@@ -16,4 +16,15 @@ describe('community health files', () => {
     expect(existsSync('.github/pull_request_template.md')).toBe(true);
     expect(existsSync('docs/plans/2026-03-20-jixia-github-settings.md')).toBe(true);
   });
+
+  it('keeps GitHub publication notes scoped to the pre-publish phase', () => {
+    const settings = readFileSync(
+      'docs/plans/2026-03-20-jixia-github-settings.md',
+      'utf8'
+    );
+
+    expect(settings).toContain('Repository Protection');
+    expect(settings).toContain('Replace `OWNER`');
+    expect(settings).toContain('Local Git Bootstrap Checkpoints');
+  });
 });

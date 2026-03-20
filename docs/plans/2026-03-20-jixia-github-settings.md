@@ -22,3 +22,16 @@ This checklist records the settings that should be applied once the public GitHu
 - confirm bug and feature issue templates are visible
 - confirm the pull request template is visible
 - confirm README, README_CN, LICENSE, and SECURITY are rendered correctly on GitHub
+
+## Publication Follow-Ups
+
+- Replace `OWNER` in `.github/ISSUE_TEMPLATE/config.yml` with the actual GitHub owner immediately after repository creation.
+- Confirm the private vulnerability reporting link resolves to the published repository.
+
+## Local Git Bootstrap Checkpoints
+
+Local git initialization remains incomplete until all of the following are true:
+
+- `git status` succeeds
+- the default branch is `main`
+- the working tree is clean after bootstrap changes are committed

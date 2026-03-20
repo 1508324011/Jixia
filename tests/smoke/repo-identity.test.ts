@@ -6,6 +6,11 @@ describe('repository identity scaffold', () => {
     expect(existsSync('package.json')).toBe(true);
     expect(existsSync('tsconfig.json')).toBe(true);
     expect(existsSync('vitest.config.ts')).toBe(true);
+
+    const tsconfig = readFileSync('tsconfig.json', 'utf8');
+
+    expect(tsconfig).toContain('src/**/*.ts');
+    expect(tsconfig).toContain('src/**/*.tsx');
   });
 
   it('includes bilingual readmes and a license', () => {
