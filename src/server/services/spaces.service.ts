@@ -23,6 +23,7 @@ export interface SpaceAccessRequest {
 export interface SpacesStore {
   memberships: SpaceMembership[];
   nextId(prefix: string): string;
+  persist(): void;
   spaces: StoredSpace[];
 }
 
@@ -68,6 +69,7 @@ export function createSpacesService(store: SpacesStore): SpacesService {
         spaceId: space.id,
         userId: actorUserId,
       });
+      store.persist();
 
       return {
         createdAt: space.createdAt,
