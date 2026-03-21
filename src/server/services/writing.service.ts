@@ -3,33 +3,48 @@ import type {
   WritingDocRecord,
   WritingDocSnapshot,
 } from '@shared/contracts/writing';
+import type { SpaceMembership } from '@shared/contracts/spaces';
 
+import type { StoredPaperAsset } from './import.service';
 import type { StoredSpace } from './spaces.service';
 import type { StoredDocVersion, VersioningService } from './versioning.service';
 
 export interface CreateDocumentRequest {
+  actorSpaceId: string;
+  actorUserId: string;
   ownerUserId: string;
   spaceId: string;
   title: string;
 }
 
 export interface SaveDocumentRequest {
+  actorSpaceId: string;
+  actorUserId: string;
   citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
   content: string;
   docId: string;
 }
 
 export interface TransitionPublishStateRequest {
+  actorSpaceId: string;
+  actorUserId: string;
   docId: string;
   publishState: PublishState;
 }
 
+export interface StoredWritingDoc extends WritingDocRecord {
+  ownerUserId: string;
+}
+
 export interface WritingStore {
   docVersions: StoredDocVersion[];
+  memberships: SpaceMembership[];
   nextId(prefix: string): string;
+  paperAssets: StoredPaperAsset[];
+  persist(): void;
   spaces: StoredSpace[];
   versioningService: VersioningService;
-  writingDocs: WritingDocRecord[];
+  writingDocs: StoredWritingDoc[];
 }
 
 export interface WritingService {
@@ -43,7 +58,7 @@ export interface WritingService {
 function findDocument(
   store: WritingStore,
   docId: string,
-): WritingDocRecord {
+): StoredWritingDoc {
   const document = store.writingDocs.find((candidate) => candidate.id === docId);
 
   if (!document) {
@@ -51,6 +66,34 @@ function findDocument(
   }
 
   return document;
+}
+
+function assertActorMembership(
+  store: WritingStore,
+  actorUserId: string,
+  spaceId: string,
+): void {
+  const actorHasMembership = store.memberships.some(
+    (membership) =>
+      membership.spaceId === spaceId && membership.userId === actorUserId,
+  );
+
+  if (!actorHasMembership) {
+    throw new Error('Access denied for the requested space resource.');
+  }
+}
+
+function assertDocumentAccess(
+  actorSpaceId: string,
+  actorUserId: string,
+  document: StoredWritingDoc,
+): void {
+  if (
+    actorSpaceId !== document.spaceId ||
+    actorUserId !== document.ownerUserId
+  ) {
+    throw new Error('Access denied for the requested writing document.');
+  }
 }
 
 export function createWritingService(store: WritingStore): WritingService {
@@ -66,20 +109,33 @@ export function createWritingService(store: WritingStore): WritingService {
         throw new Error(`Space ${input.spaceId} does not exist.`);
       }
 
-      const document: WritingDocRecord = {
+      if (input.ownerUserId !== input.actorUserId) {
+        throw new Error('Writing documents must be created by their owner.');
+      }
+
+      if (input.actorSpaceId !== input.spaceId) {
+        throw new Error('Access denied for the requested writing document.');
+      }
+
+      assertActorMembership(store, input.actorUserId, input.spaceId);
+
+      const document: StoredWritingDoc = {
         createdAt: new Date().toISOString(),
         id: store.nextId('doc'),
+        ownerUserId: input.ownerUserId,
         publishState: 'draft',
         spaceId: input.spaceId,
         title: input.title,
       };
 
       store.writingDocs.push(document);
+      store.persist();
 
       return document;
     },
     async saveDocument(input: SaveDocumentRequest): Promise<WritingDocSnapshot> {
       const document = findDocument(store, input.docId);
+      assertDocumentAccess(input.actorSpaceId, input.actorUserId, document);
 
       return store.versioningService.saveVersion({
         citations: input.citations,
@@ -91,7 +147,9 @@ export function createWritingService(store: WritingStore): WritingService {
       input: TransitionPublishStateRequest,
     ): Promise<WritingDocRecord> {
       const document = findDocument(store, input.docId);
+      assertDocumentAccess(input.actorSpaceId, input.actorUserId, document);
       document.publishState = input.publishState;
+      store.persist();
 
       return document;
     },

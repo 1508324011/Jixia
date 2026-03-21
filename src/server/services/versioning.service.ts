@@ -4,6 +4,8 @@ import type {
   WritingDocRecord,
 } from '@shared/contracts/writing';
 
+import type { StoredPaperAsset } from './import.service';
+
 export interface StoredDocVersion {
   content: string;
   createdAt: string;
@@ -22,6 +24,8 @@ export interface VersioningStore {
   citationLinks: CitationLinkRecord[];
   docVersions: StoredDocVersion[];
   nextId(prefix: string): string;
+  paperAssets: StoredPaperAsset[];
+  persist(): void;
 }
 
 export interface VersioningService {
@@ -33,6 +37,16 @@ export function createVersioningService(
 ): VersioningService {
   return {
     async saveVersion(input: SaveVersionRequest): Promise<WritingDocSnapshot> {
+      for (const citation of input.citations) {
+        const paperAsset = store.paperAssets.find(
+          (asset) => asset.id === citation.paperAssetId,
+        );
+
+        if (!paperAsset) {
+          throw new Error(`Paper asset ${citation.paperAssetId} does not exist.`);
+        }
+      }
+
       const priorVersions = store.docVersions.filter(
         (version) => version.writingDocId === input.writingDoc.id,
       );
@@ -54,6 +68,7 @@ export function createVersioningService(
 
       store.docVersions.push(docVersion);
       store.citationLinks.push(...citations);
+      store.persist();
 
       return {
         capturedAt: createdAt,
