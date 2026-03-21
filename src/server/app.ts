@@ -1,3 +1,7 @@
+import type {
+  CitationLinkRecord,
+  WritingDocRecord,
+} from '@shared/contracts/writing';
 import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
 import type { ConversationRecord, NoteRecord } from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
@@ -23,6 +27,10 @@ import {
   type ReadingRoutes,
 } from './routes/reading.routes';
 import {
+  createWritingRoutes,
+  type WritingRoutes,
+} from './routes/writing.routes';
+import {
   createHealthRoutes,
   type HealthRoutes,
 } from './routes/health.routes';
@@ -42,6 +50,11 @@ import {
   createSpacesService,
   type StoredSpace,
 } from './services/spaces.service';
+import {
+  createVersioningService,
+  type StoredDocVersion,
+} from './services/versioning.service';
+import { createWritingService } from './services/writing.service';
 import { createFileStore } from './storage/file-store';
 import type { StorageRootEnv } from './storage/storage-root';
 
@@ -54,7 +67,9 @@ export interface CreateJixiaAppOptions {
 }
 
 export interface JixiaAppState {
+  citationLinks: CitationLinkRecord[];
   conversations: ConversationRecord[];
+  docVersions: StoredDocVersion[];
   insights: GeneratedInsightRecord[];
   libraryEntries: StoredLibraryEntry[];
   memberships: SpaceMembership[];
@@ -62,6 +77,7 @@ export interface JixiaAppState {
   notes: NoteRecord[];
   paperAssets: StoredPaperAsset[];
   spaces: StoredSpace[];
+  writingDocs: WritingDocRecord[];
 }
 
 export interface JixiaApp {
@@ -70,11 +86,14 @@ export interface JixiaApp {
   library: LibraryRoutes;
   reading: ReadingRoutes;
   spaces: SpacesRoutes;
+  writing: WritingRoutes;
 }
 
 function createState(): JixiaAppState {
   return {
+    citationLinks: [],
     conversations: [],
+    docVersions: [],
     insights: [],
     libraryEntries: [],
     memberships: [],
@@ -82,6 +101,7 @@ function createState(): JixiaAppState {
     notes: [],
     paperAssets: [],
     spaces: [],
+    writingDocs: [],
   };
 }
 
@@ -127,6 +147,22 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     paperAssets: state.paperAssets,
     spaces: state.spaces,
   });
+  const versioningService = createVersioningService({
+    citationLinks: state.citationLinks,
+    docVersions: state.docVersions,
+    nextId(prefix: string): string {
+      return nextId(state, prefix);
+    },
+  });
+  const writingService = createWritingService({
+    docVersions: state.docVersions,
+    nextId(prefix: string): string {
+      return nextId(state, prefix);
+    },
+    spaces: state.spaces,
+    versioningService,
+    writingDocs: state.writingDocs,
+  });
 
   return {
     health: createHealthRoutes(),
@@ -134,5 +170,6 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     library: createLibraryRoutes(libraryService),
     reading: createReadingRoutes(readingService),
     spaces: createSpacesRoutes(spacesService),
+    writing: createWritingRoutes(writingService),
   };
 }
