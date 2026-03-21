@@ -1,46 +1,68 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
 import { describe, expect, it } from 'vitest';
 
 import { createJixiaApp } from '../../src/server/app';
 
 describe('job governance', () => {
   it('persists jobs and audits credential-backed runs', async () => {
-    const app = createJixiaApp();
-    const sharedSpace = await app.spaces.createSpace(
-      { kind: 'shared', name: 'Governance Space' },
-      'user-alice',
-    );
-    const credential = await app.credentials.createCredential({
-      provider: 'openai',
-      rawSecret: 'sk-test-secret',
-      userId: 'user-alice',
-    });
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-job-governance-'));
 
-    expect(credential.credentialRef).toMatch(/^cred-/);
-    expect(JSON.stringify(credential)).not.toContain('sk-test-secret');
+    try {
+      const app = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Governance Space' },
+        'user-alice',
+      );
+      const credential = await app.credentials.createCredential({
+        provider: 'openai',
+        rawSecret: 'sk-test-secret',
+        userId: 'user-alice',
+      });
 
-    const job = await app.jobs.createJob({
-      credentialRef: credential.credentialRef,
-      kind: 'ai.summary',
-      payload: { prompt: 'Summarize shared findings.' },
-      requestedByUserId: 'user-alice',
-      spaceId: sharedSpace.id,
-    });
+      expect(credential.credentialRef).toMatch(/^cred-/);
+      expect(JSON.stringify(credential)).not.toContain('sk-test-secret');
 
-    expect(job.status).toBe('queued');
-    expect(JSON.stringify(job)).not.toContain('sk-test-secret');
+      const job = await app.jobs.createJob({
+        credentialRef: credential.credentialRef,
+        kind: 'ai.summary',
+        payload: { prompt: 'Summarize shared findings.' },
+        requestedByUserId: 'user-alice',
+        spaceId: sharedSpace.id,
+      });
 
-    const completed = await app.jobs.runJob(job.id);
-    expect(completed.status).toBe('succeeded');
+      expect(job.status).toBe('queued');
+      expect(JSON.stringify(job)).not.toContain('sk-test-secret');
 
-    const stream = app.jobStream.toSse(job.id);
-    expect(stream).toContain('event: job');
-    expect(stream).toContain('"status":"queued"');
-    expect(stream).toContain('"status":"succeeded"');
+      const completed = await app.jobs.runJob({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        jobId: job.id,
+      });
+      expect(completed.status).toBe('succeeded');
 
-    const audits = await app.jobs.listAuditRecords(job.id);
-    expect(audits.map((audit) => audit.action)).toEqual([
-      'job.created',
-      'job.completed',
-    ]);
+      const stream = app.jobStream.toSse({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        jobId: job.id,
+      });
+      expect(stream).toContain('event: job');
+      expect(stream).toContain('"status":"queued"');
+      expect(stream).toContain('"status":"succeeded"');
+
+      const audits = await app.jobs.listAuditRecords({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        jobId: job.id,
+      });
+      expect(audits.map((audit) => audit.action)).toEqual([
+        'job.created',
+        'job.completed',
+      ]);
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
   });
 });
