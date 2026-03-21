@@ -3,11 +3,17 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@shared": ["src/shared/index.ts"],
+      "@shared/*": ["src/shared/*"]
+    },
     "types": ["node", "vitest/globals"]
   },
   "include": [
@@ -15,6 +21,7 @@
     "src/**/*.tsx",
     "tests/**/*.ts",
     "tests/**/*.tsx",
+    "vite.config.ts",
     "vitest.config.ts"
   ]
 }
