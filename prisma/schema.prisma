@@ -1,0 +1,242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum SpaceKind {
+  personal
+  shared
+}
+
+enum SpaceRole {
+  owner
+  editor
+  viewer
+}
+
+enum LibraryEntryVisibility {
+  private
+  space_shared
+  published_to_project
+}
+
+enum NoteVisibility {
+  private
+  space_shared
+}
+
+enum PublishState {
+  draft
+  review
+  published
+}
+
+enum JobStatus {
+  queued
+  running
+  succeeded
+  failed
+  cancelled
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  displayName         String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  memberships         Membership[]
+  importedAssets      PaperAsset[]         @relation("PaperAssetImportedBy")
+  notes               Note[]
+  readingStates       ReadingState[]
+  conversations       Conversation[]
+  writingDocs         WritingDoc[]
+  providerCredentials ProviderCredential[]
+  jobs                Job[]                @relation("JobRequestedBy")
+  auditLogs           AuditLog[]
+}
+
+model Space {
+  id           String         @id @default(cuid())
+  name         String
+  description  String?
+  kind         SpaceKind
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  memberships  Membership[]
+  libraryEntries LibraryEntry[]
+  writingDocs  WritingDoc[]
+  jobs         Job[]
+  auditLogs    AuditLog[]
+}
+
+model Membership {
+  id        String    @id @default(cuid())
+  spaceId    String
+  userId     String
+  role       SpaceRole
+  joinedAt   DateTime  @default(now())
+  space      Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([spaceId, userId])
+}
+
+model PaperAsset {
+  id              String         @id @default(cuid())
+  canonicalId     String         @unique
+  title           String
+  abstractText    String?
+  storageKey      String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  importedByUserId String
+  importedBy      User           @relation("PaperAssetImportedBy", fields: [importedByUserId], references: [id], onDelete: Restrict)
+  libraryEntries  LibraryEntry[]
+  citationLinks   CitationLink[]
+}
+
+model LibraryEntry {
+  id            String                 @id @default(cuid())
+  spaceId        String
+  paperAssetId   String
+  visibility     LibraryEntryVisibility
+  addedAt        DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  space          Space                  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  paperAsset     PaperAsset             @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+  notes          Note[]
+  conversations  Conversation[]
+  readingStates  ReadingState[]
+
+  @@unique([spaceId, paperAssetId])
+}
+
+model Note {
+  id            String         @id @default(cuid())
+  libraryEntryId String
+  authorUserId   String
+  visibility     NoteVisibility
+  body           String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  libraryEntry   LibraryEntry    @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
+  author         User            @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+}
+
+model ReadingState {
+  id            String        @id @default(cuid())
+  libraryEntryId String
+  userId         String
+  lastOpenedAt   DateTime?
+  progress       Float        @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  libraryEntry   LibraryEntry @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([libraryEntryId, userId])
+}
+
+model Conversation {
+  id             String       @id @default(cuid())
+  libraryEntryId String
+  userId         String
+  title          String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  libraryEntry   LibraryEntry @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WritingDoc {
+  id          String           @id @default(cuid())
+  spaceId      String
+  ownerId      String
+  title        String
+  publishState PublishState
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  space        Space            @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  owner        User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  versions     DocVersion[]
+}
+
+model DocVersion {
+  id            String      @id @default(cuid())
+  writingDocId   String
+  versionNumber  Int
+  snapshot       String
+  createdAt      DateTime    @default(now())
+  writingDoc     WritingDoc  @relation(fields: [writingDocId], references: [id], onDelete: Cascade)
+  citationLinks  CitationLink[]
+
+  @@unique([writingDocId, versionNumber])
+}
+
+model CitationLink {
+  id            String      @id @default(cuid())
+  docVersionId   String
+  paperAssetId   String
+  citationText   String
+  createdAt      DateTime    @default(now())
+  docVersion     DocVersion  @relation(fields: [docVersionId], references: [id], onDelete: Cascade)
+  paperAsset     PaperAsset  @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([docVersionId, paperAssetId])
+}
+
+model ProviderCredential {
+  id            String    @id @default(cuid())
+  userId         String
+  provider       String
+  secretRef      String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobs           Job[]
+
+  @@unique([userId, provider])
+}
+
+model Job {
+  id                String        @id @default(cuid())
+  spaceId           String
+  requestedByUserId String
+  credentialRef     String
+  kind              String
+  status            JobStatus
+  payload           String
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  space             Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  requestedBy       User          @relation("JobRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Cascade)
+  providerCredential ProviderCredential @relation(fields: [credentialRef], references: [id], onDelete: Restrict)
+  events            JobEvent[]
+  auditLogs         AuditLog[]
+}
+
+model JobEvent {
+  id          String    @id @default(cuid())
+  jobId        String
+  status       JobStatus
+  message      String
+  recordedAt   DateTime  @default(now())
+  job          Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  spaceId      String
+  actorUserId  String
+  jobId        String?
+  action       String
+  detail       String
+  recordedAt   DateTime  @default(now())
+  space        Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  actor        User      @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+  job          Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+}
