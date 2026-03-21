@@ -6,8 +6,15 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: {
-      '@shared': fileURLToPath(new URL('./src/shared/index.ts', import.meta.url))
-    }
+    alias: [
+      {
+        find: /^@shared\/(.+)$/,
+        replacement: `${fileURLToPath(new URL('./src/shared', import.meta.url))}/$1`,
+      },
+      {
+        find: '@shared',
+        replacement: fileURLToPath(new URL('./src/shared/index.ts', import.meta.url)),
+      },
+    ],
   }
 });
