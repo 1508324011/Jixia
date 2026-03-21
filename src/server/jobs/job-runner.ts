@@ -16,6 +16,7 @@ export interface JobRunnerStore {
   jobBus: JobBus;
   jobs: StoredJob[];
   nextId(prefix: string): string;
+  persist(): void;
 }
 
 export interface JobRunner {
@@ -45,6 +46,7 @@ export function createJobRunner(store: JobRunnerStore): JobRunner {
       }
 
       job.status = 'running';
+      store.persist();
       store.jobBus.publish({
         id: store.nextId('job-event'),
         jobId: job.id,
@@ -54,6 +56,7 @@ export function createJobRunner(store: JobRunnerStore): JobRunner {
       });
 
       job.status = 'succeeded';
+      store.persist();
       store.jobBus.publish({
         id: store.nextId('job-event'),
         jobId: job.id,

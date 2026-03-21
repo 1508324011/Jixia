@@ -1,6 +1,8 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type {
   CitationLinkRecord,
-  WritingDocRecord,
 } from '@shared/contracts/writing';
 import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
 import type { JobEventRecord } from '@shared/contracts/jobs';
@@ -55,6 +57,7 @@ import {
   createCredentialsService,
   type StoredCredential,
 } from './services/credentials.service';
+import { createSecretBox } from './security/secret-box';
 import {
   createAuditService,
   type AuditLogRecord,
@@ -77,9 +80,17 @@ import {
   createVersioningService,
   type StoredDocVersion,
 } from './services/versioning.service';
-import { createWritingService } from './services/writing.service';
+import {
+  createWritingService,
+  type StoredWritingDoc,
+} from './services/writing.service';
 import { createFileStore } from './storage/file-store';
-import type { StorageRootEnv } from './storage/storage-root';
+import {
+  resolveStorageRoot,
+  type StorageRootEnv,
+} from './storage/storage-root';
+
+const APP_STATE_FILE = 'server-state.json';
 
 export interface CreateJixiaAppOptions {
   connectors?: {
@@ -104,7 +115,7 @@ export interface JixiaAppState {
   notes: NoteRecord[];
   paperAssets: StoredPaperAsset[];
   spaces: StoredSpace[];
-  writingDocs: WritingDocRecord[];
+  writingDocs: StoredWritingDoc[];
 }
 
 export interface JixiaApp {
@@ -139,6 +150,49 @@ function createState(): JixiaAppState {
   };
 }
 
+function resolveAppStatePath(env: StorageRootEnv = process.env): string {
+  return join(resolveStorageRoot(env), APP_STATE_FILE);
+}
+
+function loadState(env: StorageRootEnv = process.env): JixiaAppState {
+  const initialState = createState();
+  const statePath = resolveAppStatePath(env);
+
+  if (!existsSync(statePath)) {
+    return initialState;
+  }
+
+  const parsed = JSON.parse(readFileSync(statePath, 'utf8')) as Partial<JixiaAppState>;
+
+  return {
+    auditLogs: parsed.auditLogs ?? initialState.auditLogs,
+    citationLinks: parsed.citationLinks ?? initialState.citationLinks,
+    conversations: parsed.conversations ?? initialState.conversations,
+    credentials: parsed.credentials ?? initialState.credentials,
+    docVersions: parsed.docVersions ?? initialState.docVersions,
+    insights: parsed.insights ?? initialState.insights,
+    jobEvents: parsed.jobEvents ?? initialState.jobEvents,
+    jobs: parsed.jobs ?? initialState.jobs,
+    libraryEntries: parsed.libraryEntries ?? initialState.libraryEntries,
+    memberships: parsed.memberships ?? initialState.memberships,
+    nextSequence: parsed.nextSequence ?? initialState.nextSequence,
+    notes: parsed.notes ?? initialState.notes,
+    paperAssets: parsed.paperAssets ?? initialState.paperAssets,
+    spaces: parsed.spaces ?? initialState.spaces,
+    writingDocs: parsed.writingDocs ?? initialState.writingDocs,
+  };
+}
+
+function persistState(
+  state: JixiaAppState,
+  env: StorageRootEnv = process.env,
+): void {
+  const rootDirectory = resolveStorageRoot(env);
+
+  mkdirSync(rootDirectory, { recursive: true });
+  writeFileSync(resolveAppStatePath(env), JSON.stringify(state, null, 2));
+}
+
 function nextId(state: JixiaAppState, prefix: string): string {
   state.nextSequence += 1;
 
@@ -146,27 +200,36 @@ function nextId(state: JixiaAppState, prefix: string): string {
 }
 
 export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
-  const state = createState();
+  const state = loadState(options.env);
+  const persist = (): void => {
+    persistState(state, options.env);
+  };
   const spacesService = createSpacesService({
     memberships: state.memberships,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
+    persist,
     spaces: state.spaces,
   });
   const importService = createImportService({
     arxivConnector: options.connectors?.arxiv ?? createArxivConnector(),
     fileStore: createFileStore(options.env),
     libraryEntries: state.libraryEntries,
+    memberships: state.memberships,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
     paperAssets: state.paperAssets,
+    persist,
     pubmedConnector: options.connectors?.pubmed ?? createPubmedConnector(),
+    spaces: state.spaces,
   });
   const libraryService = createLibraryService({
     libraryEntries: state.libraryEntries,
+    memberships: state.memberships,
     paperAssets: state.paperAssets,
+    spaces: state.spaces,
   });
   const readingService = createReadingService({
     conversations: state.conversations,
@@ -179,6 +242,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     },
     notes: state.notes,
     paperAssets: state.paperAssets,
+    persist,
     spaces: state.spaces,
   });
   const versioningService = createVersioningService({
@@ -187,12 +251,17 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
+    paperAssets: state.paperAssets,
+    persist,
   });
   const writingService = createWritingService({
     docVersions: state.docVersions,
+    memberships: state.memberships,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
+    paperAssets: state.paperAssets,
+    persist,
     spaces: state.spaces,
     versioningService,
     writingDocs: state.writingDocs,
@@ -202,14 +271,17 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
+    persist,
+    secretBox: createSecretBox(options.env),
   });
   const auditService = createAuditService({
     auditLogs: state.auditLogs,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
+    persist,
   });
-  const jobBus = createJobBus(state.jobEvents);
+  const jobBus = createJobBus(state.jobEvents, persist);
   const jobRunner = createJobRunner({
     auditService,
     credentials: state.credentials,
@@ -218,6 +290,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
+    persist,
   });
   const jobsRoutes = createJobsRoutes({
     auditService,
@@ -225,9 +298,12 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     jobBus,
     jobRunner,
     jobs: state.jobs,
+    memberships: state.memberships,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
+    persist,
+    spaces: state.spaces,
   });
 
   return {
@@ -235,7 +311,12 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     health: createHealthRoutes(),
     imports: createImportRoutes(importService),
     jobs: jobsRoutes,
-    jobStream: createJobStreamRoutes(jobBus),
+    jobStream: createJobStreamRoutes({
+      jobBus,
+      jobs: state.jobs,
+      memberships: state.memberships,
+      spaces: state.spaces,
+    }),
     library: createLibraryRoutes(libraryService),
     reading: createReadingRoutes(readingService),
     spaces: createSpacesRoutes(spacesService),

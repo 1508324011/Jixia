@@ -15,6 +15,7 @@ dist/
 *.local
 *.sqlite
 *.db
+.jixia-storage/
 
 .DS_Store
 Thumbs.db

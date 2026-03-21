@@ -6,13 +6,17 @@ export interface JobBus {
   toSse(jobId: string): string;
 }
 
-export function createJobBus(events: JobEventRecord[]): JobBus {
+export function createJobBus(
+  events: JobEventRecord[],
+  persist: () => void,
+): JobBus {
   return {
     listEvents(jobId: string): JobEventRecord[] {
       return events.filter((event) => event.jobId === jobId);
     },
     publish(event: JobEventRecord): void {
       events.push(event);
+      persist();
     },
     toSse(jobId: string): string {
       return this.listEvents(jobId)

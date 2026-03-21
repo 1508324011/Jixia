@@ -19,6 +19,7 @@ export interface CreateAuditRecordRequest {
 export interface AuditStore {
   auditLogs: AuditLogRecord[];
   nextId(prefix: string): string;
+  persist(): void;
 }
 
 export interface AuditService {
@@ -40,6 +41,7 @@ export function createAuditService(store: AuditStore): AuditService {
       };
 
       store.auditLogs.push(record);
+      store.persist();
 
       return record;
     },

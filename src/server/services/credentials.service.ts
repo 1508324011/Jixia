@@ -1,3 +1,8 @@
+import type {
+  EncryptedSecretPayload,
+  SecretBox,
+} from '../security/secret-box';
+
 export interface CredentialRecord {
   createdAt: string;
   credentialRef: string;
@@ -5,9 +10,7 @@ export interface CredentialRecord {
   userId: string;
 }
 
-export interface StoredCredential extends CredentialRecord {
-  sealedSecret: string;
-}
+export interface StoredCredential extends CredentialRecord, EncryptedSecretPayload {}
 
 export interface CreateCredentialRequest {
   provider: string;
@@ -18,15 +21,13 @@ export interface CreateCredentialRequest {
 export interface CredentialsStore {
   credentials: StoredCredential[];
   nextId(prefix: string): string;
+  persist(): void;
+  secretBox: SecretBox;
 }
 
 export interface CredentialsService {
   createCredential(input: CreateCredentialRequest): Promise<CredentialRecord>;
   getStoredCredential(credentialRef: string): StoredCredential | null;
-}
-
-function sealSecret(rawSecret: string): string {
-  return Buffer.from(rawSecret, 'utf8').toString('base64');
 }
 
 export function createCredentialsService(
@@ -39,12 +40,13 @@ export function createCredentialsService(
       const credential: StoredCredential = {
         createdAt: new Date().toISOString(),
         credentialRef: store.nextId('cred'),
+        ...store.secretBox.encrypt(input.rawSecret),
         provider: input.provider,
-        sealedSecret: sealSecret(input.rawSecret),
         userId: input.userId,
       };
 
       store.credentials.push(credential);
+      store.persist();
 
       return {
         createdAt: credential.createdAt,
