@@ -2,6 +2,8 @@
 
 This checklist records the settings that should be applied once the public GitHub repository exists.
 
+Published repository: `https://github.com/1508324011/Jixia`
+
 ## Repository Metadata
 
 - repository name: `Jixia`
@@ -25,7 +27,7 @@ This checklist records the settings that should be applied once the public GitHu
 
 ## Publication Follow-Ups
 
-- Replace `OWNER` in `.github/ISSUE_TEMPLATE/config.yml` with the actual GitHub owner immediately after repository creation.
+- `.github/ISSUE_TEMPLATE/config.yml` now points to `https://github.com/1508324011/Jixia/security/advisories/new`.
 - Confirm the private vulnerability reporting link resolves to the published repository.
 
 ## Local Git Bootstrap Checkpoints

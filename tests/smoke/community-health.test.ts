@@ -17,14 +17,23 @@ describe('community health files', () => {
     expect(existsSync('docs/plans/2026-03-20-jixia-github-settings.md')).toBe(true);
   });
 
-  it('keeps GitHub publication notes scoped to the pre-publish phase', () => {
+  it('records post-publish GitHub settings with a concrete repository owner', () => {
     const settings = readFileSync(
       'docs/plans/2026-03-20-jixia-github-settings.md',
       'utf8'
     );
+    const issueTemplateConfig = readFileSync(
+      '.github/ISSUE_TEMPLATE/config.yml',
+      'utf8'
+    );
 
     expect(settings).toContain('Repository Protection');
-    expect(settings).toContain('Replace `OWNER`');
+    expect(settings).toContain('1508324011/Jixia');
+    expect(settings).not.toContain('Replace `OWNER`');
     expect(settings).toContain('Local Git Bootstrap Checkpoints');
+    expect(issueTemplateConfig).toContain(
+      'https://github.com/1508324011/Jixia/security/advisories/new'
+    );
+    expect(issueTemplateConfig).not.toContain('OWNER');
   });
 });
