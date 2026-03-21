@@ -1,5 +1,7 @@
 import type { LibraryEntryVisibility, LibraryEntryRecord } from '@shared/contracts/library';
 
+import type { SpaceMembership } from '@shared/contracts/spaces';
+
 import type { ArxivConnector } from '../connectors/arxiv.connector';
 import type {
   ImportedPaperMetadata,
@@ -7,6 +9,7 @@ import type {
 } from '../connectors/pubmed.connector';
 import { createPaperPdfStorageKey } from '../storage/asset-key';
 import type { FileStore } from '../storage/file-store';
+import type { StoredSpace } from './spaces.service';
 
 export interface StoredPaperAsset {
   abstractText?: string;
@@ -44,9 +47,12 @@ export interface ImportStore {
   arxivConnector: ArxivConnector;
   fileStore: FileStore;
   libraryEntries: StoredLibraryEntry[];
+  memberships: SpaceMembership[];
   nextId(prefix: string): string;
   paperAssets: StoredPaperAsset[];
+  persist(): void;
   pubmedConnector: PubmedConnector;
+  spaces: StoredSpace[];
 }
 
 export interface ImportService {
@@ -71,6 +77,18 @@ function createLibraryEntry(
   paperAssetId: string,
   visibility: LibraryEntryVisibility,
 ): StoredLibraryEntry {
+  const paperAsset = store.paperAssets.find((asset) => asset.id === paperAssetId);
+
+  if (!paperAsset) {
+    throw new Error(`Paper asset ${paperAssetId} does not exist.`);
+  }
+
+  const space = store.spaces.find((candidate) => candidate.id === spaceId);
+
+  if (!space) {
+    throw new Error(`Space ${spaceId} does not exist.`);
+  }
+
   const existingEntry = store.libraryEntries.find(
     (entry) => entry.spaceId === spaceId && entry.paperAssetId === paperAssetId,
   );
@@ -88,13 +106,37 @@ function createLibraryEntry(
   };
 
   store.libraryEntries.push(entry);
+  store.persist();
 
   return entry;
+}
+
+function assertCanWriteToSpace(
+  store: ImportStore,
+  requestedByUserId: string,
+  spaceId: string,
+): void {
+  const space = store.spaces.find((candidate) => candidate.id === spaceId);
+
+  if (!space) {
+    throw new Error(`Space ${spaceId} does not exist.`);
+  }
+
+  const actorHasMembership = store.memberships.some(
+    (membership) =>
+      membership.spaceId === spaceId && membership.userId === requestedByUserId,
+  );
+
+  if (!actorHasMembership) {
+    throw new Error('Access denied for the requested space resource.');
+  }
 }
 
 export function createImportService(store: ImportStore): ImportService {
   return {
     async uploadPdf(input: UploadPdfRequest): Promise<ImportedLibraryRecord> {
+      assertCanWriteToSpace(store, input.requestedByUserId, input.spaceId);
+
       const assetId = store.nextId('asset');
       const storageKey = await store.fileStore.writeText(
         createPaperPdfStorageKey(assetId),
@@ -110,6 +152,7 @@ export function createImportService(store: ImportStore): ImportService {
       };
 
       store.paperAssets.push(asset);
+      store.persist();
 
       return {
         asset,
@@ -122,6 +165,8 @@ export function createImportService(store: ImportStore): ImportService {
       };
     },
     async importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord> {
+      assertCanWriteToSpace(store, input.requestedByUserId, input.spaceId);
+
       const metadata = await resolveImportedMetadata(store, input);
       const existingAsset = store.paperAssets.find(
         (asset) => asset.canonicalId === metadata.canonicalId,
@@ -139,6 +184,7 @@ export function createImportService(store: ImportStore): ImportService {
           };
 
           store.paperAssets.push(createdAsset);
+          store.persist();
 
           return createdAsset;
         })();

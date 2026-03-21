@@ -59,7 +59,11 @@ describe('library import', () => {
       expect(secondImported.entry.spaceId).toBe(reviewSpace.id);
       expect(arxivImported.asset.canonicalId).toBe('arxiv:2401.00001');
 
-      const storedEntry = await app.library.getEntry(firstImported.entry.id);
+      const storedEntry = await app.library.getEntry({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        entryId: firstImported.entry.id,
+      });
       expect(storedEntry).toMatchObject({
         asset: { canonicalId: 'doi:10.1000/jixia-demo' },
         entry: { id: firstImported.entry.id, spaceId: sharedSpace.id },
