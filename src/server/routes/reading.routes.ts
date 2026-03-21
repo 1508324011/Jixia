@@ -3,6 +3,7 @@ import type { NoteRecord } from '@shared/contracts/reading';
 
 import type {
   CreateNoteRequest,
+  GetReadingDetailRequest,
   ReadingDetail,
   ReadingService,
   SaveGeneratedInsightRequest,
@@ -10,7 +11,7 @@ import type {
 
 export interface ReadingRoutes {
   createNote(input: CreateNoteRequest): Promise<NoteRecord>;
-  getDetail(libraryEntryId: string): Promise<ReadingDetail | null>;
+  getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
   saveGeneratedInsight(
     input: SaveGeneratedInsightRequest,
   ): Promise<GeneratedInsightRecord>;
@@ -21,8 +22,8 @@ export function createReadingRoutes(service: ReadingService): ReadingRoutes {
     createNote(input: CreateNoteRequest): Promise<NoteRecord> {
       return service.createNote(input);
     },
-    getDetail(libraryEntryId: string): Promise<ReadingDetail | null> {
-      return service.getDetail(libraryEntryId);
+    getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null> {
+      return service.getDetail(input);
     },
     saveGeneratedInsight(
       input: SaveGeneratedInsightRequest,

@@ -10,7 +10,10 @@ import type {
 } from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
-import { assertCanReadResource } from '../policies/access-policy';
+import {
+  assertCanReadResource,
+  canReadResource,
+} from '../policies/access-policy';
 import type {
   StoredLibraryEntry,
   StoredPaperAsset,
@@ -35,6 +38,12 @@ export interface SaveGeneratedInsightRequest {
   title: string;
 }
 
+export interface GetReadingDetailRequest {
+  actorSpaceId: string;
+  actorUserId: string;
+  libraryEntryId: string;
+}
+
 export interface ReadingDetail {
   asset: LibraryEntryView['asset'];
   entry: LibraryEntryView['entry'];
@@ -51,12 +60,13 @@ export interface ReadingStore {
   nextId(prefix: string): string;
   notes: NoteRecord[];
   paperAssets: StoredPaperAsset[];
+  persist(): void;
   spaces: StoredSpace[];
 }
 
 export interface ReadingService {
   createNote(input: CreateNoteRequest): Promise<NoteRecord>;
-  getDetail(libraryEntryId: string): Promise<ReadingDetail | null>;
+  getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
   saveGeneratedInsight(
     input: SaveGeneratedInsightRequest,
   ): Promise<GeneratedInsightRecord>;
@@ -97,7 +107,6 @@ function assertEntryAccess(
   actorUserId: string,
   actorSpaceId: string,
   libraryEntryId: string,
-  visibility: 'private' | 'space_shared' | 'published_to_project',
 ): void {
   const { entry, space } = getLibraryContext(store, libraryEntryId);
   const actorHasResourceMembership = store.memberships.some(
@@ -111,15 +120,17 @@ function assertEntryAccess(
     actorUserId,
     resourceOwnerUserId: space.ownerUserId,
     resourceSpaceId: entry.spaceId,
-    visibility,
+    visibility: entry.visibility,
   });
 }
 
 export function createReadingService(store: ReadingStore): ReadingService {
   return {
-    async getDetail(libraryEntryId: string): Promise<ReadingDetail | null> {
+    async getDetail(
+      input: GetReadingDetailRequest,
+    ): Promise<ReadingDetail | null> {
       const entry = store.libraryEntries.find(
-        (candidate) => candidate.id === libraryEntryId,
+        (candidate) => candidate.id === input.libraryEntryId,
       );
 
       if (!entry) {
@@ -134,6 +145,27 @@ export function createReadingService(store: ReadingStore): ReadingService {
         return null;
       }
 
+      const space = store.spaces.find((candidate) => candidate.id === entry.spaceId);
+
+      if (!space) {
+        throw new Error(`Space ${entry.spaceId} does not exist.`);
+      }
+
+      const actorHasResourceMembership = store.memberships.some(
+        (membership) =>
+          membership.spaceId === entry.spaceId &&
+          membership.userId === input.actorUserId,
+      );
+
+      assertCanReadResource({
+        actorHasResourceMembership,
+        actorSpaceId: input.actorSpaceId,
+        actorUserId: input.actorUserId,
+        resourceOwnerUserId: space.ownerUserId,
+        resourceSpaceId: entry.spaceId,
+        visibility: entry.visibility,
+      });
+
       return {
         asset: {
           abstractText: asset.abstractText,
@@ -144,21 +176,26 @@ export function createReadingService(store: ReadingStore): ReadingService {
         },
         entry,
         insights: store.insights.filter(
-          (insight) => insight.libraryEntryId === libraryEntryId,
+          (insight) => insight.libraryEntryId === input.libraryEntryId,
         ),
-        notes: store.notes.filter(
-          (note) => note.libraryEntryId === libraryEntryId,
-        ),
+        notes: store.notes.filter((note) => {
+          if (note.libraryEntryId !== input.libraryEntryId) {
+            return false;
+          }
+
+          return canReadResource({
+            actorHasResourceMembership,
+            actorSpaceId: input.actorSpaceId,
+            actorUserId: input.actorUserId,
+            resourceOwnerUserId: note.authorUserId,
+            resourceSpaceId: entry.spaceId,
+            visibility: note.visibility,
+          });
+        }),
       };
     },
     async createNote(input: CreateNoteRequest): Promise<NoteRecord> {
-      assertEntryAccess(
-        store,
-        input.authorUserId,
-        input.actorSpaceId,
-        input.libraryEntryId,
-        input.visibility,
-      );
+      assertEntryAccess(store, input.authorUserId, input.actorSpaceId, input.libraryEntryId);
 
       const note: NoteRecord = {
         authorUserId: input.authorUserId,
@@ -170,6 +207,7 @@ export function createReadingService(store: ReadingStore): ReadingService {
       };
 
       store.notes.push(note);
+      store.persist();
 
       return note;
     },
@@ -181,7 +219,6 @@ export function createReadingService(store: ReadingStore): ReadingService {
         input.startedByUserId,
         input.actorSpaceId,
         input.libraryEntryId,
-        'space_shared',
       );
 
       const { asset } = getLibraryContext(store, input.libraryEntryId);
@@ -207,6 +244,7 @@ export function createReadingService(store: ReadingStore): ReadingService {
       });
 
       store.insights.push(insight);
+      store.persist();
 
       return insight;
     },
