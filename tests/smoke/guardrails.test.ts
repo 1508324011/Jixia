@@ -8,6 +8,7 @@ describe('repository guardrails', () => {
     expect(gitignore).toContain('.env');
     expect(gitignore).toContain('*.env');
     expect(gitignore).toContain('*api*key*');
+    expect(gitignore).toContain('*apikey*');
     expect(gitignore).toContain('*.pem');
     expect(gitignore).toContain('*.key');
     expect(readFileSync('.env.example', 'utf8')).toContain('YOUR_');
