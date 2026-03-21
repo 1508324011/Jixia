@@ -1,3 +1,5 @@
+import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
+import type { ConversationRecord, NoteRecord } from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import {
@@ -17,6 +19,10 @@ import {
   type LibraryRoutes,
 } from './routes/library.routes';
 import {
+  createReadingRoutes,
+  type ReadingRoutes,
+} from './routes/reading.routes';
+import {
   createHealthRoutes,
   type HealthRoutes,
 } from './routes/health.routes';
@@ -29,7 +35,9 @@ import {
   type StoredLibraryEntry,
   type StoredPaperAsset,
 } from './services/import.service';
+import { createEvidenceLinkService } from './services/evidence-link.service';
 import { createLibraryService } from './services/library.service';
+import { createReadingService } from './services/reading.service';
 import {
   createSpacesService,
   type StoredSpace,
@@ -46,9 +54,12 @@ export interface CreateJixiaAppOptions {
 }
 
 export interface JixiaAppState {
+  conversations: ConversationRecord[];
+  insights: GeneratedInsightRecord[];
   libraryEntries: StoredLibraryEntry[];
   memberships: SpaceMembership[];
   nextSequence: number;
+  notes: NoteRecord[];
   paperAssets: StoredPaperAsset[];
   spaces: StoredSpace[];
 }
@@ -57,14 +68,18 @@ export interface JixiaApp {
   health: HealthRoutes;
   imports: ImportRoutes;
   library: LibraryRoutes;
+  reading: ReadingRoutes;
   spaces: SpacesRoutes;
 }
 
 function createState(): JixiaAppState {
   return {
+    conversations: [],
+    insights: [],
     libraryEntries: [],
     memberships: [],
     nextSequence: 0,
+    notes: [],
     paperAssets: [],
     spaces: [],
   };
@@ -99,11 +114,25 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     libraryEntries: state.libraryEntries,
     paperAssets: state.paperAssets,
   });
+  const readingService = createReadingService({
+    conversations: state.conversations,
+    evidenceLinkService: createEvidenceLinkService(),
+    insights: state.insights,
+    libraryEntries: state.libraryEntries,
+    memberships: state.memberships,
+    nextId(prefix: string): string {
+      return nextId(state, prefix);
+    },
+    notes: state.notes,
+    paperAssets: state.paperAssets,
+    spaces: state.spaces,
+  });
 
   return {
     health: createHealthRoutes(),
     imports: createImportRoutes(importService),
     library: createLibraryRoutes(libraryService),
+    reading: createReadingRoutes(readingService),
     spaces: createSpacesRoutes(spacesService),
   };
 }
