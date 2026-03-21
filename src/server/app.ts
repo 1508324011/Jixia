@@ -3,6 +3,7 @@ import type {
   WritingDocRecord,
 } from '@shared/contracts/writing';
 import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
+import type { JobEventRecord } from '@shared/contracts/jobs';
 import type { ConversationRecord, NoteRecord } from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
@@ -15,9 +16,21 @@ import {
   type PubmedConnector,
 } from './connectors/pubmed.connector';
 import {
+  createCredentialsRoutes,
+  type CredentialsRoutes,
+} from './routes/credentials.routes';
+import {
   createImportRoutes,
   type ImportRoutes,
 } from './routes/import.routes';
+import {
+  createJobsRoutes,
+  type JobsRoutes,
+} from './routes/jobs.routes';
+import {
+  createJobStreamRoutes,
+  type JobStreamRoutes,
+} from './routes/job-stream.routes';
 import {
   createLibraryRoutes,
   type LibraryRoutes,
@@ -39,11 +52,21 @@ import {
   type SpacesRoutes,
 } from './routes/spaces.routes';
 import {
+  createCredentialsService,
+  type StoredCredential,
+} from './services/credentials.service';
+import {
+  createAuditService,
+  type AuditLogRecord,
+} from './services/audit.service';
+import {
   createImportService,
   type StoredLibraryEntry,
   type StoredPaperAsset,
 } from './services/import.service';
 import { createEvidenceLinkService } from './services/evidence-link.service';
+import { createJobBus } from './jobs/job-bus';
+import { createJobRunner, type StoredJob } from './jobs/job-runner';
 import { createLibraryService } from './services/library.service';
 import { createReadingService } from './services/reading.service';
 import {
@@ -67,10 +90,14 @@ export interface CreateJixiaAppOptions {
 }
 
 export interface JixiaAppState {
+  auditLogs: AuditLogRecord[];
   citationLinks: CitationLinkRecord[];
   conversations: ConversationRecord[];
+  credentials: StoredCredential[];
   docVersions: StoredDocVersion[];
   insights: GeneratedInsightRecord[];
+  jobEvents: JobEventRecord[];
+  jobs: StoredJob[];
   libraryEntries: StoredLibraryEntry[];
   memberships: SpaceMembership[];
   nextSequence: number;
@@ -81,8 +108,11 @@ export interface JixiaAppState {
 }
 
 export interface JixiaApp {
+  credentials: CredentialsRoutes;
   health: HealthRoutes;
   imports: ImportRoutes;
+  jobs: JobsRoutes;
+  jobStream: JobStreamRoutes;
   library: LibraryRoutes;
   reading: ReadingRoutes;
   spaces: SpacesRoutes;
@@ -91,10 +121,14 @@ export interface JixiaApp {
 
 function createState(): JixiaAppState {
   return {
+    auditLogs: [],
     citationLinks: [],
     conversations: [],
+    credentials: [],
     docVersions: [],
     insights: [],
+    jobEvents: [],
+    jobs: [],
     libraryEntries: [],
     memberships: [],
     nextSequence: 0,
@@ -163,10 +197,45 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     versioningService,
     writingDocs: state.writingDocs,
   });
+  const credentialsService = createCredentialsService({
+    credentials: state.credentials,
+    nextId(prefix: string): string {
+      return nextId(state, prefix);
+    },
+  });
+  const auditService = createAuditService({
+    auditLogs: state.auditLogs,
+    nextId(prefix: string): string {
+      return nextId(state, prefix);
+    },
+  });
+  const jobBus = createJobBus(state.jobEvents);
+  const jobRunner = createJobRunner({
+    auditService,
+    credentials: state.credentials,
+    jobBus,
+    jobs: state.jobs,
+    nextId(prefix: string): string {
+      return nextId(state, prefix);
+    },
+  });
+  const jobsRoutes = createJobsRoutes({
+    auditService,
+    credentials: state.credentials,
+    jobBus,
+    jobRunner,
+    jobs: state.jobs,
+    nextId(prefix: string): string {
+      return nextId(state, prefix);
+    },
+  });
 
   return {
+    credentials: createCredentialsRoutes(credentialsService),
     health: createHealthRoutes(),
     imports: createImportRoutes(importService),
+    jobs: jobsRoutes,
+    jobStream: createJobStreamRoutes(jobBus),
     library: createLibraryRoutes(libraryService),
     reading: createReadingRoutes(readingService),
     spaces: createSpacesRoutes(spacesService),
