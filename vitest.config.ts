@@ -6,7 +6,14 @@ export default mergeConfig(
   viteConfig,
   defineConfig({
     test: {
-      include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'tests/**/*.test.ts', 'tests/**/*.test.tsx', 'tests/smoke/**/*.test.ts', 'tests/smoke/**/*.test.tsx']
-    }
-  })
+      environment: 'jsdom',
+      include: [
+        'tests/**/*.test.ts',
+        'tests/**/*.test.tsx',
+        'tests/smoke/**/*.test.ts',
+        'tests/smoke/**/*.test.tsx',
+      ],
+      setupFiles: ['./src/test/setup.ts'],
+    },
+  }),
 );

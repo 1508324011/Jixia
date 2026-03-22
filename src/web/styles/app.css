@@ -1,0 +1,126 @@
+@import './tokens.css';
+
+:root {
+  color: var(--jixia-text);
+  background: var(--jixia-bg);
+  font-family: var(--jixia-font-sans);
+  line-height: 1.6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--jixia-bg);
+  color: var(--jixia-text);
+}
+
+a {
+  color: var(--jixia-ink);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: var(--jixia-space-6) var(--jixia-space-4);
+  background:
+    radial-gradient(circle at top left, rgba(181, 119, 77, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(245, 243, 240, 0.92));
+}
+
+.page-shell {
+  display: grid;
+  gap: var(--jixia-space-4);
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--jixia-space-5);
+  border: 1px solid var(--jixia-border);
+  border-radius: var(--jixia-radius-lg);
+  background: rgba(251, 249, 246, 0.9);
+  box-shadow: var(--jixia-shadow);
+}
+
+.page-header {
+  display: grid;
+  gap: var(--jixia-space-2);
+}
+
+.page-kicker {
+  margin: 0;
+  color: var(--jixia-warm);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+}
+
+.page-title {
+  margin: 0;
+  color: var(--jixia-ink);
+  font-family: var(--jixia-font-serif);
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.page-description,
+.quiet-copy {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--jixia-text-muted);
+}
+
+.context-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--jixia-space-2);
+  align-items: center;
+  padding: var(--jixia-space-3) var(--jixia-space-4);
+  border: 1px solid var(--jixia-border);
+  border-radius: var(--jixia-radius-md);
+  background: var(--jixia-surface-strong);
+  color: var(--jixia-text-muted);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid rgba(43, 58, 103, 0.15);
+  border-radius: 999px;
+  background: rgba(43, 58, 103, 0.08);
+  color: var(--jixia-ink);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.shell-grid,
+.panel-grid {
+  display: grid;
+  gap: var(--jixia-space-4);
+}
+
+.panel-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.panel,
+.hero-card {
+  display: grid;
+  gap: var(--jixia-space-2);
+  padding: var(--jixia-space-4);
+  border: 1px solid var(--jixia-border);
+  border-radius: var(--jixia-radius-md);
+  background: var(--jixia-surface);
+}
+
+.panel-title {
+  margin: 0;
+  color: var(--jixia-ink);
+  font-size: 1.1rem;
+}
+
+.panel-link {
+  font-weight: 600;
+}
