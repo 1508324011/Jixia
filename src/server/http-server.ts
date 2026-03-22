@@ -4,6 +4,8 @@ import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createJixiaApp } from './app';
+import { bootstrapNativeDemoState } from './demo/bootstrap';
+import { handleHttpApiRequest } from './http-api';
 import { readRuntimeConfig, type RuntimeConfig, type RuntimeConfigEnv } from './runtime-config';
 
 const DIST_ROOT = resolve(process.cwd(), 'dist');
@@ -148,23 +150,35 @@ export function createHttpServer(options: HttpServerOptions = {}): JixiaHttpServ
 
   const runtimeEnv = options.env ?? process.env;
   const runtimeConfig = readRuntimeConfig(runtimeEnv);
+  bootstrapNativeDemoState(runtimeEnv);
   const app = createJixiaApp({ env: runtimeEnv });
   const server = createServer((request, response) => {
     const method = request.method ?? 'GET';
 
-    if (method !== 'GET' && method !== 'HEAD') {
-      sendText(response, 405, 'Method not allowed', method);
-      return;
-    }
+    void (async () => {
+      const requestUrl = new URL(request.url ?? '/', `http://${runtimeConfig.host}`);
+      const apiResponse = await handleHttpApiRequest(app, request, requestUrl);
 
-    const requestUrl = new URL(request.url ?? '/', `http://${runtimeConfig.host}`);
+      if (apiResponse) {
+        sendJson(response, apiResponse.statusCode, apiResponse.payload, method);
+        return;
+      }
 
-    if (requestUrl.pathname === '/health') {
-      sendJson(response, 200, app.health.getHealth(), method);
-      return;
-    }
+      if (method !== 'GET' && method !== 'HEAD') {
+        sendText(response, 405, 'Method not allowed', method);
+        return;
+      }
 
-    handleStaticRequest(response, requestUrl.pathname, method);
+      if (requestUrl.pathname === '/health') {
+        sendJson(response, 200, app.health.getHealth(), method);
+        return;
+      }
+
+      handleStaticRequest(response, requestUrl.pathname, method);
+    })().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Unexpected server error';
+      sendJson(response, 500, { error: message }, method);
+    });
   });
 
   return {

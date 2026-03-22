@@ -1,3 +1,6 @@
+import type { GeneratedInsightRecord } from './evidence';
+import type { LibraryEntryView } from './library';
+
 export type NoteVisibility = 'private' | 'space_shared';
 
 export interface NoteRecord {
@@ -22,6 +25,21 @@ export interface ReadingStateRecord {
   userId: string;
   progressPercent: number;
   lastReadAt: string;
+}
+
+export interface ReadingDetailView {
+  asset: LibraryEntryView['asset'];
+  entry: LibraryEntryView['entry'];
+  insights: GeneratedInsightRecord[];
+  notes: NoteRecord[];
+}
+
+export interface ReadingNoteResponse {
+  note: NoteRecord;
+}
+
+export interface ReadingInsightResponse {
+  insight: GeneratedInsightRecord;
 }
 
 export const readingContract = 'jixia-reading-contract';
