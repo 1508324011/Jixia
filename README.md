@@ -7,13 +7,23 @@ versioned writing, and governed AI jobs.
 
 ## Current Phase
 
-The repository now includes two aligned layers:
+The repository now includes a server-first backend scaffold and a native demo showcase that exercises the main browser workflow against real file-backed server state.
+
+Current branch focus:
 
 1. a server-first backend scaffold for spaces, library, reading, writing, and governed AI jobs
-2. the first scholarly web workflow shell for `Spaces -> Library -> Reader -> Writing`
+2. a native Node demo for `Spaces -> Import Paper -> Reader -> Writing -> governed summary` with deterministic reset
 
-Bootstrap guardrails remain in place, but the project has moved beyond repository-only setup.
-The current branch state reflects a verified Task 10 shell rather than a placeholder web entry.
+Bootstrap guardrails remain in place, but the branch is now beyond a placeholder web shell.
+The current state is a verified native showcase rather than a static Task 10-only handoff.
+
+## Native Demo Showcase
+
+The quickest way to understand the current branch is the dedicated runbook:
+
+- `docs/runbooks/native-demo-showcase.md`
+
+That runbook covers the exact reset/start commands, user-owned runtime paths, and the real click-path through `Enter shared space`, `Import paper`, `Open reader`, `Refresh reader`, `Open writing`, `Reload draft`, `Publish`, and the optional `Run governed summary` finale.
 
 ## Planning Documents
 
@@ -26,43 +36,35 @@ Detailed design and implementation plans live under `docs/plans/`:
 - `2026-03-21-jixia-task-10-ui-direction-notes.md`
 - `2026-03-22-jixia-task-11-deployment-implementation.md`
 
-## Task 10 Status
+## Current Showcase Surface
 
-Task 10's first browser workflow shell is complete on this branch.
 The web layer now includes:
 
 - `src/web/app.tsx` and `src/web/router.tsx`
-- page shells for spaces, library, reader, and writing
+- real spaces, library, reader, and writing pages backed by the native HTTP server
 - minimal design tokens and shared shell styling
 - governance-visible UI cues for visibility, shared context, publish state, and governed AI/job language
-- UI workflow tests covering the main navigation path and direct deep links
+- UI workflow tests covering the main navigation path, direct deep links, refresh-visible persistence, and the governed-job finale
 
 ## Verification Snapshot
 
 Latest branch verification evidence:
 
 - `npm run typecheck`
-- `npm test` → 16 files / 48 tests passing
+- `npm test`
 - `npm run build`
 
-This means the current shell is ready for interface review and manual workflow walkthroughs,
-even though it is still a shell rather than a fully connected product frontend.
+This means the current branch is ready for native demo walkthroughs and operator-facing review, even though it is still a scoped showcase rather than a full production deployment story.
 
 ## Near-Term Direction
 
-The next delivery focus has two tracks:
-
-1. exercise Task 11 on a Docker-capable operator machine and extend the runtime past the current shell-and-health deployment boundary
-2. continue from the Task 10 shell toward real server-backed web interactions
-
-The Task 10 handoff note in `docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md`
-records what shipped, what was verified, and what still belongs to the next phase.
+The next delivery focus is operator hardening: turn the native demo contract into a more controlled deployment path with clearer service supervision, persistent storage ownership, secret handling, and reproducible operational packaging.
 
 ## Task 11 Operator Runbook
 
-Task 11 turns the verified Task 10 shell into a reproducibly runnable lab-server package.
-The current runtime starts a minimal Node 22 HTTP server, serves the built Task 10 web shell,
-and exposes `GET /health`. It does not yet imply full browser-side live data integration.
+Task 11 now packages the native showcase as a reproducibly runnable lab-server path.
+The current runtime starts a minimal Node 22 HTTP server, serves the built browser app plus
+the native demo JSON API surface, and still exposes `GET /health` for operator checks.
 
 ### Prerequisites
 
@@ -72,21 +74,21 @@ and exposes `GET /health`. It does not yet imply full browser-side live data int
 
 ### Environment contract
 
-Copy `.env.example` to `.env` and fill in operator-specific values.
+Copy `.env.example` to `.env` to use the runnable native-demo defaults on the current host,
+or edit the values if your operator-owned paths differ.
 
 - `JIXIA_STORAGE_ROOT` controls where Jixia persists server-managed storage assets.
-  On a lab server, keep this on durable storage such as `/var/lib/jixia/storage`.
+  The checked-in demo default uses `/home/zhurui/.local/share/jixia-demo/storage`.
 - The current Task 11 runtime persists its server state to
   `JIXIA_STORAGE_ROOT/server-state.json`.
 - `JIXIA_DATABASE_URL` remains a reserved runtime boundary for the next DB-backed phase.
-  Keep the recommended future-compatible path at `file:/var/lib/jixia/data/jixia.db`.
+  The checked-in demo default uses `file:/home/zhurui/.local/share/jixia-demo/data/jixia-demo.db`.
 - `JIXIA_HOST` controls the bind host. Use `127.0.0.1` for local-only runs and `0.0.0.0`
   when the process is containerized or needs to listen on the lab network.
 - `JIXIA_PORT` controls the HTTP port. Task 11 uses `3000` as the default runtime port.
 
-Persist `/var/lib/jixia/storage` on the lab server so `server-state.json` survives restarts.
-Keep `/var/lib/jixia/data` reserved for the next runtime phase so the future database file can
-land on persistent storage without changing the operator contract.
+For an operator-owned deployment, move those defaults onto durable storage before handing the
+branch to a wider lab audience.
 
 ### Local Node startup path
 
@@ -94,10 +96,14 @@ land on persistent storage without changing the operator contract.
 cp .env.example .env
 npm install
 npm run build
+npm run demo:reset
 npm run start:server
 ```
 
-After startup, the server serves the built Task 10 shell from `dist/` and the health endpoint at `/health`.
+After startup, the server serves the built browser app from `dist/`, the server-backed native demo
+API, and the health endpoint at `/health`. The browser walkthrough is now `Enter shared space` ->
+`Import paper` -> `Open reader` -> `Refresh reader` -> `Open writing` -> `Reload draft` ->
+`Publish` -> optional `Run governed summary`.
 
 ### Docker Compose startup path
 
