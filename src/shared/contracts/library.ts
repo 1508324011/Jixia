@@ -32,4 +32,18 @@ export interface LibraryEntryView {
   asset: PaperAssetRecord;
 }
 
+export interface LibraryListItem {
+  entryId: string;
+  spaceId: string;
+  paperAssetId: string;
+  canonicalId: string;
+  title: string;
+  visibility: LibraryEntryVisibility;
+  addedAt: string;
+}
+
+export interface LibraryListResponse {
+  entries: LibraryListItem[];
+}
+
 export const libraryContract = 'jixia-library-contract';
