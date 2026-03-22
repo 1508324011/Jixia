@@ -1,5 +1,7 @@
 import type {
+  CitationLinkRecord,
   PublishState,
+  WritingDocumentView,
   WritingDocRecord,
   WritingDocSnapshot,
 } from '@shared/contracts/writing';
@@ -32,11 +34,19 @@ export interface TransitionPublishStateRequest {
   publishState: PublishState;
 }
 
+export interface GetDocumentRequest {
+  actorSpaceId: string;
+  actorUserId: string;
+  projectId: string;
+  spaceId: string;
+}
+
 export interface StoredWritingDoc extends WritingDocRecord {
   ownerUserId: string;
 }
 
 export interface WritingStore {
+  citationLinks: CitationLinkRecord[];
   docVersions: StoredDocVersion[];
   memberships: SpaceMembership[];
   nextId(prefix: string): string;
@@ -49,10 +59,35 @@ export interface WritingStore {
 
 export interface WritingService {
   createDocument(input: CreateDocumentRequest): Promise<WritingDocRecord>;
+  getDocument(input: GetDocumentRequest): Promise<WritingDocumentView | null>;
   saveDocument(input: SaveDocumentRequest): Promise<WritingDocSnapshot>;
   transitionPublishState(
     input: TransitionPublishStateRequest,
   ): Promise<WritingDocRecord>;
+}
+
+function buildLatestSnapshot(
+  store: WritingStore,
+  document: StoredWritingDoc,
+): WritingDocSnapshot | null {
+  const latestVersion = store.docVersions
+    .filter((version) => version.writingDocId === document.id)
+    .sort((left, right) => left.versionNumber - right.versionNumber)
+    .at(-1);
+
+  if (!latestVersion) {
+    return null;
+  }
+
+  return {
+    capturedAt: latestVersion.createdAt,
+    citations: store.citationLinks.filter(
+      (citation) => citation.docVersionId === latestVersion.id,
+    ),
+    content: latestVersion.content,
+    doc: document,
+    docVersionId: latestVersion.id,
+  };
 }
 
 function findDocument(
@@ -132,6 +167,30 @@ export function createWritingService(store: WritingStore): WritingService {
       store.persist();
 
       return document;
+    },
+    async getDocument(
+      input: GetDocumentRequest,
+    ): Promise<WritingDocumentView | null> {
+      const document = store.writingDocs.find(
+        (candidate) =>
+          candidate.spaceId === input.spaceId &&
+          candidate.ownerUserId === input.actorUserId,
+      );
+
+      if (!document) {
+        return null;
+      }
+
+      assertDocumentAccess(input.actorSpaceId, input.actorUserId, document);
+
+      return {
+        documentId: document.id,
+        latestSnapshot: buildLatestSnapshot(store, document),
+        projectId: input.projectId,
+        publishState: document.publishState,
+        spaceId: document.spaceId,
+        title: document.title,
+      };
     },
     async saveDocument(input: SaveDocumentRequest): Promise<WritingDocSnapshot> {
       const document = findDocument(store, input.docId);
