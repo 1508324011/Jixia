@@ -124,3 +124,72 @@ a {
 .panel-link {
   font-weight: 600;
 }
+
+.stack-sm,
+.stack-xs {
+  display: grid;
+}
+
+.stack-sm {
+  gap: var(--jixia-space-3);
+}
+
+.stack-xs {
+  gap: var(--jixia-space-1);
+}
+
+.draft-editor {
+  width: 100%;
+  padding: var(--jixia-space-3);
+  border: 1px solid var(--jixia-border);
+  border-radius: var(--jixia-radius-md);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--jixia-text);
+  font: inherit;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.field-label {
+  display: grid;
+  gap: var(--jixia-space-1);
+  color: var(--jixia-ink);
+  font-weight: 600;
+}
+
+.text-input {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--jixia-border);
+  border-radius: var(--jixia-radius-md);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--jixia-text);
+  font: inherit;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--jixia-space-2);
+}
+
+.action-button {
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(43, 58, 103, 0.15);
+  border-radius: 999px;
+  background: rgba(43, 58, 103, 0.92);
+  color: white;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.action-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.action-button-secondary {
+  background: rgba(181, 119, 77, 0.12);
+  color: var(--jixia-ink);
+}
