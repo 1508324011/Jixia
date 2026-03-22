@@ -33,6 +33,7 @@ export interface SpacesService {
     input: CreateSpaceRequest,
     actorUserId: string,
   ): Promise<SpaceSummary>;
+  listSpaces(actorUserId: string): Promise<SpaceSummary[]>;
   listMemberships(query: MembershipQuery): Promise<SpaceMembership[]>;
 }
 
@@ -82,6 +83,21 @@ export function createSpacesService(store: SpacesStore): SpacesService {
       return store.memberships.filter(
         (membership) => membership.spaceId === query.spaceId,
       );
+    },
+    async listSpaces(actorUserId: string): Promise<SpaceSummary[]> {
+      return store.spaces
+        .filter((space) =>
+          store.memberships.some(
+            (membership) =>
+              membership.spaceId === space.id && membership.userId === actorUserId,
+          ),
+        )
+        .map((space) => ({
+          createdAt: space.createdAt,
+          id: space.id,
+          kind: space.kind,
+          name: space.name,
+        }));
     },
     async assertCanReadResource(request: SpaceAccessRequest): Promise<void> {
       const resourceSpace = findSpace(store, request.resourceSpaceId);
