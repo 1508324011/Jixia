@@ -4,8 +4,10 @@ import type { JobRecord } from '@shared/contracts/jobs';
 
 import {
   assertSafeJobPayload,
+  findLatestAuthorizedJob,
   findAuthorizedJob,
   type JobAccessRequest,
+  type SpaceJobAccessRequest,
 } from '../jobs/job-governance';
 import type { JobRunner, StoredJob } from '../jobs/job-runner';
 import type { JobBus } from '../jobs/job-bus';
@@ -26,6 +28,7 @@ export interface CreateJobRequest {
 
 export interface JobsRoutes {
   createJob(input: CreateJobRequest): Promise<JobRecord>;
+  getLatestJob(input: SpaceJobAccessRequest): Promise<JobRecord | null>;
   listAuditRecords(input: JobAccessRequest): Promise<AuditLogRecord[]>;
   runJob(input: JobAccessRequest): Promise<JobRecord>;
 }
@@ -43,6 +46,16 @@ export interface JobsRouteStore {
 }
 
 export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
+  function mapJobRecord(job: StoredJob): JobRecord {
+    return {
+      createdAt: job.createdAt,
+      credentialRef: job.credentialRef,
+      id: job.id,
+      kind: job.kind,
+      status: job.status,
+    };
+  }
+
   return {
     async createJob(input: CreateJobRequest): Promise<JobRecord> {
       const space = store.spaces.find((candidate) => candidate.id === input.spaceId);
@@ -103,13 +116,12 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
         spaceId: input.spaceId,
       });
 
-      return {
-        createdAt: job.createdAt,
-        credentialRef: job.credentialRef,
-        id: job.id,
-        kind: job.kind,
-        status: job.status,
-      };
+      return mapJobRecord(job);
+    },
+    async getLatestJob(input: SpaceJobAccessRequest): Promise<JobRecord | null> {
+      const job = findLatestAuthorizedJob(store, input);
+
+      return job ? mapJobRecord(job) : null;
     },
     async listAuditRecords(input: JobAccessRequest): Promise<AuditLogRecord[]> {
       const job = findAuthorizedJob(store, input);

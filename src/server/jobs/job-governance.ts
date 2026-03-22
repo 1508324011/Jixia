@@ -9,6 +9,13 @@ export interface JobAccessRequest {
   jobId: string;
 }
 
+export interface SpaceJobAccessRequest {
+  actorSpaceId: string;
+  actorUserId: string;
+  kind?: string;
+  spaceId: string;
+}
+
 export interface JobGovernanceStore {
   jobs: StoredJob[];
   memberships: SpaceMembership[];
@@ -102,4 +109,47 @@ export function findAuthorizedJob(
   }
 
   return job;
+}
+
+function assertAuthorizedSpaceAccess(
+  store: JobGovernanceStore,
+  input: SpaceJobAccessRequest,
+): void {
+  const space = store.spaces.find((candidate) => candidate.id === input.spaceId);
+
+  if (!space) {
+    throw new Error(`Space ${input.spaceId} does not exist.`);
+  }
+
+  const actorHasMembership = store.memberships.some(
+    (membership) =>
+      membership.spaceId === input.spaceId && membership.userId === input.actorUserId,
+  );
+
+  if (input.actorSpaceId !== input.spaceId || !actorHasMembership) {
+    throw new Error('Access denied for the requested space resource.');
+  }
+}
+
+export function findLatestAuthorizedJob(
+  store: JobGovernanceStore,
+  input: SpaceJobAccessRequest,
+): StoredJob | null {
+  assertAuthorizedSpaceAccess(store, input);
+
+  for (let index = store.jobs.length - 1; index >= 0; index -= 1) {
+    const job = store.jobs[index];
+
+    if (job.spaceId !== input.spaceId || job.requestedByUserId !== input.actorUserId) {
+      continue;
+    }
+
+    if (input.kind && job.kind !== input.kind) {
+      continue;
+    }
+
+    return job;
+  }
+
+  return null;
 }
