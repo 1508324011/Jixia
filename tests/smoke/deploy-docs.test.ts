@@ -57,12 +57,14 @@ describe('deployment and operator scaffolding', () => {
   it('includes operator-facing environment guidance', () => {
     const envExample = read('.env.example');
 
-    expect(envExample).toContain('JIXIA_STORAGE_ROOT=YOUR_STORAGE_ROOT');
-    expect(envExample).toContain('JIXIA_DATABASE_URL=YOUR_DATABASE_URL');
-    expect(envExample).toContain('JIXIA_HOST=YOUR_SERVER_HOST');
-    expect(envExample).toContain('JIXIA_PORT=YOUR_SERVER_PORT');
-    expect(envExample).toContain('/var/lib/jixia/storage');
-    expect(envExample).toContain('file:/var/lib/jixia/data/jixia.db');
+    expect(envExample).toContain('JIXIA_STORAGE_ROOT=/home/zhurui/.local/share/jixia-demo/storage');
+    expect(envExample).toContain('JIXIA_DATABASE_URL=file:/home/zhurui/.local/share/jixia-demo/data/jixia-demo.db');
+    expect(envExample).toContain('JIXIA_HOST=127.0.0.1');
+    expect(envExample).toContain('JIXIA_PORT=3000');
+    expect(envExample).not.toContain('YOUR_STORAGE_ROOT');
+    expect(envExample).not.toContain('YOUR_DATABASE_URL');
+    expect(envExample).not.toContain('YOUR_SERVER_HOST');
+    expect(envExample).not.toContain('YOUR_SERVER_PORT');
   });
 
   it('documents the english startup path', () => {
@@ -87,7 +89,7 @@ describe('deployment and operator scaffolding', () => {
     expect(readmeCn).toContain('JIXIA_STORAGE_ROOT');
     expect(readmeCn).toContain('JIXIA_DATABASE_URL');
     expect(readmeCn).toContain('server-state.json');
-    expect(readmeCn).toContain('保留的运行时边界');
+    expect(readmeCn).toContain('保留运行时边界');
     expect(ciWorkflow).toContain('npm run build');
   });
 });

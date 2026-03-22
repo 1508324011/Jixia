@@ -6,13 +6,23 @@
 
 ## 当前阶段
 
-当前仓库已经具备两层对齐的基础：
+当前仓库已经具备 server-first 后端骨架，以及一条对齐的原生 Demo 展示路径，可直接在 Node 上跑通真实的浏览器工作流。
+
+当前分支聚焦于：
 
 1. 面向 spaces、library、reading、writing 与 governed AI jobs 的 server-first 后端骨架
-2. 面向 `Spaces -> Library -> Reader -> Writing` 的第一版学术工作流 Web 壳
+2. 面向 `Spaces -> Import Paper -> Reader -> Writing -> governed summary` 的原生 Node Demo，且支持确定性 reset
 
-bootstrap 护栏仍然保留，但项目已经不再只是仓库初始化状态。
-当前分支反映的是一个经过验证的 Task 10 UI 壳，而不是占位用的 Web 入口。
+bootstrap 护栏仍然保留，但当前分支已经不再只是 Task 10 的占位 UI 壳。
+现在的状态是一个经过验证的 native showcase，而不是静态页面 handoff。
+
+## Native Demo 展示手册
+
+理解当前分支的最快入口是专门的 runbook：
+
+- `docs/runbooks/native-demo-showcase.md`
+
+该 runbook 记录了精确的 reset / startup 命令、用户自有运行路径，以及浏览器中的真实点击链路，包括 `Enter shared space`、`Import paper`、`Open reader`、`Refresh reader`、`Open writing`、`Reload draft`、`Publish`，以及可选的 `Run governed summary` 收尾步骤。
 
 ## 计划文档
 
@@ -25,42 +35,35 @@ bootstrap 护栏仍然保留，但项目已经不再只是仓库初始化状态�
 - `2026-03-21-jixia-task-10-ui-direction-notes.md`
 - `2026-03-22-jixia-task-11-deployment-implementation.md`
 
-## Task 10 当前状态
+## 当前展示面
 
-当前分支已经完成 Task 10 的第一版浏览器工作流壳，现状包括：
+当前 Web 层包括：
 
 - `src/web/app.tsx` 与 `src/web/router.tsx`
-- spaces、library、reader、writing 四个页面壳
+- 由 native HTTP server 驱动的 spaces、library、reader、writing 四个真实页面
 - 最小设计 token 与共享页面样式
 - visibility、shared context、publish state、governed AI/job 等治理信号
-- 覆盖主导航链路与 direct deep link 的 UI 测试
+- 覆盖主导航链路、direct deep link、刷新后仍可见的持久化验证，以及 governed-job finale 的 UI 测试
 
 ## 验证快照
 
 当前分支最近一次验证结果：
 
 - `npm run typecheck`
-- `npm test` → 16 个测试文件 / 48 个测试全部通过
+- `npm test`
 - `npm run build`
 
-这意味着当前 UI 已适合做界面评审与人工走查，
-但它仍然是工作流壳，而不是已经接通全部真实业务流的前端产品。
+这意味着当前分支已适合做 native demo 走查与 operator 视角的评审，
+但它仍然是一个收敛后的 showcase，而不是完整的生产部署方案。
 
 ## 近期方向
 
-下一阶段的交付重点分为两条：
-
-1. 在具备 Docker 的 operator 机器上实测 Task 11，并把运行时从当前 shell + health 边界继续向前推进
-2. 以当前 Task 10 壳为基础，继续接入真实的 server-backed Web 交互
-
-`docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md` 中记录了
-Task 10 的已交付内容、验证证据，以及向下一阶段的 handoff。
+下一阶段的重点是 operator hardening：把当前 native demo 的运行合同继续推进为更可控的部署路径，包括服务托管、持久化目录归属、密钥注入、备份与可重复运维包装。
 
 ## Task 11 运维启动手册
 
-Task 11 的目标是把已经验证过的 Task 10 Web 壳收敛成一个可重复启动的实验室服务器包。
-当前运行时会启动一个最小 Node 22 HTTP 服务、托管构建后的 Task 10 Web shell，并暴露 `GET /health`。
-它还不代表浏览器端已经完成全部实时 server-backed 数据接入。
+Task 11 现在的目标，是把当前 native showcase 收敛成一条可重复启动的实验室服务器路径。
+当前运行时会启动一个最小 Node 22 HTTP 服务，托管构建后的浏览器应用与 native demo JSON API，并暴露 `GET /health` 供运维检查。
 
 ### 前置条件
 
@@ -70,21 +73,19 @@ Task 11 的目标是把已经验证过的 Task 10 Web 壳收敛成一个可重�
 
 ### 环境变量约定
 
-先将 `.env.example` 复制为 `.env`，再填写实验室服务器的实际值。
+先将 `.env.example` 复制为 `.env`，即可在当前主机上直接使用可运行的 native demo 默认值；如果你的 operator 路径不同，再按需修改。
 
 - `JIXIA_STORAGE_ROOT` 用来控制 Jixia 的服务端持久化存储目录。
-  实验室服务器建议使用 `/var/lib/jixia/storage` 这样的持久盘路径。
+  当前示例默认使用 `/home/zhurui/.local/share/jixia-demo/storage`。
 - 当前 Task 11 运行时实际会把服务端状态持久化到
   `JIXIA_STORAGE_ROOT/server-state.json`。
-- `JIXIA_DATABASE_URL` 目前仍是面向下一阶段 DB-backed 运行时的保留的运行时边界。
-  为了保持后续兼容，建议继续使用 `file:/var/lib/jixia/data/jixia.db`。
+- `JIXIA_DATABASE_URL` 目前仍是面向下一阶段 DB-backed 运行时的保留运行时边界。
+  当前示例默认使用 `file:/home/zhurui/.local/share/jixia-demo/data/jixia-demo.db`。
 - `JIXIA_HOST` 控制绑定地址。本地仅自用时可使用 `127.0.0.1`；
   在 Docker 或需要对实验室网络提供服务时使用 `0.0.0.0`。
 - `JIXIA_PORT` 控制 HTTP 监听端口。Task 11 的默认端口为 `3000`。
 
-实验室服务器至少需要持久化 `/var/lib/jixia/storage`，确保 `server-state.json`
-在重启后仍然存在。`/var/lib/jixia/data` 则继续保留给下一阶段的数据库运行时，
-这样未来接入真实 DB 时无需改变 operator 合同。
+当要交给 operator 长期托管时，再把这些默认路径迁移到实验室自己的持久化目录。
 
 ### 本地 Node 启动路径
 
@@ -92,10 +93,11 @@ Task 11 的目标是把已经验证过的 Task 10 Web 壳收敛成一个可重�
 cp .env.example .env
 npm install
 npm run build
+npm run demo:reset
 npm run start:server
 ```
 
-启动后，服务会从 `dist/` 提供构建后的 Task 10 shell，并在 `/health` 暴露健康检查端点。
+启动后，服务会从 `dist/` 提供构建后的浏览器应用、native demo API，并在 `/health` 暴露健康检查端点。浏览器走查路径现在是 `Enter shared space` -> `Import paper` -> `Open reader` -> `Refresh reader` -> `Open writing` -> `Reload draft` -> `Publish` -> 可选的 `Run governed summary`。
 
 ### Docker Compose 启动路径
 
