@@ -6,8 +6,13 @@
 
 ## 当前阶段
 
-当前仓库处于开源 bootstrap 阶段。
-这一阶段优先补齐仓库身份、协作治理、工程护栏，以及开始功能开发前所需的最小脚手架。
+当前仓库已经具备两层对齐的基础：
+
+1. 面向 spaces、library、reading、writing 与 governed AI jobs 的 server-first 后端骨架
+2. 面向 `Spaces -> Library -> Reader -> Writing` 的第一版学术工作流 Web 壳
+
+bootstrap 护栏仍然保留，但项目已经不再只是仓库初始化状态。
+当前分支反映的是一个经过验证的 Task 10 UI 壳，而不是占位用的 Web 入口。
 
 ## 计划文档
 
@@ -17,12 +22,35 @@
 - `2026-03-20-jixia-open-source-bootstrap-implementation.md`
 - `2026-03-20-jixia-platform-design.md`
 - `2026-03-20-jixia-platform-implementation.md`
+- `2026-03-21-jixia-task-10-ui-direction-notes.md`
+
+## Task 10 当前状态
+
+当前分支已经完成 Task 10 的第一版浏览器工作流壳，现状包括：
+
+- `src/web/app.tsx` 与 `src/web/router.tsx`
+- spaces、library、reader、writing 四个页面壳
+- 最小设计 token 与共享页面样式
+- visibility、shared context、publish state、governed AI/job 等治理信号
+- 覆盖主导航链路与 direct deep link 的 UI 测试
+
+## 验证快照
+
+当前分支最近一次验证结果：
+
+- `npm run typecheck`
+- `npm test` → 15 个测试文件 / 41 个测试全部通过
+- `npm run build`
+
+这意味着当前 UI 已适合做界面评审与人工走查，
+但它仍然是工作流壳，而不是已经接通全部真实业务流的前端产品。
 
 ## 近期方向
 
-当前路线分为两条：
+下一阶段的交付重点分为两条：
 
-1. 先把 Jixia 启动为一个治理优先的公开仓库
-2. 再搭建 spaces、library、reading、writing 与 AI governance 的第一版 server-first 平台骨架
+1. 完成 Task 11 的 Docker-first 部署脚手架与 operator 文档
+2. 以当前 Task 10 壳为基础，继续接入真实的 server-backed Web 交互
 
-在正式功能开发展开前，仓库 bootstrap 会优先完成，以确保项目边界、贡献方式与工程约束清晰可见。
+`docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md` 中记录了
+Task 10 的已交付内容、验证证据，以及向下一阶段的 handoff。
