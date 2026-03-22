@@ -16,6 +16,7 @@ export interface SpacesRoutes {
     input: CreateSpaceRequest,
     actorUserId: string,
   ): Promise<SpaceSummary>;
+  listSpaces(actorUserId: string): Promise<SpaceSummary[]>;
   listMemberships(query: MembershipQuery): Promise<SpaceMembership[]>;
 }
 
@@ -29,6 +30,9 @@ export function createSpacesRoutes(service: SpacesService): SpacesRoutes {
       actorUserId: string,
     ): Promise<SpaceSummary> {
       return service.createSpace(input, actorUserId);
+    },
+    listSpaces(actorUserId: string): Promise<SpaceSummary[]> {
+      return service.listSpaces(actorUserId);
     },
     listMemberships(query: MembershipQuery): Promise<SpaceMembership[]> {
       return service.listMemberships(query);
