@@ -1,5 +1,10 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { createServer, type Server, type ServerResponse } from 'node:http';
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -144,6 +149,34 @@ function handleStaticRequest(
   sendText(response, 404, 'Not found', method);
 }
 
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+
+  await new Promise<void>((resolve, reject) => {
+    request.on('data', (chunk: Buffer | string) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    request.once('end', () => resolve());
+    request.once('error', reject);
+  });
+
+  if (chunks.length === 0) {
+    return undefined;
+  }
+
+  const body = Buffer.concat(chunks).toString('utf8').trim();
+
+  if (!body) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    throw new Error('Request body must be valid JSON.');
+  }
+}
+
 export function createHttpServer(options: HttpServerOptions = {}): JixiaHttpServer {
   loadProjectEnvFile();
 
@@ -151,28 +184,40 @@ export function createHttpServer(options: HttpServerOptions = {}): JixiaHttpServ
   const runtimeConfig = readRuntimeConfig(runtimeEnv);
   const app = createJixiaApp({ env: runtimeEnv });
   const server = createServer((request, response) => {
-    const method = request.method ?? 'GET';
+    void (async () => {
+      const method = request.method ?? 'GET';
+      const requestUrl = new URL(request.url ?? '/', `http://${runtimeConfig.host}`);
+      const requestBody =
+        method === 'GET' || method === 'HEAD' ? undefined : await readJsonBody(request);
+      const apiResponse = await resolveHttpApi(
+        app,
+        requestUrl.pathname,
+        method,
+        requestBody,
+      );
 
-    if (method !== 'GET' && method !== 'HEAD') {
-      sendText(response, 405, 'Method not allowed', method);
-      return;
-    }
+      if (apiResponse) {
+        sendJson(response, apiResponse.statusCode, apiResponse.payload, method);
+        return;
+      }
 
-    const requestUrl = new URL(request.url ?? '/', `http://${runtimeConfig.host}`);
+      if (method !== 'GET' && method !== 'HEAD') {
+        sendText(response, 405, 'Method not allowed', method);
+        return;
+      }
 
-    const apiResponse = resolveHttpApi(requestUrl.pathname, method);
+      if (requestUrl.pathname === '/health') {
+        sendJson(response, 200, app.health.getHealth(), method);
+        return;
+      }
 
-    if (apiResponse) {
-      sendJson(response, apiResponse.statusCode, apiResponse.payload, method);
-      return;
-    }
-
-    if (requestUrl.pathname === '/health') {
-      sendJson(response, 200, app.health.getHealth(), method);
-      return;
-    }
-
-    handleStaticRequest(response, requestUrl.pathname, method);
+      handleStaticRequest(response, requestUrl.pathname, method);
+    })().catch((error: unknown) => {
+      const method = request.method ?? 'GET';
+      const message = error instanceof Error ? error.message : 'Internal server error';
+      const statusCode = /payload|json|provided/.test(message) ? 400 : 500;
+      sendText(response, statusCode, message, method);
+    });
   });
 
   return {

@@ -1,5 +1,6 @@
 import type {
   DiscoveryTodayResponse,
+  UpdateWorkbenchSettingsRequest,
   WorkbenchSettingsResponse,
 } from '@shared';
 
@@ -19,6 +20,17 @@ export function createDemoApi(baseUrl = '') {
     getWorkbenchSettings(): Promise<WorkbenchSettingsResponse> {
       return requestJson<WorkbenchSettingsResponse>(
         resolveApiUrl(baseUrl, '/api/settings/me'),
+      );
+    },
+    saveWorkbenchSettings(
+      input: UpdateWorkbenchSettingsRequest,
+    ): Promise<WorkbenchSettingsResponse> {
+      return requestJson<WorkbenchSettingsResponse>(
+        resolveApiUrl(baseUrl, '/api/settings/me'),
+        {
+          body: JSON.stringify(input),
+          method: 'POST',
+        },
       );
     },
   };

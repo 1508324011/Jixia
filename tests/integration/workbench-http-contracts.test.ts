@@ -59,7 +59,58 @@ describe('workbench http contracts', () => {
       expect(settingsResponse.status).toBe(200);
 
       const settings = await settingsResponse.json();
-      expect(settings.apiKeyConfigured).toBeDefined();
+      expect(settings).toMatchObject({
+        apiKeyConfigured: false,
+        defaultImportTarget: 'personal-library',
+      });
+      expect(settings.apiKey).toBeUndefined();
+
+      const savedResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        body: JSON.stringify({
+          apiKey: 'sk-test-secret',
+          defaultImportTarget: 'project-workspace',
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      });
+      expect(savedResponse.status).toBe(200);
+
+      const savedSettings = await savedResponse.json();
+      expect(savedSettings).toMatchObject({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'project-workspace',
+      });
+      expect(savedSettings.apiKey).toBeUndefined();
+
+      const persistedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`);
+      expect(persistedSettingsResponse.status).toBe(200);
+
+      const persistedSettings = await persistedSettingsResponse.json();
+      expect(persistedSettings).toMatchObject({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'project-workspace',
+      });
+      expect(persistedSettings.apiKey).toBeUndefined();
+
+      const persistedState = JSON.parse(
+        readFileSync(join(storageRoot, 'server-state.json'), 'utf8'),
+      ) as {
+        credentials?: Array<{ encryptedSecret?: string }>;
+        workbenchSettings?: Array<{ credentialRef?: string; defaultImportTarget?: string }>;
+      };
+      const persistedStateText = readFileSync(join(storageRoot, 'server-state.json'), 'utf8');
+
+      expect(persistedState.credentials).toHaveLength(1);
+      expect(persistedState.credentials?.[0]?.encryptedSecret).toBeDefined();
+      expect(persistedState.workbenchSettings).toMatchObject([
+        {
+          credentialRef: expect.any(String),
+          defaultImportTarget: 'project-workspace',
+        },
+      ]);
+      expect(persistedStateText).not.toContain('sk-test-secret');
 
       const { createDemoApi } = await import('../../src/web/lib/demo-api');
       const demoApi = createDemoApi(baseUrl);

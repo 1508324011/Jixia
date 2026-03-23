@@ -5,4 +5,9 @@ export interface WorkbenchSettingsResponse {
   defaultImportTarget: DefaultImportTarget;
 }
 
+export interface UpdateWorkbenchSettingsRequest {
+  apiKey?: string;
+  defaultImportTarget: DefaultImportTarget;
+}
+
 export const settingsContract = 'jixia-settings-contract';

@@ -56,6 +56,7 @@ import {
 import {
   createCredentialsService,
   type StoredCredential,
+  type WorkbenchSettingsRecord,
 } from './services/credentials.service';
 import { createSecretBox } from './security/secret-box';
 import {
@@ -115,6 +116,7 @@ export interface JixiaAppState {
   notes: NoteRecord[];
   paperAssets: StoredPaperAsset[];
   spaces: StoredSpace[];
+  workbenchSettings: WorkbenchSettingsRecord[];
   writingDocs: StoredWritingDoc[];
 }
 
@@ -146,6 +148,7 @@ function createState(): JixiaAppState {
     notes: [],
     paperAssets: [],
     spaces: [],
+    workbenchSettings: [],
     writingDocs: [],
   };
 }
@@ -179,6 +182,7 @@ function loadState(env: StorageRootEnv = process.env): JixiaAppState {
     notes: parsed.notes ?? initialState.notes,
     paperAssets: parsed.paperAssets ?? initialState.paperAssets,
     spaces: parsed.spaces ?? initialState.spaces,
+    workbenchSettings: parsed.workbenchSettings ?? initialState.workbenchSettings,
     writingDocs: parsed.writingDocs ?? initialState.writingDocs,
   };
 }
@@ -273,6 +277,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     },
     persist,
     secretBox: createSecretBox(options.env),
+    workbenchSettings: state.workbenchSettings,
   });
   const auditService = createAuditService({
     auditLogs: state.auditLogs,
