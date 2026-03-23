@@ -1,5 +1,6 @@
 import type { IncomingMessage } from 'node:http';
 
+import type { DiscoveryTodayResponse } from '@shared/contracts/discovery';
 import type { EvidenceSpanRecord } from '@shared/contracts/evidence';
 import type { GovernedJobResponse } from '@shared/contracts/jobs';
 import type { LibraryEntryVisibility, LibraryListResponse } from '@shared/contracts/library';
@@ -8,6 +9,7 @@ import type {
   ReadingInsightResponse,
   ReadingNoteResponse,
 } from '@shared/contracts/reading';
+import type { WorkbenchSettingsResponse } from '@shared/contracts/settings';
 import type {
   CreateSpaceRequest,
   DemoSpaceListResponse,
@@ -50,6 +52,22 @@ interface CreateInsightRequestBody {
 interface PublishDocumentRequestBody {
   publishState?: 'draft' | 'published' | 'review';
 }
+
+const todayRecommendations: DiscoveryTodayResponse = {
+  items: [
+    {
+      id: 'today-1',
+      imported: true,
+      reason: 'Shared tumor-board review needs a first-pass summary today.',
+      title: 'Signal pathways in shared tumor boards',
+    },
+  ],
+};
+
+const workbenchSettings: WorkbenchSettingsResponse = {
+  apiKeyConfigured: false,
+  defaultImportTarget: 'personal-library',
+};
 
 async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
@@ -167,6 +185,14 @@ export async function handleHttpApiRequest(
   const actorUserId = nativeDemoFixture.actorUserId;
 
   try {
+    if ((method === 'GET' || method === 'HEAD') && pathname === '/api/discovery/today') {
+      return createJsonResponse(200, todayRecommendations);
+    }
+
+    if ((method === 'GET' || method === 'HEAD') && pathname === '/api/settings/me') {
+      return createJsonResponse(200, workbenchSettings);
+    }
+
     if (pathname === '/api/spaces' && method === 'GET') {
       const spaces = await app.spaces.listSpaces(actorUserId);
       const payload: DemoSpaceListResponse = {

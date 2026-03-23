@@ -161,7 +161,6 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-
 describe('mvp workflow shell', () => {
   it('navigates from spaces to library, reader, and writing', async () => {
     const user = userEvent.setup();

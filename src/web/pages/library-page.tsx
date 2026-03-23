@@ -7,8 +7,15 @@ import type { DemoSpaceListResponse } from '@shared/contracts/spaces';
 import { getLibraryEntries, importLibraryPaper } from '../lib/demo-api';
 import { useJsonResource } from '../lib/use-json-resource';
 
-export function LibraryPage() {
-  const { spaceId = 'shared-space', projectId = 'tumor-board' } = useParams();
+interface LibraryPageProps {
+  mode?: 'personal' | 'project';
+}
+
+export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
+  const { spaceId, projectId } = useParams();
+  const resolvedSpaceId = spaceId ?? 'shared-space';
+  const resolvedProjectId = projectId ?? 'tumor-board';
+  const isPersonalMode = mode === 'personal' && !spaceId;
   const spacesRequest = useJsonResource<DemoSpaceListResponse>('/api/spaces');
   const [entries, setEntries] = useState<LibraryListResponse['entries']>([]);
   const [libraryError, setLibraryError] = useState<string | null>(null);
@@ -18,11 +25,23 @@ export function LibraryPage() {
   const [isLoadingEntries, setIsLoadingEntries] = useState(true);
   const [sourceType, setSourceType] = useState<'arxiv' | 'doi' | 'pmid'>('pmid');
   const activeSpace = spacesRequest.data?.spaces.find(
-    (space) => space.spaceId === spaceId,
+    (space) => space.spaceId === resolvedSpaceId,
   );
   const visibilityFallback = activeSpace?.visibility ?? 'space_shared';
   const isLoading = spacesRequest.isLoading || isLoadingEntries;
   const error = spacesRequest.error ?? libraryError;
+  const kicker = isPersonalMode
+    ? 'Personal library · imported references · ready to sort'
+    : 'Shared space · curated collection · visibility-aware entries';
+  const description = isPersonalMode
+    ? 'Review imported literature entries and decide what stays private versus what should move into a project workspace.'
+    : 'Review imported literature entries, metadata, and reading readiness inside the selected space.';
+  const contextLabel = isPersonalMode
+    ? 'Personal library'
+    : `Context · ${activeSpace?.name ?? resolvedSpaceId} / ${resolvedProjectId}`;
+  const importLabel = isPersonalMode
+    ? 'Private-first import surface for your personal reading lane.'
+    : `Import target · ${activeSpace?.name ?? resolvedSpaceId}`;
 
   useEffect(() => {
     let isActive = true;
@@ -32,7 +51,7 @@ export function LibraryPage() {
       setLibraryError(null);
 
       try {
-        const response = await getLibraryEntries(spaceId, projectId);
+        const response = await getLibraryEntries(resolvedSpaceId, resolvedProjectId);
 
         if (!isActive) {
           return;
@@ -59,7 +78,7 @@ export function LibraryPage() {
     return () => {
       isActive = false;
     };
-  }, [projectId, spaceId]);
+  }, [resolvedProjectId, resolvedSpaceId]);
 
   async function handleImport(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -78,17 +97,17 @@ export function LibraryPage() {
       await importLibraryPaper({
         sourceLocator: trimmedLocator,
         sourceType,
-        spaceId,
+        spaceId: resolvedSpaceId,
         visibility: visibilityFallback,
       });
-      const response = await getLibraryEntries(spaceId, projectId);
+      const response = await getLibraryEntries(resolvedSpaceId, resolvedProjectId);
 
       setEntries(response.entries);
     } catch (mutationError) {
       setImportError(
         mutationError instanceof Error ? mutationError.message : 'Import failed.',
       );
-    } finally {
+  } finally {
       setIsImporting(false);
     }
   }
@@ -96,22 +115,15 @@ export function LibraryPage() {
   return (
     <main className="page-shell">
       <header className="page-header">
-        <p className="page-kicker">Shared space · curated collection · visibility-aware entries</p>
+        <p className="page-kicker">{kicker}</p>
         <h1 className="page-title">Library</h1>
-        <p className="page-description">
-          Review imported literature entries, metadata, and reading readiness
-          inside the selected space.
-        </p>
+        <p className="page-description">{description}</p>
       </header>
 
       <section aria-label="context bar" className="context-bar">
-        <span>
-          Context · {activeSpace?.name ?? spaceId} / {projectId}
-        </span>
-        <span className="status-badge">{visibilityFallback}</span>
-        <span className="status-badge">
-          {activeSpace?.importLocator ?? 'seeded import'}
-        </span>
+        <span>{contextLabel}</span>
+        <span className="status-badge">{isPersonalMode ? 'personal' : visibilityFallback}</span>
+        <span className="status-badge">{activeSpace?.importLocator ?? 'pmid import'}</span>
       </section>
 
       <section className="panel-grid" aria-label="library list">
@@ -121,6 +133,7 @@ export function LibraryPage() {
             Bring one more deterministic DOI, PMID, or arXiv record into the shared
             shelf before opening the reader.
           </p>
+          <p className="quiet-copy">{importLabel}</p>
           <form className="stack-sm" onSubmit={(event) => void handleImport(event)}>
             <label className="field-label" htmlFor="import-locator">
               <span>Import locator</span>
@@ -190,14 +203,24 @@ export function LibraryPage() {
             <p className="quiet-copy">
               Canonical record · {entry.canonicalId ?? activeSpace?.importLocator ?? 'seeded import'}
             </p>
-            <p className="quiet-copy">Shared context · {activeSpace?.name ?? spaceId}</p>
-            <p className="quiet-copy">Project · {projectId}</p>
+            <p className="quiet-copy">
+              {isPersonalMode
+                ? 'Source · Imported into Personal Library'
+                : `Shared context · ${activeSpace?.name ?? resolvedSpaceId}`}
+            </p>
+            <p className="quiet-copy">
+              {isPersonalMode ? 'Personal shelf' : `Project · ${resolvedProjectId}`}
+            </p>
             <p className="quiet-copy">
               Visibility · {entry.visibility ?? visibilityFallback}
             </p>
             <Link
               className="panel-link"
-              to={`/spaces/${spaceId}/projects/${projectId}/library/${entry.entryId}/reader`}
+              to={
+                isPersonalMode
+                  ? `/projects/${resolvedProjectId}/library/${entry.entryId}/reader`
+                  : `/spaces/${resolvedSpaceId}/projects/${resolvedProjectId}/library/${entry.entryId}/reader`
+              }
             >
               Open reader
             </Link>

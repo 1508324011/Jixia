@@ -11,18 +11,19 @@
 当前分支聚焦于：
 
 1. 面向 spaces、library、reading、writing 与 governed AI jobs 的 server-first 后端骨架
-2. 面向 `Spaces -> Import Paper -> Reader -> Writing -> governed summary` 的原生 Node Demo，且支持确定性 reset
+2. 面向 `Login -> Home -> Today/Search/Library/Projects/Settings` 的集成式 workbench beta
+3. 面向 `Spaces -> Import Paper -> Reader -> Writing -> governed summary` 的原生 Node Demo，且支持确定性 reset 与打包运行
 
-bootstrap 护栏仍然保留，但当前分支已经不再只是 Task 10 的占位 UI 壳。
-现在的状态是一个经过验证的 native showcase，而不是静态页面 handoff。
+bootstrap 护栏仍然保留，但当前分支已经不再只是仓库初始化或占位 UI。
+现在的状态是一个经过验证的 workbench 交互壳，同时也能通过真实 server-backed 的 native showcase 跑通主线流程。
 
 ## Native Demo 展示手册
 
-理解当前分支的最快入口是专门的 runbook：
+理解当前可运行 demo 的最快入口仍然是：
 
 - `docs/runbooks/native-demo-showcase.md`
 
-该 runbook 记录了精确的 reset / startup 命令、由 `npm run package:native-demo` 生成的打包产物路径 `.native-demo-package/native-demo`、用户自有运行路径，以及浏览器中的真实点击链路，包括 `Create space`、`Open library`、`Import paper`、`Open reader`、`Refresh reader`、`Open writing`、`Reload draft`、`Publish`，以及可选的 `Run governed summary` 收尾步骤。
+该 runbook 记录了精确的 reset / startup 命令、`npm run package:native-demo` 生成的打包产物路径，以及包含 `Import paper`、reader 持久化、writing reopen 与 governed summary 收尾的真实浏览器走查路径。
 
 ## 计划文档
 
@@ -34,36 +35,54 @@ bootstrap 护栏仍然保留，但当前分支已经不再只是 Task 10 的占�
 - `2026-03-20-jixia-platform-implementation.md`
 - `2026-03-21-jixia-task-10-ui-direction-notes.md`
 - `2026-03-22-jixia-task-11-deployment-implementation.md`
+- `2026-03-23-jixia-web-interaction-design.md`
+- `2026-03-23-jixia-web-interaction-implementation.md`
 
-## 当前展示面
+## 当前集成展示面
 
-当前 Web 层包括：
+当前 Web 层已经把 workbench 产品模型与可运行的 native demo 展示面收敛到一起。
+
+当前已交付内容包括：
 
 - `src/web/app.tsx` 与 `src/web/router.tsx`
-- 由 native HTTP server 驱动的 spaces、library、reader、writing 四个真实页面
-- 最小设计 token 与共享页面样式
-- visibility、shared context、publish state、governed AI/job 等治理信号
-- 覆盖主导航链路、direct deep link、刷新后仍可见的持久化验证，以及 governed-job finale 的 UI 测试
+- `src/web/pages/login-page.tsx`
+- `src/web/pages/home-page.tsx`，即 `个人工作台首页`
+- `今日推荐`、`搜索`、`Library`、`Projects`、`设置` 五个顶层入口
+- 明确的 `Personal` 与 `Project / 项目名` 上下文提示
+- `AI 对话`、`私人笔记`、`共享评论`、`关键信息` 四个 paper workspace 面板
+- 将成熟内容推进到 `Writer 文档区` 的项目级写作流提示
+- 由 native HTTP server 驱动的 spaces、library、reader、writing 真实页面
+- 当前 `GET /api/discovery/today` 与 `GET /api/settings/me` 接口
+- 继续保留 legacy `/spaces/...` 路由，用回归测试守住兼容性
+
+面向个人的 `/library` 等路由只是 workbench 层的快捷表达，底层仍然由同一个
+`space` 模型负责路由、合同、权限与审计边界。
 
 ## 验证快照
 
-当前分支最近一次验证结果：
+当前分支的标准验证仍然以以下命令为准：
 
-- `npm run typecheck`
 - `npm test`
+- `npm run typecheck`
 - `npm run build`
 
-这意味着当前分支已适合做 native demo 走查与 operator 视角的评审，
-但它仍然是一个收敛后的 showcase，而不是完整的生产部署方案。
+额外的定向验证还覆盖 workbench 路由、personal / project 上下文切换、paper workspace 面板、项目写作流、native walkthrough，以及当前 discovery / settings 合同。
 
 ## 近期方向
 
-下一阶段的重点是 operator hardening：把当前 native demo 的运行合同继续推进为更可控的部署路径，包括服务托管、持久化目录归属、密钥注入、备份与可重复运维包装。
+下一阶段的交付重点分为三条：
+
+1. 继续推进 Task 11 的运维 / 部署路径，保证实验室服务器上的可重复启动
+2. 把新的 workbench 页面从 demo 数据逐步替换为权威的 server-backed 数据
+3. 把 paper、project 与 Writer 的当前壳交互扩展为真正持久化的协作流程
+
+`docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md` 中记录了
+当前已交付的 workbench 壳、仍然存在的 shell 边界，以及下一阶段的 handoff。
 
 ## Task 11 运维启动手册
 
-Task 11 现在的目标，是把当前 native showcase 收敛成一条可重复启动的实验室服务器路径。
-当前运行时会启动一个最小 Node 22 HTTP 服务，托管构建后的浏览器应用与 native demo JSON API，并暴露 `GET /health` 供运维检查。
+Task 11 的目标是把已经验证过的 workbench 交互壳收敛成一个可重复启动的实验室服务器包。
+当前运行时会启动一个最小 Node 22 HTTP 服务，托管构建后的浏览器应用与 server-backed demo API，并暴露 `GET /health`、`GET /api/discovery/today`、`GET /api/settings/me`。
 
 ### 前置条件
 
@@ -106,7 +125,7 @@ node demo-reset.mjs
 ./run-native-demo.sh
 ```
 
-启动后，服务会从 `dist/` 提供构建后的浏览器应用、native demo API，并在 `/health` 暴露健康检查端点。浏览器走查路径现在是 `Create space` -> `Open library` -> `Import paper` -> `Open reader` -> `Refresh reader` -> `Open writing` -> `Reload draft` -> `Publish` -> 可选的 `Run governed summary`。
+启动后，服务会从 `dist/` 提供构建后的 workbench shell，响应 `/health`，并在 `/api/` 提供当前 server-backed 的浏览器接口。浏览器走查既可以从 `Login -> Home` 进入，也可以按 native demo 的路径执行：`Create space` -> `Open library` -> `Import paper` -> `Open reader` -> `Refresh reader` -> `Open writing` -> `Reload draft` -> `Publish` -> 可选的 `Run governed summary`。
 
 ### Docker Compose 启动路径
 

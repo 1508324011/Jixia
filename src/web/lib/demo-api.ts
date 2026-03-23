@@ -1,15 +1,17 @@
 import type { EvidenceSpanRecord } from '@shared/contracts/evidence';
+import type { DiscoveryTodayResponse } from '@shared/contracts/discovery';
 import type {
   LibraryEntryVisibility,
   LibraryListResponse,
 } from '@shared/contracts/library';
+import type { GovernedJobResponse } from '@shared/contracts/jobs';
 import type {
+  NoteVisibility,
   ReadingDetailView,
   ReadingInsightResponse,
   ReadingNoteResponse,
-  NoteVisibility,
 } from '@shared/contracts/reading';
-import type { GovernedJobResponse } from '@shared/contracts/jobs';
+import type { WorkbenchSettingsResponse } from '@shared/contracts/settings';
 import type {
   CreateSpaceRequest,
   DemoSpaceListResponse,
@@ -64,6 +66,33 @@ export interface SaveWritingDocumentInput {
   projectId: string;
   spaceId: string;
   title: string;
+}
+
+function resolveApiUrl(baseUrl: string, pathname: string): string {
+  return baseUrl ? new URL(pathname, baseUrl).toString() : pathname;
+}
+
+function requestDemoJson<T>(baseUrl: string, pathname: string, init?: RequestInit): Promise<T> {
+  return requestJson<T>(resolveApiUrl(baseUrl, pathname), init);
+}
+
+export function createDemoApi(baseUrl = '') {
+  return {
+    getTodayRecommendations(): Promise<DiscoveryTodayResponse> {
+      return requestDemoJson<DiscoveryTodayResponse>(baseUrl, '/api/discovery/today');
+    },
+    getWorkbenchSettings(): Promise<WorkbenchSettingsResponse> {
+      return requestDemoJson<WorkbenchSettingsResponse>(baseUrl, '/api/settings/me');
+    },
+  };
+}
+
+export function getTodayRecommendations(): Promise<DiscoveryTodayResponse> {
+  return createDemoApi().getTodayRecommendations();
+}
+
+export function getWorkbenchSettings(): Promise<WorkbenchSettingsResponse> {
+  return createDemoApi().getWorkbenchSettings();
 }
 
 export async function getReadingDetail(
@@ -142,9 +171,9 @@ export async function saveReadingInsight(
           {
             endOffset: 24,
             quote: 'Key mutation evidence',
-          startOffset: 0,
-        },
-      ],
+            startOffset: 0,
+          },
+        ],
         summary: input.summary,
         title: input.title ?? 'Tumor board summary',
       }),

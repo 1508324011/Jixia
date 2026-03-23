@@ -212,6 +212,9 @@ export function WritingPage() {
           Draft the shared document while keeping versions, citations, and
           publish state visible but quiet.
         </p>
+        <p className="quiet-copy">
+          Mature content path · AI 对话 → 私人笔记 → 共享评论 → Writer 文稿
+        </p>
       </header>
 
       <section aria-label="context bar" className="context-bar">
@@ -292,6 +295,7 @@ export function WritingPage() {
           <h2 className="panel-title">Versions, references, and governed jobs</h2>
           <div className="stack-sm">
             <p className="quiet-copy">review path · published target · citation links</p>
+            <p className="quiet-copy">将成熟内容整理进入 Writer</p>
             <p className="quiet-copy">Publish state path</p>
             <p className="quiet-copy">draft · review · published</p>
             <p className="quiet-copy">Citations linked · {citationCount}</p>

@@ -10,13 +10,16 @@ import {
   getReadingDetail,
   saveReadingInsight,
 } from '../lib/demo-api';
+import { PaperWorkspaceTabs } from '../components/paper-workspace-tabs';
 
 export function ReaderPage() {
   const {
-    spaceId = 'shared-space',
+    spaceId,
     projectId = 'tumor-board',
     entryId = 'entry-1',
   } = useParams();
+  const hasSpaceContext = typeof spaceId === 'string' && spaceId.length > 0;
+  const resolvedSpaceId = spaceId ?? 'shared-space';
 
   const [data, setData] = useState<ReadingDetailView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +40,7 @@ export function ReaderPage() {
       setError(null);
 
       try {
-        const detail = await getReadingDetail(entryId, spaceId);
+        const detail = await getReadingDetail(entryId, resolvedSpaceId);
 
         if (!isCancelled) {
           setData(detail);
@@ -63,14 +66,14 @@ export function ReaderPage() {
     return () => {
       isCancelled = true;
     };
-  }, [entryId, spaceId]);
+  }, [entryId, resolvedSpaceId]);
 
   useEffect(() => {
     let isCancelled = false;
 
     async function loadGovernedSummary(): Promise<void> {
       try {
-        const response = await getGovernedSummary(spaceId);
+        const response = await getGovernedSummary(resolvedSpaceId);
 
         if (!isCancelled) {
           setGovernedJob(response.governedJob);
@@ -87,14 +90,14 @@ export function ReaderPage() {
     return () => {
       isCancelled = true;
     };
-  }, [spaceId]);
+  }, [resolvedSpaceId]);
 
   async function refreshReader(): Promise<void> {
     setIsRefreshing(true);
     setMutationError(null);
 
     try {
-      const detail = await getReadingDetail(entryId, spaceId);
+      const detail = await getReadingDetail(entryId, resolvedSpaceId);
       setData(detail);
       setError(null);
     } catch (refreshError) {
@@ -120,7 +123,7 @@ export function ReaderPage() {
       const response = await createReadingNote({
         body: noteBody.trim(),
         entryId,
-        spaceId,
+        spaceId: resolvedSpaceId,
       });
 
       setData((current) =>
@@ -152,7 +155,7 @@ export function ReaderPage() {
     try {
       const response = await saveReadingInsight({
         entryId,
-        spaceId,
+        spaceId: resolvedSpaceId,
         summary: insightSummary.trim(),
       });
 
@@ -192,7 +195,7 @@ export function ReaderPage() {
       </header>
 
       <section aria-label="context bar" className="context-bar">
-        <span>Space context · {spaceId}</span>
+        {hasSpaceContext ? <span>Space context · {spaceId}</span> : null}
         <span>Project context · {projectId}</span>
         <span>Entry · {entryId}</span>
         <span className="status-badge">{statusLabel}</span>
@@ -200,8 +203,8 @@ export function ReaderPage() {
         <span className="status-badge">{insightCountLabel}</span>
       </section>
 
-      <section className="panel-grid" aria-label="reading layout">
-        <article className="panel">
+      <section className="reader-page" aria-label="reading layout">
+        <article className="panel paper-surface">
           {isLoading ? (
             <>
               <h2 className="panel-title">Loading reading detail…</h2>
@@ -233,8 +236,13 @@ export function ReaderPage() {
             </>
           )}
         </article>
-        <aside className="panel">
+        <aside className="panel paper-workspace">
           <h2 className="panel-title">Evidence workspace</h2>
+          <p className="quiet-copy">
+            <span className="status-badge">space_shared note</span> · quoted evidence ·
+            governed AI summary
+          </p>
+          <PaperWorkspaceTabs />
           {isLoading ? (
             <p className="quiet-copy">Preparing notes and insight context…</p>
           ) : error ? (
@@ -336,7 +344,7 @@ export function ReaderPage() {
 
       <Link
         className="panel-link"
-        to={`/spaces/${spaceId}/projects/${projectId}/writing/doc-1`}
+        to={`/spaces/${resolvedSpaceId}/projects/${projectId}/writing/doc-1`}
       >
         Open writing
       </Link>
