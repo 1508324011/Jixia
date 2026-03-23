@@ -1,0 +1,18 @@
+services:
+  jixia:
+    build:
+      context: .
+    environment:
+      JIXIA_STORAGE_ROOT: /var/lib/jixia/storage
+      JIXIA_DATABASE_URL: file:/var/lib/jixia/data/jixia.db
+      JIXIA_HOST: ${JIXIA_HOST:-0.0.0.0}
+      JIXIA_PORT: ${JIXIA_PORT:-3000}
+    ports:
+      - '${JIXIA_PORT:-3000}:${JIXIA_PORT:-3000}'
+    volumes:
+      - jixia-storage:/var/lib/jixia/storage
+      - jixia-data:/var/lib/jixia/data
+
+volumes:
+  jixia-storage:
+  jixia-data:

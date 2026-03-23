@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-server/
+coverage/
+.git/
+.gitignore
+.env
+.env.*
+!.env.example
+.jixia-storage/
+*.db
+*.sqlite

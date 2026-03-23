@@ -1,6 +1,7 @@
 node_modules/
 coverage/
 dist/
+dist-server/
 
 .env
 *.env
@@ -15,6 +16,7 @@ dist/
 *.local
 *.sqlite
 *.db
+.jixia-storage/
 
 .DS_Store
 Thumbs.db

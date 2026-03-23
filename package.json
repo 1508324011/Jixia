@@ -4,25 +4,34 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "npm run build:web && npm run build:server",
+    "build:server": "vite build --config vite.server.config.ts",
+    "build:web": "vite build",
+    "start:server": "node dist-server/http-server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "npm run typecheck"
   },
+  "dependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.9.3"
+  },
   "devDependencies": {
     "@prisma/client": "^7.5.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^24.5.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "dotenv": "^17.2.3",
+    "jsdom": "^27.0.0",
     "prisma": "^7.5.0",
     "typescript": "^5.9.2",
     "vite": "^7.3.1",
     "vitest": "^3.2.4"
-  },
-  "dependencies": {
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
   }
 }
