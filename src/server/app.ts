@@ -233,6 +233,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     libraryEntries: state.libraryEntries,
     memberships: state.memberships,
     paperAssets: state.paperAssets,
+    persist,
     spaces: state.spaces,
   });
   const readingService = createReadingService({

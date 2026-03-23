@@ -191,7 +191,7 @@ export function createHttpServer(options: HttpServerOptions = {}): JixiaHttpServ
         method === 'GET' || method === 'HEAD' ? undefined : await readJsonBody(request);
       const apiResponse = await resolveHttpApi(
         app,
-        requestUrl.pathname,
+        requestUrl,
         method,
         requestBody,
       );

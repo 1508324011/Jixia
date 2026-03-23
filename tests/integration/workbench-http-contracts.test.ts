@@ -54,6 +54,48 @@ describe('workbench http contracts', () => {
 
       const discovery = await response.json();
       expect(discovery.items).toBeDefined();
+      expect(discovery.items[0]).toMatchObject({
+        canonicalId: expect.any(String),
+        sourceLocator: expect.any(String),
+        sourceType: 'pmid',
+        title: expect.any(String),
+      });
+
+      const searchResponse = await fetch(
+        `${baseUrl}/api/discovery/search?query=${encodeURIComponent('tumor board')}`,
+      );
+      expect(searchResponse.status).toBe(200);
+
+      const search = await searchResponse.json();
+      expect(search.query).toBe('tumor board');
+      expect(search.items.length).toBeGreaterThan(0);
+      expect(search.items[0]).toMatchObject({
+        canonicalId: expect.any(String),
+        sourceLocator: expect.any(String),
+        sourceType: 'pmid',
+        title: expect.any(String),
+      });
+
+      const emptyPersonalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`);
+      expect(emptyPersonalLibraryResponse.status).toBe(200);
+
+      const emptyPersonalLibrary = await emptyPersonalLibraryResponse.json();
+      expect(emptyPersonalLibrary).toEqual({ entries: [] });
+
+      const importPersonalLibraryResponse = await fetch(`${baseUrl}/api/library/personal/import`, {
+        body: JSON.stringify({
+          sourceLocator: search.items[0].sourceLocator,
+          sourceType: search.items[0].sourceType,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      });
+      expect(importPersonalLibraryResponse.status).toBe(201);
+
+      const importedPersonalRecord = await importPersonalLibraryResponse.json();
+      expect(importedPersonalRecord.asset.canonicalId).toBe(search.items[0].canonicalId);
 
       const settingsResponse = await fetch(`${baseUrl}/api/settings/me`);
       expect(settingsResponse.status).toBe(200);
@@ -112,13 +154,33 @@ describe('workbench http contracts', () => {
       ]);
       expect(persistedStateText).not.toContain('sk-test-secret');
 
+      const personalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`);
+      expect(personalLibraryResponse.status).toBe(200);
+
+      const personalLibrary = await personalLibraryResponse.json();
+      expect(personalLibrary.entries).toContainEqual(
+        expect.objectContaining({
+          canonicalId: search.items[0].canonicalId,
+          title: importedPersonalRecord.asset.title,
+          visibility: 'private',
+        }),
+      );
+
       const { createDemoApi } = await import('../../src/web/lib/demo-api');
       const demoApi = createDemoApi(baseUrl);
       const todayFromClient = await demoApi.getTodayRecommendations();
+      const searchFromClient = await demoApi.searchDiscovery('tumor board');
       const settingsFromClient = await demoApi.getWorkbenchSettings();
+      const personalLibraryFromClient = await demoApi.getPersonalLibraryEntries();
 
       expect(todayFromClient.items).toBeDefined();
+      expect(searchFromClient.items.length).toBeGreaterThan(0);
       expect(settingsFromClient.apiKeyConfigured).toBeDefined();
+      expect(personalLibraryFromClient.entries).toContainEqual(
+        expect.objectContaining({
+          canonicalId: search.items[0].canonicalId,
+        }),
+      );
     } finally {
       await closeServer(httpServer.server);
       rmSync(storageRoot, { force: true, recursive: true });

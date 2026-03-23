@@ -1,6 +1,7 @@
 export const sharedEntrypoint = 'jixia-shared-entry';
 
 export type {
+  DiscoverySearchResponse,
   DiscoveryTodayResponse,
   TodayRecommendation,
 } from './contracts/discovery';
