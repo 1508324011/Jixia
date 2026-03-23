@@ -41,4 +41,8 @@ export interface DemoSpaceListResponse {
   spaces: DemoSpaceRecord[];
 }
 
+export interface DemoSpaceResponse {
+  space: DemoSpaceRecord;
+}
+
 export const spacesContract = 'jixia-spaces-contract';

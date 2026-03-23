@@ -65,6 +65,92 @@ describe('native demo workflow', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('creates a personal space from /spaces and opens its library route', async () => {
+    const user = userEvent.setup();
+
+    window.history.replaceState({}, '', '/spaces');
+
+    const spaces = [
+      {
+        importLocator: 'pmid:123456',
+        kind: 'shared',
+        name: 'Tumor Board Shared Space',
+        projectId: 'tumor-board',
+        spaceId: 'shared-space',
+        visibility: 'space_shared',
+      },
+    ];
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/spaces') && (!init?.method || init.method === 'GET')) {
+          return jsonResponse({ spaces });
+        }
+
+        if (requestUrl.endsWith('/api/spaces') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            kind: 'personal' | 'shared';
+            name: string;
+          };
+
+          expect(body).toEqual({
+            kind: 'personal',
+            name: 'Genomics Sandbox',
+          });
+
+          const createdSpace = {
+            importLocator: 'pmid:123456',
+            kind: 'personal' as const,
+            name: 'Genomics Sandbox',
+            projectId: 'tumor-board',
+            spaceId: 'space-2',
+            visibility: 'space_shared',
+          };
+
+          spaces.push(createdSpace);
+
+          return new Response(JSON.stringify({ space: createdSpace }), {
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+            },
+            status: 201,
+          });
+        }
+
+        if (
+          requestUrl.endsWith('/api/spaces/space-2/projects/tumor-board/library') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return jsonResponse({ entries: [] });
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('Tumor Board Shared Space')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: 'Space name' }), 'Genomics Sandbox');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Space kind' }), 'personal');
+    await user.click(screen.getByRole('button', { name: 'Create space' }));
+
+    expect(await screen.findByText('Genomics Sandbox')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Open library' }));
+
+    expect(window.location.pathname).toBe('/spaces/space-2/projects/tumor-board/library');
+  });
+
   it('renders fetched library data instead of placeholder demo copy', async () => {
     window.history.replaceState(
       {},
@@ -279,7 +365,10 @@ describe('native demo workflow', () => {
               ? input.toString()
               : input.url;
 
-        if (requestUrl.endsWith('/api/reading/entry-1') && (!init?.method || init.method === 'GET')) {
+        if (
+          requestUrl.endsWith('/api/reading/entry-1?spaceId=shared-space') &&
+          (!init?.method || init.method === 'GET')
+        ) {
           return jsonResponse(readingResponse);
         }
 
@@ -288,7 +377,7 @@ describe('native demo workflow', () => {
         }
 
         if (
-          requestUrl.endsWith('/api/reading/entry-1/notes') &&
+          requestUrl.endsWith('/api/reading/entry-1/notes?spaceId=shared-space') &&
           init?.method === 'POST'
         ) {
           const body = JSON.parse(String(init.body)) as { body: string };
@@ -306,7 +395,7 @@ describe('native demo workflow', () => {
         }
 
         if (
-          requestUrl.endsWith('/api/reading/entry-1/insights') &&
+          requestUrl.endsWith('/api/reading/entry-1/insights?spaceId=shared-space') &&
           init?.method === 'POST'
         ) {
           const body = JSON.parse(String(init.body)) as { summary: string };
@@ -353,6 +442,55 @@ describe('native demo workflow', () => {
     expect(screen.getByText('Evidence-backed summary for board prep.')).toBeInTheDocument();
     expect(screen.queryByText('Paper text')).not.toBeInTheDocument();
     expect(screen.queryByText('Workbench')).not.toBeInTheDocument();
+  });
+
+  it('loads a created-space reader by scoping requests to the selected space', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/spaces/space-2/projects/tumor-board/library/entry-2/reader',
+    );
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/reading/entry-2?spaceId=space-2')) {
+          return jsonResponse({
+            asset: {
+              abstractText: 'Imported PMID metadata for 789012',
+              canonicalId: 'pmid:789012',
+              id: 'asset-pmid-789012',
+              title: 'Imported PMID paper 789012',
+            },
+            entry: {
+              id: 'entry-2',
+              visibility: 'space_shared',
+            },
+            insights: [],
+            notes: [],
+          });
+        }
+
+        if (requestUrl.endsWith('/api/spaces/space-2/governed-summary')) {
+          return jsonResponse({ governedJob: null });
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('Imported PMID paper 789012')).toBeInTheDocument();
+    expect(screen.getByText('Imported PMID metadata for 789012')).toBeInTheDocument();
+    expect(screen.getByText('Space context · space-2')).toBeInTheDocument();
   });
 
   it('loads, saves, reloads, and publishes the writing document through browser fetch calls', async () => {
@@ -505,7 +643,7 @@ describe('native demo workflow', () => {
           }
 
           if (
-            requestUrl.endsWith('/api/writing/doc-1/publish') &&
+            requestUrl.endsWith('/api/writing/doc-1/publish?spaceId=shared-space') &&
             init?.method === 'POST'
           ) {
             documentResponse.document.publishState = 'published';
@@ -553,10 +691,132 @@ describe('native demo workflow', () => {
     expect(screen.queryByText('Draft canvas')).not.toBeInTheDocument();
   });
 
+  it('loads, saves, reloads, and publishes a created-space writing document', async () => {
+    const user = userEvent.setup();
+
+    window.history.replaceState(
+      {},
+      '',
+      '/spaces/space-2/projects/tumor-board/writing/doc-2',
+    );
+
+    const documentResponse = {
+      document: {
+        documentId: 'doc-2',
+        latestSnapshot: {
+          capturedAt: '2026-03-22T02:00:00.000Z',
+          citations: [],
+          content: 'Created space draft.',
+          doc: {
+            createdAt: '2026-03-22T02:00:00.000Z',
+            id: 'doc-2',
+            publishState: 'draft',
+            spaceId: 'space-2',
+            title: 'Created space synthesis',
+          },
+          docVersionId: 'doc-version-20',
+        },
+        projectId: 'tumor-board',
+        publishState: 'draft',
+        spaceId: 'space-2',
+        title: 'Created space synthesis',
+      },
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (
+          requestUrl.endsWith('/api/writing/space-2/projects/tumor-board/document') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return jsonResponse(documentResponse);
+        }
+
+        if (
+          requestUrl.endsWith('/api/spaces/space-2/governed-summary') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return jsonResponse({ governedJob: null });
+        }
+
+        if (
+          requestUrl.endsWith('/api/writing/space-2/projects/tumor-board/document') &&
+          init?.method === 'POST'
+        ) {
+          const body = JSON.parse(String(init.body)) as { content: string };
+
+          documentResponse.document.latestSnapshot = {
+            ...documentResponse.document.latestSnapshot,
+            capturedAt: '2026-03-22T02:10:00.000Z',
+            content: body.content,
+            doc: {
+              ...documentResponse.document.latestSnapshot.doc,
+              publishState: documentResponse.document.publishState,
+            },
+            docVersionId: 'doc-version-21',
+          };
+
+          return jsonResponse(documentResponse);
+        }
+
+        if (
+          requestUrl.endsWith('/api/writing/doc-2/publish?spaceId=space-2') &&
+          init?.method === 'POST'
+        ) {
+          documentResponse.document.publishState = 'published';
+          documentResponse.document.latestSnapshot = {
+            ...documentResponse.document.latestSnapshot,
+            doc: {
+              ...documentResponse.document.latestSnapshot.doc,
+              publishState: 'published',
+            },
+          };
+
+          return jsonResponse(documentResponse);
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByDisplayValue('Created space draft.')).toBeInTheDocument();
+    expect(screen.getByText('Space context · space-2')).toBeInTheDocument();
+
+    const editor = screen.getByRole('textbox', { name: 'Draft content' });
+    await user.clear(editor);
+    await user.type(editor, 'Created space synthesis after review.');
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(
+      await screen.findByDisplayValue('Created space synthesis after review.'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Reload draft' }));
+    expect(
+      await screen.findByDisplayValue('Created space synthesis after review.'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Publish' }));
+    expect(await screen.findByText('published')).toBeInTheDocument();
+  });
+
   it('keeps the runbook wording aligned with the native showcase controls', () => {
     const runbook = readFileSync(RUNBOOK_PATH, 'utf8');
 
-    expect(runbook).toContain('Enter shared space');
+    expect(runbook).toContain('Create Space -> Library -> Reader -> Writing');
+    expect(runbook).toContain('Genomics Sandbox');
+    expect(runbook).toContain('Create space');
+    expect(runbook).toContain('Open library');
     expect(runbook).toContain('Import paper');
     expect(runbook).toContain('Open reader');
     expect(runbook).toContain('Save note');
@@ -566,6 +826,7 @@ describe('native demo workflow', () => {
     expect(runbook).toContain('Save draft');
     expect(runbook).toContain('Reload draft');
     expect(runbook).toContain('Publish');
+    expect(runbook).toContain('restart');
     expect(runbook).toContain('Run governed summary');
   });
 });

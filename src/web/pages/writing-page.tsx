@@ -141,7 +141,7 @@ export function WritingPage() {
     setMutationError(null);
 
     try {
-      const response = await publishWritingDocument(document.documentId);
+      const response = await publishWritingDocument(spaceId, document.documentId);
 
       setData(response);
       setDocument(response.document);

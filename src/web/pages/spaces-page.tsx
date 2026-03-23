@@ -1,14 +1,57 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import type { DemoSpaceListResponse } from '@shared/contracts/spaces';
+import type { DemoSpaceListResponse, DemoSpaceRecord, SpaceKind } from '@shared/contracts/spaces';
 
+import { createSpace as createSpaceRecord } from '../lib/demo-api';
 import { useJsonResource } from '../lib/use-json-resource';
 
 export function SpacesPage() {
   const { data, error, isLoading } = useJsonResource<DemoSpaceListResponse>(
     '/api/spaces',
   );
-  const spaces = data?.spaces ?? [];
+  const [createdSpaces, setCreatedSpaces] = useState<DemoSpaceRecord[]>([]);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [spaceKind, setSpaceKind] = useState<SpaceKind>('shared');
+  const [spaceName, setSpaceName] = useState('');
+  const spaces = [...(data?.spaces ?? []), ...createdSpaces].filter(
+    (space, index, allSpaces) =>
+      allSpaces.findIndex((candidate) => candidate.spaceId === space.spaceId) === index,
+  );
+
+  async function handleCreateSpace(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const trimmedName = spaceName.trim();
+
+    if (!trimmedName) {
+      setCreateError('Space name is required.');
+      return;
+    }
+
+    setCreateError(null);
+    setIsCreating(true);
+
+    try {
+      const result = await createSpaceRecord({
+        kind: spaceKind,
+        name: trimmedName,
+      });
+
+      setCreatedSpaces((previousSpaces) => [...previousSpaces, result.space]);
+      setSpaceKind('shared');
+      setSpaceName('');
+    } catch (createSpaceError: unknown) {
+      setCreateError(
+        createSpaceError instanceof Error
+          ? createSpaceError.message
+          : 'Space creation failed unexpectedly.',
+      );
+    } finally {
+      setIsCreating(false);
+    }
+  }
 
   return (
     <main className="page-shell">
@@ -22,6 +65,42 @@ export function SpacesPage() {
       </header>
 
       <section className="shell-grid" aria-label="spaces list">
+        <article className="hero-card">
+          <h2 className="panel-title">Create a space</h2>
+          <p className="quiet-copy">
+            Start a new personal or shared research lane without resetting the seeded showcase.
+          </p>
+          <form onSubmit={handleCreateSpace}>
+            <p>
+              <label>
+                <span className="quiet-copy">Space name</span>
+                <input
+                  aria-label="Space name"
+                  onChange={(event) => setSpaceName(event.target.value)}
+                  value={spaceName}
+                />
+              </label>
+            </p>
+            <p>
+              <label>
+                <span className="quiet-copy">Space kind</span>
+                <select
+                  aria-label="Space kind"
+                  onChange={(event) => setSpaceKind(event.target.value as SpaceKind)}
+                  value={spaceKind}
+                >
+                  <option value="shared">Shared</option>
+                  <option value="personal">Personal</option>
+                </select>
+              </label>
+            </p>
+            {createError ? <p className="quiet-copy">{createError}</p> : null}
+            <button disabled={isCreating} type="submit">
+              {isCreating ? 'Creating space…' : 'Create space'}
+            </button>
+          </form>
+        </article>
+
         {isLoading ? (
           <article className="hero-card">
             <h2 className="panel-title">Loading spaces…</h2>

@@ -8,7 +8,12 @@ import type {
   ReadingInsightResponse,
   ReadingNoteResponse,
 } from '@shared/contracts/reading';
-import type { DemoSpaceListResponse } from '@shared/contracts/spaces';
+import type {
+  CreateSpaceRequest,
+  DemoSpaceListResponse,
+  DemoSpaceRecord,
+  DemoSpaceResponse,
+} from '@shared/contracts/spaces';
 import type { WritingDocumentView } from '@shared/contracts/writing';
 
 import type { JixiaApp } from './app';
@@ -96,6 +101,25 @@ function mapWritingDocument(document: WritingDocumentView): { document: WritingD
   return { document };
 }
 
+function getActorSpaceId(requestUrl: URL): string {
+  return requestUrl.searchParams.get('spaceId') ?? nativeDemoFixture.sharedSpaceId;
+}
+
+function mapDemoSpaceRecord(space: {
+  id: string;
+  kind: 'personal' | 'shared';
+  name: string;
+}): DemoSpaceRecord {
+  return {
+    importLocator: nativeDemoFixture.importLocator,
+    kind: space.kind,
+    name: space.name,
+    projectId: nativeDemoFixture.projectId,
+    spaceId: space.id,
+    visibility: nativeDemoFixture.visibility,
+  };
+}
+
 async function mapGovernedJobResponse(
   app: JixiaApp,
   actorUserId: string,
@@ -146,17 +170,32 @@ export async function handleHttpApiRequest(
     if (pathname === '/api/spaces' && method === 'GET') {
       const spaces = await app.spaces.listSpaces(actorUserId);
       const payload: DemoSpaceListResponse = {
-        spaces: spaces.map((space) => ({
-          importLocator: nativeDemoFixture.importLocator,
-          kind: space.kind,
-          name: space.name,
-          projectId: nativeDemoFixture.projectId,
-          spaceId: space.id,
-          visibility: nativeDemoFixture.visibility,
-        })),
+        spaces: spaces.map(mapDemoSpaceRecord),
       };
 
       return createJsonResponse(200, payload);
+    }
+
+    if (pathname === '/api/spaces' && method === 'POST') {
+      const body = await readJsonBody<CreateSpaceRequest>(request);
+
+      if (!body.name?.trim() || !body.kind) {
+        throw new Error('name and kind are required.');
+      }
+
+      const createdSpace = await app.spaces.createSpace(
+        {
+          description: body.description,
+          kind: body.kind,
+          name: body.name.trim(),
+        },
+        actorUserId,
+      );
+      const payload: DemoSpaceResponse = {
+        space: mapDemoSpaceRecord(createdSpace),
+      };
+
+      return createJsonResponse(201, payload);
     }
 
     const governedSummaryMatch = matchPath(
@@ -243,8 +282,9 @@ export async function handleHttpApiRequest(
 
     if (libraryEntryMatch && method === 'GET') {
       const [entryId] = libraryEntryMatch;
+      const actorSpaceId = getActorSpaceId(requestUrl);
       const entry = await app.library.getEntry({
-        actorSpaceId: nativeDemoFixture.sharedSpaceId,
+        actorSpaceId,
         actorUserId,
         entryId,
       });
@@ -260,8 +300,9 @@ export async function handleHttpApiRequest(
 
     if (readingMatch && method === 'GET') {
       const [entryId] = readingMatch;
+      const actorSpaceId = getActorSpaceId(requestUrl);
       const detail = await app.reading.getDetail({
-        actorSpaceId: nativeDemoFixture.sharedSpaceId,
+        actorSpaceId,
         actorUserId,
         libraryEntryId: entryId,
       });
@@ -278,13 +319,14 @@ export async function handleHttpApiRequest(
     if (noteMatch && method === 'POST') {
       const [entryId] = noteMatch;
       const body = await readJsonBody<CreateNoteRequestBody>(request);
+      const actorSpaceId = getActorSpaceId(requestUrl);
 
       if (!body.body) {
         throw new Error('body is required.');
       }
 
       const note = await app.reading.createNote({
-        actorSpaceId: nativeDemoFixture.sharedSpaceId,
+        actorSpaceId,
         authorUserId: actorUserId,
         body: body.body,
         libraryEntryId: entryId,
@@ -300,13 +342,14 @@ export async function handleHttpApiRequest(
     if (insightMatch && method === 'POST') {
       const [entryId] = insightMatch;
       const body = await readJsonBody<CreateInsightRequestBody>(request);
+      const actorSpaceId = getActorSpaceId(requestUrl);
 
       if (!body.summary) {
         throw new Error('summary is required.');
       }
 
       const insight = await app.reading.saveGeneratedInsight({
-        actorSpaceId: nativeDemoFixture.sharedSpaceId,
+        actorSpaceId,
         evidenceSpans: body.evidenceSpans ?? [
           {
             endOffset: 24,
@@ -393,19 +436,20 @@ export async function handleHttpApiRequest(
     if (publishMatch && method === 'POST') {
       const [documentId] = publishMatch;
       const body = await readJsonBody<PublishDocumentRequestBody>(request);
+      const actorSpaceId = getActorSpaceId(requestUrl);
 
       await app.writing.transitionPublishState({
-        actorSpaceId: nativeDemoFixture.sharedSpaceId,
+        actorSpaceId,
         actorUserId,
         docId: documentId,
         publishState: body.publishState ?? 'published',
       });
 
       const document = await app.writing.getDocument({
-        actorSpaceId: nativeDemoFixture.sharedSpaceId,
+        actorSpaceId,
         actorUserId,
         projectId: nativeDemoFixture.projectId,
-        spaceId: nativeDemoFixture.sharedSpaceId,
+        spaceId: actorSpaceId,
       });
 
       if (!document) {

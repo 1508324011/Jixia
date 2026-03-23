@@ -25,11 +25,16 @@ describe('native demo runbook contract', () => {
     expect(existsSync(RUNBOOK_PATH)).toBe(true);
     expect(runbook).toContain('npm run start:server');
     expect(runbook).toContain('npm run demo:reset');
-    expect(runbook).toContain('shared-space');
     expect(runbook).toContain('pmid:123456');
     expect(runbook).toContain('/home/zhurui/.local/share/jixia-demo/storage');
-    expect(runbook).toContain('Shared Space -> Import Paper -> Reader -> Writing');
+    expect(runbook).toContain('Create Space -> Library -> Reader -> Writing');
+    expect(runbook).toContain('Genomics Sandbox');
+    expect(runbook).toContain('Create space');
+    expect(runbook).toContain('Open library');
     expect(runbook).toContain('Import paper');
+    expect(runbook).toContain('Refresh reader');
+    expect(runbook).toContain('Reload draft');
+    expect(runbook).toContain('restart');
     expect(runbook).toContain('Why operator support is next');
     expect(envExample).toContain(
       'JIXIA_STORAGE_ROOT=/home/zhurui/.local/share/jixia-demo/storage',

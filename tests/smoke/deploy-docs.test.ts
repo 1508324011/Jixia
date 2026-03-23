@@ -43,13 +43,20 @@ describe('deployment and operator scaffolding', () => {
   it('defines a dockerized operator path', () => {
     const dockerfile = read('Dockerfile');
     const compose = read('docker-compose.yml');
+    const packageJson = JSON.parse(read('package.json')) as {
+      scripts?: Record<string, string>;
+    };
 
     expect(dockerfile).toContain('FROM node:22');
-    expect(dockerfile).toContain('npm run build');
+    expect(packageJson.scripts?.['package:native-demo']).toBeTruthy();
+    expect(dockerfile).toContain('npm run package:native-demo');
+    expect(dockerfile).toContain('.native-demo-package/native-demo');
+    expect(dockerfile).toContain('run-native-demo.sh');
     expect(compose).toContain('JIXIA_STORAGE_ROOT');
     expect(compose).toContain('JIXIA_DATABASE_URL');
     expect(compose).toContain('/var/lib/jixia/storage');
     expect(compose).toContain('/var/lib/jixia/data');
+    expect(compose).toContain('/app/.native-demo-package/native-demo');
     expect(compose).not.toContain('${JIXIA_STORAGE_ROOT');
     expect(compose).not.toContain('${JIXIA_DATABASE_URL');
   });
@@ -71,8 +78,9 @@ describe('deployment and operator scaffolding', () => {
     const readme = read('README.md');
 
     expect(readme).toContain('docker compose up --build');
-    expect(readme).toContain('npm run build');
+    expect(readme).toContain('npm run package:native-demo');
     expect(readme).toContain('npm run start:server');
+    expect(readme).toContain('.native-demo-package/native-demo');
     expect(readme).toContain('JIXIA_STORAGE_ROOT');
     expect(readme).toContain('JIXIA_DATABASE_URL');
     expect(readme).toContain('/var/lib/jixia/storage');
@@ -85,6 +93,8 @@ describe('deployment and operator scaffolding', () => {
     const ciWorkflow = read('.github/workflows/ci.yml');
 
     expect(readmeCn).toContain('docker compose up --build');
+    expect(readmeCn).toContain('npm run package:native-demo');
+    expect(readmeCn).toContain('.native-demo-package/native-demo');
     expect(readmeCn).toContain('npm run start:server');
     expect(readmeCn).toContain('JIXIA_STORAGE_ROOT');
     expect(readmeCn).toContain('JIXIA_DATABASE_URL');

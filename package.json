@@ -8,6 +8,7 @@
     "build:server": "vite build --config vite.server.config.ts",
     "build:web": "vite build",
     "demo:reset": "node scripts/demo-reset.mjs",
+    "package:native-demo": "npm run build && node scripts/package-native-demo.mjs",
     "start:server": "node dist-server/http-server.js",
     "test": "vitest run",
     "test:watch": "vitest",

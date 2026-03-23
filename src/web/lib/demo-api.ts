@@ -11,6 +11,11 @@ import type {
 } from '@shared/contracts/reading';
 import type { GovernedJobResponse } from '@shared/contracts/jobs';
 import type {
+  CreateSpaceRequest,
+  DemoSpaceListResponse,
+  DemoSpaceResponse,
+} from '@shared/contracts/spaces';
+import type {
   PublishState,
   WritingDocumentResponse,
 } from '@shared/contracts/writing';
@@ -41,11 +46,13 @@ export interface ImportedLibraryRecordResponse {
 export interface CreateReadingNoteInput {
   body: string;
   entryId: string;
+  spaceId: string;
   visibility?: NoteVisibility;
 }
 
 export interface SaveReadingInsightInput {
   entryId: string;
+  spaceId: string;
   evidenceSpans?: Array<Omit<EvidenceSpanRecord, 'paperAssetId'>>;
   summary: string;
   title?: string;
@@ -59,14 +66,32 @@ export interface SaveWritingDocumentInput {
   title: string;
 }
 
-export async function getReadingDetail(entryId: string): Promise<ReadingDetailView> {
-  return requestJson<ReadingDetailView>(`/api/reading/${entryId}`);
+export async function getReadingDetail(
+  entryId: string,
+  spaceId: string,
+): Promise<ReadingDetailView> {
+  return requestJson<ReadingDetailView>(
+    `/api/reading/${entryId}?spaceId=${encodeURIComponent(spaceId)}`,
+  );
 }
 
 export async function getGovernedSummary(
   spaceId: string,
 ): Promise<GovernedJobResponse> {
   return requestJson<GovernedJobResponse>(`/api/spaces/${spaceId}/governed-summary`);
+}
+
+export async function getSpaces(): Promise<DemoSpaceListResponse> {
+  return requestJson<DemoSpaceListResponse>('/api/spaces');
+}
+
+export async function createSpace(
+  input: CreateSpaceRequest,
+): Promise<DemoSpaceResponse> {
+  return requestJson<DemoSpaceResponse>('/api/spaces', {
+    body: JSON.stringify(input),
+    method: 'POST',
+  });
 }
 
 export async function getLibraryEntries(
@@ -94,32 +119,38 @@ export async function importLibraryPaper(
 export async function createReadingNote(
   input: CreateReadingNoteInput,
 ): Promise<ReadingNoteResponse> {
-  return requestJson<ReadingNoteResponse>(`/api/reading/${input.entryId}/notes`, {
-    body: JSON.stringify({
-      body: input.body,
-      visibility: input.visibility ?? 'space_shared',
-    }),
-    method: 'POST',
-  });
+  return requestJson<ReadingNoteResponse>(
+    `/api/reading/${input.entryId}/notes?spaceId=${encodeURIComponent(input.spaceId)}`,
+    {
+      body: JSON.stringify({
+        body: input.body,
+        visibility: input.visibility ?? 'space_shared',
+      }),
+      method: 'POST',
+    },
+  );
 }
 
 export async function saveReadingInsight(
   input: SaveReadingInsightInput,
 ): Promise<ReadingInsightResponse> {
-  return requestJson<ReadingInsightResponse>(`/api/reading/${input.entryId}/insights`, {
-    body: JSON.stringify({
-      evidenceSpans: input.evidenceSpans ?? [
-        {
-          endOffset: 24,
-          quote: 'Key mutation evidence',
+  return requestJson<ReadingInsightResponse>(
+    `/api/reading/${input.entryId}/insights?spaceId=${encodeURIComponent(input.spaceId)}`,
+    {
+      body: JSON.stringify({
+        evidenceSpans: input.evidenceSpans ?? [
+          {
+            endOffset: 24,
+            quote: 'Key mutation evidence',
           startOffset: 0,
         },
       ],
-      summary: input.summary,
-      title: input.title ?? 'Tumor board summary',
-    }),
-    method: 'POST',
-  });
+        summary: input.summary,
+        title: input.title ?? 'Tumor board summary',
+      }),
+      method: 'POST',
+    },
+  );
 }
 
 export async function getWritingDocument(
@@ -148,13 +179,17 @@ export async function saveWritingDocument(
 }
 
 export async function publishWritingDocument(
+  spaceId: string,
   documentId: string,
   publishState: PublishState = 'published',
 ): Promise<WritingDocumentResponse> {
-  return requestJson<WritingDocumentResponse>(`/api/writing/${documentId}/publish`, {
-    body: JSON.stringify({ publishState }),
-    method: 'POST',
-  });
+  return requestJson<WritingDocumentResponse>(
+    `/api/writing/${documentId}/publish?spaceId=${encodeURIComponent(spaceId)}`,
+    {
+      body: JSON.stringify({ publishState }),
+      method: 'POST',
+    },
+  );
 }
 
 export async function runGovernedSummary(

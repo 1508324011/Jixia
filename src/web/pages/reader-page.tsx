@@ -37,7 +37,7 @@ export function ReaderPage() {
       setError(null);
 
       try {
-        const detail = await getReadingDetail(entryId);
+        const detail = await getReadingDetail(entryId, spaceId);
 
         if (!isCancelled) {
           setData(detail);
@@ -63,7 +63,7 @@ export function ReaderPage() {
     return () => {
       isCancelled = true;
     };
-  }, [entryId]);
+  }, [entryId, spaceId]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -94,7 +94,7 @@ export function ReaderPage() {
     setMutationError(null);
 
     try {
-      const detail = await getReadingDetail(entryId);
+      const detail = await getReadingDetail(entryId, spaceId);
       setData(detail);
       setError(null);
     } catch (refreshError) {
@@ -120,6 +120,7 @@ export function ReaderPage() {
       const response = await createReadingNote({
         body: noteBody.trim(),
         entryId,
+        spaceId,
       });
 
       setData((current) =>
@@ -151,6 +152,7 @@ export function ReaderPage() {
     try {
       const response = await saveReadingInsight({
         entryId,
+        spaceId,
         summary: insightSummary.trim(),
       });
 

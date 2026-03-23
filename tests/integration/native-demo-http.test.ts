@@ -57,6 +57,45 @@ async function withServer(
   }
 }
 
+async function startServer(storageRoot: string): Promise<{
+  baseUrl: string;
+  close: () => Promise<void>;
+}> {
+  const httpServer = createHttpServer({
+    env: {
+      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-demo.db')}`,
+      JIXIA_HOST: '127.0.0.1',
+      JIXIA_PORT: '3000',
+      JIXIA_STORAGE_ROOT: storageRoot,
+    },
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    httpServer.server.once('error', reject);
+    httpServer.server.listen(0, '127.0.0.1', () => {
+      httpServer.server.off('error', reject);
+      resolve();
+    });
+  });
+
+  const address = httpServer.server.address() as AddressInfo;
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        httpServer.server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      }),
+  };
+}
+
 describe('native demo http surface', () => {
   it('exposes a browser-callable walkthrough route', async () => {
     await withServer({}, async (baseUrl) => {
@@ -305,5 +344,356 @@ describe('native demo http surface', () => {
         );
       },
     );
+  });
+
+  it('creates a personal space and keeps it visible after restart', async () => {
+    const storageRoot = createStorageRoot();
+
+    let createdSpaceId = '';
+
+    try {
+      const firstServer = await startServer(storageRoot);
+
+      try {
+        const createResponse = await fetch(`${firstServer.baseUrl}/api/spaces`, {
+          body: JSON.stringify({
+            kind: 'personal',
+            name: 'Genomics Sandbox',
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        });
+
+        expect(createResponse.status).toBe(201);
+
+        const createResult = (await createResponse.json()) as {
+          space: {
+            kind: 'personal' | 'shared';
+            name: string;
+            projectId: string;
+            spaceId: string;
+          };
+        };
+
+        createdSpaceId = createResult.space.spaceId;
+        expect(createResult.space).toEqual(
+          expect.objectContaining({
+            kind: 'personal',
+            name: 'Genomics Sandbox',
+            projectId: 'tumor-board',
+          }),
+        );
+
+        const listedSpacesResponse = await fetch(`${firstServer.baseUrl}/api/spaces`);
+        expect(listedSpacesResponse.status).toBe(200);
+
+        const listedSpacesResult = (await listedSpacesResponse.json()) as {
+          spaces: Array<{ name: string; spaceId: string }>;
+        };
+
+        expect(listedSpacesResult.spaces).toContainEqual(
+          expect.objectContaining({
+            name: 'Genomics Sandbox',
+            spaceId: createdSpaceId,
+          }),
+        );
+      } finally {
+        await firstServer.close();
+      }
+
+      const restartedServer = await startServer(storageRoot);
+
+      try {
+        const reopenedSpacesResponse = await fetch(`${restartedServer.baseUrl}/api/spaces`);
+        expect(reopenedSpacesResponse.status).toBe(200);
+
+        const reopenedSpacesResult = (await reopenedSpacesResponse.json()) as {
+          spaces: Array<{ name: string; spaceId: string }>;
+        };
+
+        expect(reopenedSpacesResult.spaces).toContainEqual(
+          expect.objectContaining({
+            name: 'Genomics Sandbox',
+            spaceId: createdSpaceId,
+          }),
+        );
+      } finally {
+        await restartedServer.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('imports multiple papers into a created space and reopens one entry after restart', async () => {
+    const storageRoot = createStorageRoot();
+
+    let createdSpaceId = '';
+    let importedEntryId = '';
+
+    try {
+      const firstServer = await startServer(storageRoot);
+
+      try {
+        const createResponse = await fetch(`${firstServer.baseUrl}/api/spaces`, {
+          body: JSON.stringify({
+            kind: 'personal',
+            name: 'Genomics Sandbox',
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        });
+        expect(createResponse.status).toBe(201);
+
+        const createResult = (await createResponse.json()) as {
+          space: { spaceId: string };
+        };
+        createdSpaceId = createResult.space.spaceId;
+
+        for (const sourceLocator of ['654321', '789012']) {
+          const importResponse = await fetch(
+            `${firstServer.baseUrl}/api/spaces/${createdSpaceId}/import`,
+            {
+              body: JSON.stringify({
+                sourceLocator,
+                sourceType: 'pmid',
+              }),
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              method: 'POST',
+            },
+          );
+
+          expect(importResponse.status).toBe(201);
+        }
+
+        const libraryResponse = await fetch(
+          `${firstServer.baseUrl}/api/spaces/${createdSpaceId}/projects/tumor-board/library`,
+        );
+        expect(libraryResponse.status).toBe(200);
+
+        const libraryResult = (await libraryResponse.json()) as {
+          entries: Array<{ entryId: string; title: string }>;
+        };
+
+        expect(libraryResult.entries).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ title: 'Imported PMID paper 654321' }),
+            expect.objectContaining({ title: 'Imported PMID paper 789012' }),
+          ]),
+        );
+
+        importedEntryId =
+          libraryResult.entries.find((entry) => entry.title === 'Imported PMID paper 789012')
+            ?.entryId ?? '';
+        expect(importedEntryId).toBeTruthy();
+
+        const entryResponse = await fetch(
+          `${firstServer.baseUrl}/api/library/${importedEntryId}?spaceId=${createdSpaceId}`,
+        );
+        expect(entryResponse.status).toBe(200);
+
+        const entryResult = (await entryResponse.json()) as {
+          asset: { title: string };
+          entry: { spaceId: string };
+        };
+        expect(entryResult.asset.title).toBe('Imported PMID paper 789012');
+        expect(entryResult.entry.spaceId).toBe(createdSpaceId);
+
+        const readingResponse = await fetch(
+          `${firstServer.baseUrl}/api/reading/${importedEntryId}?spaceId=${createdSpaceId}`,
+        );
+        expect(readingResponse.status).toBe(200);
+
+        const readingResult = (await readingResponse.json()) as {
+          asset: { canonicalId: string; title: string };
+          entry: { spaceId: string };
+        };
+        expect(readingResult.asset.title).toBe('Imported PMID paper 789012');
+        expect(readingResult.asset.canonicalId).toBe('pmid:789012');
+        expect(readingResult.entry.spaceId).toBe(createdSpaceId);
+      } finally {
+        await firstServer.close();
+      }
+
+      const restartedServer = await startServer(storageRoot);
+
+      try {
+        const reopenedLibraryResponse = await fetch(
+          `${restartedServer.baseUrl}/api/spaces/${createdSpaceId}/projects/tumor-board/library`,
+        );
+        expect(reopenedLibraryResponse.status).toBe(200);
+
+        const reopenedLibraryResult = (await reopenedLibraryResponse.json()) as {
+          entries: Array<{ entryId: string; title: string }>;
+        };
+        expect(reopenedLibraryResult.entries).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ title: 'Imported PMID paper 654321' }),
+            expect.objectContaining({
+              entryId: importedEntryId,
+              title: 'Imported PMID paper 789012',
+            }),
+          ]),
+        );
+
+        const reopenedReadingResponse = await fetch(
+          `${restartedServer.baseUrl}/api/reading/${importedEntryId}?spaceId=${createdSpaceId}`,
+        );
+        expect(reopenedReadingResponse.status).toBe(200);
+
+        const reopenedReadingResult = (await reopenedReadingResponse.json()) as {
+          asset: { title: string };
+          entry: { spaceId: string };
+        };
+        expect(reopenedReadingResult.asset.title).toBe('Imported PMID paper 789012');
+        expect(reopenedReadingResult.entry.spaceId).toBe(createdSpaceId);
+      } finally {
+        await restartedServer.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('saves, publishes, and reopens a created-space writing document after restart', async () => {
+    const storageRoot = createStorageRoot();
+
+    let createdSpaceId = '';
+    let createdDocumentId = '';
+
+    try {
+      const firstServer = await startServer(storageRoot);
+
+      try {
+        const createResponse = await fetch(`${firstServer.baseUrl}/api/spaces`, {
+          body: JSON.stringify({
+            kind: 'personal',
+            name: 'Writing Sandbox',
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        });
+        expect(createResponse.status).toBe(201);
+
+        const createResult = (await createResponse.json()) as {
+          space: { spaceId: string };
+        };
+        createdSpaceId = createResult.space.spaceId;
+
+        const initialWritingResponse = await fetch(
+          `${firstServer.baseUrl}/api/writing/${createdSpaceId}/projects/tumor-board/document`,
+        );
+        expect(initialWritingResponse.status).toBe(404);
+
+        const saveResponse = await fetch(
+          `${firstServer.baseUrl}/api/writing/${createdSpaceId}/projects/tumor-board/document`,
+          {
+            body: JSON.stringify({
+              content: 'Created-space writing synthesis',
+              title: 'Created-space writing synthesis',
+            }),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            method: 'POST',
+          },
+        );
+        expect(saveResponse.status).toBe(200);
+
+        const saveResult = (await saveResponse.json()) as {
+          document: {
+            documentId: string;
+            latestSnapshot: null | { content: string };
+            publishState: string;
+            spaceId: string;
+          };
+        };
+        createdDocumentId = saveResult.document.documentId;
+        expect(createdDocumentId).toBeTruthy();
+        expect(saveResult.document.spaceId).toBe(createdSpaceId);
+        expect(saveResult.document.latestSnapshot?.content).toBe(
+          'Created-space writing synthesis',
+        );
+        expect(saveResult.document.publishState).toBe('draft');
+
+        const reloadResponse = await fetch(
+          `${firstServer.baseUrl}/api/writing/${createdSpaceId}/projects/tumor-board/document`,
+        );
+        expect(reloadResponse.status).toBe(200);
+
+        const reloadResult = (await reloadResponse.json()) as {
+          document: {
+            documentId: string;
+            latestSnapshot: null | { content: string };
+            publishState: string;
+          };
+        };
+        expect(reloadResult.document.documentId).toBe(createdDocumentId);
+        expect(reloadResult.document.latestSnapshot?.content).toBe(
+          'Created-space writing synthesis',
+        );
+
+        const publishResponse = await fetch(
+          `${firstServer.baseUrl}/api/writing/${createdDocumentId}/publish?spaceId=${createdSpaceId}`,
+          {
+            body: JSON.stringify({ publishState: 'published' }),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            method: 'POST',
+          },
+        );
+        expect(publishResponse.status).toBe(200);
+
+        const publishResult = (await publishResponse.json()) as {
+          document: {
+            documentId: string;
+            publishState: string;
+            spaceId: string;
+          };
+        };
+        expect(publishResult.document.documentId).toBe(createdDocumentId);
+        expect(publishResult.document.publishState).toBe('published');
+        expect(publishResult.document.spaceId).toBe(createdSpaceId);
+      } finally {
+        await firstServer.close();
+      }
+
+      const restartedServer = await startServer(storageRoot);
+
+      try {
+        const reopenedWritingResponse = await fetch(
+          `${restartedServer.baseUrl}/api/writing/${createdSpaceId}/projects/tumor-board/document`,
+        );
+        expect(reopenedWritingResponse.status).toBe(200);
+
+        const reopenedWritingResult = (await reopenedWritingResponse.json()) as {
+          document: {
+            documentId: string;
+            latestSnapshot: null | { content: string };
+            publishState: string;
+            spaceId: string;
+          };
+        };
+        expect(reopenedWritingResult.document.documentId).toBe(createdDocumentId);
+        expect(reopenedWritingResult.document.latestSnapshot?.content).toBe(
+          'Created-space writing synthesis',
+        );
+        expect(reopenedWritingResult.document.publishState).toBe('published');
+        expect(reopenedWritingResult.document.spaceId).toBe(createdSpaceId);
+      } finally {
+        await restartedServer.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
   });
 });

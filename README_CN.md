@@ -22,7 +22,7 @@ bootstrap 护栏仍然保留，但当前分支已经不再只是 Task 10 的占�
 
 - `docs/runbooks/native-demo-showcase.md`
 
-该 runbook 记录了精确的 reset / startup 命令、用户自有运行路径，以及浏览器中的真实点击链路，包括 `Enter shared space`、`Import paper`、`Open reader`、`Refresh reader`、`Open writing`、`Reload draft`、`Publish`，以及可选的 `Run governed summary` 收尾步骤。
+该 runbook 记录了精确的 reset / startup 命令、由 `npm run package:native-demo` 生成的打包产物路径 `.native-demo-package/native-demo`、用户自有运行路径，以及浏览器中的真实点击链路，包括 `Create space`、`Open library`、`Import paper`、`Open reader`、`Refresh reader`、`Open writing`、`Reload draft`、`Publish`，以及可选的 `Run governed summary` 收尾步骤。
 
 ## 计划文档
 
@@ -97,7 +97,16 @@ npm run demo:reset
 npm run start:server
 ```
 
-启动后，服务会从 `dist/` 提供构建后的浏览器应用、native demo API，并在 `/health` 暴露健康检查端点。浏览器走查路径现在是 `Enter shared space` -> `Import paper` -> `Open reader` -> `Refresh reader` -> `Open writing` -> `Reload draft` -> `Publish` -> 可选的 `Run governed summary`。
+如果你想先把同一个 demo 产出成不依赖源码树的可运行包，可以先生成打包 bundle：
+
+```bash
+npm run package:native-demo
+cd .native-demo-package/native-demo
+node demo-reset.mjs
+./run-native-demo.sh
+```
+
+启动后，服务会从 `dist/` 提供构建后的浏览器应用、native demo API，并在 `/health` 暴露健康检查端点。浏览器走查路径现在是 `Create space` -> `Open library` -> `Import paper` -> `Open reader` -> `Refresh reader` -> `Open writing` -> `Reload draft` -> `Publish` -> 可选的 `Run governed summary`。
 
 ### Docker Compose 启动路径
 
@@ -108,5 +117,6 @@ docker compose up --build
 
 仓库内置的 `docker-compose.yml` 会映射运行端口，把 `JIXIA_STORAGE_ROOT`
 固定到挂载后的 `/var/lib/jixia/storage`，把 `JIXIA_DATABASE_URL` 固定到挂载后的
-`/var/lib/jixia/data` 以保留后续兼容性，并将 Task 11 的状态文件持久化到
-`/var/lib/jixia/storage/server-state.json`。
+`/var/lib/jixia/data` 作为后续 DB-backed 运行时的保留运行时边界，并将 Task 11 的状态文件持久化到
+`/var/lib/jixia/storage/server-state.json`。容器启动时运行的是 `.native-demo-package/native-demo`
+中的打包 native demo，而不是直接从源码树启动。

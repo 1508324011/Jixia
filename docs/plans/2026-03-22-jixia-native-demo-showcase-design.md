@@ -1,23 +1,30 @@
-# Jixia Native Demo Showcase Design
+# Jixia Usable Native Demo Design
 
-**Goal:** Define a truthful, persuasive Jixia demo that can run on the current server without sudo or Docker, demonstrate real product value, and strengthen the case for later admin-supported deployment work.
+**Goal:** Redefine `demo-native-showcase` from a guided showcase into a usable, space-first, single-tenant Jixia demo that can run on the current server without sudo or Docker and can realistically make operator packaging the next major gap.
 
 **Branch target:** `demo-native-showcase`
 
-**Operating constraint:** The current host has no sudo access and no container runtime. The demo therefore must succeed with a native Node startup path, user-owned storage paths, and zero dependence on administrator intervention during the walkthrough.
+**Operating constraint:** The current host has no sudo access and no container runtime. The demo therefore must succeed through native Node startup, user-owned storage paths, and repo-contained setup while still feeling like a real product rather than a four-step tour.
 
 ---
 
 ## Current context
 
-- `task10-layered-ui` already delivers the first scholarly browser shell.
-- Task 11 already added native Node startup, build artifacts, Docker scaffolding, and bilingual operator docs.
-- The browser shell still uses mostly static placeholder content.
-- The service layer already contains meaningful domain behavior for spaces, import, library entry detail, reading, writing, governed jobs, audit records, and job events.
-- `src/server/http-server.ts` currently exposes `GET /health` plus static asset serving, but not the business routes the browser would need.
-- Import connectors for PubMed and arXiv are deterministic local placeholders, which is a strength for a repeatable offline demo.
+- The branch already has truthful server-backed data flow for spaces, import, library, reader, writing, and governed jobs.
+- The current UX is still shaped around `nativeDemoFixture` and one pre-scripted corridor: one actor, one shared space, one project slug, one seed document, one preferred walkthrough path.
+- `src/server/http-api.ts` is still fixture-centric, which makes the product feel like a prepared exhibit instead of an actually usable workspace.
+- The browser pages are data-backed, but they still behave like checkpoints in a demo script instead of durable tools that a user can move between freely.
+- The strongest existing assets are already present: native runtime, deterministic reset, import flow, persisted notes/insights, persisted writing state, and governed-job evidence.
 
-This means the fastest convincing path is **not** more infrastructure work. It is a **native Node vertical slice** that turns the current shell into a real browser-driven product walkthrough.
+The problem is therefore **not** that the branch is fake. The problem is that it is **too tightly curated**. The next move is to broaden it into a **usable single-tenant product demo**, not to restart from scratch.
+
+## The real requirement
+
+The demo should satisfy this standard:
+
+> A reviewer can use Jixia as a real, space-first workspace on this server, with persistent state and non-linear re-entry, and the branch can credibly argue that packaging is the next major gap only after create/open/reopen flows are verified.
+
+That means the target is no longer “show one truthful storyline.” The target is “ship one truthful, stateful, usable product slice.”
 
 ## Constraints and success criteria
 
@@ -25,219 +32,264 @@ This means the fastest convincing path is **not** more infrastructure work. It i
 
 - no sudo
 - no Docker or Podman on the target host
-- no dependence on external scholarly APIs during the demo
-- no fake front-end-only data that would undermine credibility
-- no large architectural detour away from the current server-first model
-- no root-owned runtime paths during the demo setup
+- no dependence on real external scholarly APIs during the demo
+- no fake browser-only state that breaks the server-first model
+- no pretending that missing domain models already exist
+- no root-owned runtime paths during setup or rehearsal
 
 ### Success criteria
 
-The demo is successful if a reviewer can watch one operator session and see all of the following happen through the browser:
+The demo is successful when a user can do all of the following without being forced through a rigid sequence:
 
-1. enter a real shared space
-2. import a paper using a deterministic locator
-3. see that paper appear in the library list
-4. open the reader and create at least one note and one generated insight
-5. refresh or re-fetch and prove those reading artifacts still exist
-6. open writing, save content, transition publish state, and re-read the latest document state successfully
-7. optionally run one governed job and inspect at least one audit or event artifact
+1. open Jixia and see existing spaces or create a new usable space
+2. enter a chosen space and stay in that context while moving between library, reader, and writing
+3. import multiple papers into the current space and revisit them later from the library
+4. open any imported library entry in the reader rather than only a preselected one
+5. create notes and insights, then refresh or re-enter the reader and still see them
+6. open the writing workspace independently, save draft content, reload it, and publish it
+7. optionally run a governed summary job and inspect audit or event artifacts
+8. restart the app or re-open the browser and find the same state again until reset is explicitly requested
 
-The story must be strong enough that the next ask is not “please let me install Docker because development is annoying,” but “the product already works in native single-node mode and now needs controlled operator support for team-grade deployment.”
+The admin-facing message should become:
+
+1. **The product is already usable here in native mode.**
+2. **The remaining gap is packaging, supervision, and deployment hygiene.**
+3. **Docker support improves operations; it is not what creates product value.**
 
 ## Approaches considered
 
 | Approach | What it means | Strength | Weakness | Recommendation |
 | --- | --- | --- | --- | --- |
-| Static shell walkthrough | Keep the current Task 10 shell and narrate the missing behavior manually | Fastest possible | Weak evidence; obvious placeholders reduce credibility | Reject |
-| Native Node vertical slice | Add only the HTTP adapters, read models, demo seed/reset flow, and browser wiring needed for one truthful workflow | Strong value proof, works on this server, aligns with current architecture | Requires focused product work before infra work | **Recommend** |
-| Near-production full stack | Push for a broader API, richer UX, and deployment polish immediately | More complete long-term shape | Wrong sequencing under host constraints; delays admin persuasion | Defer |
+| Polished guided showcase | Keep the current seeded path but make it look smoother | Smallest delta | Still fails the user’s actual requirement because it remains a tour | Reject |
+| **Usable single-tenant, space-first demo** | One operator, real persisted state, multiple spaces and entries, free re-entry, honest limitations on unsupported areas | Strongest fit for the current requirement and host constraints | Requires reshaping the branch goal and removing fixture-centric assumptions | **Recommend** |
+| Near-production multi-user product | Add auth, richer admin tools, broader APIs, deployment polish, and less curated data | Closest to final product | Too large, wrong sequencing, and not necessary to justify operator help | Defer |
 
 ## Recommended direction
 
-Build a dedicated **Jixia Native Demo Showcase** on branch `demo-native-showcase` with this primary workflow:
+Build `demo-native-showcase` into a **usable single-tenant, space-first Jixia demo** with this product shape:
 
-`Shared Space -> Import Paper -> Library -> Reader Note / Insight -> Writing Save / Publish -> Governed Job / Audit (optional finale)`
+`Spaces -> Library -> Reader -> Writing` remains the core loop, but it must become **non-linear** and **stateful**.
 
-This demo should be:
+The demo should behave like this:
 
-- **native**: starts with `npm run build` and `npm run start:server`
-- **truthful**: real server-side state mutation, not local front-end mock state
-- **repeatable**: deterministic bootstrap and reset path comes first, before the walkthrough begins
-- **offline-friendly**: relies on existing local placeholder connectors for import
-- **persistence-visible**: key mutations are proven again after a fresh read or refresh
-- **persuasive**: highlights why operator support matters only after the core product already proves value
+- Spaces are real persisted contexts, not just the first slide in a presentation.
+- Library is a real working shelf where multiple imports accumulate over time.
+- Reader is a reusable evidence workspace that can open whichever library entry the user chooses.
+- Writing is an ongoing workspace for the current space, not only the final page in a script.
+- Governed jobs remain optional value-add, not the thing that makes the demo feel complete.
+
+## What “usable” means in this branch
+
+“Usable” does **not** mean “production-complete.” It means:
+
+- the browser is free to move between pages in any order
+- the current space and current work context are clear
+- imported literature accumulates and can be revisited
+- notes, insights, and drafts persist and can be reloaded
+- empty, loading, and error states are honest
+- the app still works after a restart unless the operator deliberately resets it
+
+It does **not** require all future product surface area such as full auth, true project management, role administration UI, or production credential workflows.
+
+## What must be proven before we say “packaging is next”
+
+Before this branch can honestly claim that Docker/operator support is the main remaining gap, it must first prove all of the following in native mode:
+
+1. a user can create or choose a space
+2. that space can be opened and reused later
+3. imports accumulate in that space over time
+4. reader notes/insights survive refresh and re-entry
+5. writing state survives reload and restart
+
+If any of those are still missing, the branch is still missing product behavior, not only packaging.
+
+## Honest product boundary for the demo
+
+To avoid fake completeness, the demo should explicitly adopt these boundaries:
+
+### 1. Single-tenant, actor-fixed demo runtime
+
+The operator identity can remain fixed for now. The problem is not that `demo-operator` exists; the problem is that the whole UI currently feels hardwired to one scripted story. Keep the fixed actor, but allow that actor to actually use the system.
+
+### 2. Space is first-class; project is not yet
+
+The backend currently has a real `space` model but not a first-class persisted `project` model. The demo should stop over-promising here.
+
+Recommended treatment:
+
+- keep the internal route shape if needed for compatibility
+- present the user-facing concept as a **workspace** or **current drafting lane** inside a space
+- avoid pretending the product already supports arbitrary project administration if the backend does not
+
+### 3. Fixture becomes starter content, not the whole world
+
+`shared-space`, `tumor-board`, `pmid:123456`, and `doc-1` should remain useful seeded defaults after reset, but they should no longer define the only meaningful way to use the app.
 
 ## Demo storage contract
 
-The demo must use **user-owned** storage and database paths so the first-run experience demonstrates product value instead of permission friction.
-
-Recommended defaults for the walkthrough:
+The demo must continue to use **user-owned** storage and database paths so the native experience stays frictionless:
 
 - `JIXIA_STORAGE_ROOT=/home/zhurui/.local/share/jixia-demo/storage`
 - `JIXIA_DATABASE_URL=file:/home/zhurui/.local/share/jixia-demo/data/jixia-demo.db`
 - `JIXIA_HOST=127.0.0.1`
 - `JIXIA_PORT=3000`
 
-These paths are not presented as permanent production choices. They are the lowest-friction native proof that Jixia can run, persist state, and recover deterministically on this server without admin help.
+The reset command should restore a clean starter workspace, but ordinary usage should **not** depend on reset. Reset is for rehearsal, not for every session.
 
-## Demo architecture
+## Usable-demo architecture
 
 ```mermaid
 flowchart LR
-    accTitle: Jixia Native Demo Architecture
-    accDescr: The native demo uses the existing browser shell, a minimal HTTP API adapter, deterministic demo bootstrap data, and the existing server-side services with file-backed state in user-owned paths.
+    accTitle: Jixia Usable Demo Architecture
+    accDescr: The usable demo keeps the existing server-first runtime but broadens the browser and HTTP surface from one guided fixture path into a reusable single-tenant workspace with persistent state.
 
-    browser["Browser shell\nSpaces -> Library -> Reader -> Writing"]
-    client["Typed demo API client\nrequestJson wrappers"]
-    api["Minimal HTTP API adapter\nin http-server runtime"]
-    services["Existing Jixia services\nspaces import library reading writing jobs"]
-    seed["Deterministic demo bootstrap\nshared-space tumor-board demo-user"]
-    state["User-owned file-backed state\nserver-state.json + demo database"]
+    browser["Usable browser workspace\nspaces library reader writing"]
+    context["Current context state\nactive space active entry active writing lane"]
+    client["Typed browser API layer\nreal fetch-based mutations and reads"]
+    api["Thin HTTP adapter\nno full public API redesign"]
+    services["Existing domain services\nspaces import library reading writing jobs"]
+    seed["Starter content seed\nhelpful defaults not hard requirements"]
+    state["Persistent native state\nuser-owned storage and database"]
 
-    browser --> client --> api --> services --> state
+    browser --> context --> client --> api --> services --> state
     seed --> services
 
     classDef primary fill:#e8eef8,stroke:#2b3a67,stroke-width:1.5px,color:#1f2937
     classDef support fill:#f5f3f0,stroke:#b5774d,stroke-width:1.5px,color:#1f2937
 
-    class browser,client,api,services,state primary
+    class browser,context,client,api,services,state primary
     class seed support
 ```
 
-## Demo scope
+## Product scope for this revised demo
 
 ### In scope
 
-#### 1. Deterministic bootstrap and reset comes before the walkthrough
+#### 1. Real space usage
 
-Provide a predictable demo world with:
+- list available spaces
+- create at least one new space through the UI or an adjacent control
+- enter any listed space
+- persist that space and reopen it later
 
-- `demo-user`
-- `shared-space`
-- `tumor-board`
-- at least one stable importable paper locator such as `pmid:123456`
-- one documented reset path that returns the demo to the same baseline every time
+#### 2. Real library usage
 
-#### 2. Minimal business HTTP surface
+- import multiple DOI / PMID / arXiv records into a space
+- see the full accumulated library list
+- open any listed entry from the library
+- revisit previously imported entries without reset
 
-Expose only the routes needed by the scripted browser flow. Do not attempt a full public API design yet.
+#### 3. Real reader usage
 
-Recommended surface:
+- open reader from an arbitrary chosen library entry
+- add multiple notes and insights
+- refresh and re-read to prove persistence
+- keep a visible path back to library and forward to writing
 
-- spaces list / memberships
-- create shared space if absent
-- import paper by locator
-- list library entries for a fixed space/project
-- fetch one library entry detail
-- fetch reading detail
-- create note
-- save generated insight
-- create writing document if absent
-- fetch current writing document detail
-- save document version
+#### 4. Real writing usage
+
+- open writing workspace independently from the reader
+- save and reload draft content
 - transition publish state
-- create and run a governed job
-- list audit records or job events for the current job
+- retain the current draft across restarts until reset
 
-#### 3. Real browser data flow
+#### 5. Optional governed-job usage
 
-Replace current placeholder panels with:
+- expose governed summary as an optional action once the main flow is already stable
+- show at least one event or audit artifact
 
-- actual loading states
-- actual empty states
-- actual success and failure messages
-- actual persisted mutations visible after refresh or re-fetch
+#### 6. Non-linear navigation
 
-#### 4. Admin-facing showcase script
-
-The repo should contain a short runbook that lets you:
-
-- reset the demo
-- start the service with user-owned paths
-- click through the narrative in a fixed order
-- explain why Docker or operator support is the next step rather than the first step
+- lightweight persistent navigation between spaces, library, reader, and writing
+- current context visible in the UI
+- no requirement to follow one pre-authored click order
 
 ### Out of scope
 
-- a generalized production REST API
-- fully dynamic multi-user auth
-- reverse proxy, TLS, or system service management on this server
-- replacing placeholder scholarly connectors with true upstream integrations
-- redesigning Task 10 visual direction
+- multi-user login and session management
+- production credential management UI
+- first-class project administration if the backend model still does not exist
+- PDF upload pipeline hardening beyond what the current service layer already supports
+- Docker packaging, reverse proxy, TLS, and system-service automation
 
-## Concrete demo storyline
+## Concrete user stories the revised demo must support
 
-### Scene 1: Enter Jixia as a scholarly collaboration space
+### Story 1: Start from scratch and make a space usable
 
-Open the Spaces page and show a real shared space rather than static copy. The message should be: **Jixia is not a dashboard toy; it is a research workspace with governed collaboration boundaries.**
+Open Jixia, create or choose a space, and enter it without being forced into a canned shared-space narrative.
 
-### Scene 2: Import a paper without external dependency risk
+### Story 2: Build a real library shelf
 
-On the Library page, import a paper via a deterministic PMID or arXiv locator. The page should then immediately show the new entry in the real library list. The message should be: **the system can ingest research assets reproducibly on this host.**
+Import more than one paper, see multiple entries accumulate, and choose which one to read next.
 
-### Scene 3: Turn reading into structured evidence
+### Story 3: Use the reader as a workspace, not a slide
 
-Open the Reader page, add a note, and save one generated insight. Then refresh or trigger a fresh read and prove the saved artifacts still exist. The message should be: **Jixia is not just file storage; it converts reading into reusable evidence.**
+Save notes and insights, leave the page, return later, refresh, and still find the same evidence state.
 
-### Scene 4: Turn evidence into writing state
+### Story 4: Use writing as an ongoing workspace
 
-Open Writing, create or load a document, save content, and transition publish state. Then re-open or re-fetch the document and prove the latest state persists. The message should be: **the system carries context from reading into governed writing.**
+Open the writing surface because you want to draft, not because the tour tells you it is “the next step.” Save, reload, publish, and continue editing later if needed.
 
-### Scene 5: Optional finale with governed jobs
+### Story 5: Optional governance proof
 
-Run one governed job and show an audit record or event trail. The message should be: **AI work is supervised, attributable, and not an opaque side effect.**
+Run a governed summary when you want to demonstrate auditability, not because the app feels incomplete without it.
 
 ## Design decisions
 
-### Decision 1: Keep the server-first boundary intact
+### Decision 1: Replace “tour checkpoints” with “working surfaces”
 
-Do not move demo state into front-end local storage. The browser is only a client of the already-existing server behavior.
+Each page must function independently enough that a user can enter it for a real reason, not only as the next step in a narrative.
 
-### Decision 2: Prefer a thin HTTP adapter over a broad API redesign
+### Decision 2: Keep the fixed actor, remove the fixed story
 
-This demo is a bridge from Task 10 shell to truthful runtime behavior. It is not the moment to redesign transport architecture.
+The operator identity can remain seeded. What must change is the assumption that the operator only ever uses one fixed space, one fixed entry, and one fixed document.
 
-### Decision 3: Seed deterministic demo data before relying on fixed IDs in the walkthrough
+### Decision 3: Keep seed data as a baseline, not a cage
 
-Manual prep creates demo drift. A seed/reset path keeps the showcase reliable and makes admin conversations easier.
+Reset should restore a rich starter state, but new spaces, new imports, and new work should accumulate naturally until the operator chooses to reset.
 
-### Decision 4: Make persistence visible after a fresh read
+### Decision 4: Be honest about unsupported domain models
 
-Successful mutations alone are not persuasive enough. The demo must show that notes and writing state survive a new read, a refresh, or a re-entry into the same page.
+If project management is not actually first-class yet, hide or rename that concept in the usable demo rather than pretending it is complete.
 
-### Decision 5: Treat governed jobs as an optional but high-value flourish
+### Decision 5: Make persistence and re-entry a first-class credibility signal
 
-The core persuasion path is import -> reader -> writing. Jobs should strengthen the ending, not block the main narrative.
+The strongest proof of usability is not a mutation button. It is the ability to leave, reload, reopen, and keep working.
 
 ## Risks and mitigations
 
 | Risk | Why it matters | Mitigation |
 | --- | --- | --- |
-| Demo turns into general API project | Slows delivery and diffuses scope | Limit to one browser walkthrough and its exact endpoints |
-| Library page still cannot show real data | Admin sees placeholders instead of product value | Add list read model before UI rewiring |
-| Writing can save but not reload convincingly | Demo feels partial | Add explicit writing detail/snapshot read path plus refresh-visible proof |
-| Demo reset is manual and brittle | Live showcase risk | Add a dedicated reset/bootstrap mechanism before fixed-ID assertions |
-| Demo setup requires privileged paths | First impression becomes permissions trouble | Lock user-owned storage/database paths in runbook and env guidance |
-| Job demo distracts from main flow | Time risk | Keep jobs optional until core slice is green |
+| Branch keeps the old showcase architecture under a new label | User will still feel the scripted nature immediately | Re-scope the docs and tests around non-linear usage, not walkthrough-only success |
+| Space creation becomes fake or purely client-side | Violates the server-first model | Use existing server routes and persist state through the real app runtime |
+| Project semantics remain misleading | Demo appears fuller than it really is | Collapse user-facing language to “workspace” until a true project model exists |
+| Reader and writing still depend on route-forward storytelling | Product feels chained together | Add current-context controls and only as much navigation as the existing routed surfaces can honestly support |
+| Reset remains required for every impressive moment | Demo feels fragile | Treat reset as rehearsal support only; everyday use must work without it |
+| Jobs consume too much scope | Core usability slips again | Keep governed jobs explicitly optional until spaces/library/reader/writing are strong |
 
-## Definition of done for the design
+## Definition of done for the revised design
 
-This design is considered correctly executed when the implementation branch can support all of the following on the current server without sudo:
+This revised design is correctly executed when the branch supports all of the following on the current server without sudo:
 
-- start Jixia natively with one documented command sequence
-- show real spaces and library data in the browser
-- import a paper through the browser and persist it
-- create reading artifacts and prove they survive a fresh read
-- create or update writing state and prove it survives a fresh read
-- reset the demo back to a known state with user-owned paths
-- walk an admin through the value story in less than ten minutes
+- native startup and persistence using user-owned paths
+- real spaces that can be listed and used, not only one scripted seed space
+- a library that accumulates multiple imports over time
+- arbitrary entry selection into the reader
+- reader notes and insights that survive refresh and re-entry
+- writing state that survives reload and restart
+- navigation that lets the user move around the product without following one forced corridor
+- an honest statement that the main missing step after this is deployment packaging, not product substance
 
-## Why this is the right sequencing for admin persuasion
+## Why this is the right correction
 
-The strongest admin conversation starts from proof:
+The user’s feedback is correct: the current branch already proves truthfulness, but not full usability.
 
-1. **The product already runs here in native mode.**
-2. **Its core collaborative workflow is real, persistent, and browser-driven.**
-3. **The remaining gap is operator-grade packaging, isolation, and team-scale supervision.**
+The right correction is **not** to throw away the branch. It is to evolve it from:
 
-That framing is much stronger than asking for Docker privileges before demonstrating concrete value.
+- **guided, fixture-centric showcase**
+
+into:
+
+- **usable, stateful, single-tenant product demo**
+
+That preserves the strongest work already done while aligning the branch with the real requirement: a demo that only lacks Docker packaging, not real product behavior.

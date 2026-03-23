@@ -140,7 +140,7 @@ function stubNativeDemoFetch(): void {
         return jsonResponse(libraryResponse);
       }
 
-      if (requestUrl.endsWith('/api/reading/entry-1')) {
+      if (requestUrl.endsWith('/api/reading/entry-1?spaceId=shared-space')) {
         return jsonResponse(readingResponse);
       }
 

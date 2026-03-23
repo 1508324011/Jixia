@@ -2,6 +2,7 @@ node_modules/
 coverage/
 dist/
 dist-server/
+.native-demo-package/
 
 .env
 *.env

@@ -2,6 +2,7 @@ services:
   jixia:
     build:
       context: .
+    working_dir: /app/.native-demo-package/native-demo
     environment:
       JIXIA_STORAGE_ROOT: /var/lib/jixia/storage
       JIXIA_DATABASE_URL: file:/var/lib/jixia/data/jixia.db

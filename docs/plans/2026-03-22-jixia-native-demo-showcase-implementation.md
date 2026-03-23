@@ -1,89 +1,91 @@
-# Jixia Native Demo Showcase Implementation Plan
+# Jixia Usable Native Demo Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Turn the current Task 10/11 branch state into a native Node, browser-driven, offline-reproducible Jixia demo that can convincingly showcase product value on the current no-sudo server.
+**Goal:** Turn `demo-native-showcase` into a usable, space-first, single-tenant Jixia demo whose remaining major gap can honestly be operator packaging rather than missing core product behavior.
 
-**Architecture:** Stay narrow and server-first. Do not redesign the full transport boundary or chase general deployment polish. Instead, lock a deterministic bootstrap/reset path first, then add the thinnest truthful HTTP API surface and real browser-side data flow needed for one end-to-end showcase: shared space -> import -> reader note/insight -> writing save/publish -> governed job/audit. The result should be easy to demo, easy to reset, and honest about the current platform boundary.
+**Architecture:** Preserve the existing truthful native runtime, persistence, and service-layer logic. The main correction is not “add more fake polish”; it is “stop hardwiring one story.” The branch should prove real create/open/reopen behavior for spaces, library, reader, and writing before it claims that Docker is the next big step. Navigation should stay lightweight and reuse current routed surfaces rather than becoming a second product rewrite.
 
-**Tech Stack:** Node.js, TypeScript, Vite, Vitest, React, existing `createJixiaApp()` runtime, file-backed server state, deterministic import connectors, native `fetch` client wrappers.
+**Tech Stack:** Node.js, TypeScript, Vite, Vitest, React, existing `createJixiaApp()` runtime, file-backed server state, deterministic import connectors, typed browser fetch wrappers, native reset/start scripts.
 
 ---
 
 ## Current starting point
 
-- Source branch: `task10-layered-ui`
-- Demo branch/worktree: `demo-native-showcase`
-- Verified baseline in the new worktree before planning: `npm run test`, `npm run typecheck`, and `npm run build` all pass.
-- The browser shell exists in `src/web/pages/*`, but it mostly shows placeholders rather than real data.
-- `src/server/http-server.ts` currently exposes `/health` and static assets, but not a browser-callable business API.
-- The server-side domain logic already exists for spaces, import, reading, writing, jobs, audit, and event streams.
-- Import connectors are deterministic placeholders, which is perfect for an offline demo.
-- The demo must run with **user-owned** runtime paths, for example:
-  - `JIXIA_STORAGE_ROOT=/home/zhurui/.local/share/jixia-demo/storage`
-  - `JIXIA_DATABASE_URL=file:/home/zhurui/.local/share/jixia-demo/data/jixia-demo.db`
+- Branch/worktree: `demo-native-showcase`
+- The branch already passes `npm run test`, `npm run typecheck`, `npm run build`, and `npm run demo:reset`.
+- The runtime is truthful and persisted, but still too tightly centered on `nativeDemoFixture`.
+- `src/server/http-api.ts` is still anchored to one actor, one seed space, one workspace slug, and one starter document.
+- The browser pages are data-backed, but still feel like stages in a prepared walkthrough.
+- The backend already has enough meaningful behavior to support a stronger usable demo without inventing fake client-side data.
 
 ## Non-goals
 
-- no broad production API redesign
-- no authentication system overhaul
-- no Docker-first work in this branch
-- no real external PubMed or arXiv integration
-- no major visual redesign beyond replacing placeholders with real data states
+- no multi-user login or session system
+- no Docker, reverse proxy, or TLS work in this branch
+- no false claim that first-class project administration already exists
+- no full public API redesign beyond what the demo needs
+- no broad visual redesign unrelated to usability
 
 ## Execution flow
 
 ```mermaid
 flowchart LR
-    accTitle: Native Demo Implementation Flow
-    accDescr: The native demo plan first locks the bootstrap and runbook contract, then seeds deterministic data, adds the minimal HTTP surface, wires the browser shell to real data, optionally adds governed-job showcase surfaces, and finishes with a runbook plus final verification.
+    accTitle: Space-First Demo Flow
+    accDescr: The usable-demo plan first redefines the contract, then proves persistence and create/open space behavior, broadens the space-first library-reader-writing loop, adds only lightweight navigation, and finishes with docs plus final verification.
 
-    contract["Contract tests"]
-    seed["Deterministic bootstrap and reset"]
-    api["Minimal read models and HTTP adapter"]
-    ui["Spaces library reader writing live wiring"]
-    jobs["Optional governed job and audit finale"]
-    docs["Demo runbook and admin story"]
-    verify["Full verification and showcase rehearsal"]
+    contract["Usable-demo contract tests"]
+    persistence["Starter content and persistence semantics"]
+    spaces["Create and open space"]
+    library["Space-first library usage"]
+    reader["Reusable reader workflow"]
+    writing["Independent writing workflow"]
+    shell["Lightweight current-context navigation"]
+    jobs["Optional governed-job finish"]
+    docs["Runbook and admin story"]
+    verify["Full verification and live rehearsal"]
 
-    contract --> seed --> api --> ui --> jobs --> docs --> verify
+    contract --> persistence --> spaces --> library --> reader --> writing --> shell --> jobs --> docs --> verify
 
     classDef primary fill:#e8eef8,stroke:#2b3a67,stroke-width:1.5px,color:#1f2937
 
-    class contract,seed,api,ui,jobs,docs,verify primary
+    class contract,persistence,spaces,library,reader,writing,shell,jobs,docs,verify primary
 ```
 
 ## Implementation notes before execution
 
-1. Preserve the current server-first model. The browser must never become the source of truth for demo data.
-2. Add only the minimum read models needed for the showcase, especially library listing and writing document detail.
-3. Seed deterministic demo data **before** relying on fixed IDs like `shared-space`, `tumor-board`, or `pmid:123456`.
-4. Every important mutation must be proven again after a fresh read, page reload, or route re-entry. A successful POST alone is not enough.
-5. Keep the demo storage contract user-owned and explicit in both env guidance and runbook text.
-6. Treat jobs/audit as a high-value finale. If time runs short, deliver the main research workflow first.
+1. Keep `demo-operator` if needed, but stop treating one seeded story as the only valid workflow.
+2. Seeded fixture content is **starter content**, not the entire usable world.
+3. Persistence semantics come before shell polish. A pretty navigation bar does not prove usability.
+4. “Workspace” is demo language, not a claim that a true project model already exists.
+5. Every important mutation must be re-proven after refresh, reload, re-entry, or restart where applicable.
+6. We can only say “Docker is the next major gap” after create/open/reopen flows are verified for real.
 
-### Task 1: Lock the native demo bootstrap and runbook contract in tests
+### Task 1: Lock the revised usable-demo contract in tests
 
 **Files:**
-- Create: `tests/integration/native-demo-http.test.ts`
-- Create: `tests/ui/native-demo-workflow.test.tsx`
-- Create: `tests/smoke/native-demo-runbook.test.ts`
+- Modify: `tests/integration/native-demo-http.test.ts`
+- Modify: `tests/ui/native-demo-workflow.test.tsx`
+- Modify: `tests/smoke/native-demo-runbook.test.ts`
 
 **Step 1: Write the failing tests**
 
-Create three tests that lock the demo contract before implementation:
+Redefine the branch contract around **space-first usability**, not walkthrough completion. The tests must require:
 
-- `tests/integration/native-demo-http.test.ts` should assert that a demo HTTP surface exists for the walkthrough path.
-- `tests/ui/native-demo-workflow.test.tsx` should assert that the browser flow will eventually rely on real fetched data rather than placeholder text.
-- `tests/smoke/native-demo-runbook.test.ts` should assert the presence of a dedicated demo runbook, a `demo:reset` command, and user-owned runtime guidance.
+- spaces can be listed and at least one new space can be created
+- a chosen space can be opened and reused
+- the library can accumulate more than one imported record
+- the reader can open an arbitrary chosen entry
+- the writing surface can be reopened independently and reloaded
+- the runbook no longer describes a guided tour as the primary value
 
 Starter expectations:
 
 ```ts
-expect(packageJson.scripts?.['demo:reset']).toBeTruthy();
-expect(runbook).toContain('npm run start:server');
-expect(runbook).toContain('/home/zhurui/.local/share/jixia-demo');
-expect(screen.queryByText('Loading state placeholder')).not.toBeInTheDocument();
+expect(response.spaces.length).toBeGreaterThanOrEqual(1);
+expect(runbook).toContain('Create or choose a space');
+expect(runbook).toContain('usable native demo');
+expect(runbook).not.toContain('guided showcase');
 ```
 
 **Step 2: Run tests to verify they fail**
@@ -94,51 +96,50 @@ Run:
 - `npm run test -- tests/ui/native-demo-workflow.test.tsx`
 - `npm run test -- tests/smoke/native-demo-runbook.test.ts`
 
-Expected: FAIL because the demo HTTP surface, runbook, and reset contract do not exist yet.
+Expected: FAIL because the current branch still satisfies the narrower showcase contract instead of the usable-demo contract.
 
 **Step 3: Write minimal implementation**
 
-Do not try to satisfy all failures at once. Keep these failing tests as the execution contract.
+Do not satisfy the failures yet. Keep the revised tests as the execution contract.
 
-**Step 4: Run tests again to verify they fail only for missing implementation**
+**Step 4: Run tests again to verify they fail only for missing product behavior**
 
 Run the same three commands again.
 
-Expected: FAIL only on missing demo functionality, not on syntax or import problems.
+Expected: FAIL only on missing usable-demo functionality, not on syntax or import issues.
 
 **Step 5: Commit**
 
 ```bash
 git add tests/integration/native-demo-http.test.ts tests/ui/native-demo-workflow.test.tsx tests/smoke/native-demo-runbook.test.ts
-git commit -m "test: lock native demo showcase contract"
+git commit -m "test: redefine usable native demo contract"
 ```
 
-### Task 2: Add deterministic demo bootstrap and reset behavior
+### Task 2: Make persistence semantics explicit and demote the fixture to starter content
 
 **Files:**
-- Create: `src/server/demo/bootstrap.ts`
-- Create: `src/server/demo/demo-fixture.ts`
-- Create: `scripts/demo-reset.mjs`
-- Modify: `src/server/http-server.ts`
-- Modify: `package.json`
+- Modify: `src/server/demo/demo-fixture.ts`
+- Modify: `src/server/demo/bootstrap.ts`
+- Modify: `scripts/demo-reset.mjs`
 - Modify: `.env.example`
+- Modify: `docs/runbooks/native-demo-showcase.md`
 - Modify: `tests/integration/native-demo-http.test.ts`
 - Modify: `tests/smoke/native-demo-runbook.test.ts`
 
-**Step 1: Write the failing test for seeded demo state**
+**Step 1: Write the failing tests**
 
-Update integration and smoke tests to assert:
+Require the branch to state and prove what survives:
 
-- a demo reset command exists
-- first startup after reset yields a known `shared-space` and `tumor-board`
-- one deterministic paper locator such as `pmid:123456` is documented and reproducible
-- the runbook explains user-owned storage and database paths
+- reset restores starter content
+- created spaces survive reload and restart until reset
+- imported entries survive reload and restart until reset
+- writing state survives reload and restart until reset
+- the runbook explicitly distinguishes normal reuse from deliberate reset
 
 ```ts
-expect(packageJson.scripts?.['demo:reset']).toBeTruthy();
-expect(runbook).toContain('shared-space');
-expect(runbook).toContain('pmid:123456');
-expect(runbook).toContain('/home/zhurui/.local/share/jixia-demo/storage');
+expect(runbook).toContain('Reset is for rehearsal, not every session');
+expect(runbook).toContain('/home/zhurui/.local/share/jixia-demo');
+expect(spaces.some((space) => space.spaceId === 'shared-space')).toBe(true);
 ```
 
 **Step 2: Run tests to verify they fail**
@@ -148,11 +149,11 @@ Run:
 - `npm run test -- tests/integration/native-demo-http.test.ts`
 - `npm run test -- tests/smoke/native-demo-runbook.test.ts`
 
-Expected: FAIL because there is no deterministic demo bootstrap or reset flow yet.
+Expected: FAIL because persistence semantics are not yet stated tightly enough.
 
 **Step 3: Write minimal implementation**
 
-Add a small deterministic demo bootstrap path that seeds the space/project on first run or when the storage is reset. Add `npm run demo:reset` that removes the demo storage state in a user-owned path. Keep the data minimal and stable.
+Keep `shared-space`, starter import content, and starter document after reset, but document and enforce that normal usage accumulates beyond them until reset is explicitly invoked.
 
 **Step 4: Run tests to verify they pass**
 
@@ -163,148 +164,190 @@ Expected: PASS.
 **Step 5: Commit**
 
 ```bash
-git add src/server/demo/bootstrap.ts src/server/demo/demo-fixture.ts scripts/demo-reset.mjs src/server/http-server.ts package.json .env.example tests/integration/native-demo-http.test.ts tests/smoke/native-demo-runbook.test.ts
-git commit -m "feat: add deterministic demo bootstrap"
+git add src/server/demo/demo-fixture.ts src/server/demo/bootstrap.ts scripts/demo-reset.mjs .env.example docs/runbooks/native-demo-showcase.md tests/integration/native-demo-http.test.ts tests/smoke/native-demo-runbook.test.ts
+git commit -m "feat: define usable demo persistence contract"
 ```
 
-### Task 3: Add the minimal demo read models and HTTP adapter
+### Task 3: Make create/open space the first de-scripting milestone
 
 **Files:**
-- Create: `src/server/http-api.ts`
-- Modify: `src/server/http-server.ts`
+- Modify: `src/server/http-api.ts`
 - Modify: `src/server/routes/spaces.routes.ts`
-- Modify: `src/server/routes/library.routes.ts`
-- Modify: `src/server/routes/writing.routes.ts`
-- Modify: `src/server/services/library.service.ts`
-- Modify: `src/server/services/writing.service.ts`
 - Modify: `src/shared/contracts/spaces.ts`
-- Modify: `src/shared/contracts/library.ts`
-- Modify: `src/shared/contracts/writing.ts`
-- Modify: `tests/integration/native-demo-http.test.ts`
-
-**Step 1: Write the failing test for space, library, and writing read models**
-
-Extend `tests/integration/native-demo-http.test.ts` to require these capabilities against seeded demo state:
-
-```ts
-expect(result.spaces[0]?.spaceId).toBe('shared-space');
-expect(result.entries[0]?.entryId).toBeTruthy();
-expect(result.document.documentId).toBeTruthy();
-```
-
-**Step 2: Run test to verify it fails**
-
-Run: `npm run test -- tests/integration/native-demo-http.test.ts`
-
-Expected: FAIL because space listing, library listing, and writing detail are not exposed through the HTTP layer yet.
-
-**Step 3: Write minimal implementation**
-
-Implement the thinnest adapter layer that maps browser-safe JSON routes onto existing services:
-
-- `GET /api/spaces`
-- `POST /api/spaces/:spaceId/import`
-- `GET /api/spaces/:spaceId/projects/:projectId/library`
-- `GET /api/library/:entryId`
-- `GET /api/reading/:entryId`
-- `GET /api/writing/:spaceId/projects/:projectId/document`
-- `POST /api/writing/:spaceId/projects/:projectId/document`
-- `POST /api/writing/:documentId/publish`
-
-Keep parsing and response serialization centralized in `src/server/http-api.ts` so `src/server/http-server.ts` stays readable.
-
-**Step 4: Run test to verify it passes**
-
-Run: `npm run test -- tests/integration/native-demo-http.test.ts`
-
-Expected: PASS for the read-model and HTTP adapter assertions added in this task.
-
-**Step 5: Commit**
-
-```bash
-git add src/server/http-api.ts src/server/http-server.ts src/server/routes/spaces.routes.ts src/server/routes/library.routes.ts src/server/routes/writing.routes.ts src/server/services/library.service.ts src/server/services/writing.service.ts src/shared/contracts/spaces.ts src/shared/contracts/library.ts src/shared/contracts/writing.ts tests/integration/native-demo-http.test.ts
-git commit -m "feat: add native demo http adapter"
-```
-
-### Task 4: Wire the Spaces and Library pages to real server data
-
-**Files:**
-- Create: `src/web/lib/demo-api.ts`
-- Modify: `src/web/lib/http-client.ts`
-- Modify: `src/web/pages/spaces-page.tsx`
-- Modify: `src/web/pages/library-page.tsx`
-- Modify: `src/web/styles/app.css`
-- Modify: `tests/ui/native-demo-workflow.test.tsx`
-
-**Step 1: Write the failing UI test**
-
-Update `tests/ui/native-demo-workflow.test.tsx` to require:
-
-- a rendered space list from fetched data
-- a working import action
-- a rendered library list from fetched data rather than placeholder copy
-
-```tsx
-expect(await screen.findByText('shared-space')).toBeInTheDocument();
-await user.click(screen.getByRole('button', { name: /import paper/i }));
-expect(await screen.findByText(/Imported PMID paper 123456/i)).toBeInTheDocument();
-```
-
-**Step 2: Run test to verify it fails**
-
-Run: `npm run test -- tests/ui/native-demo-workflow.test.tsx`
-
-Expected: FAIL because the browser shell still renders placeholder content.
-
-**Step 3: Write minimal implementation**
-
-Create a small demo API client in `src/web/lib/demo-api.ts`, then update `SpacesPage` and `LibraryPage` to fetch, render, and mutate real data with honest loading and empty states.
-
-**Step 4: Run test to verify it passes**
-
-Run: `npm run test -- tests/ui/native-demo-workflow.test.tsx`
-
-Expected: PASS for the spaces and library interactions.
-
-**Step 5: Commit**
-
-```bash
-git add src/web/lib/demo-api.ts src/web/lib/http-client.ts src/web/pages/spaces-page.tsx src/web/pages/library-page.tsx src/web/styles/app.css tests/ui/native-demo-workflow.test.tsx
-git commit -m "feat: wire demo spaces and library pages"
-```
-
-### Task 5: Wire Reader and Writing to real notes, insights, and document state
-
-**Files:**
-- Modify: `src/shared/contracts/reading.ts`
-- Modify: `src/shared/contracts/writing.ts`
-- Modify: `src/server/routes/reading.routes.ts`
-- Modify: `src/server/routes/writing.routes.ts`
-- Modify: `src/web/pages/reader-page.tsx`
-- Modify: `src/web/pages/writing-page.tsx`
 - Modify: `src/web/lib/demo-api.ts`
-- Modify: `tests/ui/native-demo-workflow.test.tsx`
+- Modify: `src/web/pages/spaces-page.tsx`
 - Modify: `tests/integration/native-demo-http.test.ts`
+- Modify: `tests/ui/native-demo-workflow.test.tsx`
 
 **Step 1: Write the failing tests**
 
-Add expectations that the browser can:
+Require the first real user-owned action to be space creation and open:
 
-- load reader detail for a real entry
-- create a note
-- save a generated insight
-- refresh or re-fetch and still see the saved note/insight
-- load or create a writing document
-- save content, re-fetch the document, and reflect publish-state transitions
+- `POST /api/spaces` creates a space
+- the new space appears in the space list
+- the UI can enter the new space without falling back to hardcoded `shared-space`
+
+```ts
+expect(createdSpace.spaceId).toBeTruthy();
+expect(createdSpace.kind).toBe('shared');
+```
 
 ```tsx
-await user.type(screen.getByLabelText(/note body/i), 'Key mutation note');
-await user.click(screen.getByRole('button', { name: /save note/i }));
-expect(await screen.findByText('Key mutation note')).toBeInTheDocument();
+await user.click(screen.getByRole('button', { name: /create space/i }));
+expect(await screen.findByText('Lab Notes')).toBeInTheDocument();
+```
+
+**Step 2: Run tests to verify they fail**
+
+Run:
+
+- `npm run test -- tests/integration/native-demo-http.test.ts`
+- `npm run test -- tests/ui/native-demo-workflow.test.tsx`
+
+Expected: FAIL because space creation/open is not yet the first-class starting action.
+
+**Step 3: Write minimal implementation**
+
+Expose a thin create-space path over the existing spaces service and make Spaces page treat starter content as helpful defaults rather than the only usable world.
+
+**Step 4: Run tests to verify they pass**
+
+Run the same two commands again.
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add src/server/http-api.ts src/server/routes/spaces.routes.ts src/shared/contracts/spaces.ts src/web/lib/demo-api.ts src/web/pages/spaces-page.tsx tests/integration/native-demo-http.test.ts tests/ui/native-demo-workflow.test.tsx
+git commit -m "feat: make create and open space a real demo action"
+```
+
+### Task 4: Make the library a real space-first working surface
+
+**Files:**
+- Modify: `src/server/http-api.ts`
+- Modify: `src/server/routes/library.routes.ts`
+- Modify: `src/shared/contracts/library.ts`
+- Modify: `src/web/lib/demo-api.ts`
+- Modify: `src/web/pages/library-page.tsx`
+- Modify: `tests/integration/native-demo-http.test.ts`
+- Modify: `tests/ui/native-demo-workflow.test.tsx`
+
+**Step 1: Write the failing tests**
+
+Require the library to behave like a real shelf:
+
+- imports accumulate over time in the chosen space
+- more than one imported entry is visible
+- any listed entry can be opened
+- revisiting the library later still shows previously imported entries
+
+```tsx
+expect(await screen.findByText('Imported PMID paper 654321')).toBeInTheDocument();
+expect(await screen.findByText('Imported arXiv paper 2401.01234')).toBeInTheDocument();
+```
+
+**Step 2: Run tests to verify they fail**
+
+Run:
+
+- `npm run test -- tests/integration/native-demo-http.test.ts`
+- `npm run test -- tests/ui/native-demo-workflow.test.tsx`
+
+Expected: FAIL because the library surface is still too shaped by starter assumptions.
+
+**Step 3: Write minimal implementation**
+
+Keep the API and UI thin, but make the library clearly belong to the current space, with multiple accumulated entries and honest empty/loading/error states.
+
+**Step 4: Run tests to verify they pass**
+
+Run the same two commands again.
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add src/server/http-api.ts src/server/routes/library.routes.ts src/shared/contracts/library.ts src/web/lib/demo-api.ts src/web/pages/library-page.tsx tests/integration/native-demo-http.test.ts tests/ui/native-demo-workflow.test.tsx
+git commit -m "feat: make library a usable space-first surface"
+```
+
+### Task 5: Make Reader a reusable evidence workspace
+
+**Files:**
+- Modify: `src/server/http-api.ts`
+- Modify: `src/server/routes/reading.routes.ts`
+- Modify: `src/shared/contracts/reading.ts`
+- Modify: `src/web/lib/demo-api.ts`
+- Modify: `src/web/pages/reader-page.tsx`
+- Modify: `tests/integration/native-demo-http.test.ts`
+- Modify: `tests/ui/native-demo-workflow.test.tsx`
+
+**Step 1: Write the failing tests**
+
+Require the reader to support:
+
+- opening an arbitrary chosen entry
+- saving multiple notes and insights
+- refreshing or re-entering the reader and still seeing persisted artifacts
+- moving back to library or onward to writing without feeling like a fixed stage transition
+
+```tsx
 await user.click(screen.getByRole('button', { name: /refresh reader/i }));
 expect(await screen.findByText('Key mutation note')).toBeInTheDocument();
+expect(await screen.findByText('Tumor board summary')).toBeInTheDocument();
+```
 
-await user.type(screen.getByLabelText(/draft body/i), 'Tumor board synthesis');
+**Step 2: Run tests to verify they fail**
+
+Run:
+
+- `npm run test -- tests/integration/native-demo-http.test.ts`
+- `npm run test -- tests/ui/native-demo-workflow.test.tsx`
+
+Expected: FAIL because the reader still feels more guided than reusable.
+
+**Step 3: Write minimal implementation**
+
+Keep the reader tied to real server state, but ensure it can be reopened as an evidence workspace for any currently chosen entry.
+
+**Step 4: Run tests to verify they pass**
+
+Run the same two commands again.
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add src/server/http-api.ts src/server/routes/reading.routes.ts src/shared/contracts/reading.ts src/web/lib/demo-api.ts src/web/pages/reader-page.tsx tests/integration/native-demo-http.test.ts tests/ui/native-demo-workflow.test.tsx
+git commit -m "feat: make reader a reusable evidence workspace"
+```
+
+### Task 6: Make Writing independently usable and restart-persistent
+
+**Files:**
+- Modify: `src/server/http-api.ts`
+- Modify: `src/server/routes/writing.routes.ts`
+- Modify: `src/shared/contracts/writing.ts`
+- Modify: `src/web/lib/demo-api.ts`
+- Modify: `src/web/pages/writing-page.tsx`
+- Modify: `tests/integration/native-demo-http.test.ts`
+- Modify: `tests/ui/native-demo-workflow.test.tsx`
+
+**Step 1: Write the failing tests**
+
+Require writing to support:
+
+- opening independently from current space/work context
+- saving draft content
+- reloading draft content
+- publishing and verifying persisted publish state
+- surviving restart until reset
+
+```tsx
 await user.click(screen.getByRole('button', { name: /save draft/i }));
 await user.click(screen.getByRole('button', { name: /reload draft/i }));
 expect(await screen.findByDisplayValue('Tumor board synthesis')).toBeInTheDocument();
@@ -317,11 +360,11 @@ Run:
 - `npm run test -- tests/integration/native-demo-http.test.ts`
 - `npm run test -- tests/ui/native-demo-workflow.test.tsx`
 
-Expected: FAIL because reader and writing are not yet data-driven and do not yet prove persistence after a fresh read.
+Expected: FAIL because the writing surface is still too tied to the old narrative shape.
 
 **Step 3: Write minimal implementation**
 
-Expose the remaining reader/writing HTTP endpoints, then wire `ReaderPage` and `WritingPage` to real state using the new demo API client. Add the smallest refresh or reload affordance needed to prove persistence honestly.
+Make writing usable as an independent ongoing workspace for the current space/work context, without claiming a richer project model than the backend truly has.
 
 **Step 4: Run tests to verify they pass**
 
@@ -332,30 +375,73 @@ Expected: PASS.
 **Step 5: Commit**
 
 ```bash
-git add src/shared/contracts/reading.ts src/shared/contracts/writing.ts src/server/routes/reading.routes.ts src/server/routes/writing.routes.ts src/web/pages/reader-page.tsx src/web/pages/writing-page.tsx src/web/lib/demo-api.ts tests/ui/native-demo-workflow.test.tsx tests/integration/native-demo-http.test.ts
-git commit -m "feat: wire demo reader and writing workflow"
+git add src/server/http-api.ts src/server/routes/writing.routes.ts src/shared/contracts/writing.ts src/web/lib/demo-api.ts src/web/pages/writing-page.tsx tests/integration/native-demo-http.test.ts tests/ui/native-demo-workflow.test.tsx
+git commit -m "feat: make writing independently usable"
 ```
 
-### Task 6: Add the governed job and audit finale
+### Task 7: Add lightweight current-context navigation only after the working surfaces are real
 
 **Files:**
-- Modify: `src/server/routes/jobs.routes.ts`
-- Modify: `src/server/routes/job-stream.routes.ts`
-- Modify: `src/shared/contracts/jobs.ts`
-- Modify: `src/web/lib/demo-api.ts`
-- Modify: `src/web/pages/reader-page.tsx`
+- Create: `src/web/lib/demo-session.ts`
+- Create: `src/web/components/demo-shell-nav.tsx`
+- Modify: `src/web/app.tsx`
+- Modify: `src/web/router.tsx`
+- Modify: `src/web/styles/app.css`
+- Modify: `tests/ui/native-demo-workflow.test.tsx`
+
+**Step 1: Write the failing UI test**
+
+Require only lightweight, honest navigation:
+
+- visible current space/context
+- stable links between spaces, library, reader, and writing
+- no overbuilt shell that implies a broader domain model than exists
+
+```tsx
+expect(screen.getByRole('navigation', { name: /workspace navigation/i })).toBeInTheDocument();
+expect(screen.getByText(/current space/i)).toBeInTheDocument();
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `npm run test -- tests/ui/native-demo-workflow.test.tsx`
+
+Expected: FAIL because the pages still feel too isolated.
+
+**Step 3: Write minimal implementation**
+
+Add only the shell affordances needed to keep orientation and re-entry clear. Reuse current routes; do not build a second information architecture.
+
+**Step 4: Run test to verify it passes**
+
+Run: `npm run test -- tests/ui/native-demo-workflow.test.tsx`
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add src/web/lib/demo-session.ts src/web/components/demo-shell-nav.tsx src/web/app.tsx src/web/router.tsx src/web/styles/app.css tests/ui/native-demo-workflow.test.tsx
+git commit -m "feat: add lightweight usable demo navigation"
+```
+
+### Task 8: Keep governed jobs as an optional product finish
+
+**Files:**
 - Modify: `src/web/pages/writing-page.tsx`
+- Modify: `src/web/pages/reader-page.tsx`
+- Modify: `src/web/lib/demo-api.ts`
 - Modify: `tests/integration/native-demo-http.test.ts`
 - Modify: `tests/ui/native-demo-workflow.test.tsx`
 
 **Step 1: Write the failing tests**
 
-Add expectations that a governed job can be created and run from the browser-facing demo flow, and that at least one audit or event artifact is visible.
+Require governed jobs to remain optional but demonstrable:
 
 ```tsx
 await user.click(screen.getByRole('button', { name: /run governed summary/i }));
 expect(await screen.findByText(/queued|running|succeeded/i)).toBeInTheDocument();
-expect(await screen.findByText(/audit|event/i)).toBeInTheDocument();
+expect(await screen.findByText(/audit trail|event timeline/i)).toBeInTheDocument();
 ```
 
 **Step 2: Run tests to verify they fail**
@@ -365,11 +451,11 @@ Run:
 - `npm run test -- tests/integration/native-demo-http.test.ts`
 - `npm run test -- tests/ui/native-demo-workflow.test.tsx`
 
-Expected: FAIL because job/audit data is not yet surfaced in the browser demo flow.
+Expected: FAIL only if the optional governed-job finish is still incomplete after the core usability work.
 
 **Step 3: Write minimal implementation**
 
-Expose the smallest truthful governed-job API needed by the demo and surface it in the UI as an optional final action, not as the main workflow.
+Keep governed-job proof available as a capstone, but do not let it become the main justification for the branch.
 
 **Step 4: Run tests to verify they pass**
 
@@ -380,44 +466,44 @@ Expected: PASS.
 **Step 5: Commit**
 
 ```bash
-git add src/server/routes/jobs.routes.ts src/server/routes/job-stream.routes.ts src/shared/contracts/jobs.ts src/web/lib/demo-api.ts src/web/pages/reader-page.tsx src/web/pages/writing-page.tsx tests/integration/native-demo-http.test.ts tests/ui/native-demo-workflow.test.tsx
-git commit -m "feat: add governed job demo finale"
+git add src/web/pages/writing-page.tsx src/web/pages/reader-page.tsx src/web/lib/demo-api.ts tests/integration/native-demo-http.test.ts tests/ui/native-demo-workflow.test.tsx
+git commit -m "feat: keep governed jobs as optional usable proof"
 ```
 
-### Task 7: Add the showcase runbook and admin-facing story
+### Task 9: Rewrite the runbook and admin-facing story for a usable demo
 
 **Files:**
-- Create: `docs/runbooks/native-demo-showcase.md`
+- Modify: `docs/runbooks/native-demo-showcase.md`
 - Modify: `README.md`
 - Modify: `README_CN.md`
 - Modify: `tests/smoke/native-demo-runbook.test.ts`
 
 **Step 1: Write the failing smoke test**
 
-Require a dedicated runbook with:
+Require the runbook to describe:
 
-- reset instructions
-- startup commands
-- explicit user-owned storage and database paths
-- exact demo clicks or flow
-- admin-facing explanation of why Docker or controlled ops support is the next step
+- native startup and reset
+- user-owned storage paths
+- create or choose a space
+- import multiple papers into that space
+- open reader and writing as reusable surfaces
+- the conditional admin message: packaging is next only because the product loop is already real
 
 ```ts
-expect(runbook).toContain('Shared Space -> Import Paper -> Reader -> Writing');
-expect(runbook).toContain('Why operator support is next');
-expect(runbook).toContain('npm run demo:reset');
-expect(runbook).toContain('/home/zhurui/.local/share/jixia-demo/storage');
+expect(runbook).toContain('Create or choose a space');
+expect(runbook).toContain('Import more than one paper');
+expect(runbook).toContain('Packaging is the next operator step');
 ```
 
 **Step 2: Run test to verify it fails**
 
 Run: `npm run test -- tests/smoke/native-demo-runbook.test.ts`
 
-Expected: FAIL because the runbook does not exist yet.
+Expected: FAIL because the current runbook still frames the branch as a showcase.
 
 **Step 3: Write minimal implementation**
 
-Create `docs/runbooks/native-demo-showcase.md` and add short pointers from both READMEs. Keep the runbook practical and under ten minutes of walkthrough time.
+Rewrite the runbook so it explains a usable native product session rather than a fixed scripted tour.
 
 **Step 4: Run test to verify it passes**
 
@@ -429,18 +515,18 @@ Expected: PASS.
 
 ```bash
 git add docs/runbooks/native-demo-showcase.md README.md README_CN.md tests/smoke/native-demo-runbook.test.ts
-git commit -m "docs: add native demo showcase runbook"
+git commit -m "docs: rewrite usable native demo runbook"
 ```
 
-### Task 8: Rehearse the full demo and lock final verification
+### Task 10: Rehearse and verify the full usable native demo
 
 **Files:**
 - Modify: `tests/ui/native-demo-workflow.test.tsx`
 - Modify: `docs/runbooks/native-demo-showcase.md`
 
-**Step 1: Write the final failing verification expectations**
+**Step 1: Add final verification expectations**
 
-Add final expectations that the demo workflow covers the complete showcase path and that the runbook matches the real UI wording, including the refresh-visible persistence proof.
+Ensure the final tests and runbook prove that the branch now behaves like a usable product demo instead of a guided corridor.
 
 **Step 2: Run the full suite and collect failures**
 
@@ -449,14 +535,15 @@ Run:
 - `npm run test`
 - `npm run typecheck`
 - `npm run build`
+- `npm run demo:reset`
 
-Expected: FAIL only if the demo branch still has incomplete browser-state or runbook gaps.
+Expected: FAIL only if the branch still has remaining usability gaps.
 
 **Step 3: Write minimal implementation**
 
-Adjust wording, button labels, refresh controls, and runbook steps so the runnable demo and the documented story match exactly.
+Adjust wording, navigation, route behavior, and runbook steps until the product and the docs describe the same space-first usable experience.
 
-**Step 4: Run full verification and a live rehearsal**
+**Step 4: Run final verification and live rehearsal**
 
 Run:
 
@@ -469,21 +556,21 @@ Run:
 Then manually verify in the browser:
 
 1. open Spaces
-2. enter `shared-space`
-3. import one deterministic paper
-4. open Reader and save a note and insight
-5. refresh or re-fetch and confirm those artifacts remain visible
-6. open Writing and save/publish
-7. reload the document and confirm the latest state remains visible
-8. optionally run the governed job finale
+2. create or choose a space
+3. open Library and import multiple papers
+4. open any chosen entry in Reader
+5. save note and insight, then refresh and verify persistence
+6. open Writing independently, save draft, reload, publish, and verify persistence
+7. restart without reset and verify that the new state is still present
+8. optionally run the governed summary
 
-Expected: the runbook and the actual demo match one another exactly.
+Expected: the branch now behaves like a usable native demo whose next major step can honestly be operator packaging.
 
 **Step 5: Commit**
 
 ```bash
 git add tests/ui/native-demo-workflow.test.tsx docs/runbooks/native-demo-showcase.md
-git commit -m "test: verify native demo showcase flow"
+git commit -m "test: verify usable native demo flow"
 ```
 
 ## Final verification checklist
@@ -493,16 +580,15 @@ git commit -m "test: verify native demo showcase flow"
 - `npm run build`
 - `npm run demo:reset`
 - `npm run start:server`
-- browser walkthrough of the full showcase flow, including refresh-visible persistence checks
+- live browser rehearsal proving create/open/reopen/restart behavior
 
 ## Definition of done
 
 This branch is done when all of the following are true:
 
-- the current server can run the demo natively with no sudo and no Docker
-- the browser shows real server-backed data rather than placeholder workflow shells
-- the showcase can be reset to a known state deterministically
-- the import path is offline-reproducible on this host
-- reading and writing mutations are visible again after a fresh read or refresh
-- at least one governed job or audit artifact can be demonstrated, or the branch explicitly documents why that finale was deferred
-- the repo contains a short admin-facing runbook that explains both the product value and the operational next step
+- Jixia runs natively on this host without sudo or Docker
+- a user can create or choose a space and keep using it later
+- library entries accumulate over time in that space
+- reader and writing state survive refresh, reload, and restart until reset
+- the UI no longer depends on a forced click order to feel coherent
+- the admin-facing message can honestly be: product behavior is real here; packaging and operator support are the next step
