@@ -2,6 +2,7 @@ import { ProjectTabs } from '../components/project-tabs';
 import { ProjectWriterList } from '../components/project-writer-list';
 
 const projectTabs = ['概览', '共享 Library', 'Writer', '活动'];
+const WORKBENCH_PERSONAL_SPACE_ID = 'personal-space-user-alice';
 
 export function ProjectPage() {
   return (
@@ -20,7 +21,10 @@ export function ProjectPage() {
       <section className="panel" aria-label="Writer 文档区">
         <h2 className="panel-title">Writer 文档区</h2>
         <p className="quiet-copy">将成熟内容整理进入 Writer</p>
-        <ProjectWriterList projectId="project-1" />
+        <ProjectWriterList
+          projectId="project-1"
+          spaceId={WORKBENCH_PERSONAL_SPACE_ID}
+        />
       </section>
     </main>
   );

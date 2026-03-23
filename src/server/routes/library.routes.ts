@@ -9,6 +9,7 @@ import type {
 export interface LibraryRoutes {
   getEntry(input: GetLibraryEntryRequest): Promise<LibraryEntryView | null>;
   listEntries(input: ListLibraryEntriesRequest): Promise<LibraryEntryView[]>;
+  listPersonalEntries(actorUserId: string): Promise<LibraryEntryView[]>;
 }
 
 export function createLibraryRoutes(service: LibraryService): LibraryRoutes {
@@ -18,6 +19,9 @@ export function createLibraryRoutes(service: LibraryService): LibraryRoutes {
     },
     listEntries(input: ListLibraryEntriesRequest): Promise<LibraryEntryView[]> {
       return service.listEntries(input);
+    },
+    listPersonalEntries(actorUserId: string): Promise<LibraryEntryView[]> {
+      return service.listPersonalEntries(actorUserId);
     },
   };
 }

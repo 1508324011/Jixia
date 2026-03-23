@@ -33,13 +33,13 @@ export interface LibraryEntryView {
 }
 
 export interface LibraryListItem {
-  entryId: string;
-  spaceId: string;
-  paperAssetId: string;
+  addedAt: string;
   canonicalId: string;
+  entryId: string;
+  paperAssetId: string;
+  spaceId: string;
   title: string;
   visibility: LibraryEntryVisibility;
-  addedAt: string;
 }
 
 export interface LibraryListResponse {

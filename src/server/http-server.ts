@@ -1,11 +1,16 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { createServer, type Server, type ServerResponse } from 'node:http';
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createJixiaApp } from './app';
 import { bootstrapNativeDemoState } from './demo/bootstrap';
-import { handleHttpApiRequest } from './http-api';
+import { resolveHttpApi } from './http-api';
 import { readRuntimeConfig, type RuntimeConfig, type RuntimeConfigEnv } from './runtime-config';
 
 const DIST_ROOT = resolve(process.cwd(), 'dist');
@@ -145,6 +150,34 @@ function handleStaticRequest(
   sendText(response, 404, 'Not found', method);
 }
 
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    request.on('data', (chunk: Buffer | string) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    request.once('end', () => resolvePromise());
+    request.once('error', rejectPromise);
+  });
+
+  if (chunks.length === 0) {
+    return undefined;
+  }
+
+  const body = Buffer.concat(chunks).toString('utf8').trim();
+
+  if (!body) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    throw new Error('Request body must be valid JSON.');
+  }
+}
+
 export function createHttpServer(options: HttpServerOptions = {}): JixiaHttpServer {
   loadProjectEnvFile();
 
@@ -153,11 +186,12 @@ export function createHttpServer(options: HttpServerOptions = {}): JixiaHttpServ
   bootstrapNativeDemoState(runtimeEnv);
   const app = createJixiaApp({ env: runtimeEnv });
   const server = createServer((request, response) => {
-    const method = request.method ?? 'GET';
-
     void (async () => {
+      const method = request.method ?? 'GET';
       const requestUrl = new URL(request.url ?? '/', `http://${runtimeConfig.host}`);
-      const apiResponse = await handleHttpApiRequest(app, request, requestUrl);
+      const requestBody =
+        method === 'GET' || method === 'HEAD' ? undefined : await readJsonBody(request);
+      const apiResponse = await resolveHttpApi(app, requestUrl, method, requestBody);
 
       if (apiResponse) {
         sendJson(response, apiResponse.statusCode, apiResponse.payload, method);
@@ -176,8 +210,10 @@ export function createHttpServer(options: HttpServerOptions = {}): JixiaHttpServ
 
       handleStaticRequest(response, requestUrl.pathname, method);
     })().catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : 'Unexpected server error';
-      sendJson(response, 500, { error: message }, method);
+      const method = request.method ?? 'GET';
+      const message = error instanceof Error ? error.message : 'Internal server error';
+      const statusCode = /payload|json|provided/.test(message) ? 400 : 500;
+      sendText(response, statusCode, message, method);
     });
   });
 

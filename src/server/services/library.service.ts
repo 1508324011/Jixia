@@ -2,6 +2,7 @@ import type { LibraryEntryView } from '@shared/contracts/library';
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import { assertCanReadResource } from '../policies/access-policy';
+import { ensureWorkbenchPersonalSpace } from './import.service';
 import type {
   StoredLibraryEntry,
   StoredPaperAsset,
@@ -12,6 +13,7 @@ export interface LibraryStore {
   libraryEntries: StoredLibraryEntry[];
   memberships: SpaceMembership[];
   paperAssets: StoredPaperAsset[];
+  persist(): void;
   spaces: StoredSpace[];
 }
 
@@ -30,6 +32,7 @@ export interface ListLibraryEntriesRequest {
 export interface LibraryService {
   getEntry(input: GetLibraryEntryRequest): Promise<LibraryEntryView | null>;
   listEntries(input: ListLibraryEntriesRequest): Promise<LibraryEntryView[]>;
+  listPersonalEntries(actorUserId: string): Promise<LibraryEntryView[]>;
 }
 
 function buildLibraryEntryView(
@@ -38,9 +41,7 @@ function buildLibraryEntryView(
   actorUserId: string,
   entry: StoredLibraryEntry,
 ): LibraryEntryView | null {
-  const asset = store.paperAssets.find(
-    (candidate) => candidate.id === entry.paperAssetId,
-  );
+  const asset = store.paperAssets.find((candidate) => candidate.id === entry.paperAssetId);
 
   if (!asset) {
     return null;
@@ -81,24 +82,15 @@ function buildLibraryEntryView(
 export function createLibraryService(store: LibraryStore): LibraryService {
   return {
     async getEntry(input: GetLibraryEntryRequest): Promise<LibraryEntryView | null> {
-      const entry = store.libraryEntries.find(
-        (candidate) => candidate.id === input.entryId,
-      );
+      const entry = store.libraryEntries.find((candidate) => candidate.id === input.entryId);
 
       if (!entry) {
         return null;
       }
 
-      return buildLibraryEntryView(
-        store,
-        input.actorSpaceId,
-        input.actorUserId,
-        entry,
-      );
+      return buildLibraryEntryView(store, input.actorSpaceId, input.actorUserId, entry);
     },
-    async listEntries(
-      input: ListLibraryEntriesRequest,
-    ): Promise<LibraryEntryView[]> {
+    async listEntries(input: ListLibraryEntriesRequest): Promise<LibraryEntryView[]> {
       const matchingEntries = store.libraryEntries.filter(
         (entry) => entry.spaceId === input.spaceId,
       );
@@ -112,6 +104,15 @@ export function createLibraryService(store: LibraryStore): LibraryService {
         );
 
         return view ? [view] : [];
+      });
+    },
+    async listPersonalEntries(actorUserId: string): Promise<LibraryEntryView[]> {
+      const personalSpace = ensureWorkbenchPersonalSpace(store, actorUserId);
+
+      return this.listEntries({
+        actorSpaceId: personalSpace.id,
+        actorUserId,
+        spaceId: personalSpace.id,
       });
     },
   };

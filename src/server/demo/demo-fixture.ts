@@ -96,6 +96,7 @@ export function createEmptyAppState(): JixiaAppState {
     notes: [],
     paperAssets: [],
     spaces: [],
+    workbenchSettings: [],
     writingDocs: [],
   };
 }

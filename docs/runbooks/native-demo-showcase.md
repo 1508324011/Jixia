@@ -2,6 +2,12 @@
 
 This runbook resets the branch to a deterministic server-backed demo and walks a reviewer through the strongest truthful browser story now available on `demo-native-showcase`: create a new space, import into it, read inside it, write inside it, restart the app, and reopen the same work. The branch runs natively on Node, uses user-owned storage, and avoids Docker or sudo for the showcase path.
 
+The downstream demo branch now inherits the final `main` workbench settings, discovery, personal-library, paper-workspace, and Writer persistence work, but it still keeps the packaged reset/showcase layer as a demo-only convenience.
+
+## Inherited current host beta path
+
+The inherited **current host** / **no-Docker** product path still exists on this branch even though the primary reviewer story here is the native demo showcase. The current-host beta path uses `http://127.0.0.1:3000`, confirms `登录` and `个人工作台`, opens `设置`, checks `API key not configured`, runs `检索 PubMed`, performs `导入到个人 Library`, uses `Open reader`, `Save private note`, `Save project comment`, `Save insight`, `Promote latest insight to Writer`, `打开 Writer 文稿`, `Reload draft`, and finally `restart the app process` to verify persistence in `server-state.json`. That inherited path is the product truth; this runbook keeps the `demo-native-showcase` reviewer choreography and demo-only convenience on top.
+
 ## Runtime contract
 
 Use user-owned runtime paths so the demo can be reproduced on the current host:
@@ -82,4 +88,4 @@ Create Space -> Library -> Reader -> Writing
 
 ## Why operator support is next
 
-This branch is intentionally a native single-host showcase, not the final operator story. It now proves the core usable-demo loop across spaces, library, reader, and writing with user-owned paths, but a production handoff still needs controlled operator support around service supervision, persistent directories, secret provisioning, backups, and optionally Docker or other managed runtime packaging. The next operational step is to turn this working created-space demo path into a repeatable operator-owned deployment contract rather than asking reviewers to run the app manually.
+This branch is intentionally a native single-host showcase, not the final operator story. It now proves the core usable-demo loop across spaces, library, reader, and writing with user-owned paths, while also carrying the final workbench persistence features inherited from `main`. A production handoff still needs controlled operator support around service supervision, persistent directories, secret provisioning, backups, and optionally Docker or other managed runtime packaging. The next operational step is to turn this working created-space demo path into a repeatable operator-owned deployment contract rather than asking reviewers to run the app manually.

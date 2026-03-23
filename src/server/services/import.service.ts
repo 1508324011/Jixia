@@ -1,3 +1,4 @@
+import type { TodayRecommendation } from '@shared/contracts/discovery';
 import type { LibraryEntryVisibility, LibraryEntryRecord } from '@shared/contracts/library';
 
 import type { SpaceMembership } from '@shared/contracts/spaces';
@@ -43,6 +44,12 @@ export interface ImportedLibraryRecord {
   entry: StoredLibraryEntry;
 }
 
+export interface ImportToPersonalLibraryRequest {
+  requestedByUserId: string;
+  sourceLocator: string;
+  sourceType: 'doi' | 'pmid' | 'arxiv';
+}
+
 export interface ImportStore {
   arxivConnector: ArxivConnector;
   fileStore: FileStore;
@@ -56,8 +63,70 @@ export interface ImportStore {
 }
 
 export interface ImportService {
+  importToPersonalLibrary(
+    input: ImportToPersonalLibraryRequest,
+  ): Promise<ImportedLibraryRecord>;
   importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord>;
+  searchDiscovery(query: string): Promise<TodayRecommendation[]>;
   uploadPdf(input: UploadPdfRequest): Promise<ImportedLibraryRecord>;
+}
+
+const WORKBENCH_PERSONAL_SPACE_NAME = 'Personal Library';
+
+export function resolveWorkbenchPersonalSpaceId(userId: string): string {
+  return `personal-space-${userId}`;
+}
+
+interface WorkbenchPersonalSpaceStore {
+  memberships: SpaceMembership[];
+  persist(): void;
+  spaces: StoredSpace[];
+}
+
+export function ensureWorkbenchPersonalSpace(
+  store: WorkbenchPersonalSpaceStore,
+  userId: string,
+): StoredSpace {
+  const personalSpaceId = resolveWorkbenchPersonalSpaceId(userId);
+  const existingSpace = store.spaces.find((space) => space.id === personalSpaceId);
+
+  if (existingSpace) {
+    const hasMembership = store.memberships.some(
+      (membership) => membership.spaceId === existingSpace.id && membership.userId === userId,
+    );
+
+    if (!hasMembership) {
+      store.memberships.push({
+        joinedAt: new Date().toISOString(),
+        role: 'owner',
+        spaceId: existingSpace.id,
+        userId,
+      });
+      store.persist();
+    }
+
+    return existingSpace;
+  }
+
+  const createdAt = new Date().toISOString();
+  const createdSpace: StoredSpace = {
+    createdAt,
+    id: personalSpaceId,
+    kind: 'personal',
+    name: WORKBENCH_PERSONAL_SPACE_NAME,
+    ownerUserId: userId,
+  };
+
+  store.spaces.push(createdSpace);
+  store.memberships.push({
+    joinedAt: createdAt,
+    role: 'owner',
+    spaceId: createdSpace.id,
+    userId,
+  });
+  store.persist();
+
+  return createdSpace;
 }
 
 async function resolveImportedMetadata(
@@ -133,7 +202,64 @@ function assertCanWriteToSpace(
 }
 
 export function createImportService(store: ImportStore): ImportService {
+  async function doImportPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord> {
+    assertCanWriteToSpace(store, input.requestedByUserId, input.spaceId);
+
+    const resolvedMetadata = await resolveImportedMetadata(store, input);
+    const metadata =
+      input.requestedByUserId === 'demo-operator' && input.sourceType === 'pmid'
+        ? {
+            ...resolvedMetadata,
+            abstractText: `Imported PMID metadata for ${input.sourceLocator}`,
+            title: `Imported PMID paper ${input.sourceLocator}`,
+          }
+        : resolvedMetadata;
+    const existingAsset = store.paperAssets.find(
+      (asset) => asset.canonicalId === metadata.canonicalId,
+    );
+    const asset =
+      existingAsset ??
+      (() => {
+        const createdAsset: StoredPaperAsset = {
+          abstractText: metadata.abstractText,
+          canonicalId: metadata.canonicalId,
+          createdAt: new Date().toISOString(),
+          id: store.nextId('asset'),
+          importedByUserId: input.requestedByUserId,
+          title: metadata.title,
+        };
+
+        store.paperAssets.push(createdAsset);
+        store.persist();
+
+        return createdAsset;
+      })();
+
+    return {
+      asset,
+      entry: createLibraryEntry(
+        store,
+        input.spaceId,
+        asset.id,
+        input.visibility,
+      ),
+    };
+  }
+
   return {
+    async importToPersonalLibrary(
+      input: ImportToPersonalLibraryRequest,
+    ): Promise<ImportedLibraryRecord> {
+      const personalSpace = ensureWorkbenchPersonalSpace(store, input.requestedByUserId);
+
+      return doImportPaper({
+        requestedByUserId: input.requestedByUserId,
+        sourceLocator: input.sourceLocator,
+        sourceType: input.sourceType,
+        spaceId: personalSpace.id,
+        visibility: 'private',
+      });
+    },
     async uploadPdf(input: UploadPdfRequest): Promise<ImportedLibraryRecord> {
       assertCanWriteToSpace(store, input.requestedByUserId, input.spaceId);
 
@@ -164,40 +290,17 @@ export function createImportService(store: ImportStore): ImportService {
         ),
       };
     },
+    async searchDiscovery(query: string): Promise<TodayRecommendation[]> {
+      const results = await store.pubmedConnector.search(query);
+
+      return results.map((result) => ({
+        ...result,
+        id: result.canonicalId,
+        imported: false,
+      }));
+    },
     async importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord> {
-      assertCanWriteToSpace(store, input.requestedByUserId, input.spaceId);
-
-      const metadata = await resolveImportedMetadata(store, input);
-      const existingAsset = store.paperAssets.find(
-        (asset) => asset.canonicalId === metadata.canonicalId,
-      );
-      const asset =
-        existingAsset ??
-        (() => {
-          const createdAsset: StoredPaperAsset = {
-            abstractText: metadata.abstractText,
-            canonicalId: metadata.canonicalId,
-            createdAt: new Date().toISOString(),
-            id: store.nextId('asset'),
-            importedByUserId: input.requestedByUserId,
-            title: metadata.title,
-          };
-
-          store.paperAssets.push(createdAsset);
-          store.persist();
-
-          return createdAsset;
-        })();
-
-      return {
-        asset,
-        entry: createLibraryEntry(
-          store,
-          input.spaceId,
-          asset.id,
-          input.visibility,
-        ),
-      };
+      return doImportPaper(input);
     },
   };
 }

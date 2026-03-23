@@ -41,6 +41,16 @@ export interface GetDocumentRequest {
   spaceId: string;
 }
 
+export interface SaveProjectDocumentRequest {
+  actorSpaceId: string;
+  actorUserId: string;
+  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
+  content: string;
+  projectId: string;
+  spaceId: string;
+  title: string;
+}
+
 export interface StoredWritingDoc extends WritingDocRecord {
   ownerUserId: string;
 }
@@ -61,6 +71,7 @@ export interface WritingService {
   createDocument(input: CreateDocumentRequest): Promise<WritingDocRecord>;
   getDocument(input: GetDocumentRequest): Promise<WritingDocumentView | null>;
   saveDocument(input: SaveDocumentRequest): Promise<WritingDocSnapshot>;
+  saveProjectDocument(input: SaveProjectDocumentRequest): Promise<WritingDocumentView>;
   transitionPublishState(
     input: TransitionPublishStateRequest,
   ): Promise<WritingDocRecord>;
@@ -90,10 +101,7 @@ function buildLatestSnapshot(
   };
 }
 
-function findDocument(
-  store: WritingStore,
-  docId: string,
-): StoredWritingDoc {
+function findDocument(store: WritingStore, docId: string): StoredWritingDoc {
   const document = store.writingDocs.find((candidate) => candidate.id === docId);
 
   if (!document) {
@@ -123,22 +131,15 @@ function assertDocumentAccess(
   actorUserId: string,
   document: StoredWritingDoc,
 ): void {
-  if (
-    actorSpaceId !== document.spaceId ||
-    actorUserId !== document.ownerUserId
-  ) {
+  if (actorSpaceId !== document.spaceId || actorUserId !== document.ownerUserId) {
     throw new Error('Access denied for the requested writing document.');
   }
 }
 
 export function createWritingService(store: WritingStore): WritingService {
   return {
-    async createDocument(
-      input: CreateDocumentRequest,
-    ): Promise<WritingDocRecord> {
-      const spaceExists = store.spaces.some(
-        (space) => space.id === input.spaceId,
-      );
+    async createDocument(input: CreateDocumentRequest): Promise<WritingDocRecord> {
+      const spaceExists = store.spaces.some((space) => space.id === input.spaceId);
 
       if (!spaceExists) {
         throw new Error(`Space ${input.spaceId} does not exist.`);
@@ -168,9 +169,7 @@ export function createWritingService(store: WritingStore): WritingService {
 
       return document;
     },
-    async getDocument(
-      input: GetDocumentRequest,
-    ): Promise<WritingDocumentView | null> {
+    async getDocument(input: GetDocumentRequest): Promise<WritingDocumentView | null> {
       const document = store.writingDocs.find(
         (candidate) =>
           candidate.spaceId === input.spaceId &&
@@ -201,6 +200,46 @@ export function createWritingService(store: WritingStore): WritingService {
         content: input.content,
         writingDoc: document,
       });
+    },
+    async saveProjectDocument(
+      input: SaveProjectDocumentRequest,
+    ): Promise<WritingDocumentView> {
+      const existingDocument = await this.getDocument({
+        actorSpaceId: input.actorSpaceId,
+        actorUserId: input.actorUserId,
+        projectId: input.projectId,
+        spaceId: input.spaceId,
+      });
+
+      const document = existingDocument
+        ? findDocument(store, existingDocument.documentId)
+        : await this.createDocument({
+            actorSpaceId: input.actorSpaceId,
+            actorUserId: input.actorUserId,
+            ownerUserId: input.actorUserId,
+            spaceId: input.spaceId,
+            title: input.title,
+          });
+
+      document.title = input.title;
+      store.persist();
+
+      const latestSnapshot = await this.saveDocument({
+        actorSpaceId: input.actorSpaceId,
+        actorUserId: input.actorUserId,
+        citations: input.citations,
+        content: input.content,
+        docId: document.id,
+      });
+
+      return {
+        documentId: document.id,
+        latestSnapshot,
+        projectId: input.projectId,
+        publishState: document.publishState,
+        spaceId: document.spaceId,
+        title: document.title,
+      };
     },
     async transitionPublishState(
       input: TransitionPublishStateRequest,

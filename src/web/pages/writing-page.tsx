@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import type { GovernedJobView } from '@shared/contracts/jobs';
-import type { WritingDocumentResponse, WritingDocumentView } from '@shared/contracts/writing';
+import type { WritingDocumentView } from '@shared/contracts/writing';
 
 import {
   getGovernedSummary,
@@ -14,23 +14,21 @@ import {
 
 export function WritingPage() {
   const {
-    spaceId = 'shared-space',
-    projectId = 'tumor-board',
+    spaceId = 'personal-space-user-alice',
+    projectId = 'project-1',
     docId = 'doc-1',
   } = useParams();
-
-  const [data, setData] = useState<WritingDocumentResponse | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [document, setDocument] = useState<WritingDocumentView | null>(null);
   const [draftContent, setDraftContent] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [governedJobError, setGovernedJobError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
-  const [governedJob, setGovernedJob] = useState<GovernedJobView | null>(null);
-  const [governedJobError, setGovernedJobError] = useState<string | null>(null);
   const [isRunningGovernedJob, setIsRunningGovernedJob] = useState(false);
+  const [governedJob, setGovernedJob] = useState<GovernedJobView | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -43,14 +41,15 @@ export function WritingPage() {
         const response = await getWritingDocument(spaceId, projectId);
 
         if (!isCancelled) {
-          setData(response);
+          setDocument(response.document);
+          setDraftContent(response.document.latestSnapshot?.content ?? '');
         }
       } catch (error) {
         if (!isCancelled) {
+          setDocument(null);
           setLoadError(
-            error instanceof Error ? error.message : 'Failed to load the writing document.',
+            error instanceof Error ? error.message : 'Failed to load the writer draft.',
           );
-          setData(null);
         }
       } finally {
         if (!isCancelled) {
@@ -75,6 +74,7 @@ export function WritingPage() {
 
         if (!isCancelled) {
           setGovernedJob(response.governedJob);
+          setGovernedJobError(null);
         }
       } catch (error) {
         if (!isCancelled) {
@@ -95,15 +95,6 @@ export function WritingPage() {
     };
   }, [spaceId]);
 
-  useEffect(() => {
-    if (!data) {
-      return;
-    }
-
-    setDocument(data.document);
-    setDraftContent(data.document.latestSnapshot?.content ?? '');
-  }, [data]);
-
   async function handleSave(): Promise<void> {
     if (!document) {
       return;
@@ -114,18 +105,22 @@ export function WritingPage() {
 
     try {
       const response = await saveWritingDocument({
+        citations:
+          document.latestSnapshot?.citations.map((citation) => ({
+            evidenceSpan: citation.evidenceSpan,
+            paperAssetId: citation.paperAssetId,
+          })) ?? [],
         content: draftContent,
         projectId,
         spaceId,
         title: document.title,
       });
 
-      setData(response);
       setDocument(response.document);
       setDraftContent(response.document.latestSnapshot?.content ?? '');
     } catch (error) {
       setMutationError(
-        error instanceof Error ? error.message : 'Failed to save the writing draft.',
+        error instanceof Error ? error.message : 'Failed to save the writer draft.',
       );
     } finally {
       setIsSaving(false);
@@ -142,8 +137,6 @@ export function WritingPage() {
 
     try {
       const response = await publishWritingDocument(spaceId, document.documentId);
-
-      setData(response);
       setDocument(response.document);
       setDraftContent(response.document.latestSnapshot?.content ?? '');
     } catch (error) {
@@ -160,19 +153,19 @@ export function WritingPage() {
     setMutationError(null);
 
     try {
-      const response = await getWritingDocument(spaceId, projectId);
+      const [documentResponse, governedSummaryResponse] = await Promise.all([
+        getWritingDocument(spaceId, projectId),
+        getGovernedSummary(spaceId),
+      ]);
 
-      setData(response);
-      setDocument(response.document);
-      setDraftContent(response.document.latestSnapshot?.content ?? '');
-      setLoadError(null);
-
-      const governedSummary = await getGovernedSummary(spaceId);
-      setGovernedJob(governedSummary.governedJob);
+      setDocument(documentResponse.document);
+      setDraftContent(documentResponse.document.latestSnapshot?.content ?? '');
+      setGovernedJob(governedSummaryResponse.governedJob);
       setGovernedJobError(null);
+      setLoadError(null);
     } catch (error) {
       setMutationError(
-        error instanceof Error ? error.message : 'Failed to reload the writing document.',
+        error instanceof Error ? error.message : 'Failed to reload the writer draft.',
       );
     } finally {
       setIsReloading(false);
@@ -185,7 +178,6 @@ export function WritingPage() {
 
     try {
       const response = await runGovernedSummary(spaceId);
-
       setGovernedJob(response.governedJob);
     } catch (error) {
       setGovernedJobError(
@@ -209,12 +201,10 @@ export function WritingPage() {
         <p className="page-kicker">Manuscript studio · versioned drafting · citation traceability</p>
         <h1 className="page-title">Writing</h1>
         <p className="page-description">
-          Draft the shared document while keeping versions, citations, and
-          publish state visible but quiet.
+          Draft the shared document while keeping versions, citations, and publish state visible but
+          quiet.
         </p>
-        <p className="quiet-copy">
-          Mature content path · AI 对话 → 私人笔记 → 共享评论 → Writer 文稿
-        </p>
+        <p className="quiet-copy">Mature content path · AI 对话 → 私人笔记 → 共享评论 → Writer 文稿</p>
       </header>
 
       <section aria-label="context bar" className="context-bar">
@@ -226,19 +216,15 @@ export function WritingPage() {
 
       <section className="panel-grid" aria-label="writing layout">
         <article className="panel">
-          {isLoading && !activeDocument ? (
+          {isLoading ? (
             <>
-              <h2 className="panel-title">Loading document…</h2>
-              <p className="quiet-copy">
-                Pulling the current shared draft and its latest snapshot.
-              </p>
+              <h2 className="panel-title">Loading writer draft…</h2>
+              <p className="quiet-copy">Pulling the latest saved project document.</p>
             </>
-          ) : loadError && !activeDocument ? (
+          ) : loadError ? (
             <>
-              <h2 className="panel-title">Writing unavailable</h2>
-              <p className="quiet-copy">
-                The shared document could not be loaded for this project.
-              </p>
+              <h2 className="panel-title">Writer unavailable</h2>
+              <p className="quiet-copy">{loadError}</p>
             </>
           ) : activeDocument ? (
             <div className="stack-sm">
@@ -258,24 +244,24 @@ export function WritingPage() {
                 <button
                   type="button"
                   className="action-button"
-                  onClick={() => void handleSave()}
                   disabled={isSaving || isPublishing || isReloading}
+                  onClick={() => void handleSave()}
                 >
                   {isSaving ? 'Saving draft…' : 'Save draft'}
                 </button>
                 <button
                   type="button"
-                  className="action-button"
-                  onClick={() => void handleReload()}
+                  className="action-button action-button-secondary"
                   disabled={isSaving || isPublishing || isReloading}
+                  onClick={() => void handleReload()}
                 >
                   {isReloading ? 'Reloading…' : 'Reload draft'}
                 </button>
                 <button
                   type="button"
                   className="action-button action-button-secondary"
-                  onClick={() => void handlePublish()}
                   disabled={isSaving || isPublishing || isReloading}
+                  onClick={() => void handlePublish()}
                 >
                   {isPublishing ? 'Publishing…' : 'Publish'}
                 </button>
@@ -284,10 +270,8 @@ export function WritingPage() {
             </div>
           ) : (
             <>
-              <h2 className="panel-title">No writing record found</h2>
-              <p className="quiet-copy">
-                This project does not have a shared writing document yet.
-              </p>
+              <h2 className="panel-title">No Writer draft found</h2>
+              <p className="quiet-copy">Promote an insight from Reader to start this document.</p>
             </>
           )}
         </article>
@@ -299,9 +283,7 @@ export function WritingPage() {
             <p className="quiet-copy">Publish state path</p>
             <p className="quiet-copy">draft · review · published</p>
             <p className="quiet-copy">Citations linked · {citationCount}</p>
-            <p className="quiet-copy">
-              Current publish state · {publishStateLabel}
-            </p>
+            <p className="quiet-copy">Current publish state · {publishStateLabel}</p>
             <button
               type="button"
               className="action-button action-button-secondary"

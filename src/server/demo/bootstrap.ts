@@ -2,14 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { JixiaAppState } from '../app';
-import { createSecretBox } from '../security/secret-box';
-import type { StoredCredential } from '../services/credentials.service';
 import { resolveStorageRoot, type StorageRootEnv } from '../storage/storage-root';
-import {
-  applyNativeDemoFixture,
-  createEmptyAppState,
-  nativeDemoFixture,
-} from './demo-fixture';
+import { applyNativeDemoFixture, createEmptyAppState } from './demo-fixture';
 
 const APP_STATE_FILE = 'server-state.json';
 
@@ -35,51 +29,9 @@ function normalizeState(parsed: Partial<JixiaAppState>): JixiaAppState {
     notes: parsed.notes ?? initialState.notes,
     paperAssets: parsed.paperAssets ?? initialState.paperAssets,
     spaces: parsed.spaces ?? initialState.spaces,
+    workbenchSettings: parsed.workbenchSettings ?? initialState.workbenchSettings,
     writingDocs: parsed.writingDocs ?? initialState.writingDocs,
   };
-}
-
-function ensureDemoCredential(
-  state: JixiaAppState,
-  env: StorageRootEnv,
-): boolean {
-  const existingCredential = state.credentials.find(
-    (credential) => credential.credentialRef === nativeDemoFixture.credentialRef,
-  );
-
-  if (existingCredential) {
-    let changed = false;
-
-    if (existingCredential.createdAt !== '2026-03-22T00:00:00.000Z') {
-      existingCredential.createdAt = '2026-03-22T00:00:00.000Z';
-      changed = true;
-    }
-
-    if (existingCredential.provider !== nativeDemoFixture.credentialProvider) {
-      existingCredential.provider = nativeDemoFixture.credentialProvider;
-      changed = true;
-    }
-
-    if (existingCredential.userId !== nativeDemoFixture.actorUserId) {
-      existingCredential.userId = nativeDemoFixture.actorUserId;
-      changed = true;
-    }
-
-    return changed;
-  }
-
-  const secretBox = createSecretBox(env);
-  const credential: StoredCredential = {
-    createdAt: '2026-03-22T00:00:00.000Z',
-    credentialRef: nativeDemoFixture.credentialRef,
-    ...secretBox.encrypt('demo-governed-summary-secret'),
-    provider: nativeDemoFixture.credentialProvider,
-    userId: nativeDemoFixture.actorUserId,
-  };
-
-  state.credentials.push(credential);
-
-  return true;
 }
 
 export function bootstrapNativeDemoState(
@@ -91,9 +43,7 @@ export function bootstrapNativeDemoState(
     ? (JSON.parse(readFileSync(statePath, 'utf8')) as Partial<JixiaAppState>)
     : initialState;
   const state = normalizeState(parsedState);
-  const fixtureChanged = applyNativeDemoFixture(state);
-  const credentialChanged = ensureDemoCredential(state, env);
-  const changed = fixtureChanged || credentialChanged;
+  const changed = applyNativeDemoFixture(state);
 
   if (!existsSync(statePath) || changed) {
     mkdirSync(resolveStorageRoot(env), { recursive: true });

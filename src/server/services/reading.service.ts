@@ -7,6 +7,7 @@ import type {
   ConversationRecord,
   NoteRecord,
   NoteVisibility,
+  ReadingDetailView,
 } from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
@@ -44,11 +45,24 @@ export interface GetReadingDetailRequest {
   libraryEntryId: string;
 }
 
-export interface ReadingDetail {
-  asset: LibraryEntryView['asset'];
-  entry: LibraryEntryView['entry'];
-  insights: GeneratedInsightRecord[];
-  notes: NoteRecord[];
+export interface GetWorkbenchReadingDetailRequest {
+  actorUserId: string;
+  libraryEntryId: string;
+}
+
+export interface CreateWorkbenchNoteRequest {
+  authorUserId: string;
+  body: string;
+  libraryEntryId: string;
+  visibility: NoteVisibility;
+}
+
+export interface SaveWorkbenchGeneratedInsightRequest {
+  evidenceSpans: Omit<EvidenceSpanRecord, 'paperAssetId'>[];
+  libraryEntryId: string;
+  startedByUserId: string;
+  summary: string;
+  title: string;
 }
 
 export interface ReadingStore {
@@ -66,9 +80,16 @@ export interface ReadingStore {
 
 export interface ReadingService {
   createNote(input: CreateNoteRequest): Promise<NoteRecord>;
-  getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
+  createWorkbenchNote(input: CreateWorkbenchNoteRequest): Promise<NoteRecord>;
+  getDetail(input: GetReadingDetailRequest): Promise<ReadingDetailView | null>;
+  getWorkbenchDetail(
+    input: GetWorkbenchReadingDetailRequest,
+  ): Promise<ReadingDetailView | null>;
   saveGeneratedInsight(
     input: SaveGeneratedInsightRequest,
+  ): Promise<GeneratedInsightRecord>;
+  saveWorkbenchGeneratedInsight(
+    input: SaveWorkbenchGeneratedInsightRequest,
   ): Promise<GeneratedInsightRecord>;
 }
 
@@ -128,7 +149,7 @@ export function createReadingService(store: ReadingStore): ReadingService {
   return {
     async getDetail(
       input: GetReadingDetailRequest,
-    ): Promise<ReadingDetail | null> {
+    ): Promise<ReadingDetailView | null> {
       const entry = store.libraryEntries.find(
         (candidate) => candidate.id === input.libraryEntryId,
       );
@@ -194,6 +215,23 @@ export function createReadingService(store: ReadingStore): ReadingService {
         }),
       };
     },
+    async getWorkbenchDetail(
+      input: GetWorkbenchReadingDetailRequest,
+    ): Promise<ReadingDetailView | null> {
+      const entry = store.libraryEntries.find(
+        (candidate) => candidate.id === input.libraryEntryId,
+      );
+
+      if (!entry) {
+        return null;
+      }
+
+      return this.getDetail({
+        actorSpaceId: entry.spaceId,
+        actorUserId: input.actorUserId,
+        libraryEntryId: input.libraryEntryId,
+      });
+    },
     async createNote(input: CreateNoteRequest): Promise<NoteRecord> {
       assertEntryAccess(store, input.authorUserId, input.actorSpaceId, input.libraryEntryId);
 
@@ -210,6 +248,19 @@ export function createReadingService(store: ReadingStore): ReadingService {
       store.persist();
 
       return note;
+    },
+    async createWorkbenchNote(
+      input: CreateWorkbenchNoteRequest,
+    ): Promise<NoteRecord> {
+      const { entry } = getLibraryContext(store, input.libraryEntryId);
+
+      return this.createNote({
+        actorSpaceId: entry.spaceId,
+        authorUserId: input.authorUserId,
+        body: input.body,
+        libraryEntryId: input.libraryEntryId,
+        visibility: input.visibility,
+      });
     },
     async saveGeneratedInsight(
       input: SaveGeneratedInsightRequest,
@@ -247,6 +298,20 @@ export function createReadingService(store: ReadingStore): ReadingService {
       store.persist();
 
       return insight;
+    },
+    async saveWorkbenchGeneratedInsight(
+      input: SaveWorkbenchGeneratedInsightRequest,
+    ): Promise<GeneratedInsightRecord> {
+      const { entry } = getLibraryContext(store, input.libraryEntryId);
+
+      return this.saveGeneratedInsight({
+        actorSpaceId: entry.spaceId,
+        evidenceSpans: input.evidenceSpans,
+        libraryEntryId: input.libraryEntryId,
+        startedByUserId: input.startedByUserId,
+        summary: input.summary,
+        title: input.title,
+      });
     },
   };
 }
