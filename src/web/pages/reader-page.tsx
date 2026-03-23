@@ -1,11 +1,15 @@
 import { Link, useParams } from 'react-router-dom';
 
+import { PaperWorkspaceTabs } from '../components/paper-workspace-tabs';
+
 export function ReaderPage() {
   const {
-    spaceId = 'shared-space',
+    spaceId,
     projectId = 'tumor-board',
     entryId = 'entry-1',
   } = useParams();
+  const hasSpaceContext = typeof spaceId === 'string' && spaceId.length > 0;
+  const legacySpaceId = spaceId ?? 'shared-space';
 
   return (
     <main className="page-shell">
@@ -19,21 +23,21 @@ export function ReaderPage() {
       </header>
 
       <section aria-label="context bar" className="context-bar">
-        <span>Space context · {spaceId}</span>
+        {hasSpaceContext ? <span>Space context · {spaceId}</span> : null}
         <span>Project context · {projectId}</span>
         <span>Entry · {entryId}</span>
         <span className="status-badge">quoted evidence</span>
         <span className="status-badge">governed AI</span>
       </section>
 
-      <section className="panel-grid" aria-label="reading layout">
-        <article className="panel">
+      <section className="reader-page" aria-label="reading layout">
+        <article className="panel paper-surface">
           <h2 className="panel-title">Paper text</h2>
           <p className="quiet-copy">
             Long-form reading surface with traceable source context.
           </p>
         </article>
-        <aside className="panel">
+        <aside className="panel paper-workspace">
           <h2 className="panel-title">Workbench</h2>
           <p className="quiet-copy">
             <span className="status-badge">space_shared note</span> · quoted
@@ -42,12 +46,13 @@ export function ReaderPage() {
           <p className="quiet-copy">
             Governed action source · queued → running → succeeded
           </p>
+          <PaperWorkspaceTabs />
         </aside>
       </section>
 
       <Link
         className="panel-link"
-        to={`/spaces/${spaceId}/projects/${projectId}/writing/doc-1`}
+        to={`/spaces/${legacySpaceId}/projects/${projectId}/writing/doc-1`}
       >
         Open writing
       </Link>

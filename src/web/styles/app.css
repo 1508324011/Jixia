@@ -190,6 +190,9 @@ a {
 
 .dashboard-layout,
 .field-stack,
+.paper-workspace,
+.paper-workspace-tabs,
+.paper-workspace-tabs__list,
 .project-tabs,
 .recent-opened-panel__header,
 .recent-opened-panel__item,
@@ -238,6 +241,32 @@ a {
 .project-tabs__tab--active {
   border-color: rgba(95, 132, 255, 0.38);
   background: rgba(95, 132, 255, 0.18);
+}
+
+.reader-page {
+  display: grid;
+  gap: var(--jixia-space-4);
+}
+
+.paper-workspace-tabs__tab {
+  border: 1px solid rgba(160, 174, 192, 0.24);
+  border-radius: 999px;
+  background: rgba(10, 16, 28, 0.75);
+  color: var(--jixia-ink);
+  padding: 0.65rem 1rem;
+  font: inherit;
+}
+
+.paper-workspace-tabs__tab--active {
+  border-color: rgba(95, 132, 255, 0.38);
+  background: rgba(95, 132, 255, 0.18);
+}
+
+.paper-workspace-tabs__panel {
+  padding: var(--jixia-space-4);
+  border: 1px solid var(--jixia-border);
+  border-radius: var(--jixia-radius-md);
+  background: rgba(10, 16, 28, 0.72);
 }
 
 .dashboard-layout {
@@ -295,6 +324,10 @@ a {
 
   .dashboard-layout {
     grid-template-columns: minmax(0, 1.75fr) minmax(280px, 0.9fr);
+  }
+
+  .reader-page {
+    grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
   }
 
   .sidebar-nav {

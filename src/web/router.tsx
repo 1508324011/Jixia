@@ -21,12 +21,16 @@ export function AppRouter() {
       <Route element={<WorkbenchLayout />}>
         <Route path="/home" element={<HomePage />} />
         <Route path="/today" element={<TodayPage />} />
-        <Route path="/search" element={<SearchPage />} />
-        <Route path="/library" element={<LibraryPage mode="personal" />} />
-        <Route path="/projects" element={<ProjectsPage />} />
-        <Route path="/projects/:projectId" element={<ProjectPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Route>
+      <Route path="/search" element={<SearchPage />} />
+      <Route path="/library" element={<LibraryPage mode="personal" />} />
+      <Route path="/projects" element={<ProjectsPage />} />
+      <Route path="/projects/:projectId" element={<ProjectPage />} />
+      <Route
+        path="/projects/:projectId/library/:entryId/reader"
+        element={<ReaderPage />}
+      />
+      <Route path="/settings" element={<SettingsPage />} />
+    </Route>
       <Route path="/spaces" element={<SpacesPage />} />
       <Route
         path="/spaces/:spaceId/projects/:projectId/library"
