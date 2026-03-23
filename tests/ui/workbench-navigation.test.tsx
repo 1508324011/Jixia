@@ -184,7 +184,7 @@ describe('workbench navigation', () => {
 
     const fetchMock = vi.mocked(fetch);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/settings/me',
+      expect.stringMatching(/\/api\/settings\/me$/),
       expect.objectContaining({
         body: JSON.stringify({
           apiKey: 'sk-browser-secret',

@@ -76,4 +76,61 @@ describe('writing versioning', () => {
       rmSync(storageRoot, { force: true, recursive: true });
     }
   });
+
+  it('promotes persisted workbench artifacts into a writer draft that reopens after restart', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-writing-reopen-'));
+
+    try {
+      const app = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
+      const imported = await app.imports.importToPersonalLibrary({
+        requestedByUserId: 'user-alice',
+        sourceLocator: '654321',
+        sourceType: 'pmid',
+      });
+
+      const savedDocument = await app.writing.saveProjectDocument({
+        actorSpaceId: imported.entry.spaceId,
+        actorUserId: 'user-alice',
+        citations: [
+          {
+            evidenceSpan: 'Tumor board evidence',
+            paperAssetId: imported.asset.id,
+          },
+        ],
+        content: 'Promoted governed insight paragraph.',
+        projectId: 'project-1',
+        spaceId: imported.entry.spaceId,
+        title: 'Tumor board literature synthesis',
+      });
+
+      expect(savedDocument.latestSnapshot?.content).toBe('Promoted governed insight paragraph.');
+
+      const reopenedApp = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
+      const reopenedDocument = await reopenedApp.writing.getDocument({
+        actorSpaceId: imported.entry.spaceId,
+        actorUserId: 'user-alice',
+        projectId: 'project-1',
+        spaceId: imported.entry.spaceId,
+      });
+
+      expect(reopenedDocument).toMatchObject({
+        documentId: expect.any(String),
+        projectId: 'project-1',
+        spaceId: imported.entry.spaceId,
+        title: 'Tumor board literature synthesis',
+      });
+      expect(reopenedDocument?.latestSnapshot?.content).toBe(
+        'Promoted governed insight paragraph.',
+      );
+      expect(reopenedDocument?.latestSnapshot?.citations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            paperAssetId: imported.asset.id,
+          }),
+        ]),
+      );
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
 });

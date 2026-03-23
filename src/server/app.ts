@@ -260,6 +260,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     persist,
   });
   const writingService = createWritingService({
+    citationLinks: state.citationLinks,
     docVersions: state.docVersions,
     memberships: state.memberships,
     nextId(prefix: string): string {

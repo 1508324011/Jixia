@@ -1,5 +1,7 @@
 import type {
+  CitationLinkRecord,
   PublishState,
+  WritingDocumentView,
   WritingDocRecord,
   WritingDocSnapshot,
 } from '@shared/contracts/writing';
@@ -32,11 +34,29 @@ export interface TransitionPublishStateRequest {
   publishState: PublishState;
 }
 
+export interface GetDocumentRequest {
+  actorSpaceId: string;
+  actorUserId: string;
+  projectId: string;
+  spaceId: string;
+}
+
+export interface SaveProjectDocumentRequest {
+  actorSpaceId: string;
+  actorUserId: string;
+  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
+  content: string;
+  projectId: string;
+  spaceId: string;
+  title: string;
+}
+
 export interface StoredWritingDoc extends WritingDocRecord {
   ownerUserId: string;
 }
 
 export interface WritingStore {
+  citationLinks: CitationLinkRecord[];
   docVersions: StoredDocVersion[];
   memberships: SpaceMembership[];
   nextId(prefix: string): string;
@@ -49,10 +69,36 @@ export interface WritingStore {
 
 export interface WritingService {
   createDocument(input: CreateDocumentRequest): Promise<WritingDocRecord>;
+  getDocument(input: GetDocumentRequest): Promise<WritingDocumentView | null>;
   saveDocument(input: SaveDocumentRequest): Promise<WritingDocSnapshot>;
+  saveProjectDocument(input: SaveProjectDocumentRequest): Promise<WritingDocumentView>;
   transitionPublishState(
     input: TransitionPublishStateRequest,
   ): Promise<WritingDocRecord>;
+}
+
+function buildLatestSnapshot(
+  store: WritingStore,
+  document: StoredWritingDoc,
+): WritingDocSnapshot | null {
+  const latestVersion = store.docVersions
+    .filter((version) => version.writingDocId === document.id)
+    .sort((left, right) => left.versionNumber - right.versionNumber)
+    .at(-1);
+
+  if (!latestVersion) {
+    return null;
+  }
+
+  return {
+    capturedAt: latestVersion.createdAt,
+    citations: store.citationLinks.filter(
+      (citation) => citation.docVersionId === latestVersion.id,
+    ),
+    content: latestVersion.content,
+    doc: document,
+    docVersionId: latestVersion.id,
+  };
 }
 
 function findDocument(
@@ -133,6 +179,30 @@ export function createWritingService(store: WritingStore): WritingService {
 
       return document;
     },
+    async getDocument(
+      input: GetDocumentRequest,
+    ): Promise<WritingDocumentView | null> {
+      const document = store.writingDocs.find(
+        (candidate) =>
+          candidate.spaceId === input.spaceId &&
+          candidate.ownerUserId === input.actorUserId,
+      );
+
+      if (!document) {
+        return null;
+      }
+
+      assertDocumentAccess(input.actorSpaceId, input.actorUserId, document);
+
+      return {
+        documentId: document.id,
+        latestSnapshot: buildLatestSnapshot(store, document),
+        projectId: input.projectId,
+        publishState: document.publishState,
+        spaceId: document.spaceId,
+        title: document.title,
+      };
+    },
     async saveDocument(input: SaveDocumentRequest): Promise<WritingDocSnapshot> {
       const document = findDocument(store, input.docId);
       assertDocumentAccess(input.actorSpaceId, input.actorUserId, document);
@@ -142,6 +212,47 @@ export function createWritingService(store: WritingStore): WritingService {
         content: input.content,
         writingDoc: document,
       });
+    },
+    async saveProjectDocument(
+      input: SaveProjectDocumentRequest,
+    ): Promise<WritingDocumentView> {
+      const existingDocument = await this.getDocument({
+        actorSpaceId: input.actorSpaceId,
+        actorUserId: input.actorUserId,
+        projectId: input.projectId,
+        spaceId: input.spaceId,
+      });
+
+      const document =
+        existingDocument
+          ? findDocument(store, existingDocument.documentId)
+          : await this.createDocument({
+              actorSpaceId: input.actorSpaceId,
+              actorUserId: input.actorUserId,
+              ownerUserId: input.actorUserId,
+              spaceId: input.spaceId,
+              title: input.title,
+            });
+
+      document.title = input.title;
+      store.persist();
+
+      const latestSnapshot = await this.saveDocument({
+        actorSpaceId: input.actorSpaceId,
+        actorUserId: input.actorUserId,
+        citations: input.citations,
+        content: input.content,
+        docId: document.id,
+      });
+
+      return {
+        documentId: document.id,
+        latestSnapshot,
+        projectId: input.projectId,
+        publishState: document.publishState,
+        spaceId: document.spaceId,
+        title: document.title,
+      };
     },
     async transitionPublishState(
       input: TransitionPublishStateRequest,

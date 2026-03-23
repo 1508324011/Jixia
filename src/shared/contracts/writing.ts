@@ -23,4 +23,17 @@ export interface WritingDocSnapshot {
   capturedAt: string;
 }
 
+export interface WritingDocumentView {
+  documentId: string;
+  projectId: string;
+  spaceId: string;
+  title: string;
+  publishState: PublishState;
+  latestSnapshot: WritingDocSnapshot | null;
+}
+
+export interface WritingDocumentResponse {
+  document: WritingDocumentView;
+}
+
 export const writingContract = 'jixia-writing-contract';
