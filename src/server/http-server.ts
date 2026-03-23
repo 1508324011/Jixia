@@ -4,6 +4,7 @@ import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createJixiaApp } from './app';
+import { resolveHttpApi } from './http-api';
 import { readRuntimeConfig, type RuntimeConfig, type RuntimeConfigEnv } from './runtime-config';
 
 const DIST_ROOT = resolve(process.cwd(), 'dist');
@@ -158,6 +159,13 @@ export function createHttpServer(options: HttpServerOptions = {}): JixiaHttpServ
     }
 
     const requestUrl = new URL(request.url ?? '/', `http://${runtimeConfig.host}`);
+
+    const apiResponse = resolveHttpApi(requestUrl.pathname, method);
+
+    if (apiResponse) {
+      sendJson(response, apiResponse.statusCode, apiResponse.payload, method);
+      return;
+    }
 
     if (requestUrl.pathname === '/health') {
       sendJson(response, 200, app.health.getHealth(), method);
