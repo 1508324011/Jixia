@@ -4,11 +4,16 @@ import { describe, expect, it } from 'vitest';
 
 import { App } from '../../src/web/app';
 
+function renderLegacyWorkflow() {
+  window.history.replaceState({}, '', '/spaces');
+  render(<App />);
+}
+
 describe('mvp workflow shell', () => {
   it('navigates from spaces to library, reader, and writing', async () => {
     const user = userEvent.setup();
 
-    render(<App />);
+    renderLegacyWorkflow();
 
     expect(
       screen.getByRole('heading', { name: 'Spaces' }),
@@ -60,7 +65,7 @@ describe('mvp workflow shell', () => {
   it('shares scholarly shell primitives across pages', async () => {
     const user = userEvent.setup();
 
-    render(<App />);
+    renderLegacyWorkflow();
 
     expect(screen.getByTestId('app-shell')).toHaveClass('app-shell');
     expect(screen.getByRole('heading', { name: 'Spaces' })).toHaveClass('page-title');
@@ -79,7 +84,7 @@ describe('mvp workflow shell', () => {
   it('surfaces governance cues across library, reader, and writing', async () => {
     const user = userEvent.setup();
 
-    render(<App />);
+    renderLegacyWorkflow();
 
     await user.click(
       screen.getByRole('link', { name: 'Enter shared space' }),
