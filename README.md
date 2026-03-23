@@ -10,10 +10,11 @@ versioned writing, and governed AI jobs.
 The repository now includes two aligned layers:
 
 1. a server-first backend scaffold for spaces, library, reading, writing, and governed AI jobs
-2. the first scholarly web workflow shell for `Spaces -> Library -> Reader -> Writing`
+2. a verified workbench-first web interaction shell for `Login -> Home -> Today/Search/Library/Projects/Settings`
 
 Bootstrap guardrails remain in place, but the project has moved beyond repository-only setup.
-The current branch state reflects a verified Task 10 shell rather than a placeholder web entry.
+The current branch state reflects a verified workbench interaction shell rather than a placeholder
+web entry or a purely linear demo.
 
 ## Planning Documents
 
@@ -25,44 +26,61 @@ Detailed design and implementation plans live under `docs/plans/`:
 - `2026-03-20-jixia-platform-implementation.md`
 - `2026-03-21-jixia-task-10-ui-direction-notes.md`
 - `2026-03-22-jixia-task-11-deployment-implementation.md`
+- `2026-03-23-jixia-web-interaction-design.md`
+- `2026-03-23-jixia-web-interaction-implementation.md`
 
-## Task 10 Status
+## Workbench Shell Status
 
-Task 10's first browser workflow shell is complete on this branch.
-The web layer now includes:
+The web layer now centers on a personal-dashboard-first workbench rather than a single
+`Spaces -> Library -> Reader -> Writing` walkthrough.
+
+The shipped surfaces include:
 
 - `src/web/app.tsx` and `src/web/router.tsx`
-- page shells for spaces, library, reader, and writing
-- minimal design tokens and shared shell styling
-- governance-visible UI cues for visibility, shared context, publish state, and governed AI/job language
-- UI workflow tests covering the main navigation path and direct deep links
+- `src/web/pages/login-page.tsx`
+- `src/web/pages/home-page.tsx` for `个人工作台首页`
+- top-level surfaces for `今日推荐`, `搜索`, `Library`, `Projects`, and `设置`
+- explicit `Personal` vs `Project / 项目名` context indicators
+- paper workspace panels for `AI 对话`, `私人笔记`, `共享评论`, and `关键信息`
+- project-level `Writer 文档区` cues for promoting mature content into formal writing
+- shell HTTP endpoints at `GET /api/discovery/today` and `GET /api/settings/me`
+- preserved legacy `/spaces/...` routes so deep-link regression tests still guard compatibility
+
+The personal-facing routes are workbench shorthand over the same server-side space model.
+`space` still remains authoritative inside routing, contracts, permissions, and audit logic.
 
 ## Verification Snapshot
 
-Latest branch verification evidence:
+Current branch verification is maintained with:
 
+- `npm test`
 - `npm run typecheck`
-- `npm test` → 16 files / 48 tests passing
 - `npm run build`
 
-This means the current shell is ready for interface review and manual workflow walkthroughs,
-even though it is still a shell rather than a fully connected product frontend.
+During the workbench interaction pass, targeted verification also covers:
+
+- workbench routing and navigation
+- personal vs project context switching
+- paper workspace panels and project writer flow
+- discovery/settings HTTP contract exposure
 
 ## Near-Term Direction
 
-The next delivery focus has two tracks:
+The next delivery focus has three tracks:
 
-1. exercise Task 11 on a Docker-capable operator machine and extend the runtime past the current shell-and-health deployment boundary
-2. continue from the Task 10 shell toward real server-backed web interactions
+1. continue the Task 11 operator/deployment path so the runtime stays reproducible on lab-hosted infrastructure
+2. replace shell/demo data in the new workbench surfaces with authoritative server-backed data while preserving the server-first model
+3. expand paper, project, and Writer flows from shell interactions into persisted collaborative workflows
 
-The Task 10 handoff note in `docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md`
-records what shipped, what was verified, and what still belongs to the next phase.
+The handoff note in `docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md`
+records what shipped, what remains a shell boundary, and what belongs to the next phase.
 
 ## Task 11 Operator Runbook
 
-Task 11 turns the verified Task 10 shell into a reproducibly runnable lab-server package.
-The current runtime starts a minimal Node 22 HTTP server, serves the built Task 10 web shell,
-and exposes `GET /health`. It does not yet imply full browser-side live data integration.
+Task 11 turns the verified web interaction shell into a reproducibly runnable lab-server package.
+The current runtime starts a minimal Node 22 HTTP server, serves the built workbench shell,
+and exposes `GET /health`, `GET /api/discovery/today`, and `GET /api/settings/me`.
+These API surfaces are still shell contracts rather than full product endpoints.
 
 ### Prerequisites
 
@@ -97,7 +115,8 @@ npm run build
 npm run start:server
 ```
 
-After startup, the server serves the built Task 10 shell from `dist/` and the health endpoint at `/health`.
+After startup, the server serves the built workbench shell from `dist/`, responds on `/health`,
+and exposes the current shell endpoints under `/api/`.
 
 ### Docker Compose startup path
 

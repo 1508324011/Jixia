@@ -3,11 +3,13 @@
 ## Purpose
 
 This note records the accepted Task 10 UI direction, the branch-local completion status,
-and the handoff from the first scholarly web shell into the next delivery phase.
+and the handoff from the original scholarly browser shell into the newer workbench-first
+interaction model.
 
-Task 10 was executed as a layered convergence pass rather than an open-ended visual exploration.
-The goal was to freeze the interface temperament first and then land a test-backed
-`Spaces -> Library -> Reader -> Writing` workflow shell inside the repository.
+Task 10 began as a layered convergence pass around the linear
+`Spaces -> Library -> Reader -> Writing` walkthrough.
+The current branch keeps that legacy flow only as a regression-guarded compatibility path.
+The primary user-facing model is now a personal-dashboard-first workbench.
 
 ## Accepted direction
 
@@ -31,83 +33,115 @@ hierarchy, and information grouping. It is not the primary visual identity.
 but it is not the primary Task 10 shell language because it pushes the product
 too close to generic technology-product aesthetics.
 
-## What Task 10 delivered
+## Structural update after the March 23 interaction pass
 
-Task 10 is complete on this branch as a first browser workflow shell.
+The visual temperament did not change, but the primary interaction model did.
+The shipped shell now centers the following responsibilities:
+
+- `Login -> Home -> Today/Search/Library/Projects/Settings`
+- `Personal vs Project 上下文` cues instead of exposing raw space language in every surface
+- paper workspace panels for `AI 对话`, `私人笔记`, `共享评论`, and `关键信息`
+- a project-level `Writer 文档区` for promoting mature reading output into formal writing
+- shell HTTP endpoints for discovery and settings so the workbench has explicit server-facing boundaries
+
+The old `Spaces -> Library -> Reader -> Writing` shell still exists for legacy route coverage,
+deep-link protection, and regression tests, but it is no longer the primary product story.
+
+## What the current shell delivers
+
+The branch now includes the original Task 10 shell plus the workbench interaction expansion.
 
 Delivered files and capabilities include:
 
 - `src/web/app.tsx` and `src/web/router.tsx`
-- `src/web/lib/http-client.ts`
-- `src/web/pages/spaces-page.tsx`
+- `src/web/pages/login-page.tsx`
+- `src/web/pages/home-page.tsx`
+- `src/web/pages/today-page.tsx`
+- `src/web/pages/search-page.tsx`
+- `src/web/pages/projects-page.tsx`
+- `src/web/pages/project-page.tsx`
+- `src/web/pages/settings-page.tsx`
 - `src/web/pages/library-page.tsx`
 - `src/web/pages/reader-page.tsx`
 - `src/web/pages/writing-page.tsx`
-- `src/web/styles/tokens.css`
-- `src/web/styles/app.css`
-- `tests/ui/mvp-workflow.test.tsx`
+- `src/web/components/paper-workspace-tabs.tsx`
+- `src/web/components/project-writer-list.tsx`
+- `src/web/lib/recent-opened-store.ts`
+- `src/web/lib/demo-api.ts`
+- `src/shared/contracts/discovery.ts`
+- `src/shared/contracts/settings.ts`
+- `src/server/http-api.ts`
+- UI tests covering workbench routing, navigation, context switching, paper workspace, and project writer flow
+- integration coverage for `GET /api/discovery/today` and `GET /api/settings/me`
 
 The shell now expresses the confirmed mental model in both copy and routes:
 
-- `Space -> Project -> Entry -> Doc`
+- personal dashboard first
+- stable top-level navigation
+- project-aware context indicators
+- separated paper workspace modes
+- explicit promotion path from discussion to Writer documents
 
-It also keeps the required governance signals visible:
-
-- visibility
-- shared vs personal context
-- publish state
-- governed AI / job action cues
+Governance cues remain visible through visibility labels, project/personal context hints,
+quoted-evidence language, and governed AI terminology.
 
 ## Acceptance status against the plan
 
-Task 10 acceptance criteria are satisfied on this branch:
+The current workbench shell satisfies the interaction acceptance direction on this branch:
 
-1. Four page shells are navigable.
-2. The pages share one minimal visual language.
-3. Governance information is visible in the shell.
-4. UI tests cover the minimal workflow and direct deep-link routes.
-5. The branch passes test, typecheck, and build verification.
+1. Login and home routes lead into the approved workbench model.
+2. The top-level navigation exposes `今日推荐`, `搜索`, `Library`, `Projects`, and `设置`.
+3. Personal and project contexts are visually distinct.
+4. The paper workspace separates AI, private notes, shared comments, and metadata.
+5. Project pages expose a Writer handoff surface.
+6. Shell discovery/settings HTTP endpoints exist for the current workbench model.
+7. Legacy deep-link coverage still protects the earlier `/spaces/...` flow.
 
 ## Verification evidence
 
-Latest verification run for the branch-local Task 10 state:
+The workbench pass added targeted verification for:
 
-- `npm run typecheck` ✅
-- `npm test` ✅ (`15` files / `41` tests)
-- `npm run build` ✅
+- workbench routing and navigation
+- personal vs project context switching
+- paper workspace tabs
+- project writer flow
+- workbench HTTP contracts
 
-Notable implementation detail: the original Task 11 handoff list mentioned a future
-`build` script, but Task 10 verification exposed that gap and the script was added
-immediately so the web shell now produces a real Vite build artifact.
+Branch-completion verification still uses the standard repository commands:
+
+- `npm test`
+- `npm run typecheck`
+- `npm run build`
 
 ## Remaining boundaries
 
-Task 10 delivers a verified shell, not a fully connected product frontend.
-The current UI is appropriate for:
+The current branch delivers a verified shell plus minimal shell contracts, not a fully connected product frontend.
+The current implementation is appropriate for:
 
 - interface review
 - manual workflow walkthroughs
-- validating page responsibilities and tone
+- validating context boundaries and page responsibilities
 - checking whether governance cues remain visible and calm
+- verifying the first `/api/` contract surfaces for the workbench shell
 
-It is not yet the phase for claiming complete browser-side integration with live
-library import, reading evidence persistence, or writing publication flows.
+It is not yet the phase for claiming complete browser-side integration with live search ingestion,
+real recommendation ranking, persisted settings, or full Writer publication flows.
 
-## Task 11 handoff
+## Next handoff
 
-The next phase should focus on deployment and operator readiness.
+The next phase should continue in two directions at the same time.
 
-### Next required work
+### Product-facing next work
 
-1. Add Docker-first deployment scaffolding.
-2. Add `.env.example` and environment guidance.
-3. Expand operator-facing documentation in `README.md` and `README_CN.md`.
-4. Make local/server startup paths explicit for contributors and lab operators.
+1. Replace demo discovery/settings payloads with authoritative server-backed data.
+2. Connect the home, today, search, projects, and settings surfaces to real persistence.
+3. Expand paper workspace and Writer promotion flows into saved collaborative state.
 
-### Why Task 11 comes next
+### Operator/runtime next work
 
-The current shell is now stable enough that the next bottleneck is no longer page structure.
-It is reproducibility, deployment clarity, and operator-facing setup documentation.
+1. Keep the Task 11 deployment path reproducible.
+2. Preserve the explicit runtime contract in `README.md` and `README_CN.md`.
+3. Extend the minimal Node runtime without weakening the server-first model.
 
 ## Explicit non-goals still in force
 
@@ -119,7 +153,8 @@ It is reproducibility, deployment clarity, and operator-facing setup documentati
 
 ## Summary
 
-Task 10 has been successfully converted from direction exploration into a branch-local,
-test-backed scholarly web shell. The interface now reflects Jixia's intended temperament:
-open, calm, rigorous, and collaborative. The next milestone is to make this shell easier to run,
-review, and operate through Task 11 deployment scaffolding and operator docs.
+Task 10 is no longer only a first linear browser shell. On this branch it has evolved into a
+test-backed workbench interaction model with calm scholarly tone, Personal vs Project context,
+paper workspace separation, Writer handoff cues, and minimal HTTP contracts for the new shell.
+The next milestone is to replace shell data with authoritative server-backed behavior while
+keeping deployment and operator clarity aligned with the server-first architecture.
