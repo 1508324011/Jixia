@@ -1,8 +1,8 @@
 import type {
   GeneratedInsightRecord,
+  EvidenceCardRecord,
   EvidenceSpanRecord,
 } from '@shared/contracts/evidence';
-import type { LibraryEntryView } from '@shared/contracts/library';
 import type {
   ConversationRecord,
   NoteRecord,
@@ -21,6 +21,7 @@ import type {
 } from './import.service';
 import type { StoredSpace } from './spaces.service';
 import type { EvidenceLinkService } from './evidence-link.service';
+import type { NotebookService } from './notebook.service';
 
 export interface CreateNoteRequest {
   actorSpaceId: string;
@@ -67,11 +68,13 @@ export interface SaveWorkbenchGeneratedInsightRequest {
 
 export interface ReadingStore {
   conversations: ConversationRecord[];
+  evidenceCards: EvidenceCardRecord[];
   evidenceLinkService: EvidenceLinkService;
   insights: GeneratedInsightRecord[];
   libraryEntries: StoredLibraryEntry[];
   memberships: SpaceMembership[];
   nextId(prefix: string): string;
+  notebookService: NotebookService;
   notes: NoteRecord[];
   paperAssets: StoredPaperAsset[];
   persist(): void;
@@ -143,6 +146,39 @@ function assertEntryAccess(
     resourceSpaceId: entry.spaceId,
     visibility: entry.visibility,
   });
+}
+
+function toReadingNote(
+  input: { createdAt: string; id: string; ownerUserId: string; text: string },
+  libraryEntryId: string,
+): NoteRecord {
+  return {
+    authorUserId: input.ownerUserId,
+    body: input.text,
+    createdAt: input.createdAt,
+    id: input.id,
+    libraryEntryId,
+    visibility: 'private',
+  };
+}
+
+function createEvidenceCards(
+  store: ReadingStore,
+  input: {
+    evidenceSpans: Omit<EvidenceSpanRecord, 'paperAssetId'>[];
+    paperAssetId: string;
+    scope: EvidenceCardRecord['scope'];
+  },
+): void {
+  for (const span of input.evidenceSpans) {
+    store.evidenceCards.push({
+      createdAt: new Date().toISOString(),
+      id: store.nextId('evidence-card'),
+      paperAssetId: input.paperAssetId,
+      quote: span.quote,
+      scope: input.scope,
+    });
+  }
 }
 
 export function createReadingService(store: ReadingStore): ReadingService {
@@ -226,11 +262,28 @@ export function createReadingService(store: ReadingStore): ReadingService {
         return null;
       }
 
-      return this.getDetail({
+      const detail = await this.getDetail({
         actorSpaceId: entry.spaceId,
         actorUserId: input.actorUserId,
         libraryEntryId: input.libraryEntryId,
       });
+
+      if (!detail) {
+        return null;
+      }
+
+      const notebookNotes = await store.notebookService.listNotes({
+        libraryEntryId: input.libraryEntryId,
+        ownerUserId: input.actorUserId,
+      });
+
+      return {
+        ...detail,
+        notes: [
+          ...detail.notes,
+          ...notebookNotes.map((note) => toReadingNote(note, input.libraryEntryId)),
+        ],
+      };
     },
     async createNote(input: CreateNoteRequest): Promise<NoteRecord> {
       assertEntryAccess(store, input.authorUserId, input.actorSpaceId, input.libraryEntryId);
@@ -252,6 +305,16 @@ export function createReadingService(store: ReadingStore): ReadingService {
     async createWorkbenchNote(
       input: CreateWorkbenchNoteRequest,
     ): Promise<NoteRecord> {
+      if (input.visibility === 'private') {
+        const note = await store.notebookService.createNote({
+          libraryEntryId: input.libraryEntryId,
+          ownerUserId: input.authorUserId,
+          text: input.body,
+        });
+
+        return toReadingNote(note, input.libraryEntryId);
+      }
+
       const { entry } = getLibraryContext(store, input.libraryEntryId);
 
       return this.createNote({
@@ -272,7 +335,7 @@ export function createReadingService(store: ReadingStore): ReadingService {
         input.libraryEntryId,
       );
 
-      const { asset } = getLibraryContext(store, input.libraryEntryId);
+      const { asset, entry } = getLibraryContext(store, input.libraryEntryId);
       const createdAt = new Date().toISOString();
       const conversation: ConversationRecord = {
         createdAt,
@@ -295,6 +358,11 @@ export function createReadingService(store: ReadingStore): ReadingService {
       });
 
       store.insights.push(insight);
+      createEvidenceCards(store, {
+        evidenceSpans: input.evidenceSpans,
+        paperAssetId: asset.id,
+        scope: entry.visibility === 'private' ? 'private' : 'project',
+      });
       store.persist();
 
       return insight;

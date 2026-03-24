@@ -2,9 +2,22 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type {
+  ImportMappingRecord,
+} from '@shared/contracts/library';
+import type {
   CitationLinkRecord,
+  ProjectDocumentPresenceRecord,
+  ProjectReferenceRecord,
 } from '@shared/contracts/writing';
-import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
+import type {
+  EvidenceCardRecord,
+  GeneratedInsightRecord,
+} from '@shared/contracts/evidence';
+import type {
+  NotebookNoteRecord,
+  NotebookQuestionRecord,
+  NotebookRecord,
+} from '@shared/contracts/notebook';
 import type { JobEventRecord } from '@shared/contracts/jobs';
 import type { ConversationRecord, NoteRecord } from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
@@ -13,6 +26,14 @@ import {
   createArxivConnector,
   type ArxivConnector,
 } from './connectors/arxiv.connector';
+import {
+  createBiorxivConnector,
+  type BiorxivConnector,
+} from './connectors/biorxiv.connector';
+import {
+  createOpenalexConnector,
+  type OpenalexConnector,
+} from './connectors/openalex.connector';
 import {
   createPubmedConnector,
   type PubmedConnector,
@@ -68,11 +89,24 @@ import {
   type StoredLibraryEntry,
   type StoredPaperAsset,
 } from './services/import.service';
+import {
+  createDiscoveryService,
+  type StoredDiscoveryCandidate,
+} from './services/discovery.service';
 import { createEvidenceLinkService } from './services/evidence-link.service';
 import { createJobBus } from './jobs/job-bus';
 import { createJobRunner, type StoredJob } from './jobs/job-runner';
 import { createLibraryService } from './services/library.service';
+import {
+  createNotebookService,
+  type NotebookService,
+} from './services/notebook.service';
+import {
+  createProjectProjectionService,
+  type ProjectProjectionService,
+} from './services/project-projection.service';
 import { createReadingService } from './services/reading.service';
+import { createRecommendationService } from './services/recommendation.service';
 import {
   createSpacesService,
   type StoredSpace,
@@ -96,6 +130,8 @@ const APP_STATE_FILE = 'server-state.json';
 export interface CreateJixiaAppOptions {
   connectors?: {
     arxiv?: ArxivConnector;
+    biorxiv?: BiorxivConnector;
+    openalex?: OpenalexConnector;
     pubmed?: PubmedConnector;
   };
   env?: StorageRootEnv;
@@ -106,15 +142,23 @@ export interface JixiaAppState {
   citationLinks: CitationLinkRecord[];
   conversations: ConversationRecord[];
   credentials: StoredCredential[];
+  discoveryCandidates: StoredDiscoveryCandidate[];
   docVersions: StoredDocVersion[];
+  evidenceCards: EvidenceCardRecord[];
+  importMappings: ImportMappingRecord[];
   insights: GeneratedInsightRecord[];
   jobEvents: JobEventRecord[];
   jobs: StoredJob[];
   libraryEntries: StoredLibraryEntry[];
   memberships: SpaceMembership[];
   nextSequence: number;
+  notebookNotes: NotebookNoteRecord[];
+  notebookQuestions: NotebookQuestionRecord[];
+  notebookRecords: NotebookRecord[];
   notes: NoteRecord[];
   paperAssets: StoredPaperAsset[];
+  projectDocumentPresences: ProjectDocumentPresenceRecord[];
+  projectReferences: ProjectReferenceRecord[];
   spaces: StoredSpace[];
   workbenchSettings: WorkbenchSettingsRecord[];
   writingDocs: StoredWritingDoc[];
@@ -127,6 +171,8 @@ export interface JixiaApp {
   jobs: JobsRoutes;
   jobStream: JobStreamRoutes;
   library: LibraryRoutes;
+  notebook: NotebookService;
+  projectProjection: ProjectProjectionService;
   reading: ReadingRoutes;
   spaces: SpacesRoutes;
   writing: WritingRoutes;
@@ -138,15 +184,23 @@ function createState(): JixiaAppState {
     citationLinks: [],
     conversations: [],
     credentials: [],
+    discoveryCandidates: [],
     docVersions: [],
+    evidenceCards: [],
+    importMappings: [],
     insights: [],
     jobEvents: [],
     jobs: [],
     libraryEntries: [],
     memberships: [],
     nextSequence: 0,
+    notebookNotes: [],
+    notebookQuestions: [],
+    notebookRecords: [],
     notes: [],
     paperAssets: [],
+    projectDocumentPresences: [],
+    projectReferences: [],
     spaces: [],
     workbenchSettings: [],
     writingDocs: [],
@@ -172,15 +226,24 @@ function loadState(env: StorageRootEnv = process.env): JixiaAppState {
     citationLinks: parsed.citationLinks ?? initialState.citationLinks,
     conversations: parsed.conversations ?? initialState.conversations,
     credentials: parsed.credentials ?? initialState.credentials,
+    discoveryCandidates: parsed.discoveryCandidates ?? initialState.discoveryCandidates,
     docVersions: parsed.docVersions ?? initialState.docVersions,
+    evidenceCards: parsed.evidenceCards ?? initialState.evidenceCards,
+    importMappings: parsed.importMappings ?? initialState.importMappings,
     insights: parsed.insights ?? initialState.insights,
     jobEvents: parsed.jobEvents ?? initialState.jobEvents,
     jobs: parsed.jobs ?? initialState.jobs,
     libraryEntries: parsed.libraryEntries ?? initialState.libraryEntries,
     memberships: parsed.memberships ?? initialState.memberships,
     nextSequence: parsed.nextSequence ?? initialState.nextSequence,
+    notebookNotes: parsed.notebookNotes ?? initialState.notebookNotes,
+    notebookQuestions: parsed.notebookQuestions ?? initialState.notebookQuestions,
+    notebookRecords: parsed.notebookRecords ?? initialState.notebookRecords,
     notes: parsed.notes ?? initialState.notes,
     paperAssets: parsed.paperAssets ?? initialState.paperAssets,
+    projectDocumentPresences:
+      parsed.projectDocumentPresences ?? initialState.projectDocumentPresences,
+    projectReferences: parsed.projectReferences ?? initialState.projectReferences,
     spaces: parsed.spaces ?? initialState.spaces,
     workbenchSettings: parsed.workbenchSettings ?? initialState.workbenchSettings,
     writingDocs: parsed.writingDocs ?? initialState.writingDocs,
@@ -216,17 +279,35 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     persist,
     spaces: state.spaces,
   });
+  const discoveryService = createDiscoveryService({
+    arxivConnector: options.connectors?.arxiv ?? createArxivConnector(),
+    biorxivConnector: options.connectors?.biorxiv ?? createBiorxivConnector(),
+    discoveryCandidates: state.discoveryCandidates,
+    nextId(prefix: string): string {
+      return nextId(state, prefix);
+    },
+    openalexConnector: options.connectors?.openalex ?? createOpenalexConnector(),
+    persist,
+    pubmedConnector: options.connectors?.pubmed ?? createPubmedConnector(),
+  });
+  const recommendationService = createRecommendationService(discoveryService);
   const importService = createImportService({
     arxivConnector: options.connectors?.arxiv ?? createArxivConnector(),
+    biorxivConnector: options.connectors?.biorxiv ?? createBiorxivConnector(),
+    discoveryCandidates: state.discoveryCandidates,
+    discoveryService,
     fileStore: createFileStore(options.env),
+    importMappings: state.importMappings,
     libraryEntries: state.libraryEntries,
     memberships: state.memberships,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
+    openalexConnector: options.connectors?.openalex ?? createOpenalexConnector(),
     paperAssets: state.paperAssets,
     persist,
     pubmedConnector: options.connectors?.pubmed ?? createPubmedConnector(),
+    recommendationService,
     spaces: state.spaces,
   });
   const libraryService = createLibraryService({
@@ -236,8 +317,27 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     persist,
     spaces: state.spaces,
   });
+  const notebookService = createNotebookService({
+    libraryEntries: state.libraryEntries,
+    nextId(prefix: string): string {
+      return nextId(state, prefix);
+    },
+    notebookNotes: state.notebookNotes,
+    notebookRecords: state.notebookRecords,
+    persist,
+  });
+  const projectProjectionService = createProjectProjectionService({
+    evidenceCards: state.evidenceCards,
+    nextId(prefix: string): string {
+      return nextId(state, prefix);
+    },
+    notebookService,
+    persist,
+    projectReferences: state.projectReferences,
+  });
   const readingService = createReadingService({
     conversations: state.conversations,
+    evidenceCards: state.evidenceCards,
     evidenceLinkService: createEvidenceLinkService(),
     insights: state.insights,
     libraryEntries: state.libraryEntries,
@@ -245,6 +345,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
+    notebookService,
     notes: state.notes,
     paperAssets: state.paperAssets,
     persist,
@@ -268,6 +369,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     },
     paperAssets: state.paperAssets,
     persist,
+    projectDocumentPresences: state.projectDocumentPresences,
     spaces: state.spaces,
     versioningService,
     writingDocs: state.writingDocs,
@@ -325,6 +427,8 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       spaces: state.spaces,
     }),
     library: createLibraryRoutes(libraryService),
+    notebook: notebookService,
+    projectProjection: projectProjectionService,
     reading: createReadingRoutes(readingService),
     spaces: createSpacesRoutes(spacesService),
     writing: createWritingRoutes(writingService),

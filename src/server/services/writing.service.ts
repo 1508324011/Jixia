@@ -1,6 +1,7 @@
 import type {
   CitationLinkRecord,
   PublishState,
+  ProjectDocumentPresenceRecord,
   WritingDocumentView,
   WritingDocRecord,
   WritingDocSnapshot,
@@ -51,9 +52,7 @@ export interface SaveProjectDocumentRequest {
   title: string;
 }
 
-export interface StoredWritingDoc extends WritingDocRecord {
-  ownerUserId: string;
-}
+export type StoredWritingDoc = WritingDocRecord;
 
 export interface WritingStore {
   citationLinks: CitationLinkRecord[];
@@ -62,6 +61,7 @@ export interface WritingStore {
   nextId(prefix: string): string;
   paperAssets: StoredPaperAsset[];
   persist(): void;
+  projectDocumentPresences: ProjectDocumentPresenceRecord[];
   spaces: StoredSpace[];
   versioningService: VersioningService;
   writingDocs: StoredWritingDoc[];
@@ -127,13 +127,59 @@ function assertActorMembership(
 }
 
 function assertDocumentAccess(
+  store: WritingStore,
   actorSpaceId: string,
   actorUserId: string,
   document: StoredWritingDoc,
 ): void {
-  if (actorSpaceId !== document.spaceId || actorUserId !== document.ownerUserId) {
+  assertActorMembership(store, actorUserId, document.spaceId);
+
+  if (actorSpaceId !== document.spaceId) {
     throw new Error('Access denied for the requested writing document.');
   }
+
+  if (document.ownerType === 'user' && actorUserId !== document.ownerUserId) {
+    throw new Error('Access denied for the requested writing document.');
+  }
+}
+
+function findProjectDocument(
+  store: WritingStore,
+  projectId: string,
+  spaceId: string,
+): StoredWritingDoc | undefined {
+  return store.writingDocs.find(
+    (candidate) =>
+      candidate.ownerType === 'project' &&
+      candidate.projectId === projectId &&
+      candidate.spaceId === spaceId,
+  );
+}
+
+function touchProjectPresence(
+  store: WritingStore,
+  input: { documentId: string; projectId: string; userId: string },
+): void {
+  const existingPresence = store.projectDocumentPresences.find(
+    (presence) =>
+      presence.projectId === input.projectId && presence.userId === input.userId,
+  );
+
+  if (existingPresence) {
+    existingPresence.activeDocumentId = input.documentId;
+    existingPresence.updatedAt = new Date().toISOString();
+    store.persist();
+    return;
+  }
+
+  store.projectDocumentPresences.push({
+    activeDocumentId: input.documentId,
+    id: store.nextId('project-document-presence'),
+    projectId: input.projectId,
+    updatedAt: new Date().toISOString(),
+    userId: input.userId,
+  });
+  store.persist();
 }
 
 export function createWritingService(store: WritingStore): WritingService {
@@ -158,6 +204,7 @@ export function createWritingService(store: WritingStore): WritingService {
       const document: StoredWritingDoc = {
         createdAt: new Date().toISOString(),
         id: store.nextId('doc'),
+        ownerType: 'user',
         ownerUserId: input.ownerUserId,
         publishState: 'draft',
         spaceId: input.spaceId,
@@ -170,21 +217,23 @@ export function createWritingService(store: WritingStore): WritingService {
       return document;
     },
     async getDocument(input: GetDocumentRequest): Promise<WritingDocumentView | null> {
-      const document = store.writingDocs.find(
-        (candidate) =>
-          candidate.spaceId === input.spaceId &&
-          candidate.ownerUserId === input.actorUserId,
-      );
+      const document = findProjectDocument(store, input.projectId, input.spaceId);
 
       if (!document) {
         return null;
       }
 
-      assertDocumentAccess(input.actorSpaceId, input.actorUserId, document);
+      assertDocumentAccess(store, input.actorSpaceId, input.actorUserId, document);
+      touchProjectPresence(store, {
+        documentId: document.id,
+        projectId: input.projectId,
+        userId: input.actorUserId,
+      });
 
       return {
         documentId: document.id,
         latestSnapshot: buildLatestSnapshot(store, document),
+        ownerType: 'project',
         projectId: input.projectId,
         publishState: document.publishState,
         spaceId: document.spaceId,
@@ -193,7 +242,7 @@ export function createWritingService(store: WritingStore): WritingService {
     },
     async saveDocument(input: SaveDocumentRequest): Promise<WritingDocSnapshot> {
       const document = findDocument(store, input.docId);
-      assertDocumentAccess(input.actorSpaceId, input.actorUserId, document);
+      assertDocumentAccess(store, input.actorSpaceId, input.actorUserId, document);
 
       return store.versioningService.saveVersion({
         citations: input.citations,
@@ -204,22 +253,28 @@ export function createWritingService(store: WritingStore): WritingService {
     async saveProjectDocument(
       input: SaveProjectDocumentRequest,
     ): Promise<WritingDocumentView> {
-      const existingDocument = await this.getDocument({
-        actorSpaceId: input.actorSpaceId,
-        actorUserId: input.actorUserId,
-        projectId: input.projectId,
-        spaceId: input.spaceId,
-      });
+      assertActorMembership(store, input.actorUserId, input.spaceId);
+      const existingDocument = findProjectDocument(
+        store,
+        input.projectId,
+        input.spaceId,
+      );
 
       const document = existingDocument
-        ? findDocument(store, existingDocument.documentId)
-        : await this.createDocument({
-            actorSpaceId: input.actorSpaceId,
-            actorUserId: input.actorUserId,
-            ownerUserId: input.actorUserId,
+        ? existingDocument
+        : {
+            createdAt: new Date().toISOString(),
+            id: store.nextId('doc'),
+            ownerType: 'project',
+            projectId: input.projectId,
+            publishState: 'draft',
             spaceId: input.spaceId,
             title: input.title,
-          });
+          } satisfies StoredWritingDoc;
+
+      if (!existingDocument) {
+        store.writingDocs.push(document);
+      }
 
       document.title = input.title;
       store.persist();
@@ -231,10 +286,16 @@ export function createWritingService(store: WritingStore): WritingService {
         content: input.content,
         docId: document.id,
       });
+      touchProjectPresence(store, {
+        documentId: document.id,
+        projectId: input.projectId,
+        userId: input.actorUserId,
+      });
 
       return {
         documentId: document.id,
         latestSnapshot,
+        ownerType: 'project',
         projectId: input.projectId,
         publishState: document.publishState,
         spaceId: document.spaceId,
@@ -245,7 +306,7 @@ export function createWritingService(store: WritingStore): WritingService {
       input: TransitionPublishStateRequest,
     ): Promise<WritingDocRecord> {
       const document = findDocument(store, input.docId);
-      assertDocumentAccess(input.actorSpaceId, input.actorUserId, document);
+      assertDocumentAccess(store, input.actorSpaceId, input.actorUserId, document);
       document.publishState = input.publishState;
       store.persist();
 

@@ -1,6 +1,7 @@
 import type { GeneratedInsightRecord } from './evidence';
 import type { LibraryEntryView } from './library';
 
+export type ReaderObjectType = 'library-entry';
 export type NoteVisibility = 'private' | 'space_shared';
 
 export interface NoteRecord {
@@ -21,6 +22,7 @@ export interface ConversationRecord {
 }
 
 export interface ReadingStateRecord {
+  objectType: ReaderObjectType;
   libraryEntryId: string;
   userId: string;
   progressPercent: number;

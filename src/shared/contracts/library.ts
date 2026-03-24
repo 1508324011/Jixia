@@ -1,4 +1,5 @@
 export type ImportSourceType = 'doi' | 'pmid' | 'arxiv' | 'upload';
+export type LibraryObjectType = 'library-entry';
 
 export type LibraryEntryVisibility =
   | 'private'
@@ -44,6 +45,14 @@ export interface LibraryListItem {
 
 export interface LibraryListResponse {
   entries: LibraryListItem[];
+}
+
+export interface ImportMappingRecord {
+  candidateId: string;
+  importedAt: string;
+  libraryEntryId: string;
+  paperAssetId: string;
+  targetSpaceId: string;
 }
 
 export const libraryContract = 'jixia-library-contract';

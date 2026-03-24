@@ -1,4 +1,5 @@
 import type {
+  DiscoveryBoard,
   DiscoverySearchResponse,
   DiscoveryTodayResponse,
   TodayRecommendation,
@@ -39,7 +40,6 @@ export interface HttpApiResponse {
 }
 
 const DEFAULT_WORKBENCH_USER_ID = 'user-alice';
-const TODAY_DISCOVERY_QUERY = 'tumor board biomarkers';
 
 interface ImportRequestBody {
   sourceLocator?: string;
@@ -54,6 +54,10 @@ interface PublishDocumentRequestBody {
 interface ImportToPersonalLibraryRequestBody {
   sourceLocator?: string;
   sourceType?: 'doi' | 'pmid' | 'arxiv';
+}
+
+interface ImportDiscoveryCandidateRequestBody {
+  candidateId?: string;
 }
 
 interface CreateReadingNoteRequestBody {
@@ -137,6 +141,24 @@ function parseImportToPersonalLibraryRequest(
   };
 }
 
+function parseImportDiscoveryCandidateRequest(
+  requestBody: unknown,
+): Required<ImportDiscoveryCandidateRequestBody> {
+  if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
+    throw new Error('Discovery import payload must be a JSON object.');
+  }
+
+  const { candidateId } = requestBody as Record<string, unknown>;
+
+  if (typeof candidateId !== 'string' || !candidateId.trim()) {
+    throw new Error('candidateId is required.');
+  }
+
+  return {
+    candidateId: candidateId.trim(),
+  };
+}
+
 function parseCreateReadingNoteRequest(
   requestBody: unknown,
 ): Required<CreateReadingNoteRequestBody> {
@@ -158,6 +180,77 @@ function parseCreateReadingNoteRequest(
     body: body.trim(),
     visibility,
   };
+}
+
+function parseCreateProjectReferenceRequest(
+  requestBody: unknown,
+):
+  | {
+      noteId: string;
+      notebookId: string;
+      paperAssetId: string;
+      selectedText: string;
+      sourceType: 'notebook-note';
+    }
+  | {
+      evidenceCardId: string;
+      paperAssetId: string;
+      selectedText: string;
+      sourceType: 'evidence-card';
+    } {
+  if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
+    throw new Error('Project reference payload must be a JSON object.');
+  }
+
+  const {
+    evidenceCardId,
+    noteId,
+    notebookId,
+    paperAssetId,
+    selectedText,
+    sourceType,
+  } = requestBody as Record<string, unknown>;
+
+  if (typeof paperAssetId !== 'string' || !paperAssetId.trim()) {
+    throw new Error('paperAssetId is required.');
+  }
+
+  if (typeof selectedText !== 'string' || !selectedText.trim()) {
+    throw new Error('selectedText is required.');
+  }
+
+  if (sourceType === 'notebook-note') {
+    if (typeof noteId !== 'string' || !noteId.trim()) {
+      throw new Error('noteId is required for notebook-note projection.');
+    }
+
+    if (typeof notebookId !== 'string' || !notebookId.trim()) {
+      throw new Error('notebookId is required for notebook-note projection.');
+    }
+
+    return {
+      noteId: noteId.trim(),
+      notebookId: notebookId.trim(),
+      paperAssetId: paperAssetId.trim(),
+      selectedText: selectedText.trim(),
+      sourceType,
+    };
+  }
+
+  if (sourceType === 'evidence-card') {
+    if (typeof evidenceCardId !== 'string' || !evidenceCardId.trim()) {
+      throw new Error('evidenceCardId is required for evidence-card projection.');
+    }
+
+    return {
+      evidenceCardId: evidenceCardId.trim(),
+      paperAssetId: paperAssetId.trim(),
+      selectedText: selectedText.trim(),
+      sourceType,
+    };
+  }
+
+  throw new Error('sourceType is required.');
 }
 
 function parseEvidenceSpans(
@@ -385,6 +478,24 @@ async function markImportedDiscoveryItems(
   return items.map((item) => ({
     ...item,
     imported: importedCanonicalIds.has(item.canonicalId),
+    objectType: 'external-candidate',
+    state: importedCanonicalIds.has(item.canonicalId) ? 'imported' : 'new',
+  }));
+}
+
+function toDiscoveryBoards(items: TodayRecommendation[]): DiscoveryBoard[] {
+  const groupedItems = new Map<string, TodayRecommendation[]>();
+
+  for (const item of items) {
+    const boardItems = groupedItems.get(item.sourceLabel) ?? [];
+    boardItems.push(item);
+    groupedItems.set(item.sourceLabel, boardItems);
+  }
+
+  return Array.from(groupedItems.entries()).map(([title, boardItems], index) => ({
+    id: `board-${index + 1}`,
+    items: boardItems,
+    title,
   }));
 }
 
@@ -416,23 +527,40 @@ export async function resolveHttpApi(
 
   try {
     if ((method === 'GET' || method === 'HEAD') && pathname === '/api/discovery/today') {
+      const items = await markImportedDiscoveryItems(app, await app.imports.listTodayDiscovery());
+
       return createJsonResponse(200, {
-        items: await markImportedDiscoveryItems(
-          app,
-          await app.imports.searchDiscovery(TODAY_DISCOVERY_QUERY),
-        ),
+        boards: toDiscoveryBoards(items),
+        items,
       } satisfies DiscoveryTodayResponse);
     }
 
     if ((method === 'GET' || method === 'HEAD') && pathname === '/api/discovery/search') {
-      const query = requestUrl.searchParams.get('query')?.trim() ?? '';
+      const query =
+        requestUrl.searchParams.get('query')?.trim() ||
+        requestUrl.searchParams.get('q')?.trim() ||
+        '';
+      const items = query
+        ? await markImportedDiscoveryItems(app, await app.imports.searchDiscovery(query))
+        : [];
 
       return createJsonResponse(200, {
-        items: query
-          ? await markImportedDiscoveryItems(app, await app.imports.searchDiscovery(query))
-          : [],
+        boards: toDiscoveryBoards(items),
+        items,
         query,
       } satisfies DiscoverySearchResponse);
+    }
+
+    if (method === 'POST' && pathname === '/api/discovery/import') {
+      const payload = parseImportDiscoveryCandidateRequest(requestBody);
+
+      return createJsonResponse(
+        201,
+        await app.imports.importDiscoveryCandidate({
+          candidateId: payload.candidateId,
+          requestedByUserId: DEFAULT_WORKBENCH_USER_ID,
+        }),
+      );
     }
 
     if ((method === 'GET' || method === 'HEAD') && pathname === '/api/library/personal') {
@@ -458,7 +586,7 @@ export async function resolveHttpApi(
     if ((method === 'GET' || method === 'HEAD') && pathname === '/api/settings/me') {
       return createJsonResponse(
         200,
-        await app.credentials.getWorkbenchSettings(DEFAULT_WORKBENCH_USER_ID),
+        app.credentials.getWorkbenchSettings(DEFAULT_WORKBENCH_USER_ID),
       );
     }
 
@@ -636,6 +764,22 @@ export async function resolveHttpApi(
 
         return createJsonResponse(201, { insight } satisfies ReadingInsightResponse);
       }
+    }
+
+    const projectDocumentReferenceMatch = pathname.match(
+      /^\/api\/projects\/([^/]+)\/docs\/([^/]+)\/references$/,
+    );
+
+    if (projectDocumentReferenceMatch && method === 'POST') {
+      const projectId = decodePathSegment(projectDocumentReferenceMatch[1]);
+      const payload = parseCreateProjectReferenceRequest(requestBody);
+      const reference = await app.projectProjection.createReference({
+        actorUserId: DEFAULT_WORKBENCH_USER_ID,
+        ...payload,
+        projectId,
+      });
+
+      return createJsonResponse(201, { reference });
     }
 
     const writingDocumentMatch = pathname.match(/^\/api\/writing\/([^/]+)\/projects\/([^/]+)\/document$/);
@@ -819,14 +963,14 @@ export async function resolveHttpApi(
 
       await app.writing.transitionPublishState({
         actorSpaceId,
-        actorUserId: nativeDemoFixture.actorUserId,
+        actorUserId: resolveWritingActorUserId(actorSpaceId),
         docId: documentId,
         publishState: body?.publishState ?? 'published',
       });
 
       const document = await app.writing.getDocument({
         actorSpaceId,
-        actorUserId: nativeDemoFixture.actorUserId,
+        actorUserId: resolveWritingActorUserId(actorSpaceId),
         projectId: nativeDemoFixture.projectId,
         spaceId: actorSpaceId,
       });

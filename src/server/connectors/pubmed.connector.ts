@@ -6,10 +6,12 @@ export interface ImportedPaperMetadata {
   title: string;
 }
 
-export interface PubmedDiscoveryRecord
-  extends Omit<TodayRecommendation, 'id' | 'imported'> {
+export interface DiscoveryConnectorResult
+  extends Omit<TodayRecommendation, 'id' | 'imported' | 'objectType' | 'state'> {
   sourceType: DiscoverySourceType;
 }
+
+export interface PubmedDiscoveryRecord extends DiscoveryConnectorResult {}
 
 export interface PubmedConnector {
   lookup(locator: string, sourceType: 'doi' | 'pmid'): Promise<ImportedPaperMetadata>;

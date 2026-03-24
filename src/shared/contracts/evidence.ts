@@ -5,6 +5,16 @@ export interface EvidenceSpanRecord {
   startOffset: number;
 }
 
+export type EvidenceScope = 'private' | 'project';
+
+export interface EvidenceCardRecord {
+  createdAt: string;
+  id: string;
+  paperAssetId: string;
+  quote: string;
+  scope: EvidenceScope;
+}
+
 export interface GeneratedInsightRecord {
   conversationId: string;
   createdAt: string;

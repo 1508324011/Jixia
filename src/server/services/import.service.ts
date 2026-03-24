@@ -1,15 +1,23 @@
 import type { TodayRecommendation } from '@shared/contracts/discovery';
-import type { LibraryEntryVisibility, LibraryEntryRecord } from '@shared/contracts/library';
+import type {
+  ImportMappingRecord,
+  LibraryEntryVisibility,
+  LibraryEntryRecord,
+} from '@shared/contracts/library';
 
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import type { ArxivConnector } from '../connectors/arxiv.connector';
+import type { BiorxivConnector } from '../connectors/biorxiv.connector';
+import type { OpenalexConnector } from '../connectors/openalex.connector';
 import type {
   ImportedPaperMetadata,
   PubmedConnector,
 } from '../connectors/pubmed.connector';
 import { createPaperPdfStorageKey } from '../storage/asset-key';
 import type { FileStore } from '../storage/file-store';
+import type { DiscoveryService, StoredDiscoveryCandidate } from './discovery.service';
+import type { RecommendationService } from './recommendation.service';
 import type { StoredSpace } from './spaces.service';
 
 export interface StoredPaperAsset {
@@ -44,29 +52,48 @@ export interface ImportedLibraryRecord {
   entry: StoredLibraryEntry;
 }
 
+export interface ImportedDiscoveryCandidateRecord extends ImportedLibraryRecord {
+  importMapping: ImportMappingRecord;
+}
+
 export interface ImportToPersonalLibraryRequest {
   requestedByUserId: string;
   sourceLocator: string;
   sourceType: 'doi' | 'pmid' | 'arxiv';
 }
 
+export interface ImportDiscoveryCandidateRequest {
+  candidateId: string;
+  requestedByUserId: string;
+}
+
 export interface ImportStore {
   arxivConnector: ArxivConnector;
+  biorxivConnector: BiorxivConnector;
+  discoveryCandidates: StoredDiscoveryCandidate[];
+  discoveryService: DiscoveryService;
   fileStore: FileStore;
+  importMappings: ImportMappingRecord[];
   libraryEntries: StoredLibraryEntry[];
   memberships: SpaceMembership[];
   nextId(prefix: string): string;
+  openalexConnector: OpenalexConnector;
   paperAssets: StoredPaperAsset[];
   persist(): void;
   pubmedConnector: PubmedConnector;
+  recommendationService: RecommendationService;
   spaces: StoredSpace[];
 }
 
 export interface ImportService {
+  importDiscoveryCandidate(
+    input: ImportDiscoveryCandidateRequest,
+  ): Promise<ImportedDiscoveryCandidateRecord>;
   importToPersonalLibrary(
     input: ImportToPersonalLibraryRequest,
   ): Promise<ImportedLibraryRecord>;
   importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord>;
+  listTodayDiscovery(): Promise<TodayRecommendation[]>;
   searchDiscovery(query: string): Promise<TodayRecommendation[]>;
   uploadPdf(input: UploadPdfRequest): Promise<ImportedLibraryRecord>;
 }
@@ -247,6 +274,51 @@ export function createImportService(store: ImportStore): ImportService {
   }
 
   return {
+    async importDiscoveryCandidate(
+      input: ImportDiscoveryCandidateRequest,
+    ): Promise<ImportedDiscoveryCandidateRecord> {
+      const candidate = store.discoveryService.getCandidate(input.candidateId);
+
+      if (!candidate) {
+        throw new Error(`Discovery candidate ${input.candidateId} does not exist.`);
+      }
+
+      const personalSpace = ensureWorkbenchPersonalSpace(store, input.requestedByUserId);
+      const importedRecord = await doImportPaper({
+        requestedByUserId: input.requestedByUserId,
+        sourceLocator: candidate.sourceLocator,
+        sourceType: candidate.sourceType,
+        spaceId: personalSpace.id,
+        visibility: 'private',
+      });
+      const existingMapping = store.importMappings.find(
+        (mapping) =>
+          mapping.candidateId === candidate.id &&
+          mapping.targetSpaceId === personalSpace.id &&
+          mapping.libraryEntryId === importedRecord.entry.id,
+      );
+      const importMapping =
+        existingMapping ??
+        (() => {
+          const createdMapping: ImportMappingRecord = {
+            candidateId: candidate.id,
+            importedAt: new Date().toISOString(),
+            libraryEntryId: importedRecord.entry.id,
+            paperAssetId: importedRecord.asset.id,
+            targetSpaceId: personalSpace.id,
+          };
+
+          store.importMappings.push(createdMapping);
+          store.persist();
+
+          return createdMapping;
+        })();
+
+      return {
+        ...importedRecord,
+        importMapping,
+      };
+    },
     async importToPersonalLibrary(
       input: ImportToPersonalLibraryRequest,
     ): Promise<ImportedLibraryRecord> {
@@ -290,14 +362,11 @@ export function createImportService(store: ImportStore): ImportService {
         ),
       };
     },
+    async listTodayDiscovery(): Promise<TodayRecommendation[]> {
+      return store.recommendationService.listToday();
+    },
     async searchDiscovery(query: string): Promise<TodayRecommendation[]> {
-      const results = await store.pubmedConnector.search(query);
-
-      return results.map((result) => ({
-        ...result,
-        id: result.canonicalId,
-        imported: false,
-      }));
+      return store.discoveryService.search(query);
     },
     async importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord> {
       return doImportPaper(input);
