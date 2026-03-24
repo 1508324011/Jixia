@@ -26,6 +26,7 @@ import type {
 } from '@shared/contracts/spaces';
 import type {
   PublishState,
+  ProjectReferenceRecord,
   WritingDocumentResponse,
 } from '@shared/contracts/writing';
 
@@ -73,6 +74,16 @@ export interface SaveWritingDocumentInput {
   projectId: string;
   spaceId: string;
   title: string;
+}
+
+export interface CreateProjectReferenceInput {
+  docId: string;
+  noteId: string;
+  notebookId: string;
+  paperAssetId: string;
+  projectId: string;
+  selectedText: string;
+  spaceId: string;
 }
 
 function resolveApiUrl(baseUrl: string, pathname: string): string {
@@ -175,11 +186,29 @@ export function createDemoApi(baseUrl = '') {
           }),
           method: 'POST',
         },
+        );
+      },
+    createProjectReference(
+      input: CreateProjectReferenceInput,
+    ): Promise<{ reference: ProjectReferenceRecord }> {
+      return requestJson<{ reference: ProjectReferenceRecord }>(
+        resolvePath(`/api/projects/${input.projectId}/docs/${input.docId}/references`),
+        {
+          body: JSON.stringify({
+            noteId: input.noteId,
+            notebookId: input.notebookId,
+            paperAssetId: input.paperAssetId,
+            selectedText: input.selectedText,
+            sourceType: 'notebook-note',
+            spaceId: input.spaceId,
+          }),
+          method: 'POST',
+        },
       );
     },
-    getWorkbenchSettings(): Promise<WorkbenchSettingsResponse> {
-      return requestJson<WorkbenchSettingsResponse>(resolvePath('/api/settings/me'));
-    },
+      getWorkbenchSettings(): Promise<WorkbenchSettingsResponse> {
+        return requestJson<WorkbenchSettingsResponse>(resolvePath('/api/settings/me'));
+      },
     saveWorkbenchSettings(
       input: UpdateWorkbenchSettingsRequest,
     ): Promise<WorkbenchSettingsResponse> {
@@ -299,6 +328,25 @@ export async function saveWritingDocument(
         citations: input.citations ?? [],
         content: input.content,
         title: input.title,
+      }),
+      method: 'POST',
+    },
+  );
+}
+
+export async function createProjectReference(
+  input: CreateProjectReferenceInput,
+): Promise<{ reference: ProjectReferenceRecord }> {
+  return requestJson<{ reference: ProjectReferenceRecord }>(
+    `/api/projects/${input.projectId}/docs/${input.docId}/references`,
+    {
+      body: JSON.stringify({
+        noteId: input.noteId,
+        notebookId: input.notebookId,
+        paperAssetId: input.paperAssetId,
+        selectedText: input.selectedText,
+        spaceId: input.spaceId,
+        sourceType: 'notebook-note',
       }),
       method: 'POST',
     },

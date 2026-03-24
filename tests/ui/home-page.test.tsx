@@ -18,4 +18,12 @@ describe('home page', () => {
     expect(screen.getByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '最近项目' })).not.toBeInTheDocument();
   });
+
+  it('renders actionable recent-opened links in the context rail', () => {
+    renderHomePage();
+
+    expect(
+      screen.getByRole('link', { name: /signal pathways in shared tumor boards/i }),
+    ).toBeInTheDocument();
+  });
 });

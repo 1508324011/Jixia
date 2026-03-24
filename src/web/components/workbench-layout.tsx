@@ -9,11 +9,30 @@ const demoProjectNameById: Record<string, string> = {
   'tumor-board': 'Tumor board workspace',
 };
 
+const demoProjectDocIdById: Record<string, string> = {
+  'project-1': 'doc-1',
+  'tumor-board': 'doc-1',
+};
+
 export function WorkbenchLayout() {
   const { projectId } = useParams();
   const projectName = projectId ? demoProjectNameById[projectId] ?? projectId : null;
   const label = projectName ? `Project / ${projectName}` : 'Personal';
   const variant = projectName ? 'project' : 'personal';
+  const contextActions = projectId
+    ? [
+        { label: 'Project overview', to: `/projects/${projectId}` },
+        { label: 'Project library', to: `/projects/${projectId}/library` },
+        {
+          label: 'Project docs',
+          to: `/projects/${projectId}/writing/${demoProjectDocIdById[projectId] ?? 'doc-1'}`,
+        },
+      ]
+    : [
+        { label: 'Today intake', to: '/today' },
+        { label: 'Library inventory', to: '/library' },
+        { label: 'Projects workspace', to: '/projects' },
+      ];
   const mainClassName = projectId
     ? 'workbench-main workbench-main--project'
     : 'workbench-main workbench-main--personal';
@@ -24,12 +43,12 @@ export function WorkbenchLayout() {
         <SidebarNav />
       </aside>
 
-      <div className={mainClassName} data-testid="workbench-main-surface">
+      <div className={mainClassName} data-layout-mode="full-width" data-testid="workbench-main-surface">
         <Outlet />
       </div>
 
       <aside className="workbench-context-rail" data-testid="workbench-context-rail">
-        <ContextIndicator label={label} variant={variant} />
+        <ContextIndicator actions={contextActions} label={label} variant={variant} />
         <RecentOpenedPanel />
       </aside>
     </div>

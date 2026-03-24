@@ -23,6 +23,7 @@ describe('research workbench contracts', () => {
     };
     const reference: ProjectReferenceRecord = {
       createdAt: '2026-03-24T00:00:00.000Z',
+      documentId: 'doc-1',
       id: 'reference-1',
       ownerType: 'project',
       paperAssetId: 'asset-1',
@@ -34,6 +35,7 @@ describe('research workbench contracts', () => {
 
     expect(notebook.visibility).toBe('private');
     expect(question.notebookId).toBe(notebook.id);
+    expect(reference.documentId).toBe('doc-1');
     expect(reference.ownerType).toBe('project');
     expect(reference.sourceKind).toBe('projection');
   });

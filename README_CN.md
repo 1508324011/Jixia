@@ -11,7 +11,7 @@
 2. 已经过验证的 workbench 浏览器界面：`Home -> Today/Search/Library/Projects/Settings`
 3. 已经落地到 `demo-native-showcase` 的 **统一摄取与深读工作台** reset：canonical `/projects/...` 路由、三栏 shell、分离的 `Reader` / `Notes Workspace` / `Project Docs`，以及 project-owned 文档语义
 
-也就是说，这个分支不再只是“有一个 approved reset 计划”。风险优先实现计划的 Tasks 1–9 已经在 `demo-native-showcase` 中落地并完成验证；当前面向后续迭代的重点，是 operator handoff / packaging，以及未来浏览器侧的 `quote / insert helper`。
+也就是说，这个分支不再只是“有一个 approved reset 计划”。风险优先实现计划的 Tasks 1–9 已经在 `demo-native-showcase` 中落地并完成验证；当前面向后续迭代的重点，是 operator handoff / packaging，以及更完整的 recommendation / push-lane 能力。
 
 ## Native Demo 展示手册
 
@@ -19,7 +19,7 @@
 
 - `docs/runbooks/native-demo-showcase.md`
 
-该 runbook 记录了精确的 reset / startup 命令、`npm run package:native-demo` 生成的打包产物路径、当前真实的浏览器走查路径，以及已交付 reset 与仍待补齐的浏览器 helper 之间的边界。
+该 runbook 记录了精确的 reset / startup 命令、`npm run package:native-demo` 生成的打包产物路径、当前真实的浏览器走查路径，以及已交付 reset 与后续 recommendation / operator 工作之间的边界。
 
 ## 当前主机 beta 路径真相
 
@@ -45,9 +45,9 @@
 - 只有 **已导入库存** 才能进入深读、`Notes Workspace`、证据生成与 `Project Docs`
 - `Notebook` 保持 fully private、围绕研究问题组织
 - `Project Docs` 是 project-owned 的共享写作对象
-- notebook 到 project 的过桥只能通过 `quote / insert helper`，不能直接共享 notebook 本体
+- notebook 到 project 的过桥现在只能通过浏览器侧显式的 **Insert into project docs** 投影流程，不能直接共享 notebook 本体
 
-浏览器现在已经体现了 route / shell / ownership 的 reset；尚未交付的是 notebook 到 project 的显式浏览器侧 helper。
+浏览器现在已经体现了 route / shell / ownership 的 reset，也已经交付 notebook 到 project 的显式浏览器侧投影操作。
 
 ## 计划文档
 
@@ -109,7 +109,7 @@
 下一阶段的重点分为三条：
 
 1. 在后续迭代中持续保持 operator-facing 文档与 runbook 和当前实际交付一致
-2. 在已经落地的 notebook/private/project 边界之上，补上浏览器侧 `quote / insert helper`
+2. 在后续迭代中继续保持浏览器侧 notebook-to-project 投影流程与实际交付一致
 3. 继续推进 Task 11 的 operator/deployment 路径，让 runtime 能在实验室服务器上稳定复现，同时不再分叉产品模型
 
 ## Task 11 运维启动手册

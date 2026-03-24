@@ -41,7 +41,7 @@ describe('native demo runbook contract', () => {
     expect(runbook).toContain('Why operator support is next');
     expect(runbook).toContain('Unified Intake & Deep Reading Workbench');
     expect(runbook).toContain('imported inventory');
-    expect(runbook).toContain('quote / insert helper');
+    expect(runbook).toContain('Insert into project docs');
     expect(runbook).toContain('shared-space');
     expect(runbook).toContain('tumor-board');
     expect(runbook).not.toContain('Create Space -> Library -> Reader -> Writing');
@@ -65,7 +65,7 @@ describe('native demo runbook contract', () => {
     expect(readme).toContain('Notes Workspace');
     expect(readme).toContain('Project Docs');
     expect(readme).toContain('2026-03-24-jixia-research-workbench-reset-risk-first-implementation.md');
-    expect(readme).toContain('quote / insert helper');
+    expect(readme).toContain('Insert into project docs');
     expect(readme).not.toContain('Spaces -> Import paper -> Reader -> Writing -> governed summary');
     expect(readme).not.toContain('It does not yet imply full browser-side live data integration.');
     expect(readme).not.toContain('serves the built Task 10 shell');
@@ -75,7 +75,7 @@ describe('native demo runbook contract', () => {
     expect(readmeCn).toContain('Notes Workspace');
     expect(readmeCn).toContain('Project Docs');
     expect(readmeCn).toContain('2026-03-24-jixia-research-workbench-reset-risk-first-implementation.md');
-    expect(readmeCn).toContain('quote / insert helper');
+    expect(readmeCn).toContain('Insert into project docs');
     expect(readmeCn).not.toContain('Spaces -> Import paper -> Reader -> Writing -> governed summary');
     expect(readmeCn).not.toContain('它还不代表浏览器端已经完成全部实时 server-backed 数据接入。');
     expect(readmeCn).not.toContain('托管构建后的 Task 10 Web shell');

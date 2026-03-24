@@ -15,6 +15,7 @@ describe('workbench ownership boundaries', () => {
     expect(policy.canEnterReader({ objectType: 'library-entry' })).toBe(true);
 
     const projection = policy.createProjectReference({
+      documentId: 'doc-1',
       paperAssetId: 'asset-1',
       projectId: 'project-1',
       selectedText: 'Important excerpt',
@@ -25,6 +26,7 @@ describe('workbench ownership boundaries', () => {
     expect(projection.sourceKind).toBe('projection');
     expect(projection.paperAssetId).toBe('asset-1');
     expect(projection.projectId).toBe('project-1');
+    expect(projection.documentId).toBe('doc-1');
     expect(projection).not.toHaveProperty('notebookBody');
   });
 

@@ -1,12 +1,15 @@
 import type { EvidenceCardRecord } from '@shared/contracts/evidence';
-import type { ProjectReferenceRecord } from '@shared/contracts/writing';
+import type { SpaceMembership } from '@shared/contracts/spaces';
+import type { ProjectReferenceRecord, WritingDocRecord } from '@shared/contracts/writing';
 
 import { createWorkbenchOwnershipPolicy } from './workbench-ownership.service';
 import type { NotebookService } from './notebook.service';
 
 export type CreateProjectReferenceRequest =
   | {
+      actorSpaceId: string;
       actorUserId: string;
+      docId: string;
       noteId: string;
       notebookId: string;
       paperAssetId: string;
@@ -15,7 +18,9 @@ export type CreateProjectReferenceRequest =
       sourceType: 'notebook-note';
     }
   | {
+      actorSpaceId: string;
       actorUserId: string;
+      docId: string;
       evidenceCardId: string;
       paperAssetId: string;
       projectId: string;
@@ -25,10 +30,12 @@ export type CreateProjectReferenceRequest =
 
 export interface ProjectProjectionStore {
   evidenceCards: EvidenceCardRecord[];
+  memberships: SpaceMembership[];
   nextId(prefix: string): string;
   notebookService: NotebookService;
   persist(): void;
   projectReferences: ProjectReferenceRecord[];
+  writingDocs: WritingDocRecord[];
 }
 
 export interface ProjectProjectionService {
@@ -43,6 +50,47 @@ function assertSelectedText(selectedText: string): string {
   return selectedText.trim();
 }
 
+function assertActorMembership(
+  store: ProjectProjectionStore,
+  actorUserId: string,
+  spaceId: string,
+): void {
+  const actorHasMembership = store.memberships.some(
+    (membership) => membership.spaceId === spaceId && membership.userId === actorUserId,
+  );
+
+  if (!actorHasMembership) {
+    throw new Error('Access denied for the requested space resource.');
+  }
+}
+
+function assertProjectDocument(
+  store: ProjectProjectionStore,
+  docId: string,
+  projectId: string,
+): Extract<WritingDocRecord, { ownerType: 'project' }> {
+  const document = store.writingDocs.find((candidate) => candidate.id === docId);
+
+  if (!document || document.ownerType !== 'project' || document.projectId !== projectId) {
+    throw new Error('Project document not found.');
+  }
+
+  return document;
+}
+
+function assertProjectDocumentAccess(
+  store: ProjectProjectionStore,
+  actorSpaceId: string,
+  actorUserId: string,
+  document: Extract<WritingDocRecord, { ownerType: 'project' }>,
+): void {
+  assertActorMembership(store, actorUserId, document.spaceId);
+
+  if (actorSpaceId !== document.spaceId) {
+    throw new Error('Access denied for the requested project document.');
+  }
+}
+
 export function createProjectProjectionService(
   store: ProjectProjectionStore,
 ): ProjectProjectionService {
@@ -54,6 +102,9 @@ export function createProjectProjectionService(
 
   return {
     async createReference(input) {
+      const document = assertProjectDocument(store, input.docId, input.projectId);
+      assertProjectDocumentAccess(store, input.actorSpaceId, input.actorUserId, document);
+
       if (input.sourceType === 'notebook-note') {
         const notebook = store.notebookService.getNotebook(input.notebookId);
         const note = store.notebookService.getNote(input.noteId);
@@ -71,6 +122,7 @@ export function createProjectProjectionService(
         }
 
         const reference = ownershipPolicy.createProjectReference({
+          documentId: input.docId,
           paperAssetId: input.paperAssetId,
           projectId: input.projectId,
           selectedText: assertSelectedText(input.selectedText),
@@ -96,6 +148,7 @@ export function createProjectProjectionService(
       }
 
       const reference = ownershipPolicy.createProjectReference({
+        documentId: input.docId,
         paperAssetId: input.paperAssetId,
         projectId: input.projectId,
         selectedText: assertSelectedText(input.selectedText),

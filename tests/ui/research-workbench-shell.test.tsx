@@ -17,4 +17,13 @@ describe('research workbench shell', () => {
     expect(screen.getByTestId('workbench-context-rail')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '最近打开' })).toBeInTheDocument();
   });
+
+  it('renders a desktop workbench shell without page-width constraining the main surface', () => {
+    renderWorkbench('/home');
+
+    expect(screen.getByTestId('workbench-main-surface')).toHaveAttribute(
+      'data-layout-mode',
+      'full-width',
+    );
+  });
 });

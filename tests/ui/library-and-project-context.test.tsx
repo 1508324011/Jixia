@@ -88,6 +88,10 @@ describe('library and project context', () => {
     expect(await screen.findByRole('heading', { name: 'Library inventory' })).toBeInTheDocument();
     expect(screen.getByText('Inventory view')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'All records' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Open reader' })).toHaveAttribute(
+      'href',
+      '/library/entry-personal/reader',
+    );
 
     cleanup();
 

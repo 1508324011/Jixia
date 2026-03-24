@@ -19,8 +19,10 @@ export interface TodayRecommendation {
 }
 
 export interface DiscoveryBoard {
+  description?: string;
   id: string;
   items: TodayRecommendation[];
+  laneLabel?: string;
   title: string;
 }
 

@@ -6,6 +6,8 @@ interface ProjectDocumentTreeProps {
 }
 
 export function ProjectDocumentTree({ document, projectId }: ProjectDocumentTreeProps) {
+  const references = document?.references ?? [];
+
   return (
     <section className="panel" aria-label="project document tree">
       <p className="page-kicker">Project-owned structure</p>
@@ -25,6 +27,19 @@ export function ProjectDocumentTree({ document, projectId }: ProjectDocumentTree
           <p className="quiet-copy">
             Citations · {document.latestSnapshot?.citations.length ?? 0}
           </p>
+          <div className="stack-xs">
+            <h3 className="panel-title">Reference rail</h3>
+            {references.length > 0 ? (
+              references.map((reference) => (
+                <div key={reference.id} className="stack-xs">
+                  <span className="status-badge">{reference.sourceType}</span>
+                  <p className="quiet-copy">{reference.selectedText}</p>
+                </div>
+              ))
+            ) : (
+              <p className="quiet-copy">No projected references yet.</p>
+            )}
+          </div>
         </div>
       ) : (
         <p className="quiet-copy">No shared project document has been saved yet.</p>

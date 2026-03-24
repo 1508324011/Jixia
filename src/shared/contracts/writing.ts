@@ -43,6 +43,7 @@ export interface WritingDocumentView {
   documentId: string;
   ownerType: 'project';
   projectId: string;
+  references: ProjectReferenceRecord[];
   spaceId: string;
   title: string;
   publishState: PublishState;
@@ -55,6 +56,7 @@ export interface WritingDocumentResponse {
 
 export interface ProjectReferenceRecord {
   createdAt: string;
+  documentId: string;
   id: string;
   ownerType: 'project';
   paperAssetId: string;

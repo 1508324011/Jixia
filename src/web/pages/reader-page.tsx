@@ -2,7 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 import type { GovernedJobView } from '@shared/contracts/jobs';
-import type { ReadingDetailView } from '@shared/contracts/reading';
+import type {
+  ReadingDetailView,
+  ReadingRetrievalStateView,
+  ReadingWorkspaceView,
+} from '@shared/contracts/reading';
+import {
+  defaultNotebookQuestionPrompts,
+  metadataOnlyReadingRetrievalState,
+} from '@shared/contracts/reading';
 
 import { PaperWorkspaceTabs } from '../components/paper-workspace-tabs';
 import {
@@ -15,18 +23,24 @@ const demoApi = createDemoApi();
 const DEFAULT_PROJECT_SPACE_ID = 'shared-space';
 
 function buildNotesWorkspacePath(
-  projectId: string,
   entryId: string,
-  spaceId: string,
-  preserveSpaceContext = false,
+  options: {
+    preserveSpaceContext?: boolean;
+    projectId?: string;
+    spaceId?: string;
+  },
 ): string {
-  const pathname = `/projects/${projectId}/library/${entryId}/notes`;
+  if (!options.projectId) {
+    return `/library/${entryId}/notes`;
+  }
 
-  if (!preserveSpaceContext && spaceId === DEFAULT_PROJECT_SPACE_ID) {
+  const pathname = `/projects/${options.projectId}/library/${entryId}/notes`;
+
+  if (!options.preserveSpaceContext && options.spaceId === DEFAULT_PROJECT_SPACE_ID) {
     return pathname;
   }
 
-  return `${pathname}?spaceId=${encodeURIComponent(spaceId)}`;
+  return `${pathname}?spaceId=${encodeURIComponent(options.spaceId ?? DEFAULT_PROJECT_SPACE_ID)}`;
 }
 
 function buildProjectDocsPath(
@@ -44,9 +58,32 @@ function buildProjectDocsPath(
   return `${pathname}?spaceId=${encodeURIComponent(spaceId)}`;
 }
 
+function resolveReaderWorkspace(detail: ReadingDetailView): ReadingWorkspaceView {
+  if (detail.workspace?.notebookId) {
+    return detail.workspace;
+  }
+
+  const notebookId = `notebook-${detail.entry.id}`;
+
+  return {
+    notebookId,
+    privateNotes: detail.notes.filter((note) => note.visibility === 'private'),
+    questions: defaultNotebookQuestionPrompts.map((prompt, index) => ({
+      id: `${notebookId}-question-${index + 1}`,
+      prompt,
+    })),
+    sharedComments: detail.notes.filter((note) => note.visibility === 'space_shared'),
+  };
+}
+
+function resolveRetrievalState(detail: ReadingDetailView): ReadingRetrievalStateView {
+  return detail.retrieval ?? { ...metadataOnlyReadingRetrievalState };
+}
+
 export function ReaderPage() {
   const [searchParams] = useSearchParams();
-  const { spaceId: routeSpaceId, projectId = 'project-1', entryId = 'entry-1' } = useParams();
+  const { spaceId: routeSpaceId, projectId, entryId = 'entry-1' } = useParams();
+  const isPersonalMode = !projectId;
   const spaceId = routeSpaceId ?? searchParams.get('spaceId') ?? undefined;
   const hasExplicitSpaceContext = typeof spaceId === 'string' && spaceId.length > 0;
   const resolvedSpaceId = spaceId ?? DEFAULT_PROJECT_SPACE_ID;
@@ -125,26 +162,24 @@ export function ReaderPage() {
     };
   }, [hasExplicitSpaceContext, resolvedSpaceId]);
 
-  const privateNotes = useMemo(
-    () => detail?.notes.filter((note) => note.visibility === 'private') ?? [],
+  const workspace = useMemo(() => (detail ? resolveReaderWorkspace(detail) : null), [detail]);
+  const retrievalState = useMemo(
+    () => (detail ? resolveRetrievalState(detail) : { ...metadataOnlyReadingRetrievalState }),
     [detail],
   );
-  const projectComments = useMemo(
-    () => detail?.notes.filter((note) => note.visibility === 'space_shared') ?? [],
-    [detail],
-  );
+  const privateNotes = workspace?.privateNotes ?? [];
+  const projectComments = workspace?.sharedComments ?? [];
   const linkedSpaceContext = hasExplicitSpaceContext ? resolvedSpaceId : DEFAULT_PROJECT_SPACE_ID;
-  const projectDocsPath = buildProjectDocsPath(
-    projectId,
-    'doc-1',
-    linkedSpaceContext,
-    hasExplicitSpaceContext,
-  );
+  const projectDocsPath = projectId
+    ? buildProjectDocsPath(projectId, 'doc-1', linkedSpaceContext, hasExplicitSpaceContext)
+    : null;
   const notesWorkspacePath = buildNotesWorkspacePath(
-    projectId,
     entryId,
-    linkedSpaceContext,
-    hasExplicitSpaceContext,
+    {
+      preserveSpaceContext: hasExplicitSpaceContext,
+      projectId,
+      spaceId: linkedSpaceContext,
+    },
   );
 
   return (
@@ -159,8 +194,8 @@ export function ReaderPage() {
       </header>
 
       <section aria-label="context bar" className="context-bar">
-        {hasExplicitSpaceContext ? <span>Space context · {resolvedSpaceId}</span> : null}
-        <span>Project context · {projectId}</span>
+        <span>{isPersonalMode ? 'Personal context' : `Project context · ${projectId}`}</span>
+        {!isPersonalMode && hasExplicitSpaceContext ? <span>Space context · {resolvedSpaceId}</span> : null}
         <span>Entry · {entryId}</span>
         <span className="status-badge">{privateNotes.length} private notes</span>
         <span className="status-badge">{projectComments.length} shared comments</span>
@@ -200,68 +235,29 @@ export function ReaderPage() {
             Reader stays focused on evidence. Private notes and project docs now live on their own
             surfaces.
           </p>
-          <PaperWorkspaceTabs />
+          {detail ? (
+            <PaperWorkspaceTabs
+              governedJob={governedJob}
+              insights={detail.insights}
+              privateNotes={privateNotes}
+              retrieval={retrievalState}
+              sharedComments={projectComments}
+            />
+          ) : null}
 
           {detail ? (
             <div className="stack-sm">
-              <p className="quiet-copy">Governed action source · queued → running → succeeded</p>
-
-              <div className="stack-xs">
-                <h3 className="panel-title">Private notebook preview</h3>
-                {privateNotes.length > 0 ? (
-                  privateNotes.map((note) => (
-                    <p key={note.id} className="quiet-copy">
-                      {note.body}
-                    </p>
-                  ))
-                ) : (
-                  <p className="quiet-copy">No private notes yet. Continue in Notes Workspace.</p>
-                )}
-              </div>
-
-              <div className="stack-xs">
-                <h3 className="panel-title">Project comments</h3>
-                {projectComments.length > 0 ? (
-                  projectComments.map((note) => (
-                    <p key={note.id} className="quiet-copy">
-                      {note.body}
-                    </p>
-                  ))
-                ) : (
-                  <p className="quiet-copy">No shared comments yet.</p>
-                )}
-              </div>
-
-              <div className="stack-xs">
-                <h3 className="panel-title">Governed insights</h3>
-                {detail.insights.length > 0 ? (
-                  detail.insights.map((insight) => (
-                    <p key={insight.id} className="quiet-copy">
-                      {insight.summary}
-                    </p>
-                  ))
-                ) : (
-                  <p className="quiet-copy">No governed insights yet.</p>
-                )}
-              </div>
-
-              {governedJob ? (
-                <div className="stack-xs">
-                  <p className="quiet-copy">Latest governed finale</p>
-                  <span className="status-badge">{governedJob.job.status}</span>
-                  <p className="quiet-copy">
-                    {governedJob.events.length} events · {governedJob.audits.length} audit records
-                  </p>
-                </div>
-              ) : null}
+              <p className="quiet-copy">Notebook notes, shared comments, and retrieval status now live inside the tabbed workspace so each lane reflects a real backend boundary.</p>
 
               <div className="button-row">
                 <Link className="panel-link" to={notesWorkspacePath}>
                   Open notes workspace
                 </Link>
-                <Link className="panel-link" to={projectDocsPath}>
-                  Open project docs
-                </Link>
+                {projectDocsPath ? (
+                  <Link className="panel-link" to={projectDocsPath}>
+                    Open project docs
+                  </Link>
+                ) : null}
               </div>
             </div>
           ) : null}

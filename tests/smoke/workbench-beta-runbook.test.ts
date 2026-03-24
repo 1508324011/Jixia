@@ -50,7 +50,7 @@ describe('workbench beta runbook contract', () => {
     expect(runbook).toContain('Notebook');
     expect(runbook).toContain('fully private');
     expect(runbook).toContain('Project Docs');
-    expect(runbook).toContain('quote / insert helper');
+    expect(runbook).toContain('Insert into project docs');
     expect(runbook).not.toContain('Promote latest insight to Writer');
     expect(runbook).not.toContain('打开 Writer 文稿');
 
@@ -60,7 +60,7 @@ describe('workbench beta runbook contract', () => {
     expect(readme).toContain('Unified Intake & Deep Reading Workbench');
     expect(readme).toContain('Discovery & Intake');
     expect(readme).toContain('Project Docs');
-    expect(readme).toContain('quote / insert helper');
+    expect(readme).toContain('Insert into project docs');
     expect(readme).toContain('/projects/:projectId/...');
     expect(readmeCn).toContain('docs/runbooks/native-demo-showcase.md');
     expect(readmeCn).toContain('当前主机 beta 路径');
@@ -68,7 +68,7 @@ describe('workbench beta runbook contract', () => {
     expect(readmeCn).toContain('统一摄取与深读工作台');
     expect(readmeCn).toContain('Discovery & Intake');
     expect(readmeCn).toContain('Project Docs');
-    expect(readmeCn).toContain('quote / insert helper');
+    expect(readmeCn).toContain('Insert into project docs');
     expect(readmeCn).toContain('/projects/:projectId/...');
   });
 });

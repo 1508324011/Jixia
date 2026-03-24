@@ -328,12 +328,14 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const projectProjectionService = createProjectProjectionService({
     evidenceCards: state.evidenceCards,
+    memberships: state.memberships,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
     notebookService,
     persist,
     projectReferences: state.projectReferences,
+    writingDocs: state.writingDocs,
   });
   const readingService = createReadingService({
     conversations: state.conversations,
@@ -370,6 +372,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     paperAssets: state.paperAssets,
     persist,
     projectDocumentPresences: state.projectDocumentPresences,
+    projectReferences: state.projectReferences,
     spaces: state.spaces,
     versioningService,
     writingDocs: state.writingDocs,

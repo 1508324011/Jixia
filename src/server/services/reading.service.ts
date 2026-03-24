@@ -5,9 +5,15 @@ import type {
 } from '@shared/contracts/evidence';
 import type {
   ConversationRecord,
+  NotebookQuestionView,
   NoteRecord,
   NoteVisibility,
   ReadingDetailView,
+  ReadingWorkspaceView,
+} from '@shared/contracts/reading';
+import {
+  defaultNotebookQuestionPrompts,
+  metadataOnlyReadingRetrievalState,
 } from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
@@ -162,6 +168,38 @@ function toReadingNote(
   };
 }
 
+function createNotebookQuestions(notebookId: string): NotebookQuestionView[] {
+  return defaultNotebookQuestionPrompts.map((prompt, index) => ({
+    id: `${notebookId}-question-${index + 1}`,
+    prompt,
+  }));
+}
+
+async function buildWorkspaceView(
+  store: ReadingStore,
+  input: {
+    actorUserId: string;
+    libraryEntryId: string;
+    sharedComments: NoteRecord[];
+  },
+): Promise<ReadingWorkspaceView> {
+  const notebook = await store.notebookService.getNotebookForLibraryEntry({
+    libraryEntryId: input.libraryEntryId,
+    ownerUserId: input.actorUserId,
+  });
+  const privateNotes = (await store.notebookService.listNotes({
+    libraryEntryId: input.libraryEntryId,
+    ownerUserId: input.actorUserId,
+  })).map((note) => toReadingNote(note, input.libraryEntryId));
+
+  return {
+    notebookId: notebook.id,
+    privateNotes,
+    questions: createNotebookQuestions(notebook.id),
+    sharedComments: input.sharedComments,
+  };
+}
+
 function createEvidenceCards(
   store: ReadingStore,
   input: {
@@ -223,6 +261,26 @@ export function createReadingService(store: ReadingStore): ReadingService {
         visibility: entry.visibility,
       });
 
+      const sharedComments = store.notes.filter((note) => {
+        if (note.libraryEntryId !== input.libraryEntryId || note.visibility !== 'space_shared') {
+          return false;
+        }
+
+        return canReadResource({
+          actorHasResourceMembership,
+          actorSpaceId: input.actorSpaceId,
+          actorUserId: input.actorUserId,
+          resourceOwnerUserId: note.authorUserId,
+          resourceSpaceId: entry.spaceId,
+          visibility: note.visibility,
+        });
+      });
+      const workspace = await buildWorkspaceView(store, {
+        actorUserId: input.actorUserId,
+        libraryEntryId: input.libraryEntryId,
+        sharedComments,
+      });
+
       return {
         asset: {
           abstractText: asset.abstractText,
@@ -235,20 +293,9 @@ export function createReadingService(store: ReadingStore): ReadingService {
         insights: store.insights.filter(
           (insight) => insight.libraryEntryId === input.libraryEntryId,
         ),
-        notes: store.notes.filter((note) => {
-          if (note.libraryEntryId !== input.libraryEntryId) {
-            return false;
-          }
-
-          return canReadResource({
-            actorHasResourceMembership,
-            actorSpaceId: input.actorSpaceId,
-            actorUserId: input.actorUserId,
-            resourceOwnerUserId: note.authorUserId,
-            resourceSpaceId: entry.spaceId,
-            visibility: note.visibility,
-          });
-        }),
+        notes: [...workspace.privateNotes, ...sharedComments],
+        retrieval: { ...metadataOnlyReadingRetrievalState },
+        workspace,
       };
     },
     async getWorkbenchDetail(
@@ -272,18 +319,7 @@ export function createReadingService(store: ReadingStore): ReadingService {
         return null;
       }
 
-      const notebookNotes = await store.notebookService.listNotes({
-        libraryEntryId: input.libraryEntryId,
-        ownerUserId: input.actorUserId,
-      });
-
-      return {
-        ...detail,
-        notes: [
-          ...detail.notes,
-          ...notebookNotes.map((note) => toReadingNote(note, input.libraryEntryId)),
-        ],
-      };
+      return detail;
     },
     async createNote(input: CreateNoteRequest): Promise<NoteRecord> {
       assertEntryAccess(store, input.authorUserId, input.actorSpaceId, input.libraryEntryId);

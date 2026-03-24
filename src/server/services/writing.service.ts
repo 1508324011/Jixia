@@ -2,6 +2,8 @@ import type {
   CitationLinkRecord,
   PublishState,
   ProjectDocumentPresenceRecord,
+  ProjectOwnedWritingDocRecord,
+  ProjectReferenceRecord,
   WritingDocumentView,
   WritingDocRecord,
   WritingDocSnapshot,
@@ -62,6 +64,7 @@ export interface WritingStore {
   paperAssets: StoredPaperAsset[];
   persist(): void;
   projectDocumentPresences: ProjectDocumentPresenceRecord[];
+  projectReferences: ProjectReferenceRecord[];
   spaces: StoredSpace[];
   versioningService: VersioningService;
   writingDocs: StoredWritingDoc[];
@@ -147,13 +150,49 @@ function findProjectDocument(
   store: WritingStore,
   projectId: string,
   spaceId: string,
-): StoredWritingDoc | undefined {
-  return store.writingDocs.find(
+): ProjectOwnedWritingDocRecord | undefined {
+  const document = store.writingDocs.find(
     (candidate) =>
       candidate.ownerType === 'project' &&
       candidate.projectId === projectId &&
       candidate.spaceId === spaceId,
   );
+
+  return document?.ownerType === 'project' ? document : undefined;
+}
+
+function buildProjectReferences(
+  store: WritingStore,
+  document: StoredWritingDoc,
+): ProjectReferenceRecord[] {
+  if (document.ownerType !== 'project') {
+    return [];
+  }
+
+  return store.projectReferences.filter(
+    (reference) =>
+      reference.documentId === document.id &&
+      reference.ownerType === 'project' &&
+      reference.projectId === document.projectId,
+  );
+}
+
+function toWritingDocumentView(
+  store: WritingStore,
+  document: ProjectOwnedWritingDocRecord,
+  projectId: string,
+  latestSnapshot = buildLatestSnapshot(store, document),
+): WritingDocumentView {
+  return {
+    documentId: document.id,
+    latestSnapshot,
+    ownerType: 'project',
+    projectId,
+    publishState: document.publishState,
+    references: buildProjectReferences(store, document),
+    spaceId: document.spaceId,
+    title: document.title,
+  };
 }
 
 function touchProjectPresence(
@@ -230,15 +269,7 @@ export function createWritingService(store: WritingStore): WritingService {
         userId: input.actorUserId,
       });
 
-      return {
-        documentId: document.id,
-        latestSnapshot: buildLatestSnapshot(store, document),
-        ownerType: 'project',
-        projectId: input.projectId,
-        publishState: document.publishState,
-        spaceId: document.spaceId,
-        title: document.title,
-      };
+      return toWritingDocumentView(store, document, input.projectId);
     },
     async saveDocument(input: SaveDocumentRequest): Promise<WritingDocSnapshot> {
       const document = findDocument(store, input.docId);
@@ -270,7 +301,7 @@ export function createWritingService(store: WritingStore): WritingService {
             publishState: 'draft',
             spaceId: input.spaceId,
             title: input.title,
-          } satisfies StoredWritingDoc;
+          } satisfies ProjectOwnedWritingDocRecord;
 
       if (!existingDocument) {
         store.writingDocs.push(document);
@@ -292,15 +323,7 @@ export function createWritingService(store: WritingStore): WritingService {
         userId: input.actorUserId,
       });
 
-      return {
-        documentId: document.id,
-        latestSnapshot,
-        ownerType: 'project',
-        projectId: input.projectId,
-        publishState: document.publishState,
-        spaceId: document.spaceId,
-        title: document.title,
-      };
+      return toWritingDocumentView(store, document, input.projectId, latestSnapshot);
     },
     async transitionPublishState(
       input: TransitionPublishStateRequest,

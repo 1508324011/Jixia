@@ -155,6 +155,39 @@ describe('reading evidence', () => {
         libraryEntryId: imported.entry.id,
       });
 
+      expect(reopenedDetail?.retrieval).toEqual(
+        expect.objectContaining({
+          fullTextAvailable: false,
+          state: 'metadata-only',
+        }),
+      );
+      expect(reopenedDetail?.workspace.notebookId).toMatch(/^notebook-/);
+      expect(reopenedDetail?.workspace.questions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            prompt: 'What changes my interpretation of this paper?',
+          }),
+          expect.objectContaining({
+            prompt: 'Which claim deserves a project-level reference?',
+          }),
+        ]),
+      );
+      expect(reopenedDetail?.workspace.privateNotes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            body: 'Private note for later synthesis.',
+            visibility: 'private',
+          }),
+        ]),
+      );
+      expect(reopenedDetail?.workspace.sharedComments).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            body: 'Project-visible comment for the tumor board.',
+            visibility: 'space_shared',
+          }),
+        ]),
+      );
       expect(reopenedDetail?.notes).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

@@ -67,4 +67,43 @@ describe('workbench routing', () => {
     expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument();
     expect(window.location.pathname).toBe('/projects/tumor-board/library');
   });
+
+  it('renders canonical personal reader routes without inventing a project route', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const url = input.toString();
+
+        if (url.endsWith('/api/reading/entry-1')) {
+          return new Response(
+            JSON.stringify({
+              asset: {
+                abstractText: 'Personal imported record for quiet review.',
+                canonicalId: 'pmid:111111',
+                id: 'asset-1',
+                title: 'Personal evidence note',
+              },
+              entry: {
+                id: 'entry-1',
+                visibility: 'private',
+              },
+              insights: [],
+              notes: [],
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }),
+    );
+
+    renderWorkbench('/library/entry-1/reader');
+
+    expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/library/entry-1/reader');
+  });
 });

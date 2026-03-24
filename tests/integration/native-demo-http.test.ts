@@ -97,6 +97,19 @@ async function startServer(storageRoot: string): Promise<{
 }
 
 describe('native demo http surface', () => {
+  it('honors explicit caller identity for writing document reads', async () => {
+    await withServer({}, async (baseUrl) => {
+      const response = await fetch(
+        `${baseUrl}/api/writing/shared-space/projects/tumor-board/document?userId=user-alice`,
+      );
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({
+        error: 'Access denied for the requested space resource.',
+      });
+    });
+  });
+
   it('exposes a browser-callable walkthrough route', async () => {
     await withServer({}, async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/spaces`);
@@ -149,13 +162,18 @@ describe('native demo http surface', () => {
       const entryResponse = await fetch(`${baseUrl}/api/library/${entryId}`);
       expect(entryResponse.status).toBe(200);
 
-      const readingResponse = await fetch(`${baseUrl}/api/reading/${entryId}`);
+      const readingResponse = await fetch(`${baseUrl}/api/reading/${entryId}?spaceId=shared-space`);
       expect(readingResponse.status).toBe(200);
 
-      const noteResponse = await fetch(`${baseUrl}/api/reading/${entryId}/notes`, {
+      const readingResult = (await readingResponse.json()) as {
+        asset: { id: string };
+        workspace: { notebookId: string };
+      };
+
+      const noteResponse = await fetch(`${baseUrl}/api/reading/${entryId}/notes?spaceId=shared-space`, {
         body: JSON.stringify({
-          body: 'Key mutation note',
-          visibility: 'space_shared',
+          body: 'Private notebook body about key mutation and next experiments.',
+          visibility: 'private',
         }),
         headers: {
           'Content-Type': 'application/json',
@@ -163,6 +181,10 @@ describe('native demo http surface', () => {
         method: 'POST',
       });
       expect(noteResponse.status).toBe(201);
+
+      const noteResult = (await noteResponse.json()) as {
+        note: { id: string };
+      };
 
       const insightResponse = await fetch(`${baseUrl}/api/reading/${entryId}/insights`, {
         body: JSON.stringify({
@@ -183,7 +205,7 @@ describe('native demo http surface', () => {
       });
       expect(insightResponse.status).toBe(201);
 
-      const refreshedReadingResponse = await fetch(`${baseUrl}/api/reading/${entryId}`);
+      const refreshedReadingResponse = await fetch(`${baseUrl}/api/reading/${entryId}?spaceId=shared-space`);
       expect(refreshedReadingResponse.status).toBe(200);
 
       const refreshedReadingResult = (await refreshedReadingResponse.json()) as {
@@ -191,7 +213,7 @@ describe('native demo http surface', () => {
         notes: Array<{ body: string }>;
       };
       expect(refreshedReadingResult.notes).toContainEqual(
-        expect.objectContaining({ body: 'Key mutation note' }),
+        expect.objectContaining({ body: 'Private notebook body about key mutation and next experiments.' }),
       );
       expect(refreshedReadingResult.insights).toContainEqual(
         expect.objectContaining({ summary: 'Evidence-backed summary for board prep.' }),
@@ -206,6 +228,42 @@ describe('native demo http surface', () => {
         document: { documentId: string };
       };
       expect(writingResult.document.documentId).toBeTruthy();
+
+        const projectReferenceResponse = await fetch(
+          `${baseUrl}/api/projects/tumor-board/docs/${writingResult.document.documentId}/references?spaceId=shared-space`,
+          {
+            body: JSON.stringify({
+              noteId: noteResult.note.id,
+              notebookId: readingResult.workspace.notebookId,
+              paperAssetId: readingResult.asset.id,
+              selectedText: 'Key mutation excerpt',
+              spaceId: 'shared-space',
+              sourceType: 'notebook-note',
+            }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+      expect(projectReferenceResponse.status).toBe(201);
+
+      const projectReferenceResult = (await projectReferenceResponse.json()) as {
+        reference: {
+          documentId: string;
+          ownerType: string;
+          selectedText: string;
+          sourceKind: string;
+        };
+      };
+      expect(projectReferenceResult.reference).toEqual(
+        expect.objectContaining({
+          documentId: writingResult.document.documentId,
+          ownerType: 'project',
+          selectedText: 'Key mutation excerpt',
+          sourceKind: 'projection',
+        }),
+      );
 
       const saveDocumentResponse = await fetch(
         `${baseUrl}/api/writing/shared-space/projects/tumor-board/document`,
@@ -232,10 +290,17 @@ describe('native demo http surface', () => {
           documentId: string;
           latestSnapshot: null | { content: string };
           publishState: string;
+          references: Array<{ selectedText: string }>;
         };
       };
       expect(refreshedWritingResult.document.latestSnapshot?.content).toBe(
         'Tumor board synthesis',
+      );
+      expect(refreshedWritingResult.document.references).toContainEqual(
+        expect.objectContaining({ selectedText: 'Key mutation excerpt' }),
+      );
+      expect(JSON.stringify(refreshedWritingResult.document.references)).not.toContain(
+        'Private notebook body about key mutation and next experiments.',
       );
 
       const publishResponse = await fetch(

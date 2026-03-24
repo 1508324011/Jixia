@@ -50,6 +50,27 @@ describe('notes workspace', () => {
         libraryEntryId: string;
         visibility: 'private' | 'space_shared';
       }>,
+      retrieval: {
+        detail: 'Abstract metadata is ready for review, but full text stays outside this demo.',
+        fullTextAvailable: false,
+        state: 'metadata-only',
+        summary: 'Metadata imported',
+      },
+      workspace: {
+        notebookId: 'notebook-1',
+        privateNotes: [],
+        questions: [
+          {
+            id: 'question-1',
+            prompt: 'What changes my interpretation of this paper?',
+          },
+          {
+            id: 'question-2',
+            prompt: 'Which claim deserves a project-level reference?',
+          },
+        ],
+        sharedComments: [],
+      },
     };
 
     vi.stubGlobal(
@@ -99,8 +120,21 @@ describe('notes workspace', () => {
 
     expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
     expect(screen.getByText('Notebook questions')).toBeInTheDocument();
+    expect(screen.getByText('Notebook · notebook-1')).toBeInTheDocument();
 
-    await user.type(screen.getByRole('textbox', { name: 'Private note' }), 'Cross-paper note for later synthesis.');
+    await user.click(screen.getByRole('button', { name: 'Which claim deserves a project-level reference?' }));
+    expect(
+      screen.getByRole('textbox', {
+        name: 'Private note for “Which claim deserves a project-level reference?”',
+      }),
+    ).toBeInTheDocument();
+
+    await user.type(
+      screen.getByRole('textbox', {
+        name: 'Private note for “Which claim deserves a project-level reference?”',
+      }),
+      'Cross-paper note for later synthesis.',
+    );
     await user.click(screen.getByRole('button', { name: 'Save private note' }));
 
     expect(await screen.findByText('Cross-paper note for later synthesis.')).toBeInTheDocument();
@@ -141,6 +175,23 @@ describe('notes workspace', () => {
             },
             insights: [],
             notes: [],
+            retrieval: {
+              detail: 'Abstract metadata is ready for review, but full text stays outside this demo.',
+              fullTextAvailable: false,
+              state: 'metadata-only',
+              summary: 'Metadata imported',
+            },
+            workspace: {
+              notebookId: 'notebook-1',
+              privateNotes: [],
+              questions: [
+                {
+                  id: 'question-1',
+                  prompt: 'What changes my interpretation of this paper?',
+                },
+              ],
+              sharedComments: [],
+            },
           });
         }
 

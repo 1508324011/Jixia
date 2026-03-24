@@ -27,6 +27,10 @@ function buildCanonicalProjectPath(
   return `${pathname}?spaceId=${encodeURIComponent(spaceId)}`;
 }
 
+function buildPersonalReaderPath(entryId: string): string {
+  return `/library/${entryId}/reader`;
+}
+
 interface LibraryPageProps {
   mode?: 'personal' | 'project';
 }
@@ -306,7 +310,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
                   className="panel-link"
                   to={
                     isPersonalMode
-                      ? `/projects/project-1/library/${entry.entryId}/reader`
+                      ? buildPersonalReaderPath(entry.entryId)
                       : buildCanonicalProjectPath(
                           `/projects/${resolvedProjectId}/library/${entry.entryId}/reader`,
                           resolvedSpaceId,

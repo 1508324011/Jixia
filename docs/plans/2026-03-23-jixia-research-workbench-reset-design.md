@@ -2,7 +2,7 @@
 
 **Goal:** 将当前仍然偏 demo / page-by-page 的 Web beta，重构为一个真正可承载研究工作的全屏研究工作台：外部发现、统一研究库存、单篇深读、跨论文思考、项目协作和多文档写作都在同一套空间语义中完成。
 
-> **状态说明（2026-03-24）:** `demo-native-showcase` 已经按风险优先顺序落地了 ownership/contracts/intake/import/notebook-project boundary/project-owned docs/canonical `/projects/...` routes/three-pane shell/Reader-Notes Workspace-Project Docs 分离。浏览器侧 `quote / insert helper` 与更完整的 push-lane recommendation 仍然属于后续波次，而不是本稿声称已完成的内容。
+> **状态说明（2026-03-24）:** `demo-native-showcase` 已经按风险优先顺序落地了 ownership/contracts/intake/import/notebook-project boundary/project-owned docs/canonical `/projects/...` routes/three-pane shell/Reader-Notes Workspace-Project Docs 分离，以及浏览器侧 `Insert into project docs` 投影流程。更完整的 push-lane recommendation 仍然属于后续波次，而不是本稿声称已完成的内容。
 
 ## 🧭 设计结论
 

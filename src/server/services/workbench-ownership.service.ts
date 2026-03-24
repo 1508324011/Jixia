@@ -10,6 +10,7 @@ export interface ReaderEntryRequest {
 }
 
 export interface CreateProjectReferenceInput {
+  documentId: string;
   paperAssetId: string;
   projectId: string;
   selectedText: string;
@@ -39,6 +40,7 @@ export function createWorkbenchOwnershipPolicy(
     createProjectReference(input) {
       return {
         createdAt: now(),
+        documentId: input.documentId,
         id: nextId('project-reference'),
         ownerType: 'project',
         paperAssetId: input.paperAssetId,

@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 
 import { ProjectTabs } from '../components/project-tabs';
 import { ProjectWriterList } from '../components/project-writer-list';
@@ -8,7 +8,9 @@ const DEFAULT_PROJECT_ID = 'tumor-board';
 const WORKBENCH_SHARED_SPACE_ID = 'shared-space';
 
 export function ProjectPage() {
+  const [searchParams] = useSearchParams();
   const { projectId = DEFAULT_PROJECT_ID } = useParams();
+  const spaceId = searchParams.get('spaceId') ?? WORKBENCH_SHARED_SPACE_ID;
 
   return (
     <main className="page-shell">
@@ -26,7 +28,7 @@ export function ProjectPage() {
       <section className="panel" aria-label="Project docs">
         <h2 className="panel-title">Project docs</h2>
         <p className="quiet-copy">Shared document tree and current draft live here.</p>
-        <ProjectWriterList projectId={projectId} spaceId={WORKBENCH_SHARED_SPACE_ID} />
+        <ProjectWriterList projectId={projectId} spaceId={spaceId} />
       </section>
     </main>
   );

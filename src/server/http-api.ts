@@ -184,19 +184,23 @@ function parseCreateReadingNoteRequest(
 
 function parseCreateProjectReferenceRequest(
   requestBody: unknown,
-):
+): 
   | {
       noteId: string;
       notebookId: string;
       paperAssetId: string;
+      spaceId?: string;
       selectedText: string;
       sourceType: 'notebook-note';
+      userId?: string;
     }
   | {
       evidenceCardId: string;
       paperAssetId: string;
+      spaceId?: string;
       selectedText: string;
       sourceType: 'evidence-card';
+      userId?: string;
     } {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Project reference payload must be a JSON object.');
@@ -208,7 +212,9 @@ function parseCreateProjectReferenceRequest(
     notebookId,
     paperAssetId,
     selectedText,
+    spaceId,
     sourceType,
+    userId,
   } = requestBody as Record<string, unknown>;
 
   if (typeof paperAssetId !== 'string' || !paperAssetId.trim()) {
@@ -218,6 +224,17 @@ function parseCreateProjectReferenceRequest(
   if (typeof selectedText !== 'string' || !selectedText.trim()) {
     throw new Error('selectedText is required.');
   }
+
+  if (typeof spaceId !== 'undefined' && (typeof spaceId !== 'string' || !spaceId.trim())) {
+    throw new Error('spaceId must be a non-empty string when provided.');
+  }
+
+   if (typeof userId !== 'undefined' && (typeof userId !== 'string' || !userId.trim())) {
+    throw new Error('userId must be a non-empty string when provided.');
+  }
+
+  const normalizedSpaceId = typeof spaceId === 'string' ? spaceId.trim() : undefined;
+  const normalizedUserId = typeof userId === 'string' ? userId.trim() : undefined;
 
   if (sourceType === 'notebook-note') {
     if (typeof noteId !== 'string' || !noteId.trim()) {
@@ -232,8 +249,10 @@ function parseCreateProjectReferenceRequest(
       noteId: noteId.trim(),
       notebookId: notebookId.trim(),
       paperAssetId: paperAssetId.trim(),
+      spaceId: normalizedSpaceId,
       selectedText: selectedText.trim(),
       sourceType,
+      userId: normalizedUserId,
     };
   }
 
@@ -245,8 +264,10 @@ function parseCreateProjectReferenceRequest(
     return {
       evidenceCardId: evidenceCardId.trim(),
       paperAssetId: paperAssetId.trim(),
+      spaceId: normalizedSpaceId,
       selectedText: selectedText.trim(),
       sourceType,
+      userId: normalizedUserId,
     };
   }
 
@@ -394,10 +415,16 @@ function getActorSpaceId(requestUrl: URL): string {
   return requestUrl.searchParams.get('spaceId') ?? nativeDemoFixture.sharedSpaceId;
 }
 
-function resolveWritingActorUserId(spaceId: string): string {
-  return spaceId === 'personal-space-user-alice' || spaceId.startsWith('personal-space-user-alice')
-    ? DEFAULT_WORKBENCH_USER_ID
-    : nativeDemoFixture.actorUserId;
+function resolveRouteActorUserId(spaceId: string, explicitUserId?: string | null): string {
+  if (typeof explicitUserId === 'string' && explicitUserId.trim()) {
+    return explicitUserId.trim();
+  }
+
+  if (spaceId === 'personal-space-user-alice' || spaceId.startsWith('personal-space-user-alice')) {
+    return DEFAULT_WORKBENCH_USER_ID;
+  }
+
+  return nativeDemoFixture.actorUserId;
 }
 
 function mapDemoSpaceRecord(space: {
@@ -652,19 +679,22 @@ export async function resolveHttpApi(
       const actorSpaceId = requestUrl.searchParams.get('spaceId');
 
       if (actorSpaceId) {
-        const payload = requestBody as CreateReadingNoteRequestBody | undefined;
-
-        if (typeof payload?.body !== 'string' || !payload.body.trim()) {
-          throw new Error('body is required.');
-        }
-
-        const note = await app.reading.createNote({
-          actorSpaceId,
-          authorUserId: nativeDemoFixture.actorUserId,
-          body: payload.body.trim(),
-          libraryEntryId,
-          visibility: payload.visibility ?? nativeDemoFixture.visibility,
-        });
+        const payload = parseCreateReadingNoteRequest(requestBody);
+        const note =
+          payload.visibility === 'private'
+            ? await app.reading.createWorkbenchNote({
+                authorUserId: nativeDemoFixture.actorUserId,
+                body: payload.body,
+                libraryEntryId,
+                visibility: payload.visibility,
+              })
+            : await app.reading.createNote({
+                actorSpaceId,
+                authorUserId: nativeDemoFixture.actorUserId,
+                body: payload.body,
+                libraryEntryId,
+                visibility: payload.visibility,
+              });
 
         return createJsonResponse(201, { note } satisfies ReadingNoteResponse);
       }
@@ -772,10 +802,19 @@ export async function resolveHttpApi(
 
     if (projectDocumentReferenceMatch && method === 'POST') {
       const projectId = decodePathSegment(projectDocumentReferenceMatch[1]);
+      const docId = decodePathSegment(projectDocumentReferenceMatch[2]);
       const payload = parseCreateProjectReferenceRequest(requestBody);
+      const actorSpaceId =
+        payload.spaceId ?? requestUrl.searchParams.get('spaceId') ?? nativeDemoFixture.sharedSpaceId;
+      const actorUserId = resolveRouteActorUserId(
+        actorSpaceId,
+        payload.userId ?? requestUrl.searchParams.get('userId'),
+      );
       const reference = await app.projectProjection.createReference({
-        actorUserId: DEFAULT_WORKBENCH_USER_ID,
+        actorSpaceId,
+        actorUserId,
         ...payload,
+        docId,
         projectId,
       });
 
@@ -787,7 +826,7 @@ export async function resolveHttpApi(
     if (writingDocumentMatch && (method === 'GET' || method === 'HEAD')) {
       const spaceId = decodePathSegment(writingDocumentMatch[1]);
       const projectId = decodePathSegment(writingDocumentMatch[2]);
-      const actorUserId = resolveWritingActorUserId(spaceId);
+      const actorUserId = resolveRouteActorUserId(spaceId, requestUrl.searchParams.get('userId'));
       const document = await app.writing.getDocument({
         actorSpaceId: spaceId,
         actorUserId,
@@ -805,7 +844,7 @@ export async function resolveHttpApi(
     if (writingDocumentMatch && method === 'POST') {
       const spaceId = decodePathSegment(writingDocumentMatch[1]);
       const projectId = decodePathSegment(writingDocumentMatch[2]);
-      const actorUserId = resolveWritingActorUserId(spaceId);
+      const actorUserId = resolveRouteActorUserId(spaceId, requestUrl.searchParams.get('userId'));
       const payload = parseSaveWritingDocumentRequest(requestBody);
 
       return createJsonResponse(
@@ -960,17 +999,21 @@ export async function resolveHttpApi(
       const [documentId] = publishMatch;
       const body = requestBody as PublishDocumentRequestBody | undefined;
       const actorSpaceId = getActorSpaceId(requestUrl);
+      const actorUserId = resolveRouteActorUserId(
+        actorSpaceId,
+        requestUrl.searchParams.get('userId'),
+      );
 
       await app.writing.transitionPublishState({
         actorSpaceId,
-        actorUserId: resolveWritingActorUserId(actorSpaceId),
+        actorUserId,
         docId: documentId,
         publishState: body?.publishState ?? 'published',
       });
 
       const document = await app.writing.getDocument({
         actorSpaceId,
-        actorUserId: resolveWritingActorUserId(actorSpaceId),
+        actorUserId,
         projectId: nativeDemoFixture.projectId,
         spaceId: actorSpaceId,
       });

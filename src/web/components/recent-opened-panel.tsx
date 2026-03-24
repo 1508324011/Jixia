@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+
 import { getRecentOpenedItems } from '../lib/recent-opened-store';
 
 export function RecentOpenedPanel() {
@@ -18,7 +20,9 @@ export function RecentOpenedPanel() {
           <li key={item.id} className="recent-opened-panel__item">
             <div className="recent-opened-panel__meta">
               <span className="status-badge">{item.kind}</span>
-              <strong>{item.title}</strong>
+              <Link className="recent-opened-panel__title-link" to={item.to}>
+                <strong>{item.title}</strong>
+              </Link>
             </div>
             <span className="quiet-copy">{item.context}</span>
           </li>

@@ -65,6 +65,9 @@ export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps
     };
   }, [projectId, spaceId]);
 
+  const references = document?.references ?? [];
+  const latestReference = references.at(-1) ?? null;
+
   return (
     <div className="panel-grid" aria-label="project writer documents">
       {isLoading ? (
@@ -84,6 +87,10 @@ export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps
           <p className="quiet-copy">
             {document.latestSnapshot?.content ?? 'The draft exists but does not have saved content yet.'}
           </p>
+          <p className="quiet-copy">Projected references · {references.length}</p>
+          {latestReference ? (
+            <p className="quiet-copy">Latest reference · {latestReference.selectedText}</p>
+          ) : null}
           <Link
             className="panel-link"
             to={buildProjectWritingPath(projectId, document.documentId, spaceId)}

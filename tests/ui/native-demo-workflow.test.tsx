@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -370,6 +370,17 @@ describe('native demo workflow', () => {
         },
         projectId: 'tumor-board',
         publishState: 'draft',
+        references: [] as Array<{
+          createdAt: string;
+          documentId: string;
+          id: string;
+          ownerType: 'project';
+          paperAssetId: string;
+          projectId: string;
+          selectedText: string;
+          sourceKind: 'projection';
+          sourceType: 'notebook-note';
+        }>,
         spaceId: 'shared-space',
         title: 'Tumor board synthesis',
       },
@@ -420,6 +431,32 @@ describe('native demo workflow', () => {
           return jsonResponse({ note: readingResponse.notes.at(-1) });
         }
 
+        if (
+          requestUrl.endsWith('/api/projects/tumor-board/docs/doc-1/references') &&
+          init?.method === 'POST'
+        ) {
+          const body = JSON.parse(String(init.body)) as {
+            noteId: string;
+            notebookId: string;
+            paperAssetId: string;
+            selectedText: string;
+          };
+
+          documentResponse.document.references.push({
+            createdAt: '2026-03-22T01:05:00.000Z',
+            documentId: 'doc-1',
+            id: `reference-${documentResponse.document.references.length + 1}`,
+            ownerType: 'project',
+            paperAssetId: body.paperAssetId,
+            projectId: 'tumor-board',
+            selectedText: body.selectedText,
+            sourceKind: 'projection',
+            sourceType: 'notebook-note',
+          });
+
+          return jsonResponse({ reference: documentResponse.document.references.at(-1) });
+        }
+
         throw new Error(`Unexpected fetch: ${requestUrl}`);
       }),
     );
@@ -434,15 +471,123 @@ describe('native demo workflow', () => {
 
     expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
 
-    await user.type(screen.getByRole('textbox', { name: 'Private note' }), 'Key mutation note');
+    await user.type(
+      screen.getByRole('textbox', {
+        name: 'Private note for “What changes my interpretation of this paper?”',
+      }),
+      'Key mutation note',
+    );
     await user.click(screen.getByRole('button', { name: 'Save private note' }));
 
     expect(await screen.findByText('Key mutation note')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Insert into project docs' }));
+
+    expect(await screen.findByText('Project-owned reference created.')).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Open project docs' }));
 
     expect(await screen.findByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
     expect(screen.getByDisplayValue('Initial seeded paragraph.')).toBeInTheDocument();
+    expect(screen.getByText('Reference rail')).toBeInTheDocument();
+    expect(screen.getByText('Key mutation note')).toBeInTheDocument();
+  });
+
+  it('keeps imported search results inside stable source lanes while updating import state in place', async () => {
+    const user = userEvent.setup();
+
+    window.history.replaceState({}, '', '/search');
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.includes('/api/discovery/search')) {
+          return jsonResponse({
+            boards: [
+              {
+                id: 'pubmed-board',
+                items: [
+                  {
+                    abstractText: 'Curated abstract snippet for rapid triage.',
+                    canonicalId: 'pmid:654321',
+                    id: 'pubmed-result',
+                    imported: false,
+                    objectType: 'external-candidate',
+                    reason: 'PubMed result matched the tumor board intake query.',
+                    sourceLabel: 'PubMed',
+                    sourceLocator: '654321',
+                    sourceType: 'pmid',
+                    state: 'new',
+                    title: 'Tumor board biomarkers for rapid review',
+                  },
+                ],
+                title: 'PubMed',
+              },
+              {
+                id: 'arxiv-board',
+                items: [
+                  {
+                    abstractText: 'Preprint abstract focused on multimodal intake signals.',
+                    canonicalId: 'arxiv:2403.12345',
+                    id: 'arxiv-result',
+                    imported: false,
+                    objectType: 'external-candidate',
+                    reason: 'arXiv preprint extends the project’s intake horizon.',
+                    sourceLabel: 'arXiv',
+                    sourceLocator: '2403.12345',
+                    sourceType: 'arxiv',
+                    state: 'new',
+                    title: 'Multimodal evidence triage for tumor boards',
+                  },
+                ],
+                title: 'arXiv',
+              },
+            ],
+            items: [],
+            query: 'tumor board',
+          });
+        }
+
+        if (requestUrl.endsWith('/api/library/personal/import') && init?.method === 'POST') {
+          return jsonResponse({
+            asset: {
+              canonicalId: 'pmid:654321',
+              id: 'asset-1',
+              title: 'Tumor board biomarkers for rapid review',
+            },
+            entry: {
+              id: 'entry-1',
+              paperAssetId: 'asset-1',
+              spaceId: 'personal-space-user-alice',
+              visibility: 'private',
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Search intake boards' }));
+
+    const pubmedLane = await screen.findByRole('region', { name: 'PubMed intake lane' });
+    expect(within(pubmedLane).getByText('Curated abstract snippet for rapid triage.')).toBeInTheDocument();
+
+    await user.click(within(pubmedLane).getByRole('button', { name: '导入到个人 Library' }));
+
+    expect(
+      await within(pubmedLane).findByRole('button', { name: '已进入个人 Library' }),
+    ).toBeDisabled();
+    expect(screen.getByRole('region', { name: 'arXiv intake lane' })).toBeInTheDocument();
   });
 
   it('loads a created-space reader by scoping requests to the selected space', async () => {
@@ -821,10 +966,13 @@ describe('native demo workflow', () => {
     expect(runbook).toContain('Open reader');
     expect(runbook).toContain('Open notes workspace');
     expect(runbook).toContain('Save private note');
+    expect(runbook).toContain('Insert into project docs');
     expect(runbook).toContain('Open project docs');
     expect(runbook).toContain('Save draft');
     expect(runbook).toContain('Publish');
     expect(runbook).toContain('restart');
     expect(runbook).toContain('Run governed summary');
+    expect(runbook).not.toContain('browser-facing `quote / insert helper`');
+    expect(runbook).not.toContain('browser users can yet create projected references');
   });
 });

@@ -207,6 +207,7 @@ export function WritingPage() {
   const activeDocument = document;
   const publishStateLabel = activeDocument?.publishState ?? 'draft';
   const citationCount = activeDocument?.latestSnapshot?.citations.length ?? 0;
+  const referenceCount = activeDocument?.references?.length ?? 0;
   const capturedAt = activeDocument?.latestSnapshot?.capturedAt ?? 'No version saved yet';
 
   return (
@@ -294,7 +295,7 @@ export function WritingPage() {
           <div className="stack-sm">
             <ProjectDocumentTree document={activeDocument} projectId={projectId} />
             <p className="quiet-copy">review path · published target · citation links</p>
-            <p className="quiet-copy">Project-owned references move here after deliberate review.</p>
+            <p className="quiet-copy">Project-owned references · {referenceCount}</p>
             <p className="quiet-copy">Publish state path</p>
             <p className="quiet-copy">draft · review · published</p>
             <p className="quiet-copy">Citations linked · {citationCount}</p>

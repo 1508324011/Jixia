@@ -99,14 +99,18 @@ export function SearchPage() {
         {errorMessage ? <p className="quiet-copy">{errorMessage}</p> : null}
       </section>
 
-      <section aria-label="search results" className="panel-grid">
+      <section aria-label="search results" className="search-results-lanes">
         {boards.map((board) => (
           <IntakeSourceBoard
             importingId={importingId}
             items={board.items}
             key={board.id}
+            laneLabel={board.laneLabel ?? `${board.title} intake lane`}
             onImport={(item) => void handleImport(item)}
-            subtitle="Each result board keeps the source narrative intact while you triage what belongs in the inventory."
+            subtitle={
+              board.description ??
+              'Keep each source readable, dense, and stable while you triage what belongs in the inventory.'
+            }
             title={board.title}
           />
         ))}

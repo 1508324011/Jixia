@@ -80,6 +80,19 @@ function stubNativeDemoFetch(): void {
         content: 'Initial seeded paragraph.',
       },
       publishState: 'review',
+      references: [
+        {
+          createdAt: '2026-03-22T01:08:00.000Z',
+          documentId: 'doc-1',
+          id: 'reference-1',
+          ownerType: 'project',
+          paperAssetId: 'asset-pmid-123456',
+          projectId: 'tumor-board',
+          selectedText: 'Projected tumor-board excerpt',
+          sourceKind: 'projection',
+          sourceType: 'notebook-note',
+        },
+      ],
       title: 'Tumor board synthesis',
     },
   };
@@ -228,6 +241,8 @@ describe('mvp workflow shell', () => {
         name: 'References, publish state, and governed jobs',
       }),
     ).toBeInTheDocument();
+    expect(await screen.findByText('Reference rail')).toBeInTheDocument();
+    expect(screen.getByText('Projected tumor-board excerpt')).toBeInTheDocument();
     expect(screen.getByLabelText('context bar')).toHaveTextContent(
       'Space context · shared-space',
     );
@@ -277,16 +292,19 @@ describe('mvp workflow shell', () => {
 
     await user.click(screen.getByRole('link', { name: 'Open reader' }));
 
-    expect(
-      await screen.findByText('Governed action source · queued → running → succeeded'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Latest governed finale')).toBeInTheDocument();
+    expect(await screen.findByText('AI helper content')).toBeInTheDocument();
+    expect(screen.getByText('Evidence-backed summary for board prep.')).toBeInTheDocument();
+    expect(screen.getByText('succeeded')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: '共享评论' }));
     expect(screen.getByText('Key mutation note')).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Open project docs' }));
 
     expect(await screen.findByText('Publish state path')).toBeInTheDocument();
     expect(screen.getByText('draft · review · published')).toBeInTheDocument();
+    expect(screen.getByText('Reference rail')).toBeInTheDocument();
+    expect(screen.getByText('Projected tumor-board excerpt')).toBeInTheDocument();
     expect(screen.getByText('Event timeline')).toBeInTheDocument();
     expect(screen.getByText('Audit trail')).toBeInTheDocument();
     expect(screen.getByText('job.created')).toBeInTheDocument();
@@ -352,9 +370,11 @@ describe('mvp workflow shell', () => {
     expect(screen.getByLabelText('context bar')).toHaveTextContent(
       'Project context · tumor-board · doc-1',
     );
+    expect(screen.getByText('Reference rail')).toBeInTheDocument();
+    expect(screen.getByText('Projected tumor-board excerpt')).toBeInTheDocument();
     expect(screen.getByText('draft · review · published')).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Run governed summary' }),
-    ).toBeInTheDocument();
+      ).toBeInTheDocument();
   });
 });

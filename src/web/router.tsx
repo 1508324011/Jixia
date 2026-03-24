@@ -14,16 +14,6 @@ import { SettingsPage } from './pages/settings-page';
 import { TodayPage } from './pages/today-page';
 import { WritingPage } from './pages/writing-page';
 
-const DEFAULT_PROJECT_SPACE_ID = 'shared-space';
-
-function buildCanonicalProjectRoute(pathname: string, spaceId?: string): string {
-  if (!spaceId || spaceId === DEFAULT_PROJECT_SPACE_ID) {
-    return pathname;
-  }
-
-  return `${pathname}?spaceId=${encodeURIComponent(spaceId)}`;
-}
-
 function buildLegacyRedirectRoute(pathname: string, spaceId?: string): string {
   if (!spaceId) {
     return pathname;
@@ -72,6 +62,8 @@ export function AppRouter() {
         <Route path="/today" element={<TodayPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/library" element={<LibraryPage mode="personal" />} />
+        <Route path="/library/:entryId/reader" element={<ReaderPage />} />
+        <Route path="/library/:entryId/notes" element={<NotesPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/projects/:projectId" element={<ProjectPage />} />
         <Route path="/projects/:projectId/library" element={<LibraryPage />} />
