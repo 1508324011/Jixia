@@ -1,10 +1,15 @@
+import { useParams } from 'react-router-dom';
+
 import { ProjectTabs } from '../components/project-tabs';
 import { ProjectWriterList } from '../components/project-writer-list';
 
-const projectTabs = ['概览', '共享 Library', 'Writer', '活动'];
-const WORKBENCH_PERSONAL_SPACE_ID = 'personal-space-user-alice';
+const projectTabs = ['概览', '共享 Library', 'Project docs', '活动'];
+const DEFAULT_PROJECT_ID = 'tumor-board';
+const WORKBENCH_SHARED_SPACE_ID = 'shared-space';
 
 export function ProjectPage() {
+  const { projectId = DEFAULT_PROJECT_ID } = useParams();
+
   return (
     <main className="page-shell">
       <header className="page-header">
@@ -15,16 +20,13 @@ export function ProjectPage() {
 
       <section className="panel project-workspace-panel">
         <ProjectTabs tabs={projectTabs} />
-        <p className="quiet-copy">先从概览进入共享 Library、Writer 和协作动态。</p>
+        <p className="quiet-copy">先从概览进入共享 Library、Project docs 和协作动态。</p>
       </section>
 
-      <section className="panel" aria-label="Writer 文档区">
-        <h2 className="panel-title">Writer 文档区</h2>
-        <p className="quiet-copy">将成熟内容整理进入 Writer</p>
-        <ProjectWriterList
-          projectId="project-1"
-          spaceId={WORKBENCH_PERSONAL_SPACE_ID}
-        />
+      <section className="panel" aria-label="Project docs">
+        <h2 className="panel-title">Project docs</h2>
+        <p className="quiet-copy">Shared document tree and current draft live here.</p>
+        <ProjectWriterList projectId={projectId} spaceId={WORKBENCH_SHARED_SPACE_ID} />
       </section>
     </main>
   );

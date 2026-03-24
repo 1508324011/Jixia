@@ -106,9 +106,16 @@ a {
   align-items: start;
 }
 
+.workbench-left-rail,
+.workbench-context-rail,
 .workbench-main {
   display: grid;
   gap: var(--jixia-space-3);
+}
+
+.workbench-left-rail,
+.workbench-context-rail {
+  align-content: start;
 }
 
 .workbench-main--personal {
@@ -166,15 +173,47 @@ a {
 }
 
 .context-indicator {
-  display: flex;
-  align-items: center;
-  gap: var(--jixia-space-2);
-  padding: 0 var(--jixia-space-2);
+  display: grid;
+  gap: var(--jixia-space-3);
+  padding: var(--jixia-space-4);
+  border: 1px solid var(--jixia-border);
+  border-radius: var(--jixia-radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(241, 236, 228, 0.95)),
+    radial-gradient(circle at top right, rgba(181, 119, 77, 0.16), transparent 35%);
+  box-shadow: var(--jixia-shadow);
+}
+
+.context-indicator__header,
+.context-indicator__facts,
+.recent-opened-panel__meta,
+.intake-source-board__header,
+.intake-card,
+.library-filters,
+.library-filters__controls,
+.library-filters__buttons,
+.library-inventory-panel,
+.library-inventory-panel__header,
+.library-workbench,
+.home-hero,
+.home-desk-card {
+  display: grid;
+  gap: var(--jixia-space-3);
+}
+
+.context-indicator__eyebrow,
+.intake-source-board__eyebrow {
+  color: var(--jixia-warm);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .context-indicator__label {
   display: inline-flex;
   align-items: center;
+   justify-self: start;
   padding: 0.25rem 0.75rem;
   border: 1px solid rgba(43, 58, 103, 0.12);
   border-radius: 999px;
@@ -183,9 +222,75 @@ a {
   font-weight: 600;
 }
 
-.context-indicator--project .context-indicator__label {
-  background: rgba(95, 132, 255, 0.16);
-  color: #dce5ff;
+.context-indicator--project {
+  background:
+    linear-gradient(180deg, rgba(230, 236, 255, 0.9), rgba(241, 236, 228, 0.96)),
+    radial-gradient(circle at top right, rgba(95, 132, 255, 0.18), transparent 36%);
+}
+
+.context-indicator__facts {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.recent-opened-panel {
+  background:
+    linear-gradient(180deg, rgba(251, 249, 246, 0.94), rgba(244, 239, 232, 0.98)),
+    radial-gradient(circle at top left, rgba(43, 58, 103, 0.08), transparent 30%);
+}
+
+.recent-opened-panel__item {
+  padding-top: var(--jixia-space-2);
+  border-top: 1px solid rgba(43, 58, 103, 0.08);
+}
+
+.home-hero {
+  background:
+    linear-gradient(135deg, rgba(251, 249, 246, 0.96), rgba(241, 236, 228, 0.96)),
+    radial-gradient(circle at top right, rgba(43, 58, 103, 0.1), transparent 35%);
+}
+
+.intake-card {
+  padding: var(--jixia-space-3);
+  border: 1px solid rgba(43, 58, 103, 0.08);
+  border-radius: var(--jixia-radius-md);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.intake-card__meta,
+.library-filters__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--jixia-space-2);
+}
+
+.library-filters {
+  padding: var(--jixia-space-3);
+  border: 1px solid rgba(43, 58, 103, 0.08);
+  border-radius: var(--jixia-radius-md);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.library-filters__button {
+  padding: 0.6rem 0.9rem;
+  border: 1px solid rgba(43, 58, 103, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--jixia-text);
+  font: inherit;
+  font-weight: 600;
+}
+
+.library-filters__button--active {
+  background: rgba(43, 58, 103, 0.92);
+  color: white;
+}
+
+.library-inventory-panel {
+  align-content: start;
+}
+
+.library-workbench {
+  align-items: start;
 }
 
 .dashboard-layout,
@@ -388,11 +493,20 @@ a {
 
 @media (min-width: 960px) {
   .workbench-shell {
-    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+    grid-template-columns: minmax(220px, 250px) minmax(0, 1.45fr) minmax(280px, 340px);
   }
 
   .dashboard-layout {
     grid-template-columns: minmax(0, 1.75fr) minmax(280px, 0.9fr);
+  }
+
+  .library-workbench {
+    grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1.35fr);
+  }
+
+  .library-inventory-panel__header {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.95fr);
+    align-items: start;
   }
 
   .reader-page {

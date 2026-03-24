@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import type { TodayRecommendation } from '@shared/contracts/discovery';
+import type { DiscoveryBoard, TodayRecommendation } from '@shared/contracts/discovery';
 
+import { IntakeSourceBoard } from '../components/intake-source-board';
 import { createDemoApi } from '../lib/demo-api';
 
 const demoApi = createDemoApi();
 
 export function TodayPage() {
-  const [items, setItems] = useState<TodayRecommendation[]>([]);
+  const [boards, setBoards] = useState<DiscoveryBoard[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [importingId, setImportingId] = useState<string | null>(null);
@@ -22,12 +23,24 @@ export function TodayPage() {
 
       try {
         const response = await demoApi.getTodayRecommendations();
+        const responseBoards = response.boards ?? [];
+        const responseItems = response.items ?? [];
 
         if (!isMounted) {
           return;
         }
 
-        setItems(response.items);
+        setBoards(
+          responseBoards.length > 0
+            ? responseBoards
+            : [
+                {
+                  id: 'today-intake',
+                  items: responseItems,
+                  title: 'Today intake',
+                },
+              ],
+        );
       } catch (error) {
         if (!isMounted) {
           return;
@@ -59,10 +72,13 @@ export function TodayPage() {
         sourceLocator: item.sourceLocator,
         sourceType: item.sourceType,
       });
-      setItems((currentItems) =>
-        currentItems.map((candidate) =>
-          candidate.id === item.id ? { ...candidate, imported: true } : candidate,
-        ),
+      setBoards((currentBoards) =>
+        currentBoards.map((board) => ({
+          ...board,
+          items: board.items.map((candidate) =>
+            candidate.id === item.id ? { ...candidate, imported: true } : candidate,
+          ),
+        })),
       );
     } catch (error) {
       setErrorMessage(
@@ -76,58 +92,40 @@ export function TodayPage() {
   return (
     <main className="page-shell">
       <header className="page-header">
-        <p className="page-kicker">Today</p>
+        <p className="page-kicker">Today intake desk</p>
         <h1 className="page-title">今日推荐</h1>
-        <p className="page-description">把今天优先处理的阅读、导入和写作收束到同一入口。</p>
+        <p className="page-description">把今天优先处理的 intake lanes、导入节奏和下一步阅读聚拢到同一个研究桌面里。</p>
       </header>
 
       <div className="panel-grid top-level-surface-grid">
         <section className="panel">
-          <h2 className="panel-title">待读优先级</h2>
-          <p className="quiet-copy">根据当前 discovery 结果优先推进今天的个人导入与阅读。</p>
+          <h2 className="panel-title">Today intake</h2>
+          <p className="quiet-copy">按来源分道处理今天值得先收进个人 inventory 的候选文献。</p>
           {isLoading ? <p className="quiet-copy">Loading today recommendations…</p> : null}
           {errorMessage ? <p className="quiet-copy">{errorMessage}</p> : null}
-          {!isLoading && !errorMessage && items.length === 0 ? (
+          {!isLoading && !errorMessage && boards.length === 0 ? (
             <p className="quiet-copy">No recommendations available right now.</p>
           ) : null}
-          {items.map((item) => (
-            <article className="panel" key={item.id}>
-              <h3 className="panel-title">{item.title}</h3>
-              <p className="quiet-copy">{item.reason}</p>
-              <p className="quiet-copy">
-                {item.sourceLabel} · {item.canonicalId}
-              </p>
-              <p className="quiet-copy">
-                {item.imported
-                  ? 'Imported into personal library'
-                  : 'Ready to import into personal library'}
-              </p>
-              <div className="context-bar">
-                <span className="status-badge">{item.sourceType}</span>
-                <button
-                  disabled={item.imported || importingId === item.id}
-                  onClick={() => void handleImport(item)}
-                  type="button"
-                >
-                  {item.imported
-                    ? 'Open personal Library'
-                    : importingId === item.id
-                      ? 'Importing…'
-                      : '导入到个人 Library'}
-                </button>
-                <Link className="panel-link" to="/library">
-                  Open personal Library
-                </Link>
-              </div>
-            </article>
+          {boards.map((board) => (
+            <IntakeSourceBoard
+              importingId={importingId}
+              items={board.items}
+              key={board.id}
+              onImport={(item) => void handleImport(item)}
+              subtitle="Each board keeps a stable source story while you decide what enters the personal shelf."
+              title={board.title}
+            />
           ))}
         </section>
 
         <section className="panel">
-          <h2 className="panel-title">待处理导入</h2>
-          <p className="quiet-copy">把外部检索结果导入个人 Library，再决定是否带进项目。</p>
+          <h2 className="panel-title">Next destination</h2>
+          <p className="quiet-copy">After import, keep sorting inside the unified personal inventory before promoting anything into a project surface.</p>
           <Link className="panel-link" to="/search">
-            Open search surface
+            Open search intake
+          </Link>
+          <Link className="panel-link" to="/library">
+            Open personal inventory
           </Link>
         </section>
       </div>

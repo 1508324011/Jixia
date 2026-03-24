@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 
 import type { GovernedJobView } from '@shared/contracts/jobs';
 import type { WritingDocumentView } from '@shared/contracts/writing';
 
+import { ProjectDocumentTree } from '../components/project-document-tree';
+import { RequestError } from '../lib/http-client';
 import {
   getGovernedSummary,
   getWritingDocument,
@@ -13,11 +15,13 @@ import {
 } from '../lib/demo-api';
 
 export function WritingPage() {
+  const [searchParams] = useSearchParams();
   const {
-    spaceId = 'personal-space-user-alice',
+    spaceId: routeSpaceId,
     projectId = 'project-1',
     docId = 'doc-1',
   } = useParams();
+  const spaceId = routeSpaceId ?? searchParams.get('spaceId') ?? 'shared-space';
   const [document, setDocument] = useState<WritingDocumentView | null>(null);
   const [draftContent, setDraftContent] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -29,6 +33,10 @@ export function WritingPage() {
   const [isReloading, setIsReloading] = useState(false);
   const [isRunningGovernedJob, setIsRunningGovernedJob] = useState(false);
   const [governedJob, setGovernedJob] = useState<GovernedJobView | null>(null);
+
+  function isMissingProjectDocument(error: unknown): boolean {
+    return error instanceof RequestError && error.status === 404;
+  }
 
   useEffect(() => {
     let isCancelled = false;
@@ -47,9 +55,15 @@ export function WritingPage() {
       } catch (error) {
         if (!isCancelled) {
           setDocument(null);
-          setLoadError(
-            error instanceof Error ? error.message : 'Failed to load the writer draft.',
-          );
+
+          if (isMissingProjectDocument(error)) {
+            setDraftContent('');
+            setLoadError(null);
+          } else {
+            setLoadError(
+              error instanceof Error ? error.message : 'Failed to load the writer draft.',
+            );
+          }
         }
       } finally {
         if (!isCancelled) {
@@ -198,13 +212,13 @@ export function WritingPage() {
   return (
     <main className="page-shell">
       <header className="page-header">
-        <p className="page-kicker">Manuscript studio · versioned drafting · citation traceability</p>
-        <h1 className="page-title">Writing</h1>
+        <p className="page-kicker">Project docs · versioned drafting · citation traceability</p>
+        <h1 className="page-title">Project docs</h1>
         <p className="page-description">
-          Draft the shared document while keeping versions, citations, and publish state visible but
-          quiet.
+          Work inside the shared project-owned document surface while references, publish state, and
+          governed jobs stay visible but quiet.
         </p>
-        <p className="quiet-copy">Mature content path · AI 对话 → 私人笔记 → 共享评论 → Writer 文稿</p>
+        <p className="quiet-copy">Reader and Notes Workspace stay separate from the shared document tree.</p>
       </header>
 
       <section aria-label="context bar" className="context-bar">
@@ -218,12 +232,12 @@ export function WritingPage() {
         <article className="panel">
           {isLoading ? (
             <>
-              <h2 className="panel-title">Loading writer draft…</h2>
+              <h2 className="panel-title">Loading project docs…</h2>
               <p className="quiet-copy">Pulling the latest saved project document.</p>
             </>
           ) : loadError ? (
             <>
-              <h2 className="panel-title">Writer unavailable</h2>
+              <h2 className="panel-title">Project docs unavailable</h2>
               <p className="quiet-copy">{loadError}</p>
             </>
           ) : activeDocument ? (
@@ -270,16 +284,17 @@ export function WritingPage() {
             </div>
           ) : (
             <>
-              <h2 className="panel-title">No Writer draft found</h2>
-              <p className="quiet-copy">Promote an insight from Reader to start this document.</p>
+              <h2 className="panel-title">No project doc found</h2>
+              <p className="quiet-copy">Create the shared project document when the team is ready.</p>
             </>
           )}
         </article>
         <aside className="panel">
-          <h2 className="panel-title">Versions, references, and governed jobs</h2>
+          <h2 className="panel-title">References, publish state, and governed jobs</h2>
           <div className="stack-sm">
+            <ProjectDocumentTree document={activeDocument} projectId={projectId} />
             <p className="quiet-copy">review path · published target · citation links</p>
-            <p className="quiet-copy">将成熟内容整理进入 Writer</p>
+            <p className="quiet-copy">Project-owned references move here after deliberate review.</p>
             <p className="quiet-copy">Publish state path</p>
             <p className="quiet-copy">draft · review · published</p>
             <p className="quiet-copy">Citations linked · {citationCount}</p>

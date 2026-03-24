@@ -1,9 +1,10 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 import type { LibraryListResponse } from '@shared/contracts/library';
 import type { DemoSpaceListResponse } from '@shared/contracts/spaces';
 
+import { LibraryFilters, type LibraryInventoryView } from '../components/library-filters';
 import {
   createDemoApi,
   getLibraryEntries,
@@ -12,6 +13,19 @@ import {
 } from '../lib/demo-api';
 
 const demoApi = createDemoApi();
+const DEFAULT_PROJECT_SPACE_ID = 'shared-space';
+
+function buildCanonicalProjectPath(
+  pathname: string,
+  spaceId: string,
+  preserveSpaceContext = false,
+): string {
+  if (!preserveSpaceContext && spaceId === DEFAULT_PROJECT_SPACE_ID) {
+    return pathname;
+  }
+
+  return `${pathname}?spaceId=${encodeURIComponent(spaceId)}`;
+}
 
 interface LibraryPageProps {
   mode?: 'personal' | 'project';
@@ -19,8 +33,11 @@ interface LibraryPageProps {
 
 export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
   const { spaceId, projectId } = useParams();
-  const isPersonalMode = mode === 'personal' && !spaceId;
-  const resolvedSpaceId = spaceId ?? 'shared-space';
+  const [searchParams] = useSearchParams();
+  const routedSpaceId = spaceId ?? searchParams.get('spaceId') ?? undefined;
+  const hasExplicitSpaceContext = typeof routedSpaceId === 'string' && routedSpaceId.length > 0;
+  const isPersonalMode = mode === 'personal' && !projectId;
+  const resolvedSpaceId = routedSpaceId ?? DEFAULT_PROJECT_SPACE_ID;
   const resolvedProjectId = projectId ?? 'tumor-board';
 
   const [spacesData, setSpacesData] = useState<DemoSpaceListResponse | null>(null);
@@ -30,6 +47,8 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
   const [isLoadingEntries, setIsLoadingEntries] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
   const [importLocator, setImportLocator] = useState('654321');
+  const [inventoryQuery, setInventoryQuery] = useState('');
+  const [activeView, setActiveView] = useState<LibraryInventoryView>('all');
   const [sourceType, setSourceType] = useState<'arxiv' | 'doi' | 'pmid'>('pmid');
 
   const activeSpace = spacesData?.spaces.find((space) => space.spaceId === resolvedSpaceId);
@@ -50,6 +69,23 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
   const sourceLabel = isPersonalMode
     ? 'personal import'
     : activeSpace?.importLocator ?? 'pmid import';
+  const inventoryLabel = isPersonalMode ? 'Personal evidence shelf' : 'Shared evidence shelf';
+
+  const filteredEntries = entries.filter((entry) => {
+    const matchesView =
+      activeView === 'all'
+        ? true
+        : activeView === 'private'
+          ? entry.visibility === 'private'
+          : entry.visibility !== 'private';
+    const normalizedQuery = inventoryQuery.trim().toLowerCase();
+    const matchesQuery =
+      normalizedQuery.length === 0 ||
+      entry.title.toLowerCase().includes(normalizedQuery) ||
+      entry.canonicalId.toLowerCase().includes(normalizedQuery);
+
+    return matchesView && matchesQuery;
+  });
 
   useEffect(() => {
     if (isPersonalMode) {
@@ -113,9 +149,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
     };
   }, [isPersonalMode, resolvedProjectId, resolvedSpaceId]);
 
-  async function handleImport(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-
+  async function handleImport(): Promise<void> {
     const trimmedLocator = importLocator.trim();
 
     if (!trimmedLocator) {
@@ -157,7 +191,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
         <span className="status-badge">{sourceLabel}</span>
       </section>
 
-      <section aria-label="library list" className="panel-grid">
+      <section aria-label="library list" className="library-workbench">
         {!isPersonalMode ? (
           <article className="panel stack-sm">
             <h2 className="panel-title">Import paper</h2>
@@ -166,7 +200,13 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
               opening the reader.
             </p>
             <p className="quiet-copy">{importLabel}</p>
-            <form className="stack-sm" onSubmit={(event) => void handleImport(event)}>
+            <form
+              className="stack-sm"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleImport();
+              }}
+            >
               <label className="field-label" htmlFor="import-locator">
                 <span>Import locator</span>
                 <input
@@ -204,8 +244,23 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
           </article>
         ) : null}
 
-        {isLoadingEntries ? (
-          <article className="panel">
+        <article className="panel library-inventory-panel">
+          <div className="library-inventory-panel__header">
+            <div className="stack-xs">
+              <span className="intake-source-board__eyebrow">Inventory surface</span>
+              <h2 className="panel-title">Library inventory</h2>
+              <p className="quiet-copy">{inventoryLabel}</p>
+            </div>
+            <LibraryFilters
+              activeView={activeView}
+              onQueryChange={setInventoryQuery}
+              onViewChange={setActiveView}
+              query={inventoryQuery}
+            />
+          </div>
+
+          {isLoadingEntries ? (
+            <article className="panel">
             <h2 className="panel-title">Loading library entries…</h2>
             <p className="quiet-copy">
               {isPersonalMode
@@ -213,17 +268,17 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
                 : 'Reading availability, import metadata, and visibility are loading from the server.'}
             </p>
           </article>
-        ) : null}
+          ) : null}
 
-        {libraryError ? (
-          <article className="panel">
+          {libraryError ? (
+            <article className="panel">
             <h2 className="panel-title">Library unavailable</h2>
             <p className="quiet-copy">{libraryError}</p>
           </article>
-        ) : null}
+          ) : null}
 
-        {!isLoadingEntries && !libraryError && entries.length === 0 ? (
-          <article className="panel">
+          {!isLoadingEntries && !libraryError && filteredEntries.length === 0 ? (
+            <article className="panel">
             <h2 className="panel-title">No imported literature yet</h2>
             <p className="quiet-copy">
               {isPersonalMode
@@ -231,10 +286,10 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
                 : 'Import a DOI, PMID, arXiv preprint, or upload to seed the shared shelf.'}
             </p>
           </article>
-        ) : null}
+          ) : null}
 
-        {!isLoadingEntries && !libraryError
-          ? entries.map((entry) => (
+          {!isLoadingEntries && !libraryError
+            ? filteredEntries.map((entry) => (
               <article className="panel" key={entry.entryId}>
                 <h2 className="panel-title">{entry.title}</h2>
                 <p className="quiet-copy">Canonical record · {entry.canonicalId}</p>
@@ -252,14 +307,19 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
                   to={
                     isPersonalMode
                       ? `/projects/project-1/library/${entry.entryId}/reader`
-                      : `/spaces/${resolvedSpaceId}/projects/${resolvedProjectId}/library/${entry.entryId}/reader`
+                      : buildCanonicalProjectPath(
+                          `/projects/${resolvedProjectId}/library/${entry.entryId}/reader`,
+                          resolvedSpaceId,
+                          hasExplicitSpaceContext,
+                        )
                   }
                 >
                   Open reader
                 </Link>
               </article>
             ))
-          : null}
+            : null}
+        </article>
       </section>
     </main>
   );

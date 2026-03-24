@@ -1,10 +1,12 @@
 import { Outlet, useParams } from 'react-router-dom';
 
 import { ContextIndicator } from './context-indicator';
+import { RecentOpenedPanel } from './recent-opened-panel';
 import { SidebarNav } from './sidebar-nav';
 
 const demoProjectNameById: Record<string, string> = {
   'project-1': '肿瘤标志物项目',
+  'tumor-board': 'Tumor board workspace',
 };
 
 export function WorkbenchLayout() {
@@ -18,11 +20,18 @@ export function WorkbenchLayout() {
 
   return (
     <div className="workbench-shell">
-      <SidebarNav />
-      <div className={mainClassName}>
-        <ContextIndicator label={label} variant={variant} />
+      <aside className="workbench-left-rail" data-testid="workbench-left-rail">
+        <SidebarNav />
+      </aside>
+
+      <div className={mainClassName} data-testid="workbench-main-surface">
         <Outlet />
       </div>
+
+      <aside className="workbench-context-rail" data-testid="workbench-context-rail">
+        <ContextIndicator label={label} variant={variant} />
+        <RecentOpenedPanel />
+      </aside>
     </div>
   );
 }

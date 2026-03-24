@@ -140,7 +140,7 @@ export function SpacesPage() {
             <p className="quiet-copy">Visibility · {space.visibility}</p>
             <Link
               className="panel-link"
-              to={`/spaces/${space.spaceId}/projects/${space.projectId}/library`}
+              to={`/projects/${space.projectId}/library?spaceId=${encodeURIComponent(space.spaceId)}`}
             >
               {space.kind === 'shared' ? 'Enter shared space' : 'Open library'}
             </Link>

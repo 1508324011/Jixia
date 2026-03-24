@@ -1,26 +1,39 @@
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 
-import type { TodayRecommendation } from '@shared/contracts/discovery';
+import type { DiscoveryBoard, TodayRecommendation } from '@shared/contracts/discovery';
 
+import { IntakeSourceBoard } from '../components/intake-source-board';
 import { createDemoApi } from '../lib/demo-api';
 
 const demoApi = createDemoApi();
 
 export function SearchPage() {
   const [query, setQuery] = useState('tumor board');
-  const [results, setResults] = useState<TodayRecommendation[]>([]);
+  const [boards, setBoards] = useState<DiscoveryBoard[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [importingId, setImportingId] = useState<string | null>(null);
 
-  async function handleSearch(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  async function handleSearch(): Promise<void> {
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
       const response = await demoApi.searchDiscovery(query);
-      setResults(response.items);
+      const responseBoards = response.boards ?? [];
+      const responseItems = response.items ?? [];
+
+      setBoards(
+        responseBoards.length > 0
+          ? responseBoards
+          : [
+              {
+                id: 'search-results',
+                items: responseItems,
+                title: 'Search results',
+              },
+            ],
+      );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Search failed.');
     } finally {
@@ -37,10 +50,13 @@ export function SearchPage() {
         sourceLocator: item.sourceLocator,
         sourceType: item.sourceType,
       });
-      setResults((currentResults) =>
-        currentResults.map((candidate) =>
-          candidate.id === item.id ? { ...candidate, imported: true } : candidate,
-        ),
+      setBoards((currentBoards) =>
+        currentBoards.map((board) => ({
+          ...board,
+          items: board.items.map((candidate) =>
+            candidate.id === item.id ? { ...candidate, imported: true } : candidate,
+          ),
+        })),
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Import failed.');
@@ -52,13 +68,19 @@ export function SearchPage() {
   return (
     <main className="page-shell">
       <header className="page-header">
-        <p className="page-kicker">Discovery</p>
+        <p className="page-kicker">Discovery intake</p>
         <h1 className="page-title">外部搜索</h1>
-        <p className="page-description">搜索外部文献并导入到个人 Library，再决定是否带入项目协作。</p>
+        <p className="page-description">Search across the current discovery sources, then decide what deserves a place inside the personal inventory.</p>
       </header>
 
       <section className="panel search-surface">
-        <form className="field-stack" onSubmit={(event) => void handleSearch(event)}>
+        <form
+          className="field-stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSearch();
+          }}
+        >
           <label className="field-stack">
             <span className="field-label">检索主题</span>
             <input
@@ -68,38 +90,25 @@ export function SearchPage() {
               value={query}
             />
           </label>
-          <button type="submit">检索 PubMed</button>
+          <button className="action-button" type="submit">
+            Search intake boards
+          </button>
         </form>
-        <p className="quiet-copy">当前优先接入一个稳定来源：PubMed 检索与导入。</p>
+        <p className="quiet-copy">The UI now frames results as source boards instead of one flat list, even while the backend discovery sources are still intentionally lightweight.</p>
         {isLoading ? <p className="quiet-copy">Searching PubMed…</p> : null}
         {errorMessage ? <p className="quiet-copy">{errorMessage}</p> : null}
       </section>
 
       <section aria-label="search results" className="panel-grid">
-        {results.map((item) => (
-          <article className="panel" key={item.id}>
-            <h2 className="panel-title">{item.title}</h2>
-            <p className="quiet-copy">{item.reason}</p>
-            <p className="quiet-copy">
-              {item.sourceLabel} · {item.canonicalId}
-            </p>
-            <p className="quiet-copy">
-              {item.imported
-                ? 'Imported into personal library'
-                : 'Ready to import into personal library'}
-            </p>
-            <button
-              disabled={item.imported || importingId === item.id}
-              onClick={() => void handleImport(item)}
-              type="button"
-            >
-              {item.imported
-                ? 'Open personal Library'
-                : importingId === item.id
-                  ? 'Importing…'
-                  : '导入到个人 Library'}
-            </button>
-          </article>
+        {boards.map((board) => (
+          <IntakeSourceBoard
+            importingId={importingId}
+            items={board.items}
+            key={board.id}
+            onImport={(item) => void handleImport(item)}
+            subtitle="Each result board keeps the source narrative intact while you triage what belongs in the inventory."
+            title={board.title}
+          />
         ))}
       </section>
     </main>

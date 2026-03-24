@@ -11,6 +11,17 @@ interface ProjectWriterListProps {
 }
 
 const demoApi = createDemoApi();
+const DEFAULT_PROJECT_SPACE_ID = 'shared-space';
+
+function buildProjectWritingPath(projectId: string, documentId: string, spaceId: string): string {
+  const pathname = `/projects/${projectId}/writing/${documentId}`;
+
+  if (spaceId === DEFAULT_PROJECT_SPACE_ID) {
+    return pathname;
+  }
+
+  return `${pathname}?spaceId=${encodeURIComponent(spaceId)}`;
+}
 
 export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps) {
   const [document, setDocument] = useState<WritingDocumentView | null>(null);
@@ -66,7 +77,7 @@ export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps
           <h3 className="panel-title">Writer preview unavailable</h3>
           <p className="quiet-copy">{loadError}</p>
         </article>
-      ) : document ? (
+        ) : document ? (
         <article className="panel">
           <div className="status-badge">{document.publishState}</div>
           <h3 className="panel-title">{document.title}</h3>
@@ -75,15 +86,17 @@ export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps
           </p>
           <Link
             className="panel-link"
-            to={`/spaces/${spaceId}/projects/${projectId}/writing/${document.documentId}`}
+            to={buildProjectWritingPath(projectId, document.documentId, spaceId)}
           >
-            打开 Writer 文稿
+            Open project docs
           </Link>
         </article>
       ) : (
         <article className="panel">
-          <h3 className="panel-title">No promoted Writer draft yet</h3>
-          <p className="quiet-copy">Use Reader to promote a governed insight into Writer.</p>
+          <h3 className="panel-title">No shared project doc yet</h3>
+          <p className="quiet-copy">
+            Notes workspace and projected references stay separate until the shared doc is ready.
+          </p>
         </article>
       )}
     </div>

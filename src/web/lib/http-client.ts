@@ -1,3 +1,13 @@
+export class RequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'RequestError';
+  }
+}
+
 export async function requestJson<T>(
   input: string,
   init?: RequestInit,
@@ -16,7 +26,7 @@ export async function requestJson<T>(
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    throw new RequestError(`Request failed with status ${response.status}`, response.status);
   }
 
   return (await response.json()) as T;
