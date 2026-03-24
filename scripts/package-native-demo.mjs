@@ -77,7 +77,7 @@ writeFileSync(
     './run-native-demo.sh',
     '```',
     '',
-    'Then open `/spaces` and follow `RUNBOOK.md`.',
+    'Then open `/home` and follow `RUNBOOK.md`.',
     '',
   ].join('\n'),
 );

@@ -1,12 +1,24 @@
 # Native Demo Showcase Runbook
 
-This runbook resets the branch to a deterministic server-backed demo and walks a reviewer through the strongest truthful browser story now available on `demo-native-showcase`: create a new space, import into it, read inside it, write inside it, restart the app, and reopen the same work. The branch runs natively on Node, uses user-owned storage, and avoids Docker or sudo for the showcase path.
+This runbook resets the branch to a deterministic server-backed demo and walks a reviewer through the strongest truthful browser story now available on `demo-native-showcase`: start from `/home`, inspect the editorial-lab `Research workbench`, move through `Discovery & Intake`, import into personal inventory, open `Reader`, continue into `Notes Workspace`, then verify the shared `Project Docs` surface on the seeded tumor-board project. The branch still runs natively on Node, uses user-owned runtime paths, and avoids Docker or sudo for the primary showcase path.
 
-The downstream demo branch now inherits the final `main` workbench settings, discovery, personal-library, paper-workspace, and Writer persistence work, but it still keeps the packaged reset/showcase layer as a demo-only convenience.
+The downstream demo branch now carries the implemented reset from Tasks 1–8: canonical `/projects/...` routes, imported-inventory-only deep reading, a fully private `Notebook`, a three-pane workbench shell, and project-owned `Project Docs`. What remains intentionally incomplete is the browser-facing `quote / insert helper` that would turn private notebook material into explicit project references without leaving the UI.
 
 ## Inherited current host beta path
 
-The inherited **current host** / **no-Docker** product path still exists on this branch even though the primary reviewer story here is the native demo showcase. The current-host beta path uses `http://127.0.0.1:3000`, confirms `登录` and `个人工作台`, opens `设置`, checks `API key not configured`, runs `检索 PubMed`, performs `导入到个人 Library`, uses `Open reader`, `Save private note`, `Save project comment`, `Save insight`, `Promote latest insight to Writer`, `打开 Writer 文稿`, `Reload draft`, and finally `restart the app process` to verify persistence in `server-state.json`. That inherited path is the product truth; this runbook keeps the `demo-native-showcase` reviewer choreography and demo-only convenience on top.
+The inherited **current host** / **no-Docker** beta path still exists on this branch even though the primary reviewer story here is the native showcase. The current-host beta path uses `http://127.0.0.1:3000`, confirms `登录` and `个人工作台`, opens `设置`, checks `API key not configured`, uses `Search intake boards`, performs `导入到个人 Library`, uses `Open reader`, `Open notes workspace`, `Save private note`, `Open project docs`, and finally `restart the app process` to verify persistence in `server-state.json`. That inherited path is product truth; this runbook keeps the `demo-native-showcase` reviewer choreography and packaged reset as a demo-only convenience, not as a second product model.
+
+## Honest milestone framing
+
+The currently approved milestone remains **Unified Intake & Deep Reading Workbench**. This runbook now documents the parts that are already runnable and truthful on this worktree:
+
+- `Discovery & Intake` now exists as the front-door browser story, with `Pull lane` surfaces already visible in `今日推荐` and `搜索`
+- only **imported inventory** enters `Reader`, `Notes Workspace`, and `Project Docs`
+- `Notebook` remains fully private
+- `Project Docs` remain project-owned shared writing objects
+- notebook-to-project crossing is frozen behind the `quote / insert helper` boundary even though the browser helper itself is not shipped yet
+
+This means the demo can now truthfully show the rebuilt shell, route cutover, Notes Workspace, and shared Project Docs. It does **not** claim that automatic recommendation ranking, the full `Push lane`, or a browser-side quote/projection helper are already complete.
 
 ## Runtime contract
 
@@ -18,6 +30,7 @@ Use user-owned runtime paths so the demo can be reproduced on the current host:
 The deterministic walkthrough keeps these reproducible anchors:
 
 - project route: `tumor-board`
+- shared project space: `shared-space`
 - reproducible import anchor: `pmid:123456`
 - example created space name: `Genomics Sandbox`
 
@@ -31,7 +44,9 @@ npm run demo:reset
 npm run start:server
 ```
 
-After startup, open the local server in the browser and begin at `/spaces`.
+After startup, open the local server in the browser and begin at `/home`.
+
+All deep-reading and project-doc steps in this runbook start from an **imported library item**. Raw discovery candidates are not used directly in Reader, Notes Workspace, or Project Docs flows.
 
 ## Packaged native demo
 
@@ -62,30 +77,51 @@ Use this when you want to prove that the demo can be handed off as a runnable ar
 
 ## Showcase flow
 
-Create Space -> Library -> Reader -> Writing
+Home -> Intake -> Library -> Reader -> Notes Workspace -> Project Docs
 
-1. Open **Spaces** and confirm the page loads from `/spaces`.
-2. In the create form, enter **Space name** = `Genomics Sandbox`, keep **Space kind** = `personal`, then click **Create space**.
-3. Confirm the new space card appears and click **Open library**.
-4. In **Library**, leave **Source type** on `pmid`, replace **Import locator** with `654321`, then click **Import paper**.
-5. Repeat with **Import locator** = `789012` and confirm both imported entries appear in the created space without leaving the page.
-6. Click **Open reader** on `Imported PMID paper 789012`.
-7. In **Reader**, type a short note into **Note body**, click **Save note**, type a short governed summary into **Insight summary**, then click **Save insight**.
-8. Click **Refresh reader** and confirm the saved note and insight remain visible after the fresh fetch.
-9. Click **Open writing**.
-10. In **Writing**, edit **Draft content**, click **Save draft**, then click **Reload draft** and confirm the saved content persists after the reload.
-11. Click **Publish** and confirm the publish state changes to `published` inside the created space.
-12. Restart the app process, reopen `/spaces`, navigate back into `Genomics Sandbox`, and verify the imported papers plus the published writing state still exist after restart.
-13. Optionally click **Run governed summary** to show the governed job finale with queued/running/succeeded events and audit records.
+### A. Personal intake and deep-reading flow
+
+1. Open **Research workbench** at `/home` and confirm the three-pane shell is present.
+2. Open **今日推荐** or **搜索**. The surfaces are now the visible `Discovery & Intake` `Pull lane`; they are no longer `/spaces`-owned pages.
+3. On **Today intake** or **Discovery intake**, use **导入到个人 Library** on a candidate such as the deterministic PubMed fixture anchored by `pmid:123456`.
+4. Open **Library inventory** at `/library` and confirm the imported item appears inside the personal evidence shelf.
+5. Click **Open reader**.
+6. In **Reader**, confirm the page is now a deep-reading surface only: it keeps the paper, evidence summaries, and routing links, but it no longer owns direct project drafting.
+7. Click **Open notes workspace**.
+8. In **Notes workspace**, type a private note into **Private note** and click **Save private note**.
+9. Confirm the private note remains visible on the notes surface and that the browser route stays under canonical `/projects/...` paths.
+
+### B. Shared project docs flow
+
+10. Open the seeded project route `/projects/tumor-board?spaceId=shared-space`.
+11. In the **Project docs** section, click **Open project docs**.
+12. Confirm the page title is **Project docs** and the document tree renders the shared tumor-board draft.
+13. Edit **Draft content**, click **Save draft**, then click **Reload draft** and confirm the saved content persists after the reload.
+14. Click **Publish** and confirm the publish state changes to `published`.
+15. Optionally click **Run governed summary** to show the governed job finale with queued/running/succeeded events and audit records.
+16. Restart the app process, reopen `/projects/tumor-board/writing/doc-1?spaceId=shared-space`, and verify the shared document state still exists after restart.
+
+## Route truth
+
+- canonical browser routes now live under `/home`, `/today`, `/search`, `/library`, and `/projects/:projectId/...`
+- nested `/spaces/...` deep links are now compatibility redirects into the canonical `/projects/...` tree
+- the runbook no longer treats `/spaces` as the primary route authority
 
 ## What this demo proves
 
 - the native reset path restores a known server-owned state
-- a reviewer can create a real space instead of being forced through one seeded shared-space corridor
-- imported library entries accumulate inside the created space and can be reopened later
-- reading and writing mutations remain visible after refresh, reload, and process restart
-- the governed job finale leaves audit-visible artifacts without exposing raw secrets in the browser payload
+- the rebuilt browser shell is a stable three-pane `Research workbench`
+- intake/import is separated from deep reading and shared drafting
+- `Reader`, `Notes Workspace`, and `Project Docs` are now separate surfaces
+- shared project docs persist through save, reload, publish, and process restart
+- the governed job finale leaves audit-visible artifacts without exposing raw secrets in browser payloads
+
+## What this demo does not claim yet
+
+- it does not claim that the full `Push lane` / automatic recommendation domain is complete
+- it does not claim that the browser already ships the final `quote / insert helper`
+- it does not claim that browser users can yet create projected references from notebook material without that explicit helper
 
 ## Why operator support is next
 
-This branch is intentionally a native single-host showcase, not the final operator story. It now proves the core usable-demo loop across spaces, library, reader, and writing with user-owned paths, while also carrying the final workbench persistence features inherited from `main`. A production handoff still needs controlled operator support around service supervision, persistent directories, secret provisioning, backups, and optionally Docker or other managed runtime packaging. The next operational step is to turn this working created-space demo path into a repeatable operator-owned deployment contract rather than asking reviewers to run the app manually.
+This branch is intentionally a native single-host showcase, not the final operator contract. It now truthfully proves the rebuilt workbench surfaces, canonical `/projects/...` routes, and project-owned document persistence with user-owned runtime paths. A production handoff still needs operator-owned service supervision, durable storage layout, secret provisioning, backups, and optional Docker or other managed runtime packaging. The next operational step is to turn this working workbench demo into a repeatable operator-owned deployment contract rather than asking reviewers to run the app manually.
