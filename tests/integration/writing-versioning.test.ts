@@ -103,6 +103,7 @@ describe('writing versioning', () => {
         title: 'Tumor board literature synthesis',
       });
 
+      expect(savedDocument.ownerType).toBe('project');
       expect(savedDocument.latestSnapshot?.content).toBe('Promoted governed insight paragraph.');
 
       const reopenedApp = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
@@ -115,6 +116,7 @@ describe('writing versioning', () => {
 
       expect(reopenedDocument).toMatchObject({
         documentId: expect.any(String),
+        ownerType: 'project',
         projectId: 'project-1',
         spaceId: imported.entry.spaceId,
         title: 'Tumor board literature synthesis',

@@ -54,10 +54,18 @@ describe('workbench http contracts', () => {
 
       const discovery = await response.json();
       expect(discovery.items).toBeDefined();
+      expect(discovery.boards).toBeDefined();
+      expect(discovery.boards[0].items[0]).toMatchObject({
+        imported: expect.any(Boolean),
+        objectType: 'external-candidate',
+        state: expect.any(String),
+      });
       expect(discovery.items[0]).toMatchObject({
         canonicalId: expect.any(String),
+        objectType: 'external-candidate',
         sourceLocator: expect.any(String),
         sourceType: 'pmid',
+        state: expect.any(String),
         title: expect.any(String),
       });
 
@@ -69,10 +77,13 @@ describe('workbench http contracts', () => {
       const search = await searchResponse.json();
       expect(search.query).toBe('tumor board');
       expect(search.items.length).toBeGreaterThan(0);
+      expect(search.boards[0].items.length).toBeGreaterThan(0);
       expect(search.items[0]).toMatchObject({
         canonicalId: expect.any(String),
+        objectType: 'external-candidate',
         sourceLocator: expect.any(String),
         sourceType: 'pmid',
+        state: expect.any(String),
         title: expect.any(String),
       });
 
@@ -198,11 +209,11 @@ describe('workbench http contracts', () => {
       'utf8',
     );
 
-    expect(readme).toContain('个人工作台首页');
-    expect(readme).toContain('今日推荐');
+    expect(readme).toContain('Research workbench');
+    expect(readme).toContain('Today intake');
     expect(readme).toContain('Projects');
-    expect(readmeCn).toContain('个人工作台首页');
-    expect(readmeCn).toContain('共享评论');
+    expect(readmeCn).toContain('Research workbench');
+    expect(readmeCn).toContain('Notes Workspace');
     expect(handoffNotes).toContain('Personal vs Project 上下文');
     expect(handoffNotes).toContain('Writer 文档区');
     expect(

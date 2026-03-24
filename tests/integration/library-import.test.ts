@@ -21,10 +21,12 @@ function createStubPubmedConnector(): PubmedConnector {
         {
           abstractText: `PubMed search result for ${query}`,
           canonicalId: 'pmid:654321',
+          objectType: 'external-candidate',
           reason: 'PubMed query matched tumor-board biomarker curation work.',
           sourceLabel: 'PubMed',
           sourceLocator: '654321',
           sourceType: 'pmid',
+          state: 'new',
           title: 'Tumor board biomarkers for rapid review',
         },
       ];
@@ -99,12 +101,34 @@ describe('library import', () => {
     }
   });
 
-  it('supports one workbench discovery-to-personal-library slice', async () => {
+  it('supports one workbench discovery-candidate-to-personal-library slice', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-library-import-'));
 
     try {
       const app = createJixiaApp({
         connectors: {
+          arxiv: {
+            async lookup(locator) {
+              return {
+                abstractText: `External arXiv abstract for ${locator}`,
+                canonicalId: `arxiv:${locator}`,
+                title: `Imported arXiv paper ${locator}`,
+              };
+            },
+            async search() {
+              return [];
+            },
+          },
+          biorxiv: {
+            async search() {
+              return [];
+            },
+          },
+          openalex: {
+            async search() {
+              return [];
+            },
+          },
           pubmed: createStubPubmedConnector(),
         },
         env: { JIXIA_STORAGE_ROOT: storageRoot },
@@ -115,19 +139,24 @@ describe('library import', () => {
       expect(discovered).toHaveLength(1);
       expect(discovered[0]).toMatchObject({
         canonicalId: 'pmid:654321',
+        objectType: 'external-candidate',
         sourceLocator: '654321',
         sourceType: 'pmid',
+        state: 'new',
         title: 'Tumor board biomarkers for rapid review',
       });
 
-      const imported = await app.imports.importToPersonalLibrary({
+      const imported = await app.imports.importDiscoveryCandidate({
+        candidateId: discovered[0].id,
         requestedByUserId: 'user-alice',
-        sourceLocator: discovered[0].sourceLocator,
-        sourceType: discovered[0].sourceType,
       });
 
       expect(imported.asset.canonicalId).toBe('pmid:654321');
       expect(imported.entry.visibility).toBe('private');
+      expect(imported.importMapping).toMatchObject({
+        candidateId: discovered[0].id,
+        libraryEntryId: imported.entry.id,
+      });
 
       const personalEntries = await app.library.listPersonalEntries('user-alice');
 

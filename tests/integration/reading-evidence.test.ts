@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -122,6 +122,32 @@ describe('reading evidence', () => {
         summary: 'Governed insight ready for Writer promotion.',
         title: 'Tumor board governed insight',
       });
+
+      const persistedState = JSON.parse(
+        readFileSync(join(storageRoot, 'server-state.json'), 'utf8'),
+      ) as {
+        notebookNotes: Array<{ text: string }>;
+        notes: Array<{ body: string; visibility: string }>;
+      };
+
+      expect(persistedState.notebookNotes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            text: 'Private note for later synthesis.',
+          }),
+        ]),
+      );
+      expect(persistedState.notes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            body: 'Project-visible comment for the tumor board.',
+            visibility: 'space_shared',
+          }),
+        ]),
+      );
+      expect(
+        persistedState.notes.some((note) => note.body === 'Private note for later synthesis.'),
+      ).toBe(false);
 
       const reopenedApp = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
       const reopenedDetail = await reopenedApp.reading.getWorkbenchDetail({

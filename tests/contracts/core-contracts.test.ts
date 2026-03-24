@@ -132,6 +132,7 @@ describe('core contracts', () => {
       createdAt: '2026-03-21T00:00:00.000Z',
     };
     const readingState: ReadingStateRecord = {
+      objectType: 'library-entry',
       libraryEntryId: 'entry_001',
       userId: 'user_001',
       progressPercent: 40,
@@ -148,6 +149,8 @@ describe('core contracts', () => {
 
     const doc: WritingDocRecord = {
       id: 'doc_001',
+      ownerType: 'user',
+      ownerUserId: 'user_001',
       spaceId: 'space_001',
       title: 'Server-first writing draft',
       publishState: 'draft',
