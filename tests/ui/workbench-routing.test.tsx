@@ -1,16 +1,70 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/web/app';
 
+function renderWorkbench(pathname = '/home') {
+  window.history.replaceState({}, '', pathname);
+  render(<App />);
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
 describe('workbench routing', () => {
   it('redirects authenticated users to /home and renders stable nav', () => {
-    render(<App />);
+    renderWorkbench();
 
     expect(screen.getByRole('link', { name: '今日推荐' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '搜索' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '设置' })).toBeInTheDocument();
+  });
+
+  it('redirects legacy /spaces library deep links to canonical /projects paths', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const url = input.toString();
+
+        if (url.endsWith('/api/spaces')) {
+          return new Response(
+            JSON.stringify({
+              spaces: [
+                {
+                  importLocator: 'pmid:123456',
+                  kind: 'shared',
+                  name: 'Shared Space',
+                  projectId: 'tumor-board',
+                  spaceId: 'shared-space',
+                  visibility: 'space_shared',
+                },
+              ],
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
+        if (url.endsWith('/api/spaces/shared-space/projects/tumor-board/library')) {
+          return new Response(JSON.stringify({ entries: [] }), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }),
+    );
+
+    renderWorkbench('/spaces/shared-space/projects/tumor-board/library');
+
+    expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/projects/tumor-board/library');
   });
 });

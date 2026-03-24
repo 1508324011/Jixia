@@ -162,7 +162,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe('mvp workflow shell', () => {
-  it('navigates from spaces to library, reader, and writing', async () => {
+  it('navigates from spaces to library, reader, notes workspace, and project docs', async () => {
     const user = userEvent.setup();
 
     window.history.replaceState({}, '', '/spaces');
@@ -181,6 +181,9 @@ describe('mvp workflow shell', () => {
 
     expect(
       await screen.findByRole('heading', { name: 'Library' }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText('Context · Tumor Board Shared Space / tumor-board'),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('context bar')).toHaveTextContent(
       'Context · Tumor Board Shared Space / tumor-board',
@@ -212,12 +215,17 @@ describe('mvp workflow shell', () => {
       'Entry · entry-1',
     );
 
-    await user.click(screen.getByRole('link', { name: 'Open writing' }));
+    await user.click(screen.getByRole('link', { name: 'Open notes workspace' }));
 
-    expect(await screen.findByRole('heading', { name: 'Writing' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
+    expect(screen.getByText('Notebook questions')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Open project docs' }));
+
+    expect(await screen.findByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
     expect(
       screen.getByRole('heading', {
-        name: 'Versions, references, and governed jobs',
+        name: 'References, publish state, and governed jobs',
       }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('context bar')).toHaveTextContent(
@@ -250,7 +258,7 @@ describe('mvp workflow shell', () => {
     expect(screen.getAllByText('space_shared')[0]).toHaveClass('status-badge');
   });
 
-  it('surfaces governance cues across library, reader, and writing', async () => {
+  it('surfaces governance cues across library, reader, and project docs', async () => {
     const user = userEvent.setup();
 
     window.history.replaceState({}, '', '/spaces');
@@ -275,7 +283,7 @@ describe('mvp workflow shell', () => {
     expect(screen.getByText('Latest governed finale')).toBeInTheDocument();
     expect(screen.getByText('Key mutation note')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Open writing' }));
+    await user.click(screen.getByRole('link', { name: 'Open project docs' }));
 
     expect(await screen.findByText('Publish state path')).toBeInTheDocument();
     expect(screen.getByText('draft · review · published')).toBeInTheDocument();
@@ -317,6 +325,9 @@ describe('mvp workflow shell', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument();
+    expect(
+      await screen.findByText('Context · Tumor Board Shared Space / tumor-board'),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText('context bar')).toHaveTextContent(
       'Context · Tumor Board Shared Space / tumor-board',
     );
@@ -324,7 +335,7 @@ describe('mvp workflow shell', () => {
     expect(screen.getByRole('link', { name: 'Open reader' })).toBeInTheDocument();
   });
 
-  it('supports direct writing deep links with project and doc context', async () => {
+  it('supports direct project-doc deep links with project and doc context', async () => {
     window.history.replaceState(
       {},
       '',
@@ -334,7 +345,7 @@ describe('mvp workflow shell', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Writing' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
     expect(screen.getByLabelText('context bar')).toHaveTextContent(
       'Space context · shared-space',
     );

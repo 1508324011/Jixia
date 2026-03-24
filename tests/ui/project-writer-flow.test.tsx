@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe('project writer flow', () => {
-  it('project page reopens the promoted writer draft and saves updates', async () => {
+  it('project page opens the project docs surface and saves updates', async () => {
     const user = userEvent.setup();
     const documentState = {
       document: {
@@ -43,15 +43,18 @@ describe('project writer flow', () => {
           doc: {
             createdAt: '2026-03-23T00:35:00.000Z',
             id: 'doc-1',
+            ownerType: 'project',
             publishState: 'draft',
-            spaceId: 'personal-space-user-alice',
+            projectId: 'project-1',
+            spaceId: 'shared-space',
             title: 'Tumor board literature synthesis',
           },
           docVersionId: 'doc-version-1',
         },
+        ownerType: 'project',
         projectId: 'project-1',
         publishState: 'draft',
-        spaceId: 'personal-space-user-alice',
+        spaceId: 'shared-space',
         title: 'Tumor board literature synthesis',
       },
     };
@@ -67,14 +70,14 @@ describe('project writer flow', () => {
               : input.url;
 
         if (
-          requestUrl.endsWith('/api/writing/personal-space-user-alice/projects/project-1/document') &&
+          requestUrl.endsWith('/api/writing/shared-space/projects/project-1/document') &&
           (!init?.method || init.method === 'GET')
         ) {
           return jsonResponse(documentState);
         }
 
         if (
-          requestUrl.endsWith('/api/writing/personal-space-user-alice/projects/project-1/document') &&
+          requestUrl.endsWith('/api/writing/shared-space/projects/project-1/document') &&
           init?.method === 'POST'
         ) {
           const body = JSON.parse(String(init.body)) as { content: string; title: string };
@@ -101,13 +104,14 @@ describe('project writer flow', () => {
 
     renderWorkbench('/projects/project-1');
 
-    expect(screen.getByText('Writer 文档区')).toBeInTheDocument();
-    expect(screen.getByText('将成熟内容整理进入 Writer')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
+    expect(screen.getByText('Shared document tree and current draft live here.')).toBeInTheDocument();
 
     expect(await screen.findByText('Promoted governed insight paragraph.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: '打开 Writer 文稿' }));
+    await user.click(screen.getByRole('link', { name: 'Open project docs' }));
 
+    expect(await screen.findByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
     const draftContent = await screen.findByRole('textbox', { name: 'Draft content' });
     await user.clear(draftContent);
     await user.type(draftContent, 'Reopened writer draft with persisted edits.');

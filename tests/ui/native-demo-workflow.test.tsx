@@ -148,7 +148,8 @@ describe('native demo workflow', () => {
 
     await user.click(screen.getByRole('link', { name: 'Open library' }));
 
-    expect(window.location.pathname).toBe('/spaces/space-2/projects/tumor-board/library');
+    expect(window.location.pathname).toBe('/projects/tumor-board/library');
+    expect(window.location.search).toBe('?spaceId=space-2');
   });
 
   it('renders fetched library data instead of placeholder demo copy', async () => {
@@ -314,7 +315,7 @@ describe('native demo workflow', () => {
     expect(await screen.findByText('Imported PMID paper 654321')).toBeInTheDocument();
   });
 
-  it('loads reader detail and persists saved note and insight after refresh', async () => {
+  it('routes reader, private notes, and project docs through separate surfaces', async () => {
     const user = userEvent.setup();
 
     window.history.replaceState(
@@ -351,8 +352,27 @@ describe('native demo workflow', () => {
         visibility: string;
       }>,
     };
-    const governedSummaryResponse = {
-      governedJob: null,
+    const documentResponse = {
+      document: {
+        documentId: 'doc-1',
+        latestSnapshot: {
+          capturedAt: '2026-03-22T00:00:00.000Z',
+          citations: [],
+          content: 'Initial seeded paragraph.',
+          doc: {
+            createdAt: '2026-03-22T00:00:00.000Z',
+            id: 'doc-1',
+            publishState: 'draft',
+            spaceId: 'shared-space',
+            title: 'Tumor board synthesis',
+          },
+          docVersionId: 'doc-version-1',
+        },
+        projectId: 'tumor-board',
+        publishState: 'draft',
+        spaceId: 'shared-space',
+        title: 'Tumor board synthesis',
+      },
     };
 
     vi.stubGlobal(
@@ -372,15 +392,21 @@ describe('native demo workflow', () => {
           return jsonResponse(readingResponse);
         }
 
-        if (requestUrl.endsWith('/api/spaces/shared-space/governed-summary')) {
-          return jsonResponse(governedSummaryResponse);
+        if (
+          requestUrl.endsWith('/api/writing/shared-space/projects/tumor-board/document') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return jsonResponse(documentResponse);
         }
 
         if (
           requestUrl.endsWith('/api/reading/entry-1/notes?spaceId=shared-space') &&
           init?.method === 'POST'
         ) {
-          const body = JSON.parse(String(init.body)) as { body: string };
+          const body = JSON.parse(String(init.body)) as {
+            body: string;
+            visibility?: 'private' | 'space_shared';
+          };
 
           readingResponse.notes.push({
             authorUserId: 'demo-operator',
@@ -388,28 +414,10 @@ describe('native demo workflow', () => {
             createdAt: '2026-03-22T01:00:00.000Z',
             id: `note-${readingResponse.notes.length + 1}`,
             libraryEntryId: 'entry-1',
-            visibility: 'space_shared',
+            visibility: body.visibility ?? 'space_shared',
           });
 
           return jsonResponse({ note: readingResponse.notes.at(-1) });
-        }
-
-        if (
-          requestUrl.endsWith('/api/reading/entry-1/insights?spaceId=shared-space') &&
-          init?.method === 'POST'
-        ) {
-          const body = JSON.parse(String(init.body)) as { summary: string };
-
-          readingResponse.insights.push({
-            conversationId: `conversation-${readingResponse.insights.length + 1}`,
-            createdAt: '2026-03-22T01:05:00.000Z',
-            evidenceSpans: [],
-            id: `insight-${readingResponse.insights.length + 1}`,
-            libraryEntryId: 'entry-1',
-            summary: body.summary,
-          });
-
-          return jsonResponse({ insight: readingResponse.insights.at(-1) });
         }
 
         throw new Error(`Unexpected fetch: ${requestUrl}`);
@@ -420,28 +428,21 @@ describe('native demo workflow', () => {
 
     expect(await screen.findByText('Imported PMID paper 123456')).toBeInTheDocument();
     expect(screen.getByText('Imported PMID metadata for 123456')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Promote latest insight to Writer' })).not.toBeInTheDocument();
 
-    await user.type(screen.getByRole('textbox', { name: 'Note body' }), 'Key mutation note');
-    await user.click(screen.getByRole('button', { name: 'Save note' }));
+    await user.click(screen.getByRole('link', { name: 'Open notes workspace' }));
 
-    expect(await screen.findByText('Key mutation note')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
 
-    await user.type(
-      screen.getByRole('textbox', { name: 'Insight summary' }),
-      'Evidence-backed summary for board prep.',
-    );
-    await user.click(screen.getByRole('button', { name: 'Save insight' }));
-
-    expect(
-      await screen.findByText('Evidence-backed summary for board prep.'),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Refresh reader' }));
+    await user.type(screen.getByRole('textbox', { name: 'Private note' }), 'Key mutation note');
+    await user.click(screen.getByRole('button', { name: 'Save private note' }));
 
     expect(await screen.findByText('Key mutation note')).toBeInTheDocument();
-    expect(screen.getByText('Evidence-backed summary for board prep.')).toBeInTheDocument();
-    expect(screen.queryByText('Paper text')).not.toBeInTheDocument();
-    expect(screen.queryByText('Workbench')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Open project docs' }));
+
+    expect(await screen.findByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Initial seeded paragraph.')).toBeInTheDocument();
   });
 
   it('loads a created-space reader by scoping requests to the selected space', async () => {
@@ -813,18 +814,15 @@ describe('native demo workflow', () => {
   it('keeps the runbook wording aligned with the native showcase controls', () => {
     const runbook = readFileSync(RUNBOOK_PATH, 'utf8');
 
-    expect(runbook).toContain('Create Space -> Library -> Reader -> Writing');
+    expect(runbook).toContain('Home -> Intake -> Library -> Reader -> Notes Workspace -> Project Docs');
     expect(runbook).toContain('Genomics Sandbox');
-    expect(runbook).toContain('Create space');
-    expect(runbook).toContain('Open library');
-    expect(runbook).toContain('Import paper');
+    expect(runbook).toContain('Research workbench');
+    expect(runbook).toContain('导入到个人 Library');
     expect(runbook).toContain('Open reader');
-    expect(runbook).toContain('Save note');
-    expect(runbook).toContain('Save insight');
-    expect(runbook).toContain('Refresh reader');
-    expect(runbook).toContain('Open writing');
+    expect(runbook).toContain('Open notes workspace');
+    expect(runbook).toContain('Save private note');
+    expect(runbook).toContain('Open project docs');
     expect(runbook).toContain('Save draft');
-    expect(runbook).toContain('Reload draft');
     expect(runbook).toContain('Publish');
     expect(runbook).toContain('restart');
     expect(runbook).toContain('Run governed summary');

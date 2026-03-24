@@ -9,14 +9,13 @@ function renderHomePage() {
 }
 
 describe('home page', () => {
-  it('shows dashboard summary cards and recent-opened panel', () => {
+  it('shows the intake desk instead of the old dashboard summary cards', () => {
     renderHomePage();
 
-    expect(screen.getByRole('heading', { name: '个人工作台' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '今日推荐' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '最近阅读' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '最近项目' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '最近文档' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '最近打开' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Research workbench' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Intake desk' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Unified inventory' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '最近项目' })).not.toBeInTheDocument();
   });
 });

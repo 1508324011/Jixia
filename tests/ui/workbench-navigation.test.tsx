@@ -30,9 +30,11 @@ describe('workbench navigation', () => {
         canonicalId: 'pmid:654321',
         id: 'discovery-1',
         imported: false,
+        objectType: 'external-candidate',
         reason: 'PubMed result for today\'s tumor-board queue.',
         sourceLabel: 'PubMed',
         sourceLocator: '654321',
+        state: 'new',
         sourceType: 'pmid',
         title: 'Tumor board biomarkers for rapid review',
       },
@@ -46,6 +48,13 @@ describe('workbench navigation', () => {
         if (url.includes('/api/discovery/search')) {
           return new Response(
             JSON.stringify({
+              boards: [
+                {
+                  id: 'search-results',
+                  items: discoveryItems,
+                  title: 'Search results',
+                },
+              ],
               items: discoveryItems,
               query: 'tumor board',
             }),
@@ -59,6 +68,13 @@ describe('workbench navigation', () => {
         if (url.endsWith('/api/discovery/today')) {
           return new Response(
             JSON.stringify({
+              boards: [
+                {
+                  id: 'today-intake',
+                  items: discoveryItems,
+                  title: 'Today intake',
+                },
+              ],
               items: discoveryItems,
             }),
             {
@@ -152,12 +168,12 @@ describe('workbench navigation', () => {
     expect(screen.getByRole('heading', { name: '外部搜索' })).toBeInTheDocument();
     await user.clear(screen.getByLabelText('检索主题'));
     await user.type(screen.getByLabelText('检索主题'), 'tumor board');
-    await user.click(screen.getByRole('button', { name: '检索 PubMed' }));
+    await user.click(screen.getByRole('button', { name: 'Search intake boards' }));
     expect(
       await screen.findByRole('heading', { name: 'Tumor board biomarkers for rapid review' }),
     ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '导入到个人 Library' }));
-    expect(await screen.findByText('Imported into personal library')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '已进入个人 Library' })).toBeDisabled();
 
     await user.click(screen.getByRole('link', { name: 'Library' }));
     expect(screen.getByRole('heading', { name: 'Library' })).toBeInTheDocument();
@@ -199,5 +215,63 @@ describe('workbench navigation', () => {
     expect(
       await screen.findByRole('heading', { name: 'Tumor board biomarkers for rapid review' }),
     ).toBeInTheDocument();
+  });
+
+  it('project surfaces link to canonical /projects project-doc routes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (
+          requestUrl.endsWith('/api/writing/shared-space/projects/project-1/document') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return new Response(
+            JSON.stringify({
+              document: {
+                documentId: 'doc-1',
+                latestSnapshot: {
+                  capturedAt: '2026-03-24T00:00:00.000Z',
+                  citations: [],
+                  content: 'Shared project draft',
+                  doc: {
+                    createdAt: '2026-03-24T00:00:00.000Z',
+                    id: 'doc-1',
+                    ownerType: 'project',
+                    projectId: 'project-1',
+                    publishState: 'draft',
+                    spaceId: 'shared-space',
+                    title: 'Tumor board synthesis',
+                  },
+                  docVersionId: 'doc-version-1',
+                },
+                ownerType: 'project',
+                projectId: 'project-1',
+                publishState: 'draft',
+                spaceId: 'shared-space',
+                title: 'Tumor board synthesis',
+              },
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
+        throw new Error(`Unexpected fetch request: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-1');
+
+    const projectDocsLink = await screen.findByRole('link', { name: 'Open project docs' });
+    expect(projectDocsLink).toHaveAttribute('href', '/projects/project-1/writing/doc-1');
   });
 });
