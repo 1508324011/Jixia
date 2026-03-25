@@ -321,7 +321,7 @@ describe('native demo workflow', () => {
     window.history.replaceState(
       {},
       '',
-      '/spaces/shared-space/projects/tumor-board/library/entry-1/reader',
+      '/projects/tumor-board/library/entry-1/reader',
     );
 
     const readingResponse = {
@@ -397,6 +397,13 @@ describe('native demo workflow', () => {
               : input.url;
 
         if (
+          requestUrl.endsWith('/api/reading/entry-1') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return jsonResponse(readingResponse);
+        }
+
+        if (
           requestUrl.endsWith('/api/reading/entry-1?spaceId=shared-space') &&
           (!init?.method || init.method === 'GET')
         ) {
@@ -408,6 +415,27 @@ describe('native demo workflow', () => {
           (!init?.method || init.method === 'GET')
         ) {
           return jsonResponse(documentResponse);
+        }
+
+        if (
+          requestUrl.endsWith('/api/reading/entry-1/notes') &&
+          init?.method === 'POST'
+        ) {
+          const body = JSON.parse(String(init.body)) as {
+            body: string;
+            visibility?: 'private' | 'space_shared';
+          };
+
+          readingResponse.notes.push({
+            authorUserId: 'demo-operator',
+            body: body.body,
+            createdAt: '2026-03-22T01:00:00.000Z',
+            id: `note-${readingResponse.notes.length + 1}`,
+            libraryEntryId: 'entry-1',
+            visibility: body.visibility ?? 'space_shared',
+          });
+
+          return jsonResponse({ note: readingResponse.notes.at(-1) });
         }
 
         if (
@@ -550,8 +578,12 @@ describe('native demo workflow', () => {
                 title: 'arXiv',
               },
             ],
+            hasNextPage: true,
             items: [],
+            page: 1,
+            pageSize: 2,
             query: 'tumor board',
+            total: 12,
           });
         }
 
@@ -581,6 +613,8 @@ describe('native demo workflow', () => {
 
     const pubmedLane = await screen.findByRole('region', { name: 'PubMed intake lane' });
     expect(within(pubmedLane).getByText('Curated abstract snippet for rapid triage.')).toBeInTheDocument();
+    expect(screen.getByText('Showing 1-2 of 12')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeInTheDocument();
 
     await user.click(within(pubmedLane).getByRole('button', { name: '导入到个人 Library' }));
 
@@ -594,7 +628,7 @@ describe('native demo workflow', () => {
     window.history.replaceState(
       {},
       '',
-      '/spaces/space-2/projects/tumor-board/library/entry-2/reader',
+      '/projects/tumor-board/library/entry-2/reader?spaceId=space-2',
     );
 
     vi.stubGlobal(
@@ -645,7 +679,7 @@ describe('native demo workflow', () => {
     window.history.replaceState(
       {},
       '',
-      '/spaces/shared-space/projects/tumor-board/writing/doc-1',
+      '/projects/tumor-board/writing/doc-1',
     );
 
     const documentResponse = {
@@ -843,7 +877,7 @@ describe('native demo workflow', () => {
     window.history.replaceState(
       {},
       '',
-      '/spaces/space-2/projects/tumor-board/writing/doc-2',
+      '/projects/tumor-board/writing/doc-2?spaceId=space-2',
     );
 
     const documentResponse = {
@@ -959,19 +993,17 @@ describe('native demo workflow', () => {
   it('keeps the runbook wording aligned with the native showcase controls', () => {
     const runbook = readFileSync(RUNBOOK_PATH, 'utf8');
 
-    expect(runbook).toContain('Home -> Intake -> Library -> Reader -> Notes Workspace -> Project Docs');
+    expect(runbook).toContain('Home -> Projects -> Notebooks -> Reader -> Project Docs');
     expect(runbook).toContain('Genomics Sandbox');
     expect(runbook).toContain('Research workbench');
-    expect(runbook).toContain('导入到个人 Library');
-    expect(runbook).toContain('Open reader');
-    expect(runbook).toContain('Open notes workspace');
-    expect(runbook).toContain('Save private note');
+    expect(runbook).toContain('Open tumor board workspace');
+    expect(runbook).toContain('Open active notebook');
+    expect(runbook).toContain('Open related reader');
+    expect(runbook).toContain('Back to notebook');
     expect(runbook).toContain('Insert into project docs');
     expect(runbook).toContain('Open project docs');
-    expect(runbook).toContain('Save draft');
-    expect(runbook).toContain('Publish');
-    expect(runbook).toContain('restart');
-    expect(runbook).toContain('Run governed summary');
+    expect(runbook).toContain('Back to project');
+    expect(runbook).not.toContain('Home -> Intake -> Library -> Reader -> Notes Workspace -> Project Docs');
     expect(runbook).not.toContain('browser-facing `quote / insert helper`');
     expect(runbook).not.toContain('browser users can yet create projected references');
   });

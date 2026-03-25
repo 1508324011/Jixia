@@ -44,8 +44,8 @@ describe('workbench beta runbook contract', () => {
     expect(runbook).toContain('demo-only convenience');
     expect(runbook).toContain('Unified Intake & Deep Reading Workbench');
     expect(runbook).toContain('Discovery & Intake');
-    expect(runbook).toContain('Pull lane');
-    expect(runbook).toContain('Push lane');
+    expect(runbook).toContain('`Home`, `Projects`, and `Notebooks`');
+    expect(runbook).toContain('`Discovery & Intake` remains available under `Search`');
     expect(runbook).toContain('imported inventory');
     expect(runbook).toContain('Notebook');
     expect(runbook).toContain('fully private');

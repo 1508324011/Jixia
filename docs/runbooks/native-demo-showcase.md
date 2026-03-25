@@ -1,6 +1,6 @@
 # Native Demo Showcase Runbook
 
-This runbook resets the branch to a deterministic server-backed demo and walks a reviewer through the strongest truthful browser story now available on `demo-native-showcase`: start from `/home`, inspect the editorial-lab `Research workbench`, move through `Discovery & Intake`, import into personal inventory, open `Reader`, continue into `Notes Workspace`, project selected notebook material into a shared reference, then verify the shared `Project Docs` surface on the seeded tumor-board project. The branch still runs natively on Node, uses user-owned runtime paths, and avoids Docker or sudo for the primary showcase path.
+This runbook resets the branch to a deterministic server-backed demo and walks a reviewer through the strongest truthful browser story now available on `demo-native-showcase`: start from `/home`, inspect the editorial-lab `Research workbench`, open the seeded tumor-board project, continue into the active notebook, use the reader as an evidence companion, project selected notebook material into shared writing, then verify the shared `Project Docs` surface on the seeded tumor-board project. The branch still runs natively on Node, uses user-owned runtime paths, and avoids Docker or sudo for the primary showcase path.
 
 The downstream demo branch now carries the implemented reset from Tasks 1–9: canonical `/projects/...` routes, imported-inventory-only deep reading, a fully private `Notebook`, a three-pane workbench shell, a browser-side **Insert into project docs** action, and project-owned `Project Docs` with a visible reference rail.
 
@@ -12,7 +12,8 @@ The inherited **current host** / **no-Docker** beta path still exists on this br
 
 The currently approved milestone remains **Unified Intake & Deep Reading Workbench**. This runbook now documents the parts that are already runnable and truthful on this worktree:
 
-- `Discovery & Intake` now exists as the front-door browser story, with `Pull lane` surfaces already visible in `今日推荐` and `搜索`
+- `Home`, `Projects`, and `Notebooks` now form the truthful browser front door for reviewer walkthroughs
+- `Discovery & Intake` remains available under `Search`, but it is no longer the primary reviewer choreography for this native showcase
 - only **imported inventory** enters `Reader`, `Notes Workspace`, and `Project Docs`
 - `Notebook` remains fully private
 - `Project Docs` remain project-owned shared writing objects
@@ -77,35 +78,36 @@ Use this when you want to prove that the demo can be handed off as a runnable ar
 
 ## Showcase flow
 
-Home -> Intake -> Library -> Reader -> Notes Workspace -> Project Docs
+Home -> Projects -> Notebooks -> Reader -> Project Docs
 
-### A. Personal intake and deep-reading flow
+### A. Project notebook walkthrough
 
 1. Open **Research workbench** at `/home` and confirm the three-pane shell is present.
-2. Open **今日推荐** or **搜索**. The surfaces are now the visible `Discovery & Intake` `Pull lane`; they are no longer `/spaces`-owned pages.
-3. On **Today intake** or **Discovery intake**, use **导入到个人 Library** on a candidate such as the deterministic PubMed fixture anchored by `pmid:123456`.
-4. Open **Library inventory** at `/library` and confirm the imported item appears inside the personal evidence shelf.
-5. Click **Open reader**.
-6. In **Reader**, confirm the page is now a deep-reading surface only: it keeps the paper, evidence summaries, and routing links, but it no longer owns direct project drafting.
-7. Click **Open notes workspace**.
-8. In **Notes workspace**, type a private note into **Private note** and click **Save private note**.
-9. Click **Insert into project docs** and confirm the browser shows **Project-owned reference created.**
-10. Confirm the private note remains visible on the notes surface and that the browser route stays under canonical `/projects/...` paths.
+2. Click **Open tumor board workspace** and confirm the project overview now offers **Open active notebook**, **Open active reader**, and **Open project docs** as sibling companion actions.
+3. Click **Open active notebook** and confirm the browser lands in **Notes workspace** with **Notebook questions** visible as the synthesis scaffold.
+4. Type a private note into **Private note** and click **Save private note**.
+5. Click **Back to reader**.
+6. In **Evidence companion**, confirm the reader keeps the paper, evidence summaries, and routing links, then click **Open related reader** only when coming from notebook inventory rows or **Back to notebook** when already inside the seeded project flow.
+7. Click **Back to notebook** and confirm the route returns to the notebook surface without leaving canonical `/projects/...` paths.
+8. Click **Insert into project docs** and confirm the browser shows **Project-owned reference created.**
+9. Click **Open project docs** and confirm the browser lands in the shared writing surface with the new projected reference visible in **Reference rail**.
+10. Use **Back to project** to confirm the notebook, reader, and project surfaces now behave as companion routes instead of isolated desks.
 
 ### B. Shared project docs flow
 
-11. Open the seeded project route `/projects/tumor-board?spaceId=shared-space`.
+11. Reopen the seeded project route `/projects/tumor-board` (or `/projects/tumor-board?spaceId=shared-space` if you want the explicit space context in the URL).
 12. In the **Project docs** section, click **Open project docs**.
 13. Confirm the page title is **Project docs**, the document tree renders the shared tumor-board draft, and the **Reference rail** shows the projected excerpt.
 14. Edit **Draft content**, click **Save draft**, then click **Reload draft** and confirm the saved content persists after the reload.
 15. Click **Publish** and confirm the publish state changes to `published`.
 16. Optionally click **Run governed summary** to show the governed job finale with queued/running/succeeded events and audit records.
-17. Restart the app process, reopen `/projects/tumor-board/writing/doc-1?spaceId=shared-space`, and verify the shared document state still exists after restart.
+17. Restart the app process, reopen `/projects/tumor-board/writing/doc-1`, and verify the shared document state still exists after restart.
 
 ## Route truth
 
-- canonical browser routes now live under `/home`, `/today`, `/search`, `/library`, and `/projects/:projectId/...`
+- canonical browser routes now live under `/home`, `/projects`, `/notebooks`, `/search`, `/library`, and `/projects/:projectId/...`
 - nested `/spaces/...` deep links are now compatibility redirects into the canonical `/projects/...` tree
+- `/today` is no longer the canonical reviewer entry point for this showcase walkthrough
 - the runbook no longer treats `/spaces` as the primary route authority
 
 ## What this demo proves
