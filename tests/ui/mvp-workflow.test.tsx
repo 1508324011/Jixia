@@ -14,6 +14,79 @@ function jsonResponse(payload: unknown): Response {
 }
 
 function stubNativeDemoFetch(): void {
+  const sharedComment: {
+    authorUserId: string;
+    body: string;
+    createdAt: string;
+    id: string;
+    libraryEntryId: string;
+    visibility: string;
+  } = {
+    authorUserId: 'demo-operator',
+    body: 'Key mutation note',
+    createdAt: '2026-03-22T01:00:00.000Z',
+    id: 'note-1',
+    libraryEntryId: 'entry-1',
+    visibility: 'space_shared',
+  };
+
+  const createdNoteResponse = {
+    note: {
+      authorUserId: 'user-alice',
+      body: 'Private notebook body that stays in notebook only.',
+      createdAt: '2026-03-24T10:00:00.000Z',
+      id: 'note-created-1',
+      libraryEntryId: 'entry-1',
+      visibility: 'private',
+    },
+  };
+
+  const projectReferenceResponse = {
+    reference: {
+      createdAt: '2026-03-24T10:05:00.000Z',
+      documentId: 'doc-1',
+      id: 'reference-created-1',
+      ownerType: 'project',
+      paperAssetId: 'asset-pmid-123456',
+      projectId: 'tumor-board',
+      selectedText: 'Projected notebook-only excerpt',
+      sourceKind: 'projection',
+      sourceType: 'notebook-note',
+    },
+  };
+
+  const workbenchSummaryResponse = {
+    recentImports: [
+      {
+        addedAt: '2026-03-24T09:00:00.000Z',
+        canonicalId: 'pmid:123456',
+        entryId: 'entry-1',
+        projectId: 'tumor-board',
+        spaceId: 'shared-space',
+        title: 'Imported PMID paper 123456',
+        to: '/projects/tumor-board/library',
+      },
+    ],
+    recentProjects: [
+      {
+        activeNotebookCount: 1,
+        entryCount: 1,
+        projectId: 'tumor-board',
+        recentActivity: 'Notebook updated 2h ago',
+        spaceId: 'shared-space',
+        title: 'Tumor board workspace',
+      },
+    ],
+    resumeTargets: [
+      {
+        description: 'Return to the active tumor board synthesis notebook.',
+        kind: 'notebook',
+        title: 'Resume notebook',
+        to: '/projects/tumor-board/library/entry-1/notes',
+      },
+    ],
+  };
+
   const spacesResponse = {
     spaces: [
       {
@@ -30,13 +103,22 @@ function stubNativeDemoFetch(): void {
   const libraryResponse = {
     entries: [
       {
+        abstractText: 'Imported PMID metadata for 123456',
+        addedAt: '2026-03-22T00:00:00.000Z',
         canonicalId: 'pmid:123456',
+        createdAt: '2026-03-22T00:00:00.000Z',
         entryId: 'entry-1',
+        paperAssetId: 'asset-pmid-123456',
+        sourceLabel: 'PubMed',
+        sourceType: 'pmid',
+        spaceId: 'shared-space',
         title: 'Imported PMID paper 123456',
         visibility: 'space_shared',
       },
     ],
   };
+
+  const emptyNotebookNotes: Array<typeof createdNoteResponse.note> = [];
 
   const readingResponse = {
     asset: {
@@ -60,15 +142,31 @@ function stubNativeDemoFetch(): void {
       },
     ],
     notes: [
-      {
-        authorUserId: 'demo-operator',
-        body: 'Key mutation note',
-        createdAt: '2026-03-22T01:00:00.000Z',
-        id: 'note-1',
-        libraryEntryId: 'entry-1',
-        visibility: 'space_shared',
-      },
+      sharedComment,
     ],
+    workspace: {
+      companion: {
+        notebookPath: '/projects/tumor-board/library/entry-1/notes',
+        projectDocsPath: '/projects/tumor-board/writing/doc-1',
+        projectPath: '/projects/tumor-board',
+        readerPath: '/projects/tumor-board/library/entry-1/reader',
+      },
+      notebookId: 'notebook-1',
+      privateNotes: emptyNotebookNotes,
+      questions: [
+        {
+          id: 'question-1',
+          prompt: 'What changes my interpretation of this paper?',
+          status: 'open',
+        },
+        {
+          id: 'question-2',
+          prompt: 'What would I quote into a project update?',
+          status: 'open',
+        },
+      ],
+      sharedComments: [sharedComment],
+    },
   };
 
   const writingResponse = {
@@ -135,9 +233,16 @@ function stubNativeDemoFetch(): void {
     },
   };
 
+  let currentReadingResponse = structuredClone(readingResponse);
+  let currentWritingResponse = structuredClone(writingResponse);
+
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: string | URL | Request) => {
+    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const requestMethod =
+        typeof input === 'string' || input instanceof URL
+          ? (init?.method?.toUpperCase() ?? 'GET')
+          : input.method.toUpperCase();
       const requestUrl =
         typeof input === 'string'
           ? input
@@ -149,16 +254,56 @@ function stubNativeDemoFetch(): void {
         return jsonResponse(spacesResponse);
       }
 
+      if (requestUrl.endsWith('/api/workbench/summary')) {
+        return jsonResponse(workbenchSummaryResponse);
+      }
+
       if (requestUrl.endsWith('/api/spaces/shared-space/projects/tumor-board/library')) {
         return jsonResponse(libraryResponse);
       }
 
+      if (requestUrl.endsWith('/api/reading/entry-1')) {
+        return jsonResponse(currentReadingResponse);
+      }
+
       if (requestUrl.endsWith('/api/reading/entry-1?spaceId=shared-space')) {
-        return jsonResponse(readingResponse);
+        return jsonResponse(currentReadingResponse);
+      }
+
+      if (requestMethod === 'POST' && requestUrl.endsWith('/api/reading/entry-1/notes')) {
+        currentReadingResponse = {
+          ...currentReadingResponse,
+          notes: [...currentReadingResponse.notes, createdNoteResponse.note],
+          workspace: {
+            ...currentReadingResponse.workspace,
+            privateNotes: [
+              ...currentReadingResponse.workspace.privateNotes,
+              createdNoteResponse.note,
+            ],
+          },
+        };
+        return jsonResponse(createdNoteResponse);
+      }
+
+      if (
+        requestMethod === 'POST' &&
+        requestUrl.endsWith('/api/projects/tumor-board/docs/doc-1/references')
+      ) {
+        currentWritingResponse = {
+          ...currentWritingResponse,
+          document: {
+            ...currentWritingResponse.document,
+            references: [
+              ...currentWritingResponse.document.references,
+              projectReferenceResponse.reference,
+            ],
+          },
+        };
+        return jsonResponse(projectReferenceResponse);
       }
 
       if (requestUrl.endsWith('/api/writing/shared-space/projects/tumor-board/document')) {
-        return jsonResponse(writingResponse);
+        return jsonResponse(currentWritingResponse);
       }
 
       if (requestUrl.endsWith('/api/spaces/shared-space/governed-summary')) {
@@ -175,63 +320,57 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe('mvp workflow shell', () => {
-  it('navigates from spaces to library, reader, notes workspace, and project docs', async () => {
+  it('navigates from home to project notebook reader and project docs', async () => {
     const user = userEvent.setup();
 
-    window.history.replaceState({}, '', '/spaces');
+    window.history.replaceState({}, '', '/home');
     stubNativeDemoFetch();
 
     render(<App />);
 
-    expect(
-      screen.getByRole('heading', { name: 'Spaces' }),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Space → Project → Entry → Doc')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Research workbench' })).toBeInTheDocument();
 
     await user.click(
-      await screen.findByRole('link', { name: 'Enter shared space' }),
+      await screen.findByRole('link', { name: /open tumor board workspace/i }),
     );
 
-    expect(
-      await screen.findByRole('heading', { name: 'Library' }),
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByText('Context · Tumor Board Shared Space / tumor-board'),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText('context bar')).toHaveTextContent(
-      'Context · Tumor Board Shared Space / tumor-board',
-    );
-    expect(screen.getByLabelText('context bar')).toHaveTextContent(
-      'space_shared',
-    );
-    expect(screen.getByLabelText('context bar')).toHaveTextContent(
-      'pmid:123456',
-    );
-    expect(screen.getByText('Project · tumor-board')).toBeInTheDocument();
-    expect(screen.getByText('Imported PMID paper 123456')).toBeInTheDocument();
-    expect(screen.queryByText('Loading state placeholder')).not.toBeInTheDocument();
-    expect(screen.queryByText('Empty shelf placeholder')).not.toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Open active notebook' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Open reader' }));
-
-    expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { name: 'Evidence workspace' }),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText('context bar')).toHaveTextContent(
-      'Space context · shared-space',
-    );
-    expect(screen.getByLabelText('context bar')).toHaveTextContent(
-      'Project context · tumor-board',
-    );
-    expect(screen.getByLabelText('context bar')).toHaveTextContent(
-      'Entry · entry-1',
-    );
-
-    await user.click(screen.getByRole('link', { name: 'Open notes workspace' }));
+    await user.click(screen.getByRole('link', { name: 'Open active notebook' }));
 
     expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
     expect(screen.getByText('Notebook questions')).toBeInTheDocument();
+
+    await user.type(
+      screen.getByRole('textbox', {
+        name: /private note for/i,
+      }),
+      'Private notebook body that stays in notebook only.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save private note' }));
+    expect(
+      await screen.findByText('Private notebook body that stays in notebook only.'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Back to reader' }));
+
+    expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Evidence companion' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to notebook' })).toHaveAttribute(
+      'href',
+      '/projects/tumor-board/library/entry-1/notes',
+    );
+
+    await user.click(screen.getByRole('link', { name: 'Back to notebook' }));
+
+    expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
+    expect(
+      await screen.findByText('Private notebook body that stays in notebook only.'),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Insert into project docs' }));
+    expect(await screen.findByText('Project-owned reference created.')).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Open project docs' }));
 
@@ -242,61 +381,57 @@ describe('mvp workflow shell', () => {
       }),
     ).toBeInTheDocument();
     expect(await screen.findByText('Reference rail')).toBeInTheDocument();
-    expect(screen.getByText('Projected tumor-board excerpt')).toBeInTheDocument();
-    expect(screen.getByLabelText('context bar')).toHaveTextContent(
-      'Space context · shared-space',
-    );
-    expect(screen.getByLabelText('context bar')).toHaveTextContent(
-      'Project context · tumor-board · doc-1',
+    expect(screen.getByText('Projected notebook-only excerpt')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Project overview' })).toHaveAttribute(
+      'href',
+      '/projects/tumor-board',
     );
   });
 
   it('shares scholarly shell primitives across pages', async () => {
     const user = userEvent.setup();
 
-    window.history.replaceState({}, '', '/spaces');
+    window.history.replaceState({}, '', '/home');
     stubNativeDemoFetch();
 
     render(<App />);
 
     expect(screen.getByTestId('app-shell')).toHaveClass('app-shell');
-    expect(screen.getByRole('heading', { name: 'Spaces' })).toHaveClass('page-title');
+    expect(screen.getByRole('heading', { name: 'Research workbench' })).toHaveClass('page-title');
 
     await user.click(
-      await screen.findByRole('link', { name: 'Enter shared space' }),
+      await screen.findByRole('link', { name: /open tumor board workspace/i }),
     );
 
+    expect(screen.getByRole('heading', { name: 'Project docs' })).toHaveClass('panel-title');
+    await user.click(screen.getByRole('link', { name: 'Open active notebook' }));
     expect(screen.getByLabelText('context bar')).toHaveClass('context-bar');
-    expect(
-      screen.getByRole('heading', { name: 'Imported PMID paper 123456' }),
-    ).toHaveClass('panel-title');
-    expect(screen.getAllByText('space_shared')[0]).toHaveClass('status-badge');
+    expect(screen.getByLabelText('context bar')).toHaveTextContent('Space context · shared-space');
   });
 
   it('surfaces governance cues across library, reader, and project docs', async () => {
     const user = userEvent.setup();
 
-    window.history.replaceState({}, '', '/spaces');
+    window.history.replaceState({}, '', '/projects/tumor-board/library');
     stubNativeDemoFetch();
 
     render(<App />);
 
-    await user.click(
-      await screen.findByRole('link', { name: 'Enter shared space' }),
-    );
-
     expect(
-      await screen.findByText('Shared context · Tumor Board Shared Space'),
+      await screen.findByText('Context · Tumor Board Shared Space / tumor-board'),
     ).toBeInTheDocument();
-    expect(screen.getByText('Visibility · space_shared')).toBeInTheDocument();
+    expect(screen.getByText('Visibility')).toBeInTheDocument();
+    expect(screen.getAllByText('space_shared')[0]).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Open reader' }));
+      await user.click(screen.getByRole('link', { name: 'Open reader' }));
 
-    expect(await screen.findByText('AI helper content')).toBeInTheDocument();
-    expect(screen.getByText('Evidence-backed summary for board prep.')).toBeInTheDocument();
-    expect(screen.getByText('succeeded')).toBeInTheDocument();
+      expect(await screen.findByText('AI evidence companion')).toBeInTheDocument();
+      expect(screen.getByText('Evidence-backed summary for board prep.')).toBeInTheDocument();
+      await user.click(screen.getByRole('tab', { name: '关键信息' }));
+      expect(screen.getByText('Retrieval state')).toBeInTheDocument();
+      expect(screen.getByText('Full text available · No')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: '共享评论' }));
+      await user.click(screen.getByRole('tab', { name: '共享评论' }));
     expect(screen.getByText('Key mutation note')).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Open project docs' }));
@@ -315,28 +450,25 @@ describe('mvp workflow shell', () => {
     window.history.replaceState(
       {},
       '',
-      '/spaces/shared-space/projects/tumor-board/library/entry-1/reader',
+      '/projects/tumor-board/library/entry-1/reader',
     );
     stubNativeDemoFetch();
 
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
-    expect(screen.getByLabelText('context bar')).toHaveTextContent(
-      'Space context · shared-space',
-    );
+    expect(screen.getByRole('heading', { name: 'Evidence companion' })).toBeInTheDocument();
     expect(screen.getByLabelText('context bar')).toHaveTextContent(
       'Project context · tumor-board',
     );
     expect(screen.getByLabelText('context bar')).toHaveTextContent('Entry · entry-1');
-    expect(screen.getByText('Imported PMID paper 123456')).toBeInTheDocument();
   });
 
   it('supports direct library deep links with space and project context', async () => {
     window.history.replaceState(
       {},
       '',
-      '/spaces/shared-space/projects/tumor-board/library',
+      '/projects/tumor-board/library',
     );
     stubNativeDemoFetch();
 
@@ -357,7 +489,7 @@ describe('mvp workflow shell', () => {
     window.history.replaceState(
       {},
       '',
-      '/spaces/shared-space/projects/tumor-board/writing/doc-1',
+      '/projects/tumor-board/writing/doc-1',
     );
     stubNativeDemoFetch();
 
@@ -370,8 +502,9 @@ describe('mvp workflow shell', () => {
     expect(screen.getByLabelText('context bar')).toHaveTextContent(
       'Project context · tumor-board · doc-1',
     );
-    expect(screen.getByText('Reference rail')).toBeInTheDocument();
-    expect(screen.getByText('Projected tumor-board excerpt')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'References, publish state, and governed jobs' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('draft · review · published')).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Run governed summary' }),
