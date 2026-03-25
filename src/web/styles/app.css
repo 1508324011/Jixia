@@ -48,6 +48,11 @@ a {
   align-content: center;
 }
 
+.page-shell--wide {
+  width: 100%;
+  max-width: none;
+}
+
 .page-header {
   display: grid;
   gap: var(--jixia-space-2);
@@ -299,8 +304,48 @@ a {
   gap: var(--jixia-space-4);
 }
 
+.search-results-toolbar {
+  display: grid;
+  gap: var(--jixia-space-3);
+  align-items: start;
+}
+
+.search-results-summary {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--jixia-ink);
+}
+
+.search-results-pagination {
+  flex-wrap: wrap;
+}
+
 .intake-card__body {
   min-width: 0;
+}
+
+.intake-card__details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--jixia-space-2);
+  margin: 0;
+}
+
+.intake-card__detail {
+  display: grid;
+  gap: 0.2rem;
+  padding: var(--jixia-space-2);
+  border: 1px solid rgba(43, 58, 103, 0.08);
+  border-radius: var(--jixia-radius-sm);
+  background: rgba(10, 16, 28, 0.32);
+}
+
+.intake-card__detail dd {
+  margin: 0;
+  color: var(--jixia-ink);
+  font-weight: 600;
+  word-break: break-word;
 }
 
 .intake-card__citation {
@@ -342,8 +387,46 @@ a {
   align-content: start;
 }
 
+.library-inventory-surface {
+  width: 100%;
+}
+
 .library-workbench {
   align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.library-entry-card,
+.library-entry-card__details {
+  display: grid;
+  gap: var(--jixia-space-3);
+}
+
+.library-entry-card__details {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin: 0;
+}
+
+.library-entry-card__detail {
+  display: grid;
+  gap: 0.2rem;
+  padding: var(--jixia-space-2);
+  border: 1px solid rgba(43, 58, 103, 0.08);
+  border-radius: var(--jixia-radius-sm);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.library-entry-card__detail dd {
+  margin: 0;
+  color: var(--jixia-ink);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.library-entry-card__context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--jixia-space-2);
 }
 
 .dashboard-layout,
@@ -588,7 +671,7 @@ a {
   }
 
   .library-workbench {
-    grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1.35fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .library-inventory-panel__header {
