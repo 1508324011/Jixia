@@ -24,6 +24,7 @@ export interface NotebookStore {
 export interface NotebookService {
   createNote(input: CreateNotebookNoteRequest): Promise<NotebookNoteRecord>;
   getNotebook(notebookId: string): NotebookRecord | null;
+  getNotebookByPaperAsset(input: { ownerUserId: string; paperAssetId: string }): NotebookRecord | null;
   getNotebookForLibraryEntry(
     input: GetNotebookForLibraryEntryRequest,
   ): Promise<NotebookRecord>;
@@ -93,6 +94,15 @@ export function createNotebookService(store: NotebookStore): NotebookService {
     },
     getNotebook(notebookId) {
       return store.notebookRecords.find((candidate) => candidate.id === notebookId) ?? null;
+    },
+    getNotebookByPaperAsset(input) {
+      return (
+        store.notebookRecords.find(
+          (candidate) =>
+            candidate.ownerUserId === input.ownerUserId &&
+            candidate.paperAssetId === input.paperAssetId,
+        ) ?? null
+      );
     },
     async getNotebookForLibraryEntry(input) {
       return ensureNotebook(store, input);

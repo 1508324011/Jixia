@@ -11,6 +11,7 @@ import type { StoredWritingDoc } from '../services/writing.service';
 
 const FIXTURE_CREATED_AT = '2026-03-22T00:00:00.000Z';
 const DEMO_VISIBILITY: LibraryEntryVisibility = 'space_shared';
+const DEFAULT_WORKBENCH_USER_ID = 'user-alice';
 
 export const nativeDemoFixture = {
   actorUserId: 'demo-operator',
@@ -45,6 +46,15 @@ function createSharedMembership(): SpaceMembership {
     role: 'owner',
     spaceId: nativeDemoFixture.sharedSpaceId,
     userId: nativeDemoFixture.actorUserId,
+  };
+}
+
+function createWorkbenchSharedMembership(): SpaceMembership {
+  return {
+    joinedAt: FIXTURE_CREATED_AT,
+    role: 'viewer',
+    spaceId: nativeDemoFixture.sharedSpaceId,
+    userId: DEFAULT_WORKBENCH_USER_ID,
   };
 }
 
@@ -128,6 +138,22 @@ function patchRecord<T extends object>(target: T, source: T): boolean {
 export function applyNativeDemoFixture(state: JixiaAppState): boolean {
   let changed = false;
 
+  function ensureMembership(desiredMembership: SpaceMembership): void {
+    const existingMembership = state.memberships.find(
+      (membership) =>
+        membership.spaceId === desiredMembership.spaceId &&
+        membership.userId === desiredMembership.userId,
+    );
+
+    if (existingMembership) {
+      changed = patchRecord(existingMembership, desiredMembership) || changed;
+      return;
+    }
+
+    state.memberships.push(desiredMembership);
+    changed = true;
+  }
+
   const desiredSpace = createSharedSpace();
   const existingSpace = state.spaces.find(
     (space) => space.id === nativeDemoFixture.sharedSpaceId,
@@ -140,19 +166,8 @@ export function applyNativeDemoFixture(state: JixiaAppState): boolean {
     changed = true;
   }
 
-  const desiredMembership = createSharedMembership();
-  const existingMembership = state.memberships.find(
-    (membership) =>
-      membership.spaceId === desiredMembership.spaceId &&
-      membership.userId === desiredMembership.userId,
-  );
-
-  if (existingMembership) {
-    changed = patchRecord(existingMembership, desiredMembership) || changed;
-  } else {
-    state.memberships.push(desiredMembership);
-    changed = true;
-  }
+  ensureMembership(createSharedMembership());
+  ensureMembership(createWorkbenchSharedMembership());
 
   const desiredPaperAsset = createDemoPaperAsset();
   const existingPaperAsset = state.paperAssets.find(

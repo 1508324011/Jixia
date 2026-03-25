@@ -8,6 +8,7 @@ import type {
   NotebookQuestionView,
   NoteRecord,
   NoteVisibility,
+  ReadingCompanionView,
   ReadingDetailView,
   ReadingWorkspaceView,
 } from '@shared/contracts/reading';
@@ -102,6 +103,10 @@ export interface ReadingService {
   ): Promise<GeneratedInsightRecord>;
 }
 
+const DEFAULT_PROJECT_ID = 'tumor-board';
+const DEFAULT_PROJECT_SPACE_ID = 'shared-space';
+const DEFAULT_PROJECT_DOCUMENT_ID = 'doc-1';
+
 function getLibraryContext(store: ReadingStore, libraryEntryId: string): {
   asset: StoredPaperAsset;
   entry: StoredLibraryEntry;
@@ -175,6 +180,53 @@ function createNotebookQuestions(notebookId: string): NotebookQuestionView[] {
   }));
 }
 
+function buildProjectScopedPath(
+  projectId: string,
+  spaceId: string,
+  suffix?: string,
+): string {
+  const pathname = suffix
+    ? `/projects/${projectId}/${suffix}`
+    : `/projects/${projectId}`;
+
+  if (spaceId === DEFAULT_PROJECT_SPACE_ID) {
+    return pathname;
+  }
+
+  return `${pathname}?spaceId=${encodeURIComponent(spaceId)}`;
+}
+
+function buildWorkspaceCompanion(
+  entry: StoredLibraryEntry,
+  space: StoredSpace,
+): ReadingCompanionView {
+  if (space.kind === 'personal') {
+    return {
+      notebookPath: `/library/${entry.id}/notes`,
+      readerPath: `/library/${entry.id}/reader`,
+    };
+  }
+
+  return {
+    notebookPath: buildProjectScopedPath(
+      DEFAULT_PROJECT_ID,
+      entry.spaceId,
+      `library/${entry.id}/notes`,
+    ),
+    projectDocsPath: buildProjectScopedPath(
+      DEFAULT_PROJECT_ID,
+      entry.spaceId,
+      `writing/${DEFAULT_PROJECT_DOCUMENT_ID}`,
+    ),
+    projectPath: buildProjectScopedPath(DEFAULT_PROJECT_ID, entry.spaceId),
+    readerPath: buildProjectScopedPath(
+      DEFAULT_PROJECT_ID,
+      entry.spaceId,
+      `library/${entry.id}/reader`,
+    ),
+  };
+}
+
 async function buildWorkspaceView(
   store: ReadingStore,
   input: {
@@ -183,6 +235,7 @@ async function buildWorkspaceView(
     sharedComments: NoteRecord[];
   },
 ): Promise<ReadingWorkspaceView> {
+  const { entry, space } = getLibraryContext(store, input.libraryEntryId);
   const notebook = await store.notebookService.getNotebookForLibraryEntry({
     libraryEntryId: input.libraryEntryId,
     ownerUserId: input.actorUserId,
@@ -193,6 +246,7 @@ async function buildWorkspaceView(
   })).map((note) => toReadingNote(note, input.libraryEntryId));
 
   return {
+    companion: buildWorkspaceCompanion(entry, space),
     notebookId: notebook.id,
     privateNotes,
     questions: createNotebookQuestions(notebook.id),
