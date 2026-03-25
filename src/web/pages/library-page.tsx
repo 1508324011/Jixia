@@ -14,6 +14,7 @@ import {
 
 const demoApi = createDemoApi();
 const DEFAULT_PROJECT_SPACE_ID = 'shared-space';
+const DEFAULT_PROJECT_DOCUMENT_ID = 'doc-1';
 
 function buildCanonicalProjectPath(
   pathname: string,
@@ -29,6 +30,20 @@ function buildCanonicalProjectPath(
 
 function buildPersonalReaderPath(entryId: string): string {
   return `/library/${entryId}/reader`;
+}
+
+function buildPersonalNotebookPath(entryId: string): string {
+  return `/library/${entryId}/notes`;
+}
+
+function formatInventoryTimestamp(value: string): string {
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.valueOf())) {
+    return value;
+  }
+
+  return `${parsed.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
 interface LibraryPageProps {
@@ -75,6 +90,22 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
     : activeSpace?.importLocator ?? 'pmid import';
   const inventoryLabel = isPersonalMode ? 'Personal evidence shelf' : 'Shared evidence shelf';
 
+  function buildProjectLibraryPath(entryId: string, suffix: 'notes' | 'reader'): string {
+    return buildCanonicalProjectPath(
+      `/projects/${resolvedProjectId}/library/${entryId}/${suffix}`,
+      resolvedSpaceId,
+      hasExplicitSpaceContext,
+    );
+  }
+
+  function buildProjectDocsPath(): string {
+    return buildCanonicalProjectPath(
+      `/projects/${resolvedProjectId}/writing/${DEFAULT_PROJECT_DOCUMENT_ID}`,
+      resolvedSpaceId,
+      hasExplicitSpaceContext,
+    );
+  }
+
   const filteredEntries = entries.filter((entry) => {
     const matchesView =
       activeView === 'all'
@@ -86,7 +117,8 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
     const matchesQuery =
       normalizedQuery.length === 0 ||
       entry.title.toLowerCase().includes(normalizedQuery) ||
-      entry.canonicalId.toLowerCase().includes(normalizedQuery);
+      entry.canonicalId.toLowerCase().includes(normalizedQuery) ||
+      entry.sourceLabel.toLowerCase().includes(normalizedQuery);
 
     return matchesView && matchesQuery;
   });
@@ -172,7 +204,9 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
         visibility: visibilityFallback,
       });
 
-      const response = await getLibraryEntries(resolvedSpaceId, resolvedProjectId);
+      const response = isPersonalMode
+        ? await demoApi.getPersonalLibraryEntries()
+        : await getLibraryEntries(resolvedSpaceId, resolvedProjectId);
       setEntries(response.entries);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : 'Import failed.');
@@ -182,7 +216,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
   }
 
   return (
-    <main className="page-shell">
+    <main className="page-shell page-shell--wide">
       <header className="page-header">
         <p className="page-kicker">{kicker}</p>
         <h1 className="page-title">Library</h1>
@@ -248,7 +282,11 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
           </article>
         ) : null}
 
-        <article className="panel library-inventory-panel">
+        <article
+          className="panel library-inventory-panel library-inventory-surface"
+          data-layout-mode="inventory"
+          data-testid="library-inventory-surface"
+        >
           <div className="library-inventory-panel__header">
             <div className="stack-xs">
               <span className="intake-source-board__eyebrow">Inventory surface</span>
@@ -265,63 +303,106 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
 
           {isLoadingEntries ? (
             <article className="panel">
-            <h2 className="panel-title">Loading library entries…</h2>
-            <p className="quiet-copy">
-              {isPersonalMode
-                ? 'Import metadata and reading readiness are loading from the server.'
-                : 'Reading availability, import metadata, and visibility are loading from the server.'}
-            </p>
-          </article>
+              <h2 className="panel-title">Loading library entries…</h2>
+              <p className="quiet-copy">
+                {isPersonalMode
+                  ? 'Import metadata and reading readiness are loading from the server.'
+                  : 'Reading availability, import metadata, and visibility are loading from the server.'}
+              </p>
+            </article>
           ) : null}
 
           {libraryError ? (
             <article className="panel">
-            <h2 className="panel-title">Library unavailable</h2>
-            <p className="quiet-copy">{libraryError}</p>
-          </article>
+              <h2 className="panel-title">Library unavailable</h2>
+              <p className="quiet-copy">{libraryError}</p>
+            </article>
           ) : null}
 
           {!isLoadingEntries && !libraryError && filteredEntries.length === 0 ? (
             <article className="panel">
-            <h2 className="panel-title">No imported literature yet</h2>
-            <p className="quiet-copy">
-              {isPersonalMode
-                ? 'Search PubMed or import a recommendation from Today to seed your personal shelf.'
-                : 'Import a DOI, PMID, arXiv preprint, or upload to seed the shared shelf.'}
-            </p>
-          </article>
+              <h2 className="panel-title">No imported literature yet</h2>
+              <p className="quiet-copy">
+                {isPersonalMode
+                  ? 'Search PubMed or import a recommendation from Today to seed your personal shelf.'
+                  : 'Import a DOI, PMID, arXiv preprint, or upload to seed the shared shelf.'}
+              </p>
+            </article>
           ) : null}
 
           {!isLoadingEntries && !libraryError
             ? filteredEntries.map((entry) => (
-              <article className="panel" key={entry.entryId}>
-                <h2 className="panel-title">{entry.title}</h2>
-                <p className="quiet-copy">Canonical record · {entry.canonicalId}</p>
-                <p className="quiet-copy">
-                  {isPersonalMode
-                    ? 'Source · Imported into Personal Library'
-                    : `Shared context · ${activeSpace?.name ?? resolvedSpaceId}`}
-                </p>
-                <p className="quiet-copy">
-                  {isPersonalMode ? 'Personal shelf' : `Project · ${resolvedProjectId}`}
-                </p>
-                <p className="quiet-copy">Visibility · {entry.visibility}</p>
-                <Link
-                  className="panel-link"
-                  to={
-                    isPersonalMode
-                      ? buildPersonalReaderPath(entry.entryId)
-                      : buildCanonicalProjectPath(
-                          `/projects/${resolvedProjectId}/library/${entry.entryId}/reader`,
-                          resolvedSpaceId,
-                          hasExplicitSpaceContext,
-                        )
-                  }
-                >
-                  Open reader
-                </Link>
-              </article>
-            ))
+                <article className="panel library-entry-card" key={entry.entryId}>
+                  <div className="stack-xs">
+                    <span className="intake-source-board__eyebrow">
+                      {isPersonalMode ? 'Personal inventory row' : 'Project inventory row'}
+                    </span>
+                    <h2 className="panel-title">{entry.title}</h2>
+                    <p className="quiet-copy">
+                      {isPersonalMode
+                        ? 'Inventory row for private evidence triage, notebook follow-up, and fast reader access.'
+                        : `Inventory row for ${activeSpace?.name ?? resolvedSpaceId} evidence triage, notebook follow-up, and project work.`}
+                    </p>
+                  </div>
+
+                  <dl className="library-entry-card__details">
+                    <div className="library-entry-card__detail">
+                      <dt className="field-label">Source</dt>
+                      <dd>{entry.sourceLabel}</dd>
+                    </div>
+                    <div className="library-entry-card__detail">
+                      <dt className="field-label">Imported</dt>
+                      <dd>{formatInventoryTimestamp(entry.addedAt)}</dd>
+                    </div>
+                    <div className="library-entry-card__detail">
+                      <dt className="field-label">Canonical record</dt>
+                      <dd>{entry.canonicalId}</dd>
+                    </div>
+                    <div className="library-entry-card__detail">
+                      <dt className="field-label">Visibility</dt>
+                      <dd>{entry.visibility}</dd>
+                    </div>
+                  </dl>
+
+                  {entry.abstractText ? <p className="quiet-copy">{entry.abstractText}</p> : null}
+
+                  <div className="library-entry-card__context">
+                    <span className="status-badge">{entry.sourceType}</span>
+                    <span className="status-badge">
+                      {isPersonalMode ? 'Personal library' : `Project · ${resolvedProjectId}`}
+                    </span>
+                    <span className="status-badge">Created · {formatInventoryTimestamp(entry.createdAt)}</span>
+                  </div>
+
+                  <div className="button-row">
+                    <Link
+                      className="panel-link"
+                      to={
+                        isPersonalMode
+                          ? buildPersonalNotebookPath(entry.entryId)
+                          : buildProjectLibraryPath(entry.entryId, 'notes')
+                      }
+                    >
+                      Open notebook
+                    </Link>
+                    <Link
+                      className="panel-link"
+                      to={
+                        isPersonalMode
+                          ? buildPersonalReaderPath(entry.entryId)
+                          : buildProjectLibraryPath(entry.entryId, 'reader')
+                      }
+                    >
+                      Open reader
+                    </Link>
+                    {!isPersonalMode ? (
+                      <Link className="panel-link" to={buildProjectDocsPath()}>
+                        Open project docs
+                      </Link>
+                    ) : null}
+                  </div>
+                </article>
+              ))
             : null}
         </article>
       </section>

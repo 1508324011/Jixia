@@ -9,7 +9,7 @@ interface LibraryFiltersProps {
 
 const viewLabels: Record<LibraryInventoryView, string> = {
   all: 'All records',
-  private: 'Private notes',
+  private: 'Private records',
   shared: 'Shared evidence',
 };
 
@@ -43,7 +43,7 @@ export function LibraryFilters({
         </div>
 
         <label className="field-label library-filters__search" htmlFor="library-filter-query">
-          <span>Filter notes</span>
+          <span>Filter inventory</span>
           <input
             className="text-input"
             id="library-filter-query"
