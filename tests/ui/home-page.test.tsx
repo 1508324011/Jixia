@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/web/app';
 
@@ -8,15 +8,66 @@ function renderHomePage() {
   render(<App />);
 }
 
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+const workbenchSummaryResponse = {
+  recentImports: [
+    {
+      addedAt: '2026-03-24T09:00:00.000Z',
+      canonicalId: 'pmid:123456',
+      entryId: 'entry-1',
+      projectId: 'tumor-board',
+      spaceId: 'shared-space',
+      title: 'Imported PMID paper 123456',
+      to: '/projects/tumor-board/library',
+    },
+  ],
+  recentProjects: [
+    {
+      activeNotebookCount: 1,
+      entryCount: 1,
+      projectId: 'tumor-board',
+      recentActivity: 'Recent activity · Notebook updated 2h ago',
+      spaceId: 'shared-space',
+      title: 'Tumor board workspace',
+    },
+  ],
+  resumeTargets: [
+    {
+      description: 'Jump back into the question-driven synthesis lane for the active tumor board notebook.',
+      kind: 'notebook',
+      title: 'Resume notebook',
+      to: '/projects/tumor-board/library/entry-1/notes',
+    },
+  ],
+};
+
 describe('home page', () => {
-  it('shows the intake desk instead of the old dashboard summary cards', () => {
+  it('renders recent projects and continue-working entries on Home', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const url = input.toString();
+
+        if (url.endsWith('/api/workbench/summary')) {
+          return new Response(JSON.stringify(workbenchSummaryResponse), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }),
+    );
+
     renderHomePage();
 
-    expect(screen.getByRole('heading', { name: 'Research workbench' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Intake desk' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Unified inventory' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '最近项目' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /recent projects/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /open tumor board workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /resume notebook/i })).toBeInTheDocument();
   });
 
   it('renders actionable recent-opened links in the context rail', () => {
