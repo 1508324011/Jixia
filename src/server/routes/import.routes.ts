@@ -1,4 +1,7 @@
-import type { TodayRecommendation } from '@shared/contracts/discovery';
+import type {
+  DiscoverySearchRequest,
+  TodayRecommendation,
+} from '@shared/contracts/discovery';
 
 import type {
   ImportDiscoveryCandidateRequest,
@@ -9,6 +12,7 @@ import type {
   ImportService,
   UploadPdfRequest,
 } from '../services/import.service';
+import type { PaginatedDiscoverySearchResult } from '../services/discovery.service';
 
 export interface ImportRoutes {
   importDiscoveryCandidate(
@@ -20,6 +24,9 @@ export interface ImportRoutes {
   importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord>;
   listTodayDiscovery(): Promise<TodayRecommendation[]>;
   searchDiscovery(query: string): Promise<TodayRecommendation[]>;
+  searchDiscoveryPage(
+    input: DiscoverySearchRequest,
+  ): Promise<PaginatedDiscoverySearchResult>;
   uploadPdf(input: UploadPdfRequest): Promise<ImportedLibraryRecord>;
 }
 
@@ -43,6 +50,11 @@ export function createImportRoutes(service: ImportService): ImportRoutes {
     },
     searchDiscovery(query: string): Promise<TodayRecommendation[]> {
       return service.searchDiscovery(query);
+    },
+    searchDiscoveryPage(
+      input: DiscoverySearchRequest,
+    ): Promise<PaginatedDiscoverySearchResult> {
+      return service.searchDiscoveryPage(input);
     },
     uploadPdf(input: UploadPdfRequest): Promise<ImportedLibraryRecord> {
       return service.uploadPdf(input);

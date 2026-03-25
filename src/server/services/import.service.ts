@@ -1,4 +1,7 @@
-import type { TodayRecommendation } from '@shared/contracts/discovery';
+import type {
+  DiscoverySearchRequest,
+  TodayRecommendation,
+} from '@shared/contracts/discovery';
 import type {
   ImportMappingRecord,
   LibraryEntryVisibility,
@@ -16,7 +19,11 @@ import type {
 } from '../connectors/pubmed.connector';
 import { createPaperPdfStorageKey } from '../storage/asset-key';
 import type { FileStore } from '../storage/file-store';
-import type { DiscoveryService, StoredDiscoveryCandidate } from './discovery.service';
+import type {
+  DiscoveryService,
+  PaginatedDiscoverySearchResult,
+  StoredDiscoveryCandidate,
+} from './discovery.service';
 import type { RecommendationService } from './recommendation.service';
 import type { StoredSpace } from './spaces.service';
 
@@ -95,6 +102,9 @@ export interface ImportService {
   importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord>;
   listTodayDiscovery(): Promise<TodayRecommendation[]>;
   searchDiscovery(query: string): Promise<TodayRecommendation[]>;
+  searchDiscoveryPage(
+    input: DiscoverySearchRequest,
+  ): Promise<PaginatedDiscoverySearchResult>;
   uploadPdf(input: UploadPdfRequest): Promise<ImportedLibraryRecord>;
 }
 
@@ -367,6 +377,11 @@ export function createImportService(store: ImportStore): ImportService {
     },
     async searchDiscovery(query: string): Promise<TodayRecommendation[]> {
       return store.discoveryService.search(query);
+    },
+    async searchDiscoveryPage(
+      input: DiscoverySearchRequest,
+    ): Promise<PaginatedDiscoverySearchResult> {
+      return store.discoveryService.searchPage(input);
     },
     async importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord> {
       return doImportPaper(input);
