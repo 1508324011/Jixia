@@ -29,16 +29,22 @@ export interface ReadingStateRecord {
   lastReadAt: string;
 }
 
-export interface NotebookQuestionView {
-  id: string;
-  prompt: string;
-}
-
 export interface ReadingRetrievalStateView {
   detail: string;
   fullTextAvailable: boolean;
-  state: 'metadata-only';
+  state: 'document-ready' | 'metadata-only';
   summary: string;
+}
+
+export interface ReadingDocumentSectionView {
+  body: string;
+  id: string;
+  title: string;
+}
+
+export interface ReadingDocumentView {
+  sections: ReadingDocumentSectionView[];
+  title: string;
 }
 
 export interface ReadingCompanionView {
@@ -51,16 +57,8 @@ export interface ReadingCompanionView {
 export interface ReadingWorkspaceView {
   companion?: ReadingCompanionView;
   notebookId: string;
-  privateNotes: NoteRecord[];
-  questions: NotebookQuestionView[];
   sharedComments: NoteRecord[];
 }
-
-export const defaultNotebookQuestionPrompts = [
-  'What changes my interpretation of this paper?',
-  'Which claim deserves a project-level reference?',
-  'What follow-up question should stay private for now?',
-] as const;
 
 export const metadataOnlyReadingRetrievalState: ReadingRetrievalStateView = {
   detail: 'Abstract metadata is ready for review, but full text stays outside this demo.',
@@ -69,8 +67,16 @@ export const metadataOnlyReadingRetrievalState: ReadingRetrievalStateView = {
   summary: 'Metadata imported',
 };
 
+export const documentReadyReadingRetrievalState: ReadingRetrievalStateView = {
+  detail: 'Structured reading content is ready for the document-first canvas.',
+  fullTextAvailable: true,
+  state: 'document-ready',
+  summary: 'Reading document ready',
+};
+
 export interface ReadingDetailView {
   asset: LibraryEntryView['asset'];
+  document: ReadingDocumentView;
   entry: LibraryEntryView['entry'];
   insights: GeneratedInsightRecord[];
   notes: NoteRecord[];

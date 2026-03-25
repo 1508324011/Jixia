@@ -93,7 +93,9 @@ describe('search intake layout', () => {
 
     await user.click(screen.getByRole('button', { name: 'Search intake boards' }));
 
+    const intakeSurface = await screen.findByTestId('search-intake-surface');
     const pubmedLane = await screen.findByRole('region', { name: 'PubMed intake lane' });
+    expect(intakeSurface).toHaveAttribute('data-density', 'dense');
     expect(screen.getByRole('region', { name: 'arXiv intake lane' })).toBeInTheDocument();
     expect(screen.queryByTestId('equal-height-search-board')).not.toBeInTheDocument();
     expect(screen.getByText('Showing 1-10 of 12')).toBeInTheDocument();

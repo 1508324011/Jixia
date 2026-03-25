@@ -24,7 +24,7 @@ const recentOpenedItems: RecentOpenedItem[] = [
   {
     id: 'doc-1',
     title: 'Tumor board literature synthesis',
-    context: 'Writer · Draft in progress',
+    context: 'Project Docs · Draft in progress',
     kind: 'document',
     to: '/projects/project-1/writing/doc-1',
   },

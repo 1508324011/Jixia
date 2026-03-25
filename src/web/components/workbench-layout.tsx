@@ -43,7 +43,11 @@ export function WorkbenchLayout() {
         <Outlet />
       </div>
 
-      <aside className="workbench-context-rail" data-testid="workbench-context-rail">
+      <aside
+        className="workbench-context-rail"
+        data-rail-variant="supporting"
+        data-testid="workbench-context-rail"
+      >
         <ContextIndicator actions={contextActions} label={label} variant={variant} />
         <RecentOpenedPanel />
       </aside>

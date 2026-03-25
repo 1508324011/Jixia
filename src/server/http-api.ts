@@ -1,4 +1,8 @@
 import {
+  type AiWorkspaceAttachmentView,
+  type AiWorkspaceResponse,
+} from '@shared/contracts/ai-workspace';
+import {
   DEFAULT_DISCOVERY_PAGE,
   DEFAULT_DISCOVERY_PAGE_SIZE,
   MAX_DISCOVERY_PAGE_SIZE,
@@ -41,6 +45,7 @@ import type {
 } from '@shared/contracts/workbench';
 import type {
   NotebookDetailResponse,
+  NotebookDocumentResponse,
   NotebookListResponse,
   NotebookSummaryView as NotebookRouteView,
 } from '@shared/contracts/notebook';
@@ -91,6 +96,11 @@ interface SaveReadingInsightRequestBody {
 
 interface SaveWritingDocumentRequestBody {
   citations?: Array<{ evidenceSpan?: string; paperAssetId: string }>;
+  content?: string;
+  title?: string;
+}
+
+interface SaveNotebookDocumentRequestBody {
   content?: string;
   title?: string;
 }
@@ -397,6 +407,29 @@ function parseSaveWritingDocumentRequest(
   };
 }
 
+function parseSaveNotebookDocumentRequest(
+  requestBody: unknown,
+): Required<SaveNotebookDocumentRequestBody> {
+  if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
+    throw new Error('Notebook document payload must be a JSON object.');
+  }
+
+  const { content, title } = requestBody as Record<string, unknown>;
+
+  if (typeof content !== 'string') {
+    throw new Error('content is required.');
+  }
+
+  if (typeof title !== 'string' || !title.trim()) {
+    throw new Error('title is required.');
+  }
+
+  return {
+    content,
+    title: title.trim(),
+  };
+}
+
 function createJsonResponse(statusCode: number, payload: unknown): HttpApiResponse {
   return { payload, statusCode };
 }
@@ -613,9 +646,87 @@ function toReadingInsightResponse(
   return { insight };
 }
 
+function buildDemoAiAttachment(entryId: string): AiWorkspaceAttachmentView {
+  switch (entryId) {
+    case 'entry-1':
+      return {
+        canonicalId: 'pmid:654321',
+        entryId,
+        paperAssetId: 'asset-1',
+        title: 'Tumor board biomarkers for rapid review',
+      };
+    case 'entry-2':
+      return {
+        canonicalId: 'pmid:222222',
+        entryId,
+        paperAssetId: 'asset-2',
+        title: 'Signal pathway evidence for review escalation',
+      };
+    default:
+      return {
+        canonicalId: `demo:${entryId}`,
+        entryId,
+        paperAssetId: `asset-${entryId}`,
+        title: `Imported paper context for ${entryId}`,
+      };
+  }
+}
+
+function buildDemoAiWorkspaceResponse(requestUrl: URL): AiWorkspaceResponse {
+  const entryId = requestUrl.searchParams.get('entryId')?.trim();
+
+  if (entryId) {
+    return {
+      workspace: {
+        activeSessionId: 'session-reader-dock',
+        sessions: [
+          {
+            attachedEntries: [buildDemoAiAttachment(entryId)],
+            createdAt: '2026-03-25T09:00:00.000Z',
+            id: 'session-reader-dock',
+            summary: 'Dock the active AI conversation beside Reader without making Reader own it.',
+            title: 'Reader docking session',
+            updatedAt: '2026-03-25T09:10:00.000Z',
+          },
+        ],
+      },
+    } satisfies AiWorkspaceResponse;
+  }
+
+  return {
+    workspace: {
+      activeSessionId: 'session-1',
+      sessions: [
+        {
+          attachedEntries: [buildDemoAiAttachment('entry-1'), buildDemoAiAttachment('entry-2')],
+          createdAt: '2026-03-25T09:00:00.000Z',
+          id: 'session-1',
+          summary: 'Hold one governed conversation across multiple imported papers.',
+          title: 'Cross-paper biomarker synthesis',
+          updatedAt: '2026-03-25T09:20:00.000Z',
+        },
+        {
+          attachedEntries: [],
+          createdAt: '2026-03-25T08:00:00.000Z',
+          id: 'session-2',
+          summary: 'Keep a separate drafting conversation outside the reader route.',
+          title: 'Draft introduction notes',
+          updatedAt: '2026-03-25T08:40:00.000Z',
+        },
+      ],
+    },
+  } satisfies AiWorkspaceResponse;
+}
+
 function toWritingDocumentResponse(
   document: NonNullable<Awaited<ReturnType<JixiaApp['writing']['getDocument']>>>,
 ): WritingDocumentResponse {
+  return { document };
+}
+
+function toNotebookDocumentResponse(
+  document: Awaited<ReturnType<JixiaApp['notebook']['getDocument']>>,
+): NotebookDocumentResponse {
   return { document };
 }
 
@@ -721,6 +832,10 @@ async function buildNotebookSummaryForEntry(
     libraryEntryId: item.entry.id,
     ownerUserId: actorUserId,
   });
+  const existingDocument = app.notebook.findDocument({
+    actorUserId,
+    notebookId: notebook.id,
+  });
 
   return {
     entryId: item.entry.id,
@@ -733,8 +848,10 @@ async function buildNotebookSummaryForEntry(
     projectId: options?.projectId,
     readerPath: buildNotebookReaderPath(item.entry.id, item.entry.spaceId, options?.projectId),
     spaceId: item.entry.spaceId,
-    title: options?.title ?? derivePersonalNotebookTitle(item.asset.title),
-    updatedAt: latestNotebookActivityTimestamp(item.entry.addedAt, notes),
+    title: existingDocument?.title ?? options?.title ?? derivePersonalNotebookTitle(item.asset.title),
+    updatedAt:
+      existingDocument?.latestSnapshot?.capturedAt ??
+      latestNotebookActivityTimestamp(item.entry.addedAt, notes),
     workspaceLabel: options?.workspaceLabel ?? 'Personal library',
     workspacePath: buildNotebookWorkspacePath(item.entry.spaceId, options?.projectId),
   };
@@ -848,7 +965,7 @@ async function buildWorkbenchSummary(app: JixiaApp): Promise<WorkbenchSummaryRes
     if (latestEntry) {
       resumeTargets.push({
         description:
-          'Jump back into the question-driven synthesis lane for the active tumor board notebook.',
+          'Reopen the private notebook document linked to the active tumor board paper.',
         kind: 'notebook',
         title: 'Resume notebook',
         to: buildProjectWorkbenchPath(
@@ -930,6 +1047,10 @@ export async function resolveHttpApi(
       return createJsonResponse(200, await buildWorkbenchSummary(app));
     }
 
+    if ((method === 'GET' || method === 'HEAD') && pathname === '/api/ai/workspace') {
+      return createJsonResponse(200, buildDemoAiWorkspaceResponse(requestUrl));
+    }
+
     if ((method === 'GET' || method === 'HEAD') && pathname === '/api/notebooks') {
       const actorUserId = requestUrl.searchParams.get('userId')?.trim() || DEFAULT_WORKBENCH_USER_ID;
 
@@ -939,6 +1060,36 @@ export async function resolveHttpApi(
     }
 
     const notebookDetailMatch = pathname.match(/^\/api\/notebooks\/([^/]+)$/);
+    const notebookDocumentMatch = pathname.match(/^\/api\/notebooks\/([^/]+)\/document$/);
+
+    if (notebookDocumentMatch && (method === 'GET' || method === 'HEAD')) {
+      const actorUserId = requestUrl.searchParams.get('userId')?.trim() || DEFAULT_WORKBENCH_USER_ID;
+      const notebookId = decodePathSegment(notebookDocumentMatch[1]);
+      const document = await app.notebook.getDocument({
+        actorUserId,
+        notebookId,
+      });
+
+      return createJsonResponse(200, toNotebookDocumentResponse(document));
+    }
+
+    if (notebookDocumentMatch && method === 'POST') {
+      const actorUserId = requestUrl.searchParams.get('userId')?.trim() || DEFAULT_WORKBENCH_USER_ID;
+      const notebookId = decodePathSegment(notebookDocumentMatch[1]);
+      const payload = parseSaveNotebookDocumentRequest(requestBody);
+
+      return createJsonResponse(
+        200,
+        toNotebookDocumentResponse(
+          await app.notebook.saveDocument({
+            actorUserId,
+            content: payload.content,
+            notebookId,
+            title: payload.title,
+          }),
+        ),
+      );
+    }
 
     if (notebookDetailMatch && (method === 'GET' || method === 'HEAD')) {
       const actorUserId = requestUrl.searchParams.get('userId')?.trim() || DEFAULT_WORKBENCH_USER_ID;

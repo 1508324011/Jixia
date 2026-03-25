@@ -1,10 +1,23 @@
-# Jixia Project-Notebook Workbench Implementation Plan
+# Superseded: Jixia Project-Notebook Workbench Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Reorganize the `demo-native-showcase` workbench around `Home → Projects → Search → Library → Notebooks`, so Jixia becomes a project-centered research workspace with first-class notebooks instead of a paper-centered shell with notebook access hidden behind reader routes.
+> **Superseded on 2026-03-25.** This document is preserved as historical context only.
+>
+> The implemented branch truth is now described by:
+> - `docs/plans/2026-03-25-jixia-researchclaw-web-redesign-design.md`
+> - `docs/plans/2026-03-25-jixia-researchclaw-web-redesign-implementation.md`
+>
+> Current architecture truth:
+> - sidebar navigation is `Home / Projects / Search / Library / Notebooks / AI / Settings`
+> - `Search` and `Library` are dense feeder surfaces
+> - `Reader` is document-first and docks `AI Workspace` on the right by default
+> - `Notebook` is a private document-first surface
+> - `Project Docs` remain separate and project-owned
 
-**Architecture:** Treat this as an information-architecture reset layered on top of the already landed server-first reading, notes, and project-projection work. Keep the truthful ownership boundaries and current backend contracts where they are strong, but change the browser entry model: `Home` becomes the project control desk, `Projects` becomes the main collaboration/discovery surface, `Notebooks` becomes a first-class destination, `Search` becomes a dense paginated intake surface, `Library` becomes a wide inventory surface, and `Reader` becomes a companion evidence pane inside notebook/project work rather than the primary product center.
+**Historical goal:** Reorganize the `demo-native-showcase` workbench around `Home → Projects → Search → Library → Notebooks` as an intermediate reset before the later 2026-03-25 redesign finalized the independent `AI Workspace`, document-first `Reader`, and private document-first `Notebook` model.
+
+**Historical architecture:** Treat this document as the earlier IA-reset plan that preceded the current browser story. Some later tasks in this file are now intentionally outdated and should not be used as the current acceptance standard.
 
 **Tech Stack:** React, React Router, TypeScript, Vite, Vitest, current `src/web` pages/components/styles, `src/web/lib/demo-api.ts`, `src/shared/contracts/*`, `src/server/http-api.ts`, `src/server/services/*`, and `docs/runbooks/native-demo-showcase.md`.
 
@@ -419,6 +432,8 @@ git commit -m "refactor: make reader a companion surface inside notebook and pro
 
 ### Task 7: Align docs, walkthroughs, and verification with the new IA
 
+> **Historical note:** This task was superseded by Task 6 in `2026-03-25-jixia-researchclaw-web-redesign-implementation.md`, which changed the browser story to `Search/Library -> Reader -> AI Workspace / Notebook -> Project Docs` and replaced the older notebook-question / companion-reader assumptions below.
+
 **Files:**
 - Modify: `docs/runbooks/native-demo-showcase.md`
 - Modify: `docs/plans/2026-03-24-jixia-demo-gap-closure-implementation.md`
@@ -475,16 +490,18 @@ git commit -m "docs: align workbench runbook with project-notebook IA"
 
 ## Final acceptance gate
 
-Do **not** claim the phase complete until all of the following are true in one fresh runtime:
+Do **not** use the acceptance items below as the current implementation gate. They are preserved only to show the phase boundary this older plan was trying to reach.
 
-1. Sidebar renders `Home / Projects / Search / Library / Notebooks / Settings`
-2. `/home` shows real recent projects and continue-working targets
-3. `/projects` shows a real project inventory, not placeholder text blocks
-4. `/notebooks` is directly reachable without first opening a paper
-5. `/search` supports visible counts, richer metadata, and pagination controls
-6. `/library` is visually wide enough to function as an inventory surface at desktop widths
-7. `/projects/:projectId/library/:entryId/reader` behaves as a companion evidence surface with return paths into notebook/project work
-8. Browser walkthrough succeeds: `Home → open project → open notebook → open related paper reader → save/update notebook note → insert into project docs → open project docs and see projected reference`
+The current branch acceptance gate is the one in `2026-03-25-jixia-researchclaw-web-redesign-implementation.md`, which requires:
+
+1. Sidebar renders `Home / Projects / Search / Library / Notebooks / AI / Settings`
+2. Notebook is a private cloud-document surface and no longer renders notebook-question scaffolding
+3. Project Docs remains separate and project-owned
+4. AI workspace is globally reachable and appears docked on the right when entering Reader
+5. Reader presents a real document-first reading page instead of a metadata companion card
+6. Search is dense enough to function as a paper intake surface
+7. Library is dense and wide enough to function as a corpus inventory surface
+8. Browser walkthrough succeeds: open paper from Search or Library -> read in Reader -> continue in docked AI workspace -> open private notebook -> continue writing -> optionally promote into Project Docs
 9. `npm test`, `npm run typecheck`, and `npm run build` all pass
 
 If any acceptance item fails, continue iterating on the corresponding task rather than moving ahead to deeper product features.

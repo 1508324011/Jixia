@@ -2,21 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 import type {
+  NotebookDocumentView,
   NotebookSummaryView,
 } from '@shared/contracts/notebook';
 import type {
   NoteRecord,
   NoteVisibility,
-  NotebookQuestionView,
   ReadingDetailView,
-  ReadingWorkspaceView,
 } from '@shared/contracts/reading';
-import {
-  defaultNotebookQuestionPrompts,
-  metadataOnlyReadingRetrievalState,
-} from '@shared/contracts/reading';
+import { metadataOnlyReadingRetrievalState } from '@shared/contracts/reading';
 
-import { NotebookQuestionList } from '../components/notebook-question-list';
+import { DocumentEditor } from '../components/document-editor';
 import {
   createProjectReference,
   createDemoApi,
@@ -95,40 +91,16 @@ function buildReaderPath(
   return `${pathname}?spaceId=${encodeURIComponent(spaceId)}`;
 }
 
-function resolveNotesWorkspace(detail: ReadingDetailView): ReadingWorkspaceView {
-  if (detail.workspace?.notebookId) {
-    return detail.workspace;
-  }
-
-  const notebookId = `notebook-${detail.entry.id}`;
-
-  return {
-    notebookId,
-    privateNotes: detail.notes.filter((note) => note.visibility === 'private'),
-    questions: defaultNotebookQuestionPrompts.map((prompt, index) => ({
-      id: `${notebookId}-question-${index + 1}`,
-      prompt,
-    })),
-    sharedComments: detail.notes.filter((note) => note.visibility === 'space_shared'),
-  };
-}
-
 function appendNoteToDetail(detail: ReadingDetailView, note: NoteRecord): ReadingDetailView {
-  const workspace = resolveNotesWorkspace(detail);
-
   return {
     ...detail,
     notes: [...detail.notes, note],
     workspace: {
-      ...workspace,
-      privateNotes:
-        note.visibility === 'private'
-          ? [...workspace.privateNotes, note]
-          : workspace.privateNotes,
+      ...detail.workspace,
       sharedComments:
         note.visibility === 'space_shared'
-          ? [...workspace.sharedComments, note]
-          : workspace.sharedComments,
+          ? [...detail.workspace.sharedComments, note]
+          : detail.workspace.sharedComments,
     },
   };
 }
@@ -139,49 +111,64 @@ export function NotesPage() {
     spaceId: routeSpaceId,
     projectId: routeProjectId,
     entryId: routeEntryId,
-    notebookId,
+    notebookId: routeNotebookId,
   } = useParams();
-  const isNotebookRoute = typeof notebookId === 'string' && notebookId.length > 0;
+  const isNotebookRoute = typeof routeNotebookId === 'string' && routeNotebookId.length > 0;
   const routeSpaceContext = routeSpaceId ?? searchParams.get('spaceId') ?? undefined;
   const hasExplicitSpaceContext =
     typeof routeSpaceContext === 'string' && routeSpaceContext.length > 0;
 
   const [detail, setDetail] = useState<ReadingDetailView | null>(null);
-  const [notebookContext, setNotebookContext] = useState<NotebookSummaryView | null>(null);
+  const [notebookSummary, setNotebookSummary] = useState<NotebookSummaryView | null>(null);
+  const [notebookDocument, setNotebookDocument] = useState<NotebookDocumentView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
   const [isProjecting, setIsProjecting] = useState(false);
-  const [privateNoteBody, setPrivateNoteBody] = useState('');
-  const [activeQuestionId, setActiveQuestionId] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [documentContent, setDocumentContent] = useState('');
   const [projectionMessage, setProjectionMessage] = useState<string | null>(null);
-  const entryId = routeEntryId ?? notebookContext?.entryId ?? 'entry-1';
-  const projectId = routeProjectId ?? notebookContext?.projectId;
+
+  const entryId = routeEntryId ?? notebookSummary?.entryId ?? 'entry-1';
+  const projectId = routeProjectId ?? notebookSummary?.projectId;
   const isPersonalMode = !projectId;
-  const resolvedSpaceId = routeSpaceContext ?? notebookContext?.spaceId ?? DEFAULT_PROJECT_SPACE_ID;
+  const defaultSpaceId = routeProjectId
+    ? DEFAULT_PROJECT_SPACE_ID
+    : notebookSummary?.spaceId ?? DEFAULT_PROJECT_SPACE_ID;
+  const resolvedSpaceId = routeSpaceContext ?? defaultSpaceId;
+  const privateNotes = useMemo(
+    () => detail?.notes.filter((note) => note.visibility === 'private') ?? [],
+    [detail],
+  );
+  const latestPrivateNote = privateNotes.at(-1) ?? null;
+  const retrievalState = detail?.retrieval ?? metadataOnlyReadingRetrievalState;
 
   useEffect(() => {
     let isCancelled = false;
 
-    async function loadDetail(): Promise<void> {
+    async function loadNotebookSurface(): Promise<void> {
       setIsLoading(true);
       setLoadError(null);
 
       try {
-        if (isNotebookRoute && notebookId) {
-          const notebookResponse = await demoApi.getNotebook(notebookId);
-          const resolvedNotebook = notebookResponse.notebook;
+        if (isNotebookRoute && routeNotebookId) {
+          const summaryResponse = await demoApi.getNotebook(routeNotebookId);
+          const resolvedNotebook = summaryResponse.notebook;
           const requiresExplicitNotebookSpace =
             Boolean(resolvedNotebook.projectId) &&
             resolvedNotebook.spaceId !== DEFAULT_PROJECT_SPACE_ID;
-          const readingDetail = requiresExplicitNotebookSpace
-            ? await getLegacyReadingDetail(resolvedNotebook.entryId, resolvedNotebook.spaceId)
-            : await demoApi.getReadingDetail(resolvedNotebook.entryId);
+          const [readingDetail, documentResponse] = await Promise.all([
+            requiresExplicitNotebookSpace
+              ? getLegacyReadingDetail(resolvedNotebook.entryId, resolvedNotebook.spaceId)
+              : demoApi.getReadingDetail(resolvedNotebook.entryId),
+            demoApi.getNotebookDocument(resolvedNotebook.notebookId),
+          ]);
 
           if (!isCancelled) {
-            setNotebookContext(resolvedNotebook);
             setDetail(readingDetail);
+            setNotebookSummary(resolvedNotebook);
+            setNotebookDocument(documentResponse.document);
+            setDocumentContent(documentResponse.document.latestSnapshot?.content ?? '');
           }
 
           return;
@@ -189,19 +176,30 @@ export function NotesPage() {
 
         const fallbackEntryId = routeEntryId ?? 'entry-1';
         const readingDetail = hasExplicitSpaceContext
-          ? await getLegacyReadingDetail(fallbackEntryId, resolvedSpaceId)
+          ? await getLegacyReadingDetail(
+              fallbackEntryId,
+              routeSpaceContext ?? DEFAULT_PROJECT_SPACE_ID,
+            )
           : await demoApi.getReadingDetail(fallbackEntryId);
+        const summaryResponse = await demoApi.getNotebook(readingDetail.workspace.notebookId);
+        const documentResponse = await demoApi.getNotebookDocument(
+          summaryResponse.notebook.notebookId,
+        );
 
         if (!isCancelled) {
-          setNotebookContext(null);
           setDetail(readingDetail);
+          setNotebookSummary(summaryResponse.notebook);
+          setNotebookDocument(documentResponse.document);
+          setDocumentContent(documentResponse.document.latestSnapshot?.content ?? '');
         }
       } catch (error) {
         if (!isCancelled) {
           setDetail(null);
-          setNotebookContext(null);
+          setNotebookSummary(null);
+          setNotebookDocument(null);
+          setDocumentContent('');
           setLoadError(
-            error instanceof Error ? error.message : 'Failed to load the private notebook lane.',
+            error instanceof Error ? error.message : 'Failed to load the private notebook document.',
           );
         }
       } finally {
@@ -211,80 +209,43 @@ export function NotesPage() {
       }
     }
 
-    void loadDetail();
+    void loadNotebookSurface();
 
     return () => {
       isCancelled = true;
     };
-  }, [hasExplicitSpaceContext, isNotebookRoute, notebookId, resolvedSpaceId, routeEntryId]);
+  }, [hasExplicitSpaceContext, isNotebookRoute, routeEntryId, routeNotebookId, routeSpaceContext]);
 
-  const privateNotes = useMemo(
-    () => (detail ? resolveNotesWorkspace(detail).privateNotes : []),
-    [detail],
-  );
-  const workspace = useMemo(() => (detail ? resolveNotesWorkspace(detail) : null), [detail]);
-  const retrievalState = detail?.retrieval ?? metadataOnlyReadingRetrievalState;
-  const activeQuestion = useMemo(() => {
-    if (!workspace) {
-      return null;
-    }
-
-    return (
-      workspace.questions.find((question) => question.id === activeQuestionId) ??
-      workspace.questions[0] ??
-      null
-    );
-  }, [activeQuestionId, workspace]);
-  const latestPrivateNote = workspace?.privateNotes.at(-1) ?? null;
-
-  useEffect(() => {
-    if (!workspace?.questions.length) {
-      setActiveQuestionId('');
+  async function handleSaveNotebook(): Promise<void> {
+    if (!notebookSummary) {
       return;
     }
-
-    setActiveQuestionId((current) =>
-      workspace.questions.some((question) => question.id === current)
-        ? current
-        : workspace.questions[0].id,
-    );
-  }, [workspace]);
-
-  async function handleSavePrivateNote(): Promise<void> {
-    if (!privateNoteBody.trim()) {
-      return;
-    }
-
-    const requiresExplicitApiSpaceContext = isNotebookRoute
-      ? Boolean(notebookContext?.projectId) &&
-        notebookContext?.spaceId !== DEFAULT_PROJECT_SPACE_ID
-      : hasExplicitSpaceContext;
 
     setIsSaving(true);
     setMutationError(null);
     setProjectionMessage(null);
 
     try {
-      const response = requiresExplicitApiSpaceContext
-        ? await createLegacyReadingNote({
-            body: privateNoteBody.trim(),
-            entryId,
-            spaceId: resolvedSpaceId,
-            visibility: 'private' satisfies NoteVisibility,
-          })
-        : await demoApi.createReadingNote({
-            body: privateNoteBody.trim(),
-            entryId,
-            visibility: 'private',
-          });
+      const response = await demoApi.saveNotebookDocument({
+        content: documentContent,
+        notebookId: notebookSummary.notebookId,
+        title: notebookSummary.title,
+      });
 
-      setDetail((current) =>
-        current ? appendNoteToDetail(current, response.note) : current,
+      setNotebookDocument(response.document);
+      setNotebookSummary((current) =>
+        current
+          ? {
+              ...current,
+              title: response.document.title,
+              updatedAt: response.document.latestSnapshot?.capturedAt ?? current.updatedAt,
+            }
+          : current,
       );
-      setPrivateNoteBody('');
+      setDocumentContent(response.document.latestSnapshot?.content ?? '');
     } catch (error) {
       setMutationError(
-        error instanceof Error ? error.message : 'Failed to save the private notebook note.',
+        error instanceof Error ? error.message : 'Failed to save the notebook document.',
       );
     } finally {
       setIsSaving(false);
@@ -293,24 +254,48 @@ export function NotesPage() {
 
   async function handleInsertIntoProjectDocs(): Promise<void> {
     const resolvedProjectId = projectId;
-    const projectDocumentId = extractDocumentId(notebookContext?.projectDocsPath);
 
-    if (!resolvedProjectId || !detail || !workspace || !latestPrivateNote) {
+    if (!resolvedProjectId || !detail || !notebookSummary || !documentContent.trim()) {
       return;
     }
+
+    const requiresExplicitApiSpaceContext = isNotebookRoute
+      ? Boolean(notebookSummary.projectId) && notebookSummary.spaceId !== DEFAULT_PROJECT_SPACE_ID
+      : hasExplicitSpaceContext;
 
     setIsProjecting(true);
     setMutationError(null);
     setProjectionMessage(null);
 
     try {
+      const selectedText = documentContent.trim();
+      let projectionSource = latestPrivateNote;
+
+      if (!projectionSource || projectionSource.body !== selectedText) {
+        const noteResponse = requiresExplicitApiSpaceContext
+          ? await createLegacyReadingNote({
+              body: selectedText,
+              entryId,
+              spaceId: resolvedSpaceId,
+              visibility: 'private' satisfies NoteVisibility,
+            })
+          : await demoApi.createReadingNote({
+              body: selectedText,
+              entryId,
+              visibility: 'private',
+            });
+
+        projectionSource = noteResponse.note;
+        setDetail((current) => (current ? appendNoteToDetail(current, noteResponse.note) : current));
+      }
+
       await createProjectReference({
-        docId: projectDocumentId,
-        noteId: latestPrivateNote.id,
-        notebookId: workspace.notebookId,
+        docId: extractDocumentId(notebookSummary.projectDocsPath),
+        noteId: projectionSource.id,
+        notebookId: notebookSummary.notebookId,
         paperAssetId: detail.asset.id,
         projectId: resolvedProjectId,
-        selectedText: latestPrivateNote.body,
+        selectedText,
         spaceId: resolvedSpaceId,
       });
       setProjectionMessage('Project-owned reference created.');
@@ -329,24 +314,32 @@ export function NotesPage() {
     resolvedSpaceId,
     hasExplicitSpaceContext,
   );
-  const projectPath =
-    notebookContext?.workspacePath ??
-    workspace?.companion?.projectPath ??
-    buildProjectPath(projectId, resolvedSpaceId, hasExplicitSpaceContext);
-  const resolvedProjectDocsPath = notebookContext?.projectDocsPath ?? projectDocsPath;
-  const readerPath =
-    notebookContext?.readerPath ??
-    workspace?.companion?.readerPath ??
-    buildReaderPath(projectId, entryId, resolvedSpaceId, hasExplicitSpaceContext);
+  const projectPath = isNotebookRoute
+    ? notebookSummary?.workspacePath ??
+      buildProjectPath(projectId, resolvedSpaceId, hasExplicitSpaceContext)
+    : detail?.workspace.companion?.projectPath ??
+      buildProjectPath(projectId, resolvedSpaceId, hasExplicitSpaceContext);
+  const resolvedProjectDocsPath = isNotebookRoute
+    ? notebookSummary?.projectDocsPath ?? projectDocsPath
+    : detail?.workspace.companion?.projectDocsPath ?? projectDocsPath;
+  const readerPath = isNotebookRoute
+    ? notebookSummary?.readerPath ??
+      buildReaderPath(projectId, entryId, resolvedSpaceId, hasExplicitSpaceContext)
+    : detail?.workspace.companion?.readerPath ??
+      buildReaderPath(projectId, entryId, resolvedSpaceId, hasExplicitSpaceContext);
+  const notebookTitle = notebookSummary?.title ?? detail?.asset.title ?? 'Notebook';
+  const latestSnapshotLabel = notebookDocument?.latestSnapshot
+    ? `Latest snapshot · ${notebookDocument.latestSnapshot.capturedAt}`
+    : 'No notebook snapshot saved yet.';
 
   return (
     <main className="page-shell">
       <header className="page-header">
-        <p className="page-kicker">Private notebook · question-driven synthesis</p>
-        <h1 className="page-title">Notes workspace</h1>
+        <p className="page-kicker">Private notebook document</p>
+        <h1 className="page-title">Notebook</h1>
         <p className="page-description">
-          Keep private thinking separate from deep reading and project docs while you decide what
-          should graduate into shared references.
+          Keep the private notebook document separate from Reader and project docs until you decide
+          what should become a project-owned reference.
         </p>
       </header>
 
@@ -357,78 +350,46 @@ export function NotesPage() {
         <span className="status-badge">{privateNotes.length} private notes</span>
       </section>
 
-        <section className="panel-grid" aria-label="notes workspace layout">
-        <NotebookQuestionList
-          activeQuestionId={activeQuestion?.id ?? ''}
-          noteCount={privateNotes.length}
-          notebookId={workspace?.notebookId ?? `notebook-${entryId}`}
-          onSelectQuestion={setActiveQuestionId}
-          paperTitle={detail?.asset.title ?? 'this paper'}
-          questions={workspace?.questions ?? []}
-          retrievalSummary={retrievalState.summary}
-        />
-
+      <section className="panel-grid" aria-label="notes workspace layout">
         <article className="panel">
           {isLoading ? (
             <>
-              <h2 className="panel-title">Loading private notebook…</h2>
-              <p className="quiet-copy">Gathering the current paper context and private notes.</p>
+              <h2 className="panel-title">Loading notebook…</h2>
+              <p className="quiet-copy">Gathering the notebook document and current paper context.</p>
             </>
           ) : loadError ? (
             <>
-              <h2 className="panel-title">Notes workspace unavailable</h2>
+              <h2 className="panel-title">Notebook unavailable</h2>
               <p className="quiet-copy">{loadError}</p>
             </>
-          ) : detail ? (
+          ) : detail && notebookSummary && notebookDocument ? (
             <div className="stack-sm">
-              <h2 className="panel-title">{detail.asset.title}</h2>
-              <p className="quiet-copy">Notebook stays private until you explicitly project material.</p>
-              <p className="quiet-copy">Current reading boundary · {retrievalState.detail}</p>
-              {activeQuestion ? (
-                <div className="stack-xs notes-workspace__active-question">
-                  <span className="status-badge">Active question</span>
-                  <p className="quiet-copy">{activeQuestion.prompt}</p>
-                </div>
-              ) : null}
-              <label className="quiet-copy" htmlFor="notes-workspace-private-note">
-                {activeQuestion
-                  ? `Private note for “${activeQuestion.prompt}”`
-                  : 'Private note'}
-              </label>
-              <textarea
-                id="notes-workspace-private-note"
-                className="draft-editor"
-                rows={6}
-                value={privateNoteBody}
-                onChange={(event) => setPrivateNoteBody(event.target.value)}
+              <DocumentEditor
+                textareaId="notebook-document"
+                label="Private notebook document"
+                title={notebookTitle}
+                lastSavedLabel={latestSnapshotLabel}
+                description={`Notebook stays private until you deliberately create a project-owned reference. Current reading boundary · ${retrievalState.detail}`}
+                rows={10}
+                value={documentContent}
+                onChange={setDocumentContent}
+                actions={
+                  <button
+                    type="button"
+                    className="action-button"
+                    onClick={() => void handleSaveNotebook()}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? 'Saving notebook…' : 'Save notebook'}
+                  </button>
+                }
               />
-              <button
-                type="button"
-                className="action-button"
-                onClick={() => void handleSavePrivateNote()}
-                disabled={isSaving}
-              >
-                {isSaving ? 'Saving private note…' : 'Save private note'}
-              </button>
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
 
-              <div className="stack-xs">
-                <h3 className="panel-title">Private notebook notes</h3>
-                {privateNotes.length > 0 ? (
-                  privateNotes.map((note) => (
-                    <p key={note.id} className="quiet-copy">
-                      {note.body}
-                    </p>
-                  ))
-                ) : (
-                  <p className="quiet-copy">No private notes yet.</p>
-                )}
-              </div>
-
-              {workspace && workspace.sharedComments.length > 0 ? (
+              {detail.workspace.sharedComments.length > 0 ? (
                 <div className="stack-xs">
                   <h3 className="panel-title">Reader-owned shared comments</h3>
-                  {workspace.sharedComments.map((note) => (
+                  {detail.workspace.sharedComments.map((note) => (
                     <p key={note.id} className="quiet-copy">
                       {note.body}
                     </p>
@@ -440,13 +401,13 @@ export function NotesPage() {
                 <div className="stack-xs">
                   <h3 className="panel-title">Project projection</h3>
                   <p className="quiet-copy">
-                    Create a project-owned reference from a deliberate notebook insert. The notebook
-                    stays private until you project material into Project Docs.
+                    Promote a deliberate excerpt into Project Docs without leaking the notebook body
+                    into notebook metadata routes.
                   </p>
                   <button
                     type="button"
                     className="action-button action-button-secondary"
-                    disabled={isProjecting || !latestPrivateNote}
+                    disabled={isProjecting || !documentContent.trim()}
                     onClick={() => void handleInsertIntoProjectDocs()}
                   >
                     {isProjecting ? 'Creating project-owned reference…' : 'Insert into project docs'}

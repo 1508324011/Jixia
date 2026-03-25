@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -41,6 +41,17 @@ describe('paper workspace', () => {
         spaceId: 'personal-space-user-alice',
         visibility: 'private',
       },
+      document: {
+        sections: [
+          {
+            body:
+              'Tumor board biomarkers for rapid review\n\nImported PMID metadata for 654321\n\nReader now treats the paper as a document surface instead of a metadata companion panel.',
+            id: 'section-overview',
+            title: 'Overview',
+          },
+        ],
+        title: 'Tumor board biomarkers for rapid review',
+      },
       insights: [] as Array<{
         conversationId: string;
         createdAt: string;
@@ -68,10 +79,10 @@ describe('paper workspace', () => {
         },
       ],
       retrieval: {
-        detail: 'Abstract metadata is ready for review, but full text stays outside this demo.',
-        fullTextAvailable: false,
-        state: 'metadata-only',
-        summary: 'Metadata imported',
+        detail: 'Structured reading content is ready for the document-first canvas.',
+        fullTextAvailable: true,
+        state: 'document-ready',
+        summary: 'Reading document ready',
       },
       workspace: {
         companion: {
@@ -81,26 +92,6 @@ describe('paper workspace', () => {
           readerPath: '/projects/project-1/library/entry-1/reader',
         },
         notebookId: 'notebook-1',
-        privateNotes: [
-          {
-            authorUserId: 'user-alice',
-            body: 'Private note for later synthesis.',
-            createdAt: '2026-03-23T00:05:00.000Z',
-            id: 'note-private-1',
-            libraryEntryId: 'entry-1',
-            visibility: 'private',
-          },
-        ],
-        questions: [
-          {
-            id: 'question-1',
-            prompt: 'What changes my interpretation of this paper?',
-          },
-          {
-            id: 'question-2',
-            prompt: 'Which claim deserves a project-level reference?',
-          },
-        ],
         sharedComments: [
           {
             authorUserId: 'user-alice',
@@ -109,6 +100,28 @@ describe('paper workspace', () => {
             id: 'note-shared-1',
             libraryEntryId: 'entry-1',
             visibility: 'space_shared',
+          },
+        ],
+      },
+    };
+    const aiWorkspaceResponse = {
+      workspace: {
+        activeSessionId: 'session-1',
+        sessions: [
+          {
+            attachedEntries: [
+              {
+                canonicalId: 'pmid:654321',
+                entryId: 'entry-1',
+                paperAssetId: 'asset-1',
+                title: 'Tumor board biomarkers for rapid review',
+              },
+            ],
+            createdAt: '2026-03-25T09:00:00.000Z',
+            id: 'session-1',
+            summary: 'Compare the current reader evidence against prior tumor-board threads.',
+            title: 'Tumor board evidence review',
+            updatedAt: '2026-03-25T09:30:00.000Z',
           },
         ],
       },
@@ -128,6 +141,14 @@ describe('paper workspace', () => {
           return jsonResponse(readingDetail);
         }
 
+        if (
+          requestUrl.includes('/api/ai/workspace') &&
+          requestUrl.includes('entryId=entry-1') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return jsonResponse(aiWorkspaceResponse);
+        }
+
         throw new Error(`Unexpected fetch: ${requestUrl}`);
       }),
     );
@@ -135,41 +156,36 @@ describe('paper workspace', () => {
     renderWorkbench('/projects/project-1/library/entry-1/reader');
 
     expect(await screen.findByText('Tumor board biomarkers for rapid review')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'AI 对话' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '私人笔记' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '共享评论' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '关键信息' })).toBeInTheDocument();
-
-    expect(screen.queryByRole('button', { name: 'Promote latest insight to Writer' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('textbox', { name: 'Private note' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to notebook' })).toHaveAttribute(
+    const readerCanvas = await screen.findByTestId('reader-document-canvas');
+    expect(within(readerCanvas).getByText('Overview')).toBeInTheDocument();
+    expect(
+      within(readerCanvas).getByText(
+        'Reader now treats the paper as a document surface instead of a metadata companion panel.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'AI 对话' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '私人笔记' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '共享评论' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '关键信息' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
+    expect(screen.getByText('Tumor board evidence review')).toBeInTheDocument();
+    const aiAttachments = screen.getByLabelText('AI context attachments');
+    expect(within(aiAttachments).getByText('Tumor board biomarkers for rapid review')).toBeInTheDocument();
+    expect(within(aiAttachments).getByText('pmid:654321')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open notebook' })).toHaveAttribute(
       'href',
       '/projects/project-1/library/entry-1/notes',
     );
-    expect(screen.getByRole('link', { name: 'Back to project' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open project overview' })).toHaveAttribute(
       'href',
       '/projects/project-1',
-    );
-    expect(screen.getByRole('link', { name: 'Open notes workspace' })).toHaveAttribute(
-      'href',
-      '/projects/project-1/library/entry-1/notes',
     );
     expect(screen.getByRole('link', { name: 'Open project docs' })).toHaveAttribute(
       'href',
       '/projects/project-1/writing/doc-1',
     );
 
-    await user.click(screen.getByRole('tab', { name: '关键信息' }));
-    expect(screen.getByText('Retrieval state')).toBeInTheDocument();
-    expect(screen.getByText('Metadata imported')).toBeInTheDocument();
-    expect(
-      screen.getByText('Abstract metadata is ready for review, but full text stays outside this demo.'),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole('tab', { name: '私人笔记' }));
     expect(screen.getByText('Private note for later synthesis.')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('tab', { name: '共享评论' }));
     expect(screen.getByText('Project-visible comment for the tumor board.')).toBeInTheDocument();
   });
 
@@ -189,6 +205,17 @@ describe('paper workspace', () => {
         spaceId: 'personal-space-user-alice',
         visibility: 'private',
       },
+      document: {
+        sections: [
+          {
+            body:
+              'Personal evidence note\n\nImported PMID metadata for 111111\n\nPersonal reading stays document-first even when opened outside a project.',
+            id: 'section-personal-overview',
+            title: 'Overview',
+          },
+        ],
+        title: 'Personal evidence note',
+      },
       insights: [] as Array<{
         conversationId: string;
         createdAt: string;
@@ -206,10 +233,10 @@ describe('paper workspace', () => {
         visibility: 'private' | 'space_shared';
       }>,
       retrieval: {
-        detail: 'Abstract metadata is ready for review, but full text stays outside this demo.',
-        fullTextAvailable: false,
-        state: 'metadata-only',
-        summary: 'Metadata imported',
+        detail: 'Structured reading content is ready for the document-first canvas.',
+        fullTextAvailable: true,
+        state: 'document-ready',
+        summary: 'Reading document ready',
       },
       workspace: {
         companion: {
@@ -217,14 +244,29 @@ describe('paper workspace', () => {
           readerPath: '/library/entry-1/reader',
         },
         notebookId: 'notebook-personal-1',
-        privateNotes: [],
-        questions: [
+        sharedComments: [],
+      },
+    };
+    const aiWorkspaceResponse = {
+      workspace: {
+        activeSessionId: 'session-personal-1',
+        sessions: [
           {
-            id: 'question-1',
-            prompt: 'What changes my interpretation of this paper?',
+            attachedEntries: [
+              {
+                canonicalId: 'pmid:111111',
+                entryId: 'entry-1',
+                paperAssetId: 'asset-personal-1',
+                title: 'Personal evidence note',
+              },
+            ],
+            createdAt: '2026-03-25T08:00:00.000Z',
+            id: 'session-personal-1',
+            summary: 'Personal reading follow-up kept outside the notebook and reader state.',
+            title: 'Personal reading follow-up',
+            updatedAt: '2026-03-25T08:10:00.000Z',
           },
         ],
-        sharedComments: [],
       },
     };
 
@@ -242,6 +284,14 @@ describe('paper workspace', () => {
           return jsonResponse(readingDetail);
         }
 
+        if (
+          requestUrl.includes('/api/ai/workspace') &&
+          requestUrl.includes('entryId=entry-1') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return jsonResponse(aiWorkspaceResponse);
+        }
+
         throw new Error(`Unexpected fetch: ${requestUrl}`);
       }),
     );
@@ -249,16 +299,15 @@ describe('paper workspace', () => {
     renderWorkbench('/library/entry-1/reader');
 
     expect(await screen.findByText('Personal evidence note')).toBeInTheDocument();
+    expect(await screen.findByTestId('reader-document-canvas')).toBeInTheDocument();
     expect(screen.getByText('Personal context')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
+    expect(screen.getByText('Personal reading follow-up')).toBeInTheDocument();
     expect(screen.queryByText('Project context · project-1')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to notebook' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open notebook' })).toHaveAttribute(
       'href',
       '/library/entry-1/notes',
     );
-    expect(screen.queryByRole('link', { name: 'Back to project' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open notes workspace' })).toHaveAttribute(
-      'href',
-      '/library/entry-1/notes',
-    );
+    expect(screen.queryByRole('link', { name: 'Open project overview' })).not.toBeInTheDocument();
   });
 });

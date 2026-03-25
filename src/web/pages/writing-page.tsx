@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import type { GovernedJobView } from '@shared/contracts/jobs';
 import type { WritingDocumentView } from '@shared/contracts/writing';
 
+import { DocumentEditor } from '../components/document-editor';
 import { ProjectDocumentTree } from '../components/project-document-tree';
 import { RequestError } from '../lib/http-client';
 import {
@@ -219,7 +220,7 @@ export function WritingPage() {
           Work inside the shared project-owned document surface while references, publish state, and
           governed jobs stay visible but quiet.
         </p>
-        <p className="quiet-copy">Reader and Notes Workspace stay separate from the shared document tree.</p>
+        <p className="quiet-copy">Reader and Notebook stay separate from the shared document tree.</p>
       </header>
 
       <section aria-label="context bar" className="context-bar">
@@ -243,44 +244,42 @@ export function WritingPage() {
             </>
           ) : activeDocument ? (
             <div className="stack-sm">
-              <h2 className="panel-title">{activeDocument.title}</h2>
-              <p className="quiet-copy">Latest snapshot · {capturedAt}</p>
-              <label className="quiet-copy" htmlFor="draft-content">
-                Draft content
-              </label>
-              <textarea
-                id="draft-content"
-                className="draft-editor"
-                rows={12}
+              <DocumentEditor
+                textareaId="draft-content"
+                label="Project document"
+                title={activeDocument.title}
+                lastSavedLabel={`Latest snapshot · ${capturedAt}`}
                 value={draftContent}
-                onChange={(event) => setDraftContent(event.target.value)}
+                onChange={setDraftContent}
+                actions={
+                  <>
+                    <button
+                      type="button"
+                      className="action-button"
+                      disabled={isSaving || isPublishing || isReloading}
+                      onClick={() => void handleSave()}
+                    >
+                      {isSaving ? 'Saving draft…' : 'Save draft'}
+                    </button>
+                    <button
+                      type="button"
+                      className="action-button action-button-secondary"
+                      disabled={isSaving || isPublishing || isReloading}
+                      onClick={() => void handleReload()}
+                    >
+                      {isReloading ? 'Reloading…' : 'Reload draft'}
+                    </button>
+                    <button
+                      type="button"
+                      className="action-button action-button-secondary"
+                      disabled={isSaving || isPublishing || isReloading}
+                      onClick={() => void handlePublish()}
+                    >
+                      {isPublishing ? 'Publishing…' : 'Publish'}
+                    </button>
+                  </>
+                }
               />
-              <div className="button-row">
-                <button
-                  type="button"
-                  className="action-button"
-                  disabled={isSaving || isPublishing || isReloading}
-                  onClick={() => void handleSave()}
-                >
-                  {isSaving ? 'Saving draft…' : 'Save draft'}
-                </button>
-                <button
-                  type="button"
-                  className="action-button action-button-secondary"
-                  disabled={isSaving || isPublishing || isReloading}
-                  onClick={() => void handleReload()}
-                >
-                  {isReloading ? 'Reloading…' : 'Reload draft'}
-                </button>
-                <button
-                  type="button"
-                  className="action-button action-button-secondary"
-                  disabled={isSaving || isPublishing || isReloading}
-                  onClick={() => void handlePublish()}
-                >
-                  {isPublishing ? 'Publishing…' : 'Publish'}
-                </button>
-              </div>
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
             </div>
           ) : (

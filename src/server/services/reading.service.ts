@@ -5,17 +5,14 @@ import type {
 } from '@shared/contracts/evidence';
 import type {
   ConversationRecord,
-  NotebookQuestionView,
   NoteRecord,
   NoteVisibility,
   ReadingCompanionView,
+  ReadingDocumentView,
   ReadingDetailView,
   ReadingWorkspaceView,
 } from '@shared/contracts/reading';
-import {
-  defaultNotebookQuestionPrompts,
-  metadataOnlyReadingRetrievalState,
-} from '@shared/contracts/reading';
+import { documentReadyReadingRetrievalState } from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import {
@@ -173,13 +170,6 @@ function toReadingNote(
   };
 }
 
-function createNotebookQuestions(notebookId: string): NotebookQuestionView[] {
-  return defaultNotebookQuestionPrompts.map((prompt, index) => ({
-    id: `${notebookId}-question-${index + 1}`,
-    prompt,
-  }));
-}
-
 function buildProjectScopedPath(
   projectId: string,
   spaceId: string,
@@ -227,6 +217,25 @@ function buildWorkspaceCompanion(
   };
 }
 
+function buildReadingDocument(asset: StoredPaperAsset): ReadingDocumentView {
+  const overviewParagraphs = [
+    asset.title,
+    asset.abstractText?.trim() || 'No abstract was imported for this record.',
+    'Reader now treats the paper as a document surface instead of a metadata companion panel.',
+  ];
+
+  return {
+    sections: [
+      {
+        body: overviewParagraphs.join('\n\n'),
+        id: 'section-overview',
+        title: 'Overview',
+      },
+    ],
+    title: asset.title,
+  };
+}
+
 async function buildWorkspaceView(
   store: ReadingStore,
   input: {
@@ -248,8 +257,6 @@ async function buildWorkspaceView(
   return {
     companion: buildWorkspaceCompanion(entry, space),
     notebookId: notebook.id,
-    privateNotes,
-    questions: createNotebookQuestions(notebook.id),
     sharedComments: input.sharedComments,
   };
 }
@@ -334,6 +341,10 @@ export function createReadingService(store: ReadingStore): ReadingService {
         libraryEntryId: input.libraryEntryId,
         sharedComments,
       });
+      const privateNotes = (await store.notebookService.listNotes({
+        libraryEntryId: input.libraryEntryId,
+        ownerUserId: input.actorUserId,
+      })).map((note) => toReadingNote(note, input.libraryEntryId));
 
       return {
         asset: {
@@ -343,12 +354,13 @@ export function createReadingService(store: ReadingStore): ReadingService {
           id: asset.id,
           title: asset.title,
         },
+        document: buildReadingDocument(asset),
         entry,
         insights: store.insights.filter(
           (insight) => insight.libraryEntryId === input.libraryEntryId,
         ),
-        notes: [...workspace.privateNotes, ...sharedComments],
-        retrieval: { ...metadataOnlyReadingRetrievalState },
+        notes: [...privateNotes, ...sharedComments],
+        retrieval: { ...documentReadyReadingRetrievalState },
         workspace,
       };
     },

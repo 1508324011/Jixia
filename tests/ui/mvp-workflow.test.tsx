@@ -41,6 +41,45 @@ function stubNativeDemoFetch(): void {
     },
   };
 
+  const notebookSummaryResponse = {
+    notebook: {
+      entryId: 'entry-1',
+      noteCount: 0,
+      notebookId: 'notebook-1',
+      notesPath: '/projects/tumor-board/library/entry-1/notes',
+      paperAssetId: 'asset-pmid-123456',
+      paperTitle: 'Imported PMID paper 123456',
+      projectDocsPath: '/projects/tumor-board/writing/doc-1',
+      projectId: 'tumor-board',
+      readerPath: '/projects/tumor-board/library/entry-1/reader',
+      spaceId: 'shared-space',
+      title: 'Tumor board notebook',
+      updatedAt: '2026-03-22T01:00:00.000Z',
+      workspaceLabel: 'Tumor board workspace',
+      workspacePath: '/projects/tumor-board',
+    },
+  };
+
+  const notebookDocumentResponse: {
+    document: {
+      documentId: string;
+      latestSnapshot: null | { capturedAt: string; content: string };
+      ownerType: 'user';
+      ownerUserId: string;
+      title: string;
+      visibility: 'private';
+    };
+  } = {
+    document: {
+      documentId: 'notebook-document-1',
+      latestSnapshot: null,
+      ownerType: 'user',
+      ownerUserId: 'user-alice',
+      title: 'Tumor board notebook',
+      visibility: 'private',
+    },
+  };
+
   const projectReferenceResponse = {
     reference: {
       createdAt: '2026-03-24T10:05:00.000Z',
@@ -118,13 +157,21 @@ function stubNativeDemoFetch(): void {
     ],
   };
 
-  const emptyNotebookNotes: Array<typeof createdNoteResponse.note> = [];
-
   const readingResponse = {
     asset: {
       abstractText: 'Imported PMID metadata for 123456',
       canonicalId: 'pmid:123456',
       id: 'asset-pmid-123456',
+      title: 'Imported PMID paper 123456',
+    },
+    document: {
+      sections: [
+        {
+          body: 'Imported PMID paper 123456\n\nImported PMID metadata for 123456\n\nReader now centers the paper itself while keeping AI and notebook context alongside it.',
+          id: 'section-overview',
+          title: 'Overview',
+        },
+      ],
       title: 'Imported PMID paper 123456',
     },
     entry: {
@@ -144,6 +191,12 @@ function stubNativeDemoFetch(): void {
     notes: [
       sharedComment,
     ],
+    retrieval: {
+      detail: 'Structured reading content is ready for the document-first canvas.',
+      fullTextAvailable: true,
+      state: 'document-ready',
+      summary: 'Reading document ready',
+    },
     workspace: {
       companion: {
         notebookPath: '/projects/tumor-board/library/entry-1/notes',
@@ -152,20 +205,30 @@ function stubNativeDemoFetch(): void {
         readerPath: '/projects/tumor-board/library/entry-1/reader',
       },
       notebookId: 'notebook-1',
-      privateNotes: emptyNotebookNotes,
-      questions: [
+      sharedComments: [sharedComment],
+    },
+  };
+
+  const aiWorkspaceResponse = {
+    workspace: {
+      activeSessionId: 'session-1',
+      sessions: [
         {
-          id: 'question-1',
-          prompt: 'What changes my interpretation of this paper?',
-          status: 'open',
-        },
-        {
-          id: 'question-2',
-          prompt: 'What would I quote into a project update?',
-          status: 'open',
+          attachedEntries: [
+            {
+              canonicalId: 'pmid:123456',
+              entryId: 'entry-1',
+              paperAssetId: 'asset-pmid-123456',
+              title: 'Imported PMID paper 123456',
+            },
+          ],
+          createdAt: '2026-03-22T01:00:00.000Z',
+          id: 'session-1',
+          summary: 'Board prep session docked next to Reader.',
+          title: 'Tumor board evidence review',
+          updatedAt: '2026-03-24T10:00:00.000Z',
         },
       ],
-      sharedComments: [sharedComment],
     },
   };
 
@@ -235,6 +298,8 @@ function stubNativeDemoFetch(): void {
 
   let currentReadingResponse = structuredClone(readingResponse);
   let currentWritingResponse = structuredClone(writingResponse);
+  let currentNotebookSummaryResponse = structuredClone(notebookSummaryResponse);
+  let currentNotebookDocumentResponse = structuredClone(notebookDocumentResponse);
 
   vi.stubGlobal(
     'fetch',
@@ -270,17 +335,51 @@ function stubNativeDemoFetch(): void {
         return jsonResponse(currentReadingResponse);
       }
 
+      if (requestUrl.endsWith('/api/ai/workspace?entryId=entry-1')) {
+        return jsonResponse(aiWorkspaceResponse);
+      }
+
+      if (requestUrl.endsWith('/api/notebooks/notebook-1')) {
+        return jsonResponse(currentNotebookSummaryResponse);
+      }
+
+      if (requestMethod === 'GET' && requestUrl.endsWith('/api/notebooks/notebook-1/document')) {
+        return jsonResponse(currentNotebookDocumentResponse);
+      }
+
+      if (requestMethod === 'POST' && requestUrl.endsWith('/api/notebooks/notebook-1/document')) {
+        const requestBody = JSON.parse((init?.body as string | undefined) ?? '{}') as {
+          content?: string;
+          title?: string;
+        };
+
+        currentNotebookDocumentResponse = {
+          document: {
+            ...currentNotebookDocumentResponse.document,
+            latestSnapshot: {
+              capturedAt: '2026-03-24T10:00:00.000Z',
+              content: requestBody.content ?? '',
+            },
+            title: requestBody.title ?? currentNotebookDocumentResponse.document.title,
+          },
+        };
+        currentNotebookSummaryResponse = {
+          notebook: {
+            ...currentNotebookSummaryResponse.notebook,
+            title: requestBody.title ?? currentNotebookSummaryResponse.notebook.title,
+            updatedAt:
+              currentNotebookDocumentResponse.document.latestSnapshot?.capturedAt ??
+              currentNotebookSummaryResponse.notebook.updatedAt,
+          },
+        };
+
+        return jsonResponse(currentNotebookDocumentResponse);
+      }
+
       if (requestMethod === 'POST' && requestUrl.endsWith('/api/reading/entry-1/notes')) {
         currentReadingResponse = {
           ...currentReadingResponse,
           notes: [...currentReadingResponse.notes, createdNoteResponse.note],
-          workspace: {
-            ...currentReadingResponse.workspace,
-            privateNotes: [
-              ...currentReadingResponse.workspace.privateNotes,
-              createdNoteResponse.note,
-            ],
-          },
         };
         return jsonResponse(createdNoteResponse);
       }
@@ -320,7 +419,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe('mvp workflow shell', () => {
-  it('navigates from home to project notebook reader and project docs', async () => {
+  it('supports the corrected browser story from library feeder surfaces into reader, ai workspace, notebook, and project docs', async () => {
     const user = userEvent.setup();
 
     window.history.replaceState({}, '', '/home');
@@ -330,51 +429,42 @@ describe('mvp workflow shell', () => {
 
     expect(screen.getByRole('heading', { name: 'Research workbench' })).toBeInTheDocument();
 
-    await user.click(
-      await screen.findByRole('link', { name: /open tumor board workspace/i }),
-    );
+    await user.click(await screen.findByRole('link', { name: 'Open project library' }));
 
-    expect(await screen.findByRole('link', { name: 'Open active notebook' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument();
+    expect(screen.getByTestId('library-inventory-surface')).toHaveAttribute('data-density', 'dense');
 
-    await user.click(screen.getByRole('link', { name: 'Open active notebook' }));
+    await user.click(screen.getByRole('link', { name: 'Open reader' }));
 
-    expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
-    expect(screen.getByText('Notebook questions')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
+    expect(await screen.findByTestId('reader-document-canvas')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
+    expect(screen.getByText('Tumor board evidence review')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Reader supporting context' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Open notebook' }));
+
+    expect(await screen.findByRole('heading', { name: 'Notebook' })).toBeInTheDocument();
+    expect(screen.getByTestId('document-editor')).toBeInTheDocument();
 
     await user.type(
       screen.getByRole('textbox', {
-        name: /private note for/i,
+        name: 'Private notebook document',
       }),
       'Private notebook body that stays in notebook only.',
     );
-    await user.click(screen.getByRole('button', { name: 'Save private note' }));
+    await user.click(screen.getByRole('button', { name: 'Save notebook' }));
     expect(
-      await screen.findByText('Private notebook body that stays in notebook only.'),
+      await screen.findByDisplayValue('Private notebook body that stays in notebook only.'),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Back to reader' }));
-
-    expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { name: 'Evidence companion' }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to notebook' })).toHaveAttribute(
-      'href',
-      '/projects/tumor-board/library/entry-1/notes',
-    );
-
-    await user.click(screen.getByRole('link', { name: 'Back to notebook' }));
-
-    expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
-    expect(
-      await screen.findByText('Private notebook body that stays in notebook only.'),
-    ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Insert into project docs' }));
     expect(await screen.findByText('Project-owned reference created.')).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Open project docs' }));
 
     expect(await screen.findByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
+    expect(screen.getByTestId('document-editor')).toBeInTheDocument();
     expect(
       screen.getByRole('heading', {
         name: 'References, publish state, and governed jobs',
@@ -425,13 +515,12 @@ describe('mvp workflow shell', () => {
 
       await user.click(screen.getByRole('link', { name: 'Open reader' }));
 
-      expect(await screen.findByText('AI evidence companion')).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
+      expect(screen.getByText('Tumor board evidence review')).toBeInTheDocument();
       expect(screen.getByText('Evidence-backed summary for board prep.')).toBeInTheDocument();
-      await user.click(screen.getByRole('tab', { name: '关键信息' }));
-      expect(screen.getByText('Retrieval state')).toBeInTheDocument();
-      expect(screen.getByText('Full text available · No')).toBeInTheDocument();
-
-      await user.click(screen.getByRole('tab', { name: '共享评论' }));
+      expect(screen.getByRole('heading', { name: 'Governed insights' })).toBeInTheDocument();
+      expect(screen.getAllByText('Reading document ready')).toHaveLength(2);
+      expect(screen.getByText('Full text available · Yes')).toBeInTheDocument();
     expect(screen.getByText('Key mutation note')).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Open project docs' }));
@@ -457,7 +546,8 @@ describe('mvp workflow shell', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Evidence companion' })).toBeInTheDocument();
+    expect(await screen.findByTestId('reader-document-canvas')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Reader supporting context' })).toBeInTheDocument();
     expect(screen.getByLabelText('context bar')).toHaveTextContent(
       'Project context · tumor-board',
     );

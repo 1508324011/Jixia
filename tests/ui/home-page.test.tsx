@@ -37,7 +37,7 @@ const workbenchSummaryResponse = {
   ],
   resumeTargets: [
     {
-      description: 'Jump back into the question-driven synthesis lane for the active tumor board notebook.',
+      description: 'Reopen the private notebook document linked to the active tumor board paper.',
       kind: 'notebook',
       title: 'Resume notebook',
       to: '/projects/tumor-board/library/entry-1/notes',

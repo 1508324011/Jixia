@@ -315,7 +315,7 @@ describe('native demo workflow', () => {
     expect(await screen.findByText('Imported PMID paper 654321')).toBeInTheDocument();
   });
 
-  it('routes reader, private notes, and project docs through separate surfaces', async () => {
+  it('routes library, reader, ai workspace, notebook, and project docs through separate surfaces', async () => {
     const user = userEvent.setup();
 
     window.history.replaceState(
@@ -324,6 +324,15 @@ describe('native demo workflow', () => {
       '/projects/tumor-board/library/entry-1/reader',
     );
 
+    const sharedComment = {
+      authorUserId: 'demo-operator',
+      body: 'Key mutation note',
+      createdAt: '2026-03-22T01:00:00.000Z',
+      id: 'note-shared-1',
+      libraryEntryId: 'entry-1',
+      visibility: 'space_shared',
+    };
+
     const readingResponse = {
       asset: {
         abstractText: 'Imported PMID metadata for 123456',
@@ -331,11 +340,30 @@ describe('native demo workflow', () => {
         id: 'asset-pmid-123456',
         title: 'Imported PMID paper 123456',
       },
+      document: {
+        sections: [
+          {
+            body: 'Imported PMID paper 123456\n\nImported PMID metadata for 123456\n\nReader centers the paper while AI Workspace and Notebook stay adjacent but independent.',
+            id: 'section-overview',
+            title: 'Overview',
+          },
+        ],
+        title: 'Imported PMID paper 123456',
+      },
       entry: {
         id: 'entry-1',
         visibility: 'space_shared',
       },
-      insights: [] as Array<{
+      insights: [
+        {
+          conversationId: 'conversation-1',
+          createdAt: '2026-03-22T01:05:00.000Z',
+          evidenceSpans: [],
+          id: 'insight-1',
+          libraryEntryId: 'entry-1',
+          summary: 'Evidence-backed summary for board prep.',
+        },
+      ] as Array<{
         conversationId: string;
         createdAt: string;
         evidenceSpans: Array<never>;
@@ -343,7 +371,7 @@ describe('native demo workflow', () => {
         libraryEntryId: string;
         summary: string;
       }>,
-      notes: [] as Array<{
+      notes: [sharedComment] as Array<{
         authorUserId: string;
         body: string;
         createdAt: string;
@@ -351,7 +379,89 @@ describe('native demo workflow', () => {
         libraryEntryId: string;
         visibility: string;
       }>,
+      retrieval: {
+        detail: 'Structured reading content is ready for the document-first canvas.',
+        fullTextAvailable: true,
+        state: 'document-ready',
+        summary: 'Reading document ready',
+      },
+      workspace: {
+        companion: {
+          notebookPath: '/projects/tumor-board/library/entry-1/notes',
+          projectDocsPath: '/projects/tumor-board/writing/doc-1',
+          projectPath: '/projects/tumor-board',
+          readerPath: '/projects/tumor-board/library/entry-1/reader',
+        },
+        notebookId: 'notebook-1',
+        sharedComments: [sharedComment],
+      },
     };
+
+    const notebookSummaryResponse = {
+      notebook: {
+        entryId: 'entry-1',
+        noteCount: 0,
+        notebookId: 'notebook-1',
+        notesPath: '/projects/tumor-board/library/entry-1/notes',
+        paperAssetId: 'asset-pmid-123456',
+        paperTitle: 'Imported PMID paper 123456',
+        projectDocsPath: '/projects/tumor-board/writing/doc-1',
+        projectId: 'tumor-board',
+        readerPath: '/projects/tumor-board/library/entry-1/reader',
+        spaceId: 'shared-space',
+        title: 'Tumor board notebook',
+        updatedAt: '2026-03-22T01:00:00.000Z',
+        workspaceLabel: 'Tumor board workspace',
+        workspacePath: '/projects/tumor-board',
+      },
+    };
+
+    const notebookDocumentResponse: {
+      document: {
+        documentId: string;
+        latestSnapshot: null | {
+          capturedAt: string;
+          content: string;
+        };
+        ownerType: 'user';
+        ownerUserId: string;
+        title: string;
+        visibility: 'private';
+      };
+    } = {
+      document: {
+        documentId: 'notebook-document-1',
+        latestSnapshot: null,
+        ownerType: 'user' as const,
+        ownerUserId: 'demo-operator',
+        title: 'Tumor board notebook',
+        visibility: 'private' as const,
+      },
+    };
+
+    const aiWorkspaceResponse = {
+      workspace: {
+        activeSessionId: 'session-1',
+        sessions: [
+          {
+            attachedEntries: [
+              {
+                canonicalId: 'pmid:123456',
+                entryId: 'entry-1',
+                paperAssetId: 'asset-pmid-123456',
+                title: 'Imported PMID paper 123456',
+              },
+            ],
+            createdAt: '2026-03-22T01:00:00.000Z',
+            id: 'session-1',
+            summary: 'Board prep session docked next to Reader.',
+            title: 'Tumor board evidence review',
+            updatedAt: '2026-03-24T10:00:00.000Z',
+          },
+        ],
+      },
+    };
+
     const documentResponse = {
       document: {
         documentId: 'doc-1',
@@ -386,6 +496,13 @@ describe('native demo workflow', () => {
       },
     };
 
+    const governedSummaryResponse = {
+      governedJob: null,
+    };
+
+    let currentNotebookSummaryResponse = structuredClone(notebookSummaryResponse);
+    let currentNotebookDocumentResponse = structuredClone(notebookDocumentResponse);
+
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -395,6 +512,7 @@ describe('native demo workflow', () => {
             : input instanceof URL
               ? input.toString()
               : input.url;
+        const requestMethod = init?.method ?? 'GET';
 
         if (
           requestUrl.endsWith('/api/reading/entry-1') &&
@@ -410,11 +528,59 @@ describe('native demo workflow', () => {
           return jsonResponse(readingResponse);
         }
 
+        if (requestUrl.endsWith('/api/ai/workspace?entryId=entry-1')) {
+          return jsonResponse(aiWorkspaceResponse);
+        }
+
+        if (requestUrl.endsWith('/api/notebooks/notebook-1')) {
+          return jsonResponse(currentNotebookSummaryResponse);
+        }
+
+        if (requestMethod === 'GET' && requestUrl.endsWith('/api/notebooks/notebook-1/document')) {
+          return jsonResponse(currentNotebookDocumentResponse);
+        }
+
+        if (requestMethod === 'POST' && requestUrl.endsWith('/api/notebooks/notebook-1/document')) {
+          const body = JSON.parse(String(init?.body ?? '{}')) as {
+            content?: string;
+            title?: string;
+          };
+
+          currentNotebookDocumentResponse = {
+            document: {
+              ...currentNotebookDocumentResponse.document,
+              latestSnapshot: {
+                capturedAt: '2026-03-24T10:00:00.000Z',
+                content: body.content ?? '',
+              },
+              title: body.title ?? currentNotebookDocumentResponse.document.title,
+            },
+          };
+          currentNotebookSummaryResponse = {
+            notebook: {
+              ...currentNotebookSummaryResponse.notebook,
+              title: body.title ?? currentNotebookSummaryResponse.notebook.title,
+              updatedAt:
+                currentNotebookDocumentResponse.document.latestSnapshot?.capturedAt ??
+                currentNotebookSummaryResponse.notebook.updatedAt,
+            },
+          };
+
+          return jsonResponse(currentNotebookDocumentResponse);
+        }
+
         if (
           requestUrl.endsWith('/api/writing/shared-space/projects/tumor-board/document') &&
           (!init?.method || init.method === 'GET')
         ) {
           return jsonResponse(documentResponse);
+        }
+
+        if (
+          requestUrl.endsWith('/api/spaces/shared-space/governed-summary') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return jsonResponse(governedSummaryResponse);
         }
 
         if (
@@ -491,23 +657,25 @@ describe('native demo workflow', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Imported PMID paper 123456')).toBeInTheDocument();
-    expect(screen.getByText('Imported PMID metadata for 123456')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Promote latest insight to Writer' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
+    expect(await screen.findByTestId('reader-document-canvas')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
+    expect(screen.getByText('Tumor board evidence review')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Open notes workspace' }));
+    await user.click(screen.getByRole('link', { name: 'Open notebook' }));
 
-    expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Notebook' })).toBeInTheDocument();
+    expect(screen.getByTestId('document-editor')).toBeInTheDocument();
 
     await user.type(
       screen.getByRole('textbox', {
-        name: 'Private note for “What changes my interpretation of this paper?”',
+        name: 'Private notebook document',
       }),
       'Key mutation note',
     );
-    await user.click(screen.getByRole('button', { name: 'Save private note' }));
+    await user.click(screen.getByRole('button', { name: 'Save notebook' }));
 
-    expect(await screen.findByText('Key mutation note')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('Key mutation note')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Insert into project docs' }));
 
@@ -516,7 +684,10 @@ describe('native demo workflow', () => {
     await user.click(screen.getByRole('link', { name: 'Open project docs' }));
 
     expect(await screen.findByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Initial seeded paragraph.')).toBeInTheDocument();
+    expect(screen.getByTestId('document-editor')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Project document' })).toHaveValue(
+      'Initial seeded paragraph.',
+    );
     expect(screen.getByText('Reference rail')).toBeInTheDocument();
     expect(screen.getByText('Key mutation note')).toBeInTheDocument();
   });
@@ -649,12 +820,63 @@ describe('native demo workflow', () => {
               id: 'asset-pmid-789012',
               title: 'Imported PMID paper 789012',
             },
+            document: {
+              sections: [
+                {
+                  body: 'Imported PMID paper 789012\n\nImported PMID metadata for 789012\n\nReader remains document-first even in created spaces.',
+                  id: 'section-overview',
+                  title: 'Overview',
+                },
+              ],
+              title: 'Imported PMID paper 789012',
+            },
             entry: {
               id: 'entry-2',
               visibility: 'space_shared',
             },
             insights: [],
             notes: [],
+            retrieval: {
+              detail: 'Structured reading content is ready for the document-first canvas.',
+              fullTextAvailable: true,
+              state: 'document-ready',
+              summary: 'Reading document ready',
+            },
+            workspace: {
+              companion: {
+                notebookPath: '/projects/tumor-board/library/entry-2/notes?spaceId=space-2',
+                projectDocsPath: '/projects/tumor-board/writing/doc-2?spaceId=space-2',
+                projectPath: '/projects/tumor-board?spaceId=space-2',
+                readerPath: '/projects/tumor-board/library/entry-2/reader?spaceId=space-2',
+              },
+              notebookId: 'notebook-2',
+              sharedComments: [],
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/ai/workspace?entryId=entry-2')) {
+          return jsonResponse({
+            workspace: {
+              activeSessionId: 'session-2',
+              sessions: [
+                {
+                  attachedEntries: [
+                    {
+                      canonicalId: 'pmid:789012',
+                      entryId: 'entry-2',
+                      paperAssetId: 'asset-pmid-789012',
+                      title: 'Imported PMID paper 789012',
+                    },
+                  ],
+                  createdAt: '2026-03-22T02:00:00.000Z',
+                  id: 'session-2',
+                  summary: 'Created-space review session.',
+                  title: 'Created-space evidence review',
+                  updatedAt: '2026-03-24T12:00:00.000Z',
+                },
+              ],
+            },
           });
         }
 
@@ -668,7 +890,10 @@ describe('native demo workflow', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Imported PMID paper 789012')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
+    expect(await screen.findByTestId('reader-document-canvas')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
+    expect(screen.getByText('Created-space evidence review')).toBeInTheDocument();
     expect(screen.getByText('Imported PMID metadata for 789012')).toBeInTheDocument();
     expect(screen.getByText('Space context · space-2')).toBeInTheDocument();
   });
@@ -846,8 +1071,9 @@ describe('native demo workflow', () => {
     render(<App />);
 
     expect(await screen.findByDisplayValue('Initial seeded paragraph.')).toBeInTheDocument();
+    expect(screen.getByTestId('document-editor')).toBeInTheDocument();
 
-    const editor = screen.getByRole('textbox', { name: 'Draft content' });
+    const editor = screen.getByRole('textbox', { name: 'Project document' });
     await user.clear(editor);
     await user.type(editor, 'Updated tumor board synthesis.');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
@@ -971,8 +1197,9 @@ describe('native demo workflow', () => {
 
     expect(await screen.findByDisplayValue('Created space draft.')).toBeInTheDocument();
     expect(screen.getByText('Space context · space-2')).toBeInTheDocument();
+    expect(screen.getByTestId('document-editor')).toBeInTheDocument();
 
-    const editor = screen.getByRole('textbox', { name: 'Draft content' });
+    const editor = screen.getByRole('textbox', { name: 'Project document' });
     await user.clear(editor);
     await user.type(editor, 'Created space synthesis after review.');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
@@ -993,17 +1220,25 @@ describe('native demo workflow', () => {
   it('keeps the runbook wording aligned with the native showcase controls', () => {
     const runbook = readFileSync(RUNBOOK_PATH, 'utf8');
 
-    expect(runbook).toContain('Home -> Projects -> Notebooks -> Reader -> Project Docs');
+    expect(runbook).toContain('Home -> Projects -> Library -> Reader -> AI Workspace / Notebook -> Project Docs');
     expect(runbook).toContain('Genomics Sandbox');
     expect(runbook).toContain('Research workbench');
     expect(runbook).toContain('Open tumor board workspace');
-    expect(runbook).toContain('Open active notebook');
-    expect(runbook).toContain('Open related reader');
-    expect(runbook).toContain('Back to notebook');
+    expect(runbook).toContain('Open project library');
+    expect(runbook).toContain('Open reader');
+    expect(runbook).toContain('Open notebook');
+    expect(runbook).toContain('Open AI workspace');
+    expect(runbook).toContain('Save notebook');
     expect(runbook).toContain('Insert into project docs');
     expect(runbook).toContain('Open project docs');
     expect(runbook).toContain('Back to project');
+    expect(runbook).toContain('Reader supporting context');
     expect(runbook).not.toContain('Home -> Intake -> Library -> Reader -> Notes Workspace -> Project Docs');
+    expect(runbook).not.toContain('Notes workspace');
+    expect(runbook).not.toContain('Notebook questions');
+    expect(runbook).not.toContain('Evidence companion');
+    expect(runbook).not.toContain('Open related reader');
+    expect(runbook).not.toContain('Back to notebook');
     expect(runbook).not.toContain('browser-facing `quote / insert helper`');
     expect(runbook).not.toContain('browser users can yet create projected references');
   });

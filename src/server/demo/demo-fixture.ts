@@ -107,6 +107,7 @@ export function createEmptyAppState(): JixiaAppState {
     libraryEntries: [],
     memberships: [],
     nextSequence: 0,
+    notebookDocuments: [],
     notebookNotes: [],
     notebookQuestions: [],
     notebookRecords: [],

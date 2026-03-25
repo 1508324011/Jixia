@@ -9,9 +9,9 @@ versioned writing, and governed AI jobs.
 
 This branch now combines three truths in one runnable worktree:
 
-1. a server-first backend scaffold for spaces, library, reading, writing, and governed AI jobs
-2. a verified workbench browser surface for `Home -> Today/Search/Library/Projects/Settings`
-3. the implemented reset toward **Unified Intake & Deep Reading Workbench**, including canonical `/projects/...` routes, a three-pane shell, separate `Reader` / `Notes Workspace` / `Project Docs` surfaces, and project-owned document semantics
+1. a server-first backend scaffold for spaces, library, reading, notebook documents, writing, and governed AI jobs
+2. a verified workbench browser surface for `Home -> Projects -> Search/Library -> Reader -> AI Workspace / Notebook -> Project Docs`
+3. the implemented reset toward **Unified Intake & Deep Reading Workbench**, including canonical `/projects/...` routes, a three-pane shell, dense feeder surfaces, a global `AI Workspace`, a private document-first `Notebook`, a document-first `Reader`, and project-owned document semantics
 
 The branch is no longer describing the reset only as a plan. Tasks 1–9 of the risk-first reset are now landed and verified in `demo-native-showcase`; the remaining forward-looking work is operator packaging plus broader recommendation/push-lane follow-through on top of the already-shipped notebook-to-project projection boundary.
 
@@ -29,10 +29,10 @@ This downstream branch inherits the current-host beta path from `main`, but the 
 
 - browser entry through `/home`
 - `Research workbench` shell with stable left/main/right rails
-- `Today intake` and `Discovery intake` surfaces for the `Discovery & Intake` pull lane
-- personal `Library inventory`
-- deep reading in `Reader`
-- private note capture in `Notes Workspace`
+- dense `Search intake boards` and `Library inventory` feeder surfaces
+- deep reading in a document-first `Reader`
+- an independent global `AI Workspace` docked on the right when entering Reader
+- private note capture in a document-first `Notebook`
 - shared drafting in `Project Docs`
 
 The extra difference here is intentional: `demo-native-showcase` keeps deterministic reset, packaged runtime handoff, and compatibility redirects from legacy `/spaces/...` deep links into canonical `/projects/...` routes. Those redirects are now shims, not a second route authority.
@@ -43,9 +43,10 @@ The approved next-wave target remains **Unified Intake & Deep Reading Workbench*
 
 That milestone does **not** claim that automatic recommendation is already complete. Instead, it freezes these boundaries for the current implementation wave:
 
-- `Discovery & Intake` becomes a bounded context with explicit **Pull lane** (`搜索`, DOI / URL / local PDF ingest) and **Push lane** (`今日推荐`, recommendation refresh / ranking)
-- only **imported inventory** may enter deep reading, `Notes Workspace`, evidence creation, and `Project Docs`
-- `Notebook` remains fully private and question-centered
+- `Discovery & Intake` remains a bounded context, but the implemented browser story now routes reviewers through dense `Search` / `Library` feeder surfaces rather than a `/today`-first choreography
+- only **imported inventory** may enter deep reading, `Notebook`, evidence creation, and `Project Docs`
+- `Notebook` remains fully private and document-first
+- `AI Workspace` is globally reachable and docks into Reader without becoming reader-owned state
 - `Project Docs` are project-owned shared writing objects
 - notebook-to-project handoff now happens only through the explicit browser-side **Insert into project docs** projection flow, never by sharing notebook bodies directly
 
@@ -74,14 +75,14 @@ The web layer now combines the runnable native demo with the implemented workben
 The shipped browser surface includes:
 
 - `src/web/app.tsx` and `src/web/router.tsx`
-- `/home`, `/today`, `/search`, `/library`, `/projects`, and `/projects/:projectId/...` as the canonical route tree
+- `/home`, `/search`, `/library`, `/notebooks`, `/ai`, `/projects`, and `/projects/:projectId/...` as the canonical route tree
 - a stable three-pane `Research workbench` shell
-- `Today intake` and `Discovery intake` boards for the pull lane
-- `Library inventory` for personal and project evidence shelves
-- `Reader` as a deep-reading surface only
-- `Notes Workspace` as the private notebook surface
+- dense `Search intake boards` for intake and `Library inventory` for personal and project evidence shelves
+- `Reader` as a document-first reading surface
+- `AI Workspace` as a global surface that also docks into Reader
+- `Notebook` as the private notebook surface
 - `Project Docs` as the shared project-owned drafting surface
-- real native HTTP endpoints for discovery, settings, personal imports, reading detail, private/shared note storage, governed insights, and project-doc load/save/publish
+- real native HTTP endpoints for discovery, settings, personal imports, reading detail, notebook document load/save, AI workspace data, private/shared note storage, governed insights, and project-doc load/save/publish
 - legacy `/spaces/...` deep links preserved only as compatibility redirects into `/projects/...`
 
 `space` still remains authoritative in permissions, persistence, and audit logic. The browser route truth is now `/projects/...`, while explicit `spaceId` query parameters preserve shared-space context when compatibility or shared project flows need it.
@@ -89,9 +90,11 @@ The shipped browser surface includes:
 ## Truthful Runtime Notes
 
 - `/login` still exists as a shell entry, but the primary browser flow starts from `/home`
-- `GET /api/discovery/today` and `GET /api/discovery/search?query=...` back the current `Discovery & Intake` slice
+- `GET /api/discovery/today` and `GET /api/discovery/search?query=...` back the current discovery slice, but `/today` is no longer the canonical reviewer walkthrough entrypoint
 - `GET /api/library/personal` and `POST /api/library/personal/import` keep personal import ownership on the server
-- `GET /api/reading/:entryId`, `POST /api/reading/:entryId/notes`, and `POST /api/reading/:entryId/insights` back deep reading plus the current Notes/insight surfaces
+- `GET /api/reading/:entryId`, `POST /api/reading/:entryId/notes`, and `POST /api/reading/:entryId/insights` back the document-first Reader plus note/insight capture
+- `GET /api/notebooks/:id`, `GET /api/notebooks/:id/document`, and `POST /api/notebooks/:id/document` back the private notebook document model
+- `GET /api/ai/workspace` backs the global/docked AI workspace surface
 - `GET /api/writing/:spaceId/projects/:projectId/document` and `POST /api/writing/:spaceId/projects/:projectId/document` now back `Project Docs`, not a user-owned Writer draft model
 - `POST /api/writing/:docId/publish?spaceId=...` and governed-summary routes remain part of the deterministic native demo path
 - `/api/spaces` and legacy `/spaces/...` browser entry points remain demo/operator conveniences or redirect shims, not the canonical workbench route tree
@@ -104,7 +107,7 @@ Current branch verification is maintained with:
 - `npm run typecheck`
 - `npm run build`
 
-Targeted verification also covers canonical routing, personal-vs-project context switching, discovery/import seams, notebook/project projection boundaries, project-doc ownership, the three-pane shell, Reader/Notes Workspace/Project Docs separation, the native walkthrough, and the packaged demo docs.
+Targeted verification also covers canonical routing, personal-vs-project context switching, discovery/import seams, notebook/project projection boundaries, project-doc ownership, the three-pane shell, Search/Library density, Reader/AI/Notebook/Project Docs separation, the native walkthrough, and the packaged demo docs.
 
 ## Near-Term Direction
 

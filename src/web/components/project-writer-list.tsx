@@ -47,7 +47,7 @@ export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps
             setDocument(null);
           } else {
             setLoadError(
-              error instanceof Error ? error.message : 'Failed to load the Writer preview.',
+              error instanceof Error ? error.message : 'Failed to load the Project Docs preview.',
             );
           }
         }
@@ -72,12 +72,12 @@ export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps
     <div className="panel-grid" aria-label="project writer documents">
       {isLoading ? (
         <article className="panel">
-          <h3 className="panel-title">Loading Writer preview…</h3>
+          <h3 className="panel-title">Loading Project Docs preview…</h3>
           <p className="quiet-copy">Checking whether a promoted draft already exists.</p>
         </article>
       ) : loadError ? (
         <article className="panel">
-          <h3 className="panel-title">Writer preview unavailable</h3>
+          <h3 className="panel-title">Project Docs preview unavailable</h3>
           <p className="quiet-copy">{loadError}</p>
         </article>
         ) : document ? (

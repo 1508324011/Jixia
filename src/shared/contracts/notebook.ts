@@ -25,6 +25,24 @@ export interface NotebookNoteRecord {
   createdAt: string;
 }
 
+export interface NotebookDocumentSnapshot {
+  capturedAt: string;
+  content: string;
+}
+
+export interface NotebookDocumentView {
+  documentId: string;
+  latestSnapshot: NotebookDocumentSnapshot | null;
+  ownerType: 'user';
+  ownerUserId: string;
+  title: string;
+  visibility: 'private';
+}
+
+export interface NotebookDocumentRecord extends NotebookDocumentView {
+  notebookId: string;
+}
+
 export interface NotebookSummaryView {
   entryId: string;
   noteCount: number;
@@ -48,6 +66,10 @@ export interface NotebookListResponse {
 
 export interface NotebookDetailResponse {
   notebook: NotebookSummaryView;
+}
+
+export interface NotebookDocumentResponse {
+  document: NotebookDocumentView;
 }
 
 export const notebookContract = 'jixia-notebook-contract';

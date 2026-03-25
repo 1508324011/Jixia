@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 
 import { WorkbenchLayout } from './components/workbench-layout';
+import { AiWorkspacePage } from './pages/ai-workspace-page';
 import { HomePage } from './pages/home-page';
 import { LibraryPage } from './pages/library-page';
 import { LoginPage } from './pages/login-page';
@@ -60,6 +61,7 @@ export function AppRouter() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<WorkbenchLayout />}>
         <Route path="/home" element={<HomePage />} />
+        <Route path="/ai" element={<AiWorkspacePage />} />
         <Route path="/today" element={<TodayPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/library" element={<LibraryPage mode="personal" />} />

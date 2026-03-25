@@ -27,6 +27,15 @@ describe('research workbench shell', () => {
     );
   });
 
+  it('keeps the context rail as a quieter supporting surface', () => {
+    renderWorkbench('/home');
+
+    expect(screen.getByTestId('workbench-context-rail')).toHaveAttribute(
+      'data-rail-variant',
+      'supporting',
+    );
+  });
+
   it('does not render a redundant personal lane panel in personal workbench routes', () => {
     renderWorkbench('/library');
 

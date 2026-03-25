@@ -221,7 +221,12 @@ export function SearchPage() {
         </section>
       ) : null}
 
-      <section aria-label="search results" className="search-results-lanes">
+      <section
+        aria-label="search results"
+        className="search-results-lanes"
+        data-density="dense"
+        data-testid="search-intake-surface"
+      >
         {boards.map((board) => (
           <IntakeSourceBoard
             importingId={importingId}

@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 
+import type { AiWorkspaceView } from '@shared/contracts/ai-workspace';
 import type { GovernedJobView } from '@shared/contracts/jobs';
 import type {
+  ReadingDocumentView,
   ReadingDetailView,
   ReadingRetrievalStateView,
   ReadingWorkspaceView,
 } from '@shared/contracts/reading';
-import {
-  defaultNotebookQuestionPrompts,
-  metadataOnlyReadingRetrievalState,
-} from '@shared/contracts/reading';
+import { metadataOnlyReadingRetrievalState } from '@shared/contracts/reading';
 
-import { PaperWorkspaceTabs } from '../components/paper-workspace-tabs';
+import { AiWorkspaceShell } from '../components/ai-workspace-shell';
+import { ReaderDocumentCanvas } from '../components/reader-document-canvas';
 import {
   createDemoApi,
   getGovernedSummary,
@@ -77,21 +77,35 @@ function resolveReaderWorkspace(detail: ReadingDetailView): ReadingWorkspaceView
     return detail.workspace;
   }
 
-  const notebookId = `notebook-${detail.entry.id}`;
-
   return {
-    notebookId,
-    privateNotes: detail.notes.filter((note) => note.visibility === 'private'),
-    questions: defaultNotebookQuestionPrompts.map((prompt, index) => ({
-      id: `${notebookId}-question-${index + 1}`,
-      prompt,
-    })),
+    notebookId: `notebook-${detail.entry.id}`,
     sharedComments: detail.notes.filter((note) => note.visibility === 'space_shared'),
   };
 }
 
 function resolveRetrievalState(detail: ReadingDetailView): ReadingRetrievalStateView {
   return detail.retrieval ?? { ...metadataOnlyReadingRetrievalState };
+}
+
+function resolveReadingDocument(detail: ReadingDetailView): ReadingDocumentView {
+  if (detail.document?.sections?.length) {
+    return detail.document;
+  }
+
+  return {
+    sections: [
+      {
+        body: [
+          detail.asset.title,
+          detail.asset.abstractText?.trim() || 'No abstract was imported for this record.',
+          'Reader keeps the paper itself centered even when the stored document payload has not been expanded yet.',
+        ].join('\n\n'),
+        id: 'section-overview',
+        title: 'Overview',
+      },
+    ],
+    title: detail.asset.title,
+  };
 }
 
 export function ReaderPage() {
@@ -103,6 +117,9 @@ export function ReaderPage() {
   const resolvedSpaceId = spaceId ?? DEFAULT_PROJECT_SPACE_ID;
 
   const [detail, setDetail] = useState<ReadingDetailView | null>(null);
+  const [aiWorkspace, setAiWorkspace] = useState<AiWorkspaceView | null>(null);
+  const [aiLoadError, setAiLoadError] = useState<string | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [governedJob, setGovernedJob] = useState<GovernedJobView | null>(null);
@@ -148,6 +165,38 @@ export function ReaderPage() {
   }, [entryId, hasExplicitSpaceContext, resolvedSpaceId]);
 
   useEffect(() => {
+    let isCancelled = false;
+
+    async function loadAiWorkspace(): Promise<void> {
+      setIsAiLoading(true);
+      setAiLoadError(null);
+
+      try {
+        const response = await demoApi.getAiWorkspace({ entryId });
+
+        if (!isCancelled) {
+          setAiWorkspace(response.workspace);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setAiWorkspace(null);
+          setAiLoadError(error instanceof Error ? error.message : 'Failed to load the AI workspace.');
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsAiLoading(false);
+        }
+      }
+    }
+
+    void loadAiWorkspace();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [entryId]);
+
+  useEffect(() => {
     if (!hasExplicitSpaceContext) {
       setGovernedJob(null);
       return;
@@ -181,7 +230,8 @@ export function ReaderPage() {
     () => (detail ? resolveRetrievalState(detail) : { ...metadataOnlyReadingRetrievalState }),
     [detail],
   );
-  const privateNotes = workspace?.privateNotes ?? [];
+  const readingDocument = useMemo(() => (detail ? resolveReadingDocument(detail) : null), [detail]);
+  const privateNotes = detail?.notes.filter((note) => note.visibility === 'private') ?? [];
   const projectComments = workspace?.sharedComments ?? [];
   const linkedSpaceContext = hasExplicitSpaceContext ? resolvedSpaceId : DEFAULT_PROJECT_SPACE_ID;
   const defaultProjectDocsPath = projectId
@@ -205,11 +255,11 @@ export function ReaderPage() {
   return (
     <main className="page-shell">
       <header className="page-header">
-        <p className="page-kicker">Evidence companion · paper review · notebook handoff</p>
-        <h1 className="page-title">Reader</h1>
+        <p className="page-kicker">Reading surface · linked notebook · docked AI</p>
+        <h1 className="page-title">{isLoading || isAiLoading ? 'Loading Reader…' : 'Reader'}</h1>
         <p className="page-description">
-          Review the evidence here, then move back into the notebook and project surfaces where
-          synthesis and drafting actually live.
+          Review the evidence here, then continue into Notebook, AI Workspace, or Project Docs
+          without collapsing those surfaces into the reader route.
         </p>
       </header>
 
@@ -222,7 +272,7 @@ export function ReaderPage() {
       </section>
 
       <section className="reader-page" aria-label="reading layout">
-        <article className="panel paper-surface">
+        <article className="panel paper-surface reader-document-surface">
           {isLoading ? (
             <>
               <h2 className="panel-title">Loading reading detail…</h2>
@@ -233,14 +283,22 @@ export function ReaderPage() {
               <h2 className="panel-title">Reader unavailable</h2>
               <p className="quiet-copy">{loadError}</p>
             </>
-          ) : detail ? (
-            <>
-              <h2 className="panel-title">{detail.asset.title}</h2>
-              <p className="quiet-copy">
-                {detail.asset.abstractText ?? 'No abstract was imported for this record.'}
-              </p>
-              <p className="quiet-copy">Canonical source · {detail.asset.canonicalId}</p>
-            </>
+            ) : detail ? (
+              <>
+                <div className="reader-document-surface__intro stack-xs">
+                  <p className="page-kicker">Document-first reading canvas</p>
+                  <p className="quiet-copy">
+                    Read on the left, keep AI docked on the right, and exit into Notebook or
+                    Project Docs without turning Reader back into a companion-tab shell.
+                  </p>
+                </div>
+
+                <ReaderDocumentCanvas
+                  canonicalId={detail.asset.canonicalId}
+                  document={readingDocument ?? resolveReadingDocument(detail)}
+                  retrieval={retrievalState}
+                />
+              </>
           ) : (
             <>
               <h2 className="panel-title">No reading record found</h2>
@@ -249,48 +307,129 @@ export function ReaderPage() {
           )}
         </article>
 
-        <aside className="panel paper-workspace">
-          <h2 className="panel-title">Evidence companion</h2>
-          <p className="quiet-copy">
-            Reader stays subordinate to notebook synthesis and project drafting. Use the companion
-            links to move back into the surfaces where decisions are made.
-          </p>
-          {detail ? (
-            <PaperWorkspaceTabs
-              governedJob={governedJob}
-              insights={detail.insights}
-              privateNotes={privateNotes}
-              retrieval={retrievalState}
-              sharedComments={projectComments}
+        <aside className="panel paper-workspace reader-support-rail">
+          {aiWorkspace ? (
+            <AiWorkspaceShell
+              description="Dock the active AI conversation beside Reader while keeping notebook and project docs as separate surfaces."
+              headingLevel="h2"
+              workspace={aiWorkspace}
             />
-          ) : null}
+          ) : (
+            <section className="stack-sm" aria-label="AI workspace shell">
+              <div className="stack-xs">
+                <h2 className="panel-title">AI Workspace</h2>
+                <p className="quiet-copy">
+                  {isLoading
+                    ? 'Loading the docked AI workspace…'
+                    : aiLoadError ??
+                      'No AI session is docked yet, but Reader still exits into the standalone workspace.'}
+                </p>
+              </div>
+            </section>
+          )}
 
           {detail ? (
-            <div className="stack-sm">
-              <p className="quiet-copy">
-                Notebook prompts remain the synthesis scaffold in Notes Workspace, while reader keeps
-                the evidence, comments, and governed summaries close at hand.
-              </p>
+            <>
+              <section className="reader-support-card stack-sm" aria-label="Reader supporting context">
+                <div className="stack-xs">
+                  <h2 className="panel-title">Reader supporting context</h2>
+                  <p className="quiet-copy">
+                    Notebook privacy and project ownership stay intact; Reader only mirrors the
+                    evidence you need while reading.
+                  </p>
+                </div>
 
-              <div className="button-row">
-                <Link className="panel-link" to={notebookPath}>
-                  Back to notebook
-                </Link>
-                {projectPath ? (
-                  <Link className="panel-link" to={projectPath}>
-                    Back to project
-                  </Link>
+                <div className="reader-support-grid">
+                  <section className="reader-support-section stack-xs" aria-label="private notes mirror">
+                    <h3 className="panel-title">Private notes</h3>
+                    {privateNotes.length > 0 ? (
+                      <div className="reader-note-list stack-xs">
+                        {privateNotes.map((note) => (
+                          <p key={note.id} className="reader-note-item">
+                            {note.body}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="quiet-copy">No private notes yet. Continue in Notebook.</p>
+                    )}
+                  </section>
+
+                  <section className="reader-support-section stack-xs" aria-label="shared comments mirror">
+                    <h3 className="panel-title">Shared comments</h3>
+                    {projectComments.length > 0 ? (
+                      <div className="reader-note-list stack-xs">
+                        {projectComments.map((note) => (
+                          <p key={note.id} className="reader-note-item">
+                            {note.body}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="quiet-copy">No shared comments yet.</p>
+                    )}
+                  </section>
+                </div>
+
+                <section className="reader-support-section stack-xs" aria-label="reading retrieval state">
+                  <h3 className="panel-title">Reading status</h3>
+                  <div className="reader-status-row">
+                    <span className="status-badge">{retrievalState.summary}</span>
+                    <span className="status-badge">
+                      Full text available · {retrievalState.fullTextAvailable ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <p className="quiet-copy">{retrievalState.detail}</p>
+                </section>
+
+                {detail.insights.length > 0 || governedJob ? (
+                  <section className="reader-support-section stack-xs" aria-label="governed insights mirror">
+                    <h3 className="panel-title">Governed insights</h3>
+                    {detail.insights.length > 0 ? (
+                      <div className="reader-note-list stack-xs">
+                        {detail.insights.map((insight) => (
+                          <p key={insight.id} className="reader-note-item">
+                            {insight.summary}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
+                    {governedJob ? (
+                      <p className="quiet-copy">
+                        {governedJob.events.length} events · {governedJob.audits.length} audit
+                        records · {governedJob.job.status}
+                      </p>
+                    ) : null}
+                  </section>
                 ) : null}
-                <Link className="panel-link" to={notesWorkspacePath}>
-                  Open notes workspace
-                </Link>
-                {resolvedProjectDocsPath ? (
-                  <Link className="panel-link" to={resolvedProjectDocsPath}>
-                    Open project docs
+              </section>
+
+              <div className="stack-sm">
+                <p className="quiet-copy">
+                  Reader passes the current paper context into AI Workspace, but Notebook stays
+                  private and Project Docs stay project-owned.
+                </p>
+
+                <div className="button-row">
+                  <Link className="panel-link" to={notebookPath}>
+                    Open notebook
                   </Link>
-                ) : null}
+                  <Link className="panel-link" to="/ai">
+                    Open AI workspace
+                  </Link>
+                  {projectPath ? (
+                    <Link className="panel-link" to={projectPath}>
+                      Open project overview
+                    </Link>
+                  ) : null}
+                  {resolvedProjectDocsPath ? (
+                    <Link className="panel-link" to={resolvedProjectDocsPath}>
+                      Open project docs
+                    </Link>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            </>
           ) : null}
         </aside>
       </section>

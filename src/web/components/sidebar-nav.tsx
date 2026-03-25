@@ -6,6 +6,7 @@ const workbenchLinks = [
   { label: 'Search', to: '/search' },
   { label: 'Library', to: '/library' },
   { label: 'Notebooks', to: '/notebooks' },
+  { label: 'AI', to: '/ai' },
   { label: 'Settings', to: '/settings' },
 ] as const;
 

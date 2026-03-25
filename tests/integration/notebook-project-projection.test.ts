@@ -39,8 +39,9 @@ async function closeServer(server: ReturnType<typeof createHttpServer>['server']
 }
 
 describe('notebook project projection', () => {
-  it('exposes notebook summaries and notebook detail routes without leaking private note bodies', async () => {
+  it('keeps notebook list/detail metadata-only while the notebook document subresource exposes the private document', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-notebook-routes-'));
+    const notebookContent = 'Private notebook document that only the owner can reopen.';
 
     try {
       const seededApp = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
@@ -82,16 +83,29 @@ describe('notebook project projection', () => {
         },
       });
 
-      try {
-        const baseUrl = await listenOnEphemeralPort(httpServer.server);
-        const listResponse = await fetch(`${baseUrl}/api/notebooks?userId=user-alice`);
-        const listBody = await listResponse.json();
-        const detailResponse = await fetch(`${baseUrl}/api/notebooks/${notebook.id}?userId=user-alice`);
-        const detailBody = await detailResponse.json();
+        try {
+          const baseUrl = await listenOnEphemeralPort(httpServer.server);
+          const saveResponse = await fetch(`${baseUrl}/api/notebooks/${notebook.id}/document?userId=user-alice`, {
+            body: JSON.stringify({
+              content: notebookContent,
+              title: 'Tumor board synthesis notebook',
+            }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          });
+          const listResponse = await fetch(`${baseUrl}/api/notebooks?userId=user-alice`);
+          const listBody = await listResponse.json();
+          const detailResponse = await fetch(`${baseUrl}/api/notebooks/${notebook.id}?userId=user-alice`);
+          const detailBody = await detailResponse.json();
+          const documentResponse = await fetch(
+            `${baseUrl}/api/notebooks/${notebook.id}/document?userId=user-alice`,
+          );
+          const documentBody = await documentResponse.json();
 
-        expect(listResponse.status).toBe(200);
-        expect(listBody.notebooks).toEqual(
-          expect.arrayContaining([
+          expect(saveResponse.status).toBe(200);
+          expect(listResponse.status).toBe(200);
+          expect(listBody.notebooks).toEqual(
+            expect.arrayContaining([
             expect.objectContaining({
               notebookId: notebook.id,
               notesPath: `/notebooks/${notebook.id}`,
@@ -99,24 +113,33 @@ describe('notebook project projection', () => {
               title: 'Tumor board synthesis notebook',
             }),
           ]),
-        );
-        expect(detailResponse.status).toBe(200);
-        expect(detailBody.notebook).toEqual(
-          expect.objectContaining({
-            notebookId: notebook.id,
-            entryId: imported.entry.id,
-            workspacePath: `/projects/tumor-board?spaceId=${sharedSpace.id}`,
-          }),
-        );
-        expect(JSON.stringify(listBody)).not.toContain(
-          'Notebook detail should not expose this body on the summary route.',
-        );
-        expect(JSON.stringify(detailBody)).not.toContain(
-          'Notebook detail should not expose this body on the summary route.',
-        );
-      } finally {
-        await closeServer(httpServer.server);
-      }
+          );
+          expect(detailResponse.status).toBe(200);
+          expect(detailBody.notebook).toEqual(
+            expect.objectContaining({
+              notebookId: notebook.id,
+              entryId: imported.entry.id,
+              workspacePath: `/projects/tumor-board?spaceId=${sharedSpace.id}`,
+            }),
+          );
+          expect(documentResponse.status).toBe(200);
+          expect(documentBody.document).toEqual(
+            expect.objectContaining({
+              ownerType: 'user',
+              ownerUserId: 'user-alice',
+              visibility: 'private',
+              latestSnapshot: expect.objectContaining({
+                content: notebookContent,
+              }),
+            }),
+          );
+          expect(JSON.stringify(listBody)).not.toContain(
+            notebookContent,
+          );
+          expect(JSON.stringify(detailBody)).not.toContain(notebookContent);
+        } finally {
+          await closeServer(httpServer.server);
+        }
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }

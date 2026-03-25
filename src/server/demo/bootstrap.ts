@@ -29,6 +29,7 @@ function normalizeState(parsed: Partial<JixiaAppState>): JixiaAppState {
     libraryEntries: parsed.libraryEntries ?? initialState.libraryEntries,
     memberships: parsed.memberships ?? initialState.memberships,
     nextSequence: parsed.nextSequence ?? initialState.nextSequence,
+    notebookDocuments: parsed.notebookDocuments ?? initialState.notebookDocuments,
     notebookNotes: parsed.notebookNotes ?? initialState.notebookNotes,
     notebookQuestions: parsed.notebookQuestions ?? initialState.notebookQuestions,
     notebookRecords: parsed.notebookRecords ?? initialState.notebookRecords,

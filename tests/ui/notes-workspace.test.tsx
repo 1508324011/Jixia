@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe('notes workspace', () => {
-  it('keeps private notebook capture on a dedicated notes surface', async () => {
+  it('renders a document-first private notebook surface and saves notebook content', async () => {
     const user = userEvent.setup();
     const readingDetail = {
       asset: {
@@ -64,18 +64,36 @@ describe('notes workspace', () => {
           readerPath: '/projects/project-1/library/entry-1/reader?spaceId=shared-space',
         },
         notebookId: 'notebook-1',
-        privateNotes: [],
-        questions: [
-          {
-            id: 'question-1',
-            prompt: 'What changes my interpretation of this paper?',
-          },
-          {
-            id: 'question-2',
-            prompt: 'Which claim deserves a project-level reference?',
-          },
-        ],
         sharedComments: [],
+      },
+    };
+    const notebookSummary = {
+      entryId: 'entry-1',
+      noteCount: 0,
+      notebookId: 'notebook-1',
+      notesPath: '/notebooks/notebook-1',
+      paperAssetId: 'asset-1',
+      paperTitle: 'Tumor board biomarkers for rapid review',
+      projectDocsPath: '/projects/project-1/writing/doc-1?spaceId=shared-space',
+      projectId: 'project-1',
+      readerPath: '/projects/project-1/library/entry-1/reader?spaceId=shared-space',
+      spaceId: 'shared-space',
+      title: 'Tumor board synthesis notebook',
+      updatedAt: '2026-03-23T00:09:00.000Z',
+      workspaceLabel: 'Tumor board workspace',
+      workspacePath: '/projects/project-1?spaceId=shared-space',
+    };
+    const notebookDocument = {
+      document: {
+        documentId: 'notebook-doc-1',
+        latestSnapshot: {
+          capturedAt: '2026-03-23T00:09:00.000Z',
+          content: 'Initial private notebook draft.',
+        },
+        ownerType: 'user',
+        ownerUserId: 'user-alice',
+        title: 'Tumor board synthesis notebook',
+        visibility: 'private',
       },
     };
 
@@ -97,25 +115,39 @@ describe('notes workspace', () => {
         }
 
         if (
-          requestUrl.endsWith('/api/reading/entry-1/notes?spaceId=shared-space') &&
+          requestUrl.endsWith('/api/notebooks/notebook-1') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return jsonResponse({ notebook: notebookSummary });
+        }
+
+        if (
+          requestUrl.endsWith('/api/notebooks/notebook-1/document') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return jsonResponse(notebookDocument);
+        }
+
+        if (
+          requestUrl.endsWith('/api/notebooks/notebook-1/document') &&
           init?.method === 'POST'
         ) {
-          const body = JSON.parse(String(init.body)) as {
-            body: string;
-            visibility: 'private' | 'space_shared';
-          };
+          const body = JSON.parse(String(init.body)) as { content: string; title: string };
 
-          const note = {
-            authorUserId: 'user-alice',
-            body: body.body,
-            createdAt: '2026-03-23T00:10:00.000Z',
-            id: `note-${readingDetail.notes.length + 1}`,
-            libraryEntryId: 'entry-1',
-            visibility: body.visibility,
+          notebookDocument.document = {
+            ...notebookDocument.document,
+            latestSnapshot: {
+              capturedAt: '2026-03-23T00:10:00.000Z',
+              content: body.content,
+            },
+            title: body.title,
           };
-          readingDetail.notes.push(note);
+          Object.assign(notebookSummary, {
+            title: body.title,
+            updatedAt: '2026-03-23T00:10:00.000Z',
+          });
 
-          return jsonResponse({ note }, 201);
+          return jsonResponse(notebookDocument);
         }
 
         throw new Error(`Unexpected fetch: ${requestUrl}`);
@@ -124,30 +156,25 @@ describe('notes workspace', () => {
 
     renderWorkbench('/projects/project-1/library/entry-1/notes?spaceId=shared-space');
 
-    expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
-    expect(screen.getByText('Notebook questions')).toBeInTheDocument();
-    expect(screen.getByText('Notebook · notebook-1')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Notebook' })).toBeInTheDocument();
+    expect(screen.queryByText('Notebook questions')).not.toBeInTheDocument();
+    expect(screen.getByTestId('document-editor')).toBeInTheDocument();
+    const notebookEditor = await screen.findByRole('textbox', {
+      name: 'Private notebook document',
+    });
+    expect(notebookEditor).toHaveValue('Initial private notebook draft.');
     expect(screen.getByRole('link', { name: 'Back to project' })).toHaveAttribute(
       'href',
       '/projects/project-1?spaceId=shared-space',
     );
 
-    await user.click(screen.getByRole('button', { name: 'Which claim deserves a project-level reference?' }));
+    await user.clear(notebookEditor);
+    await user.type(notebookEditor, 'Cross-paper notebook draft for later synthesis.');
+    await user.click(screen.getByRole('button', { name: 'Save notebook' }));
+
     expect(
-      screen.getByRole('textbox', {
-        name: 'Private note for “Which claim deserves a project-level reference?”',
-      }),
+      await screen.findByDisplayValue('Cross-paper notebook draft for later synthesis.'),
     ).toBeInTheDocument();
-
-    await user.type(
-      screen.getByRole('textbox', {
-        name: 'Private note for “Which claim deserves a project-level reference?”',
-      }),
-      'Cross-paper note for later synthesis.',
-    );
-    await user.click(screen.getByRole('button', { name: 'Save private note' }));
-
-    expect(await screen.findByText('Cross-paper note for later synthesis.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open project docs' })).toHaveAttribute(
       'href',
       '/projects/project-1/writing/doc-1?spaceId=shared-space',
@@ -197,14 +224,39 @@ describe('notes workspace', () => {
                 readerPath: '/library/entry-1/reader',
               },
               notebookId: 'notebook-1',
-              privateNotes: [],
-              questions: [
-                {
-                  id: 'question-1',
-                  prompt: 'What changes my interpretation of this paper?',
-                },
-              ],
               sharedComments: [],
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/notebooks/notebook-1')) {
+          return jsonResponse({
+            notebook: {
+              entryId: 'entry-1',
+              noteCount: 0,
+              notebookId: 'notebook-1',
+              notesPath: '/notebooks/notebook-1',
+              paperAssetId: 'asset-1',
+              paperTitle: 'Tumor board biomarkers for rapid review',
+              readerPath: '/library/entry-1/reader',
+              spaceId: 'personal-space-user-alice',
+              title: 'Personal review notebook',
+              updatedAt: '2026-03-23T00:00:00.000Z',
+              workspaceLabel: 'Personal library',
+              workspacePath: '/library',
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/notebooks/notebook-1/document')) {
+          return jsonResponse({
+            document: {
+              documentId: 'notebook-doc-1',
+              latestSnapshot: null,
+              ownerType: 'user',
+              ownerUserId: 'user-alice',
+              title: 'Personal review notebook',
+              visibility: 'private',
             },
           });
         }
@@ -223,7 +275,8 @@ describe('notes workspace', () => {
 
     renderWorkbench('/projects/project-1/library/entry-1/notes');
 
-    expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Notebook' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Private notebook document' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Open project docs' }));
 
@@ -264,6 +317,22 @@ describe('notes workspace', () => {
           });
         }
 
+        if (requestUrl.endsWith('/api/notebooks/notebook-1/document')) {
+          return jsonResponse({
+            document: {
+              documentId: 'notebook-doc-1',
+              latestSnapshot: {
+                capturedAt: '2026-03-24T09:00:00.000Z',
+                content: 'Direct notebook route content.',
+              },
+              ownerType: 'user',
+              ownerUserId: 'user-alice',
+              title: 'Tumor board synthesis notebook',
+              visibility: 'private',
+            },
+          });
+        }
+
         if (requestUrl.endsWith('/api/reading/entry-1')) {
           return jsonResponse({
             asset: {
@@ -296,13 +365,6 @@ describe('notes workspace', () => {
                 readerPath: '/projects/tumor-board/library/entry-1/reader',
               },
               notebookId: 'notebook-1',
-              privateNotes: [],
-              questions: [
-                {
-                  id: 'question-1',
-                  prompt: 'What changes my interpretation of this paper?',
-                },
-              ],
               sharedComments: [],
             },
           });
@@ -314,8 +376,8 @@ describe('notes workspace', () => {
 
     renderWorkbench('/notebooks/notebook-1');
 
-    expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
-    expect(screen.getByText('Notebook · notebook-1')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Notebook' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Direct notebook route content.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Back to notebooks' })).toHaveAttribute(
       'href',
       '/notebooks',

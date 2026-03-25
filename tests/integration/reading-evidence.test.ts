@@ -157,8 +157,21 @@ describe('reading evidence', () => {
 
       expect(reopenedDetail?.retrieval).toEqual(
         expect.objectContaining({
-          fullTextAvailable: false,
-          state: 'metadata-only',
+          fullTextAvailable: true,
+          state: 'document-ready',
+        }),
+      );
+      expect(reopenedDetail).toEqual(
+        expect.objectContaining({
+          document: expect.objectContaining({
+            title: imported.asset.title,
+            sections: expect.arrayContaining([
+              expect.objectContaining({
+                body: expect.stringContaining(imported.asset.abstractText ?? ''),
+                title: 'Overview',
+              }),
+            ]),
+          }),
         }),
       );
       expect(reopenedDetail?.workspace.notebookId).toMatch(/^notebook-/);
@@ -167,24 +180,6 @@ describe('reading evidence', () => {
           notebookPath: `/library/${imported.entry.id}/notes`,
           readerPath: `/library/${imported.entry.id}/reader`,
         }),
-      );
-      expect(reopenedDetail?.workspace.questions).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            prompt: 'What changes my interpretation of this paper?',
-          }),
-          expect.objectContaining({
-            prompt: 'Which claim deserves a project-level reference?',
-          }),
-        ]),
-      );
-      expect(reopenedDetail?.workspace.privateNotes).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            body: 'Private note for later synthesis.',
-            visibility: 'private',
-          }),
-        ]),
       );
       expect(reopenedDetail?.workspace.sharedComments).toEqual(
         expect.arrayContaining([

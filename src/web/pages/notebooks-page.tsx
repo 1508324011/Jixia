@@ -7,8 +7,12 @@ import { createDemoApi } from '../lib/demo-api';
 
 const demoApi = createDemoApi();
 
-function toNotebookActionLabel(title: string): string {
-  return `Open ${title.toLowerCase()}`;
+function toNotebookActionLabel(notebook: NotebookSummaryView): string {
+  return notebook.projectId ? 'Open project notebook document' : 'Open notebook document';
+}
+
+function toNotebookTitleActionLabel(notebook: NotebookSummaryView): string {
+  return `Open ${notebook.title.toLowerCase()}`;
 }
 
 export function NotebooksPage() {
@@ -56,7 +60,7 @@ export function NotebooksPage() {
         <p className="page-kicker">Notebook workbench</p>
         <h1 className="page-title">Notebooks</h1>
         <p className="page-description">
-          Re-open question-driven synthesis work directly, then jump back into related library entries or project surfaces when needed.
+          Private notebook documents stay separate from reader and project docs until you reopen or deliberately project material.
         </p>
       </header>
 
@@ -84,8 +88,13 @@ export function NotebooksPage() {
               </div>
               <div className="button-row">
                 <Link className="panel-link" to={notebook.notesPath}>
-                  {toNotebookActionLabel(notebook.title)}
+                  {toNotebookActionLabel(notebook)}
                 </Link>
+                {!notebook.projectId ? (
+                  <Link className="panel-link" to={notebook.notesPath}>
+                    {toNotebookTitleActionLabel(notebook)}
+                  </Link>
+                ) : null}
                 <Link className="panel-link" to={notebook.readerPath}>
                   {notebook.projectId ? 'Open related reader' : 'Open notebook reader'}
                 </Link>

@@ -210,10 +210,13 @@ describe('workbench http contracts', () => {
     );
 
     expect(readme).toContain('Research workbench');
-    expect(readme).toContain('Today intake');
+    expect(readme).toContain('Search intake boards');
+    expect(readme).toContain('AI Workspace');
+    expect(readme).toContain('Notebook');
     expect(readme).toContain('Projects');
     expect(readmeCn).toContain('Research workbench');
-    expect(readmeCn).toContain('Notes Workspace');
+    expect(readmeCn).toContain('AI Workspace');
+    expect(readmeCn).toContain('Notebook');
     expect(handoffNotes).toContain('Personal vs Project 上下文');
     expect(handoffNotes).toContain('Writer 文档区');
     expect(

@@ -120,7 +120,8 @@ describe('project writer flow', () => {
     await user.click(screen.getByRole('link', { name: 'Open project docs' }));
 
     expect(await screen.findByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
-    const draftContent = await screen.findByRole('textbox', { name: 'Draft content' });
+    expect(screen.getByTestId('document-editor')).toBeInTheDocument();
+    const draftContent = await screen.findByRole('textbox', { name: 'Project document' });
     await user.clear(draftContent);
     await user.type(draftContent, 'Reopened writer draft with persisted edits.');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
@@ -274,23 +275,36 @@ describe('project writer flow', () => {
           readerPath: '/projects/project-1/library/entry-1/reader?spaceId=shared-space',
         },
         notebookId: 'notebook-1',
-        privateNotes: [
-          {
-            authorUserId: 'user-alice',
-            body: 'Private notebook body that stays in notebook only.',
-            createdAt: '2026-03-24T00:20:00.000Z',
-            id: 'note-1',
-            libraryEntryId: 'entry-1',
-            visibility: 'private',
-          },
-        ],
-        questions: [
-          {
-            id: 'question-1',
-            prompt: 'Which claim deserves a project-level reference?',
-          },
-        ],
         sharedComments: [],
+      },
+    };
+    const notebookSummary = {
+      entryId: 'entry-1',
+      noteCount: 1,
+      notebookId: 'notebook-1',
+      notesPath: '/notebooks/notebook-1',
+      paperAssetId: 'asset-1',
+      paperTitle: 'Tumor board biomarkers for rapid review',
+      projectDocsPath: '/projects/project-1/writing/doc-1?spaceId=shared-space',
+      projectId: 'project-1',
+      readerPath: '/projects/project-1/library/entry-1/reader?spaceId=shared-space',
+      spaceId: 'shared-space',
+      title: 'Tumor board synthesis notebook',
+      updatedAt: '2026-03-24T00:20:00.000Z',
+      workspaceLabel: 'Tumor board workspace',
+      workspacePath: '/projects/project-1?spaceId=shared-space',
+    };
+    const notebookDocument = {
+      document: {
+        documentId: 'notebook-doc-1',
+        latestSnapshot: {
+          capturedAt: '2026-03-24T00:20:00.000Z',
+          content: 'Private notebook body that stays in notebook only.',
+        },
+        ownerType: 'user',
+        ownerUserId: 'user-alice',
+        title: 'Tumor board synthesis notebook',
+        visibility: 'private',
       },
     };
 
@@ -309,6 +323,14 @@ describe('project writer flow', () => {
           (!init?.method || init.method === 'GET')
         ) {
           return jsonResponse(readingDetail);
+        }
+
+        if (requestUrl.endsWith('/api/notebooks/notebook-1')) {
+          return jsonResponse({ notebook: notebookSummary });
+        }
+
+        if (requestUrl.endsWith('/api/notebooks/notebook-1/document')) {
+          return jsonResponse(notebookDocument);
         }
 
         if (
@@ -337,10 +359,10 @@ describe('project writer flow', () => {
 
     renderWorkbench('/projects/project-1/library/entry-1/notes?spaceId=shared-space');
 
-    expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Notebook' })).toBeInTheDocument();
     expect(
-      await screen.findByText('Private notebook body that stays in notebook only.'),
-    ).toBeInTheDocument();
+      await screen.findByRole('textbox', { name: 'Private notebook document' }),
+    ).toHaveValue('Private notebook body that stays in notebook only.');
 
     await user.click(screen.getByRole('button', { name: 'Insert into project docs' }));
 
@@ -349,8 +371,9 @@ describe('project writer flow', () => {
     await user.click(screen.getByRole('link', { name: 'Open project docs' }));
 
     expect(await screen.findByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
+    expect(screen.getByTestId('document-editor')).toBeInTheDocument();
     expect(await screen.findByText('Reference rail')).toBeInTheDocument();
     expect(await screen.findByText('Key projected excerpt for the project document.')).toBeInTheDocument();
-    expect(screen.queryByText('Notebook · notebook-1')).not.toBeInTheDocument();
+    expect(screen.queryByText('Notebook questions')).not.toBeInTheDocument();
   });
 });

@@ -7,9 +7,9 @@
 
 这个分支现在把三件事收敛到了同一个可运行 worktree 中：
 
-1. 面向 spaces、library、reading、writing 与 governed AI jobs 的 server-first 后端骨架
-2. 已经过验证的 workbench 浏览器界面：`Home -> Today/Search/Library/Projects/Settings`
-3. 已经落地到 `demo-native-showcase` 的 **统一摄取与深读工作台** reset：canonical `/projects/...` 路由、三栏 shell、分离的 `Reader` / `Notes Workspace` / `Project Docs`，以及 project-owned 文档语义
+1. 面向 spaces、library、reading、notebook documents、writing 与 governed AI jobs 的 server-first 后端骨架
+2. 已经过验证的 workbench 浏览器界面：`Home -> Projects -> Search/Library -> Reader -> AI Workspace / Notebook -> Project Docs`
+3. 已经落地到 `demo-native-showcase` 的 **统一摄取与深读工作台** reset：canonical `/projects/...` 路由、三栏 shell、dense feeder surfaces、全局 `AI Workspace`、私有且 document-first 的 `Notebook`、document-first 的 `Reader`，以及 project-owned 文档语义
 
 也就是说，这个分支不再只是“有一个 approved reset 计划”。风险优先实现计划的 Tasks 1–9 已经在 `demo-native-showcase` 中落地并完成验证；当前面向后续迭代的重点，是 operator handoff / packaging，以及更完整的 recommendation / push-lane 能力。
 
@@ -27,10 +27,10 @@
 
 - 浏览器主入口是 `/home`
 - 主 shell 是三栏 `Research workbench`
-- `Today intake` 与 `Discovery intake` 是 `Discovery & Intake` 的 pull lane 浏览器面
-- `/library` 是 personal `Library inventory`
-- `Reader` 只负责深读
-- `Notes Workspace` 负责 private notebook capture
+- 稠密的 `Search intake boards` 与 `Library inventory` 现在承担 feeder surface 角色
+- `Reader` 是 document-first 的深读面
+- `AI Workspace` 是独立的全局表面，并会在进入 Reader 时默认停靠在右侧
+- `Notebook` 是私有、document-first 的记录表面
 - `Project Docs` 才是 shared drafting surface
 
 `demo-native-showcase` 额外保留的，是确定性 reset、打包运行时 handoff，以及从 legacy `/spaces/...` 深链接跳转到 canonical `/projects/...` 的兼容 redirect。这些 `/spaces/...` 现在只是 shim，不再是第二套产品路由真相。
@@ -41,9 +41,10 @@
 
 这个里程碑**不**声称自动推荐已经完成，而是明确冻结以下边界：
 
-- `Discovery & Intake` 成为独立边界，并显式区分 **Pull lane**（`搜索`、DOI / URL / local PDF 摄取）与 **Push lane**（`今日推荐`、recommendation refresh / ranking）
-- 只有 **已导入库存** 才能进入深读、`Notes Workspace`、证据生成与 `Project Docs`
-- `Notebook` 保持 fully private、围绕研究问题组织
+- `Discovery & Intake` 仍然是独立边界，但当前已实现的浏览器故事已经改为通过稠密的 `Search` / `Library` feeder surfaces 进入后续工作，而不是以 `/today` 作为主走查路径
+- 只有 **已导入库存** 才能进入深读、`Notebook`、证据生成与 `Project Docs`
+- `Notebook` 保持 fully private、document-first
+- `AI Workspace` 全局可达，并会在 Reader 中停靠，但不会变成 Reader 自己拥有的状态
 - `Project Docs` 是 project-owned 的共享写作对象
 - notebook 到 project 的过桥现在只能通过浏览器侧显式的 **Insert into project docs** 投影流程，不能直接共享 notebook 本体
 
@@ -72,14 +73,14 @@
 当前已交付内容包括：
 
 - `src/web/app.tsx` 与 `src/web/router.tsx`
-- canonical 路由树：`/home`、`/today`、`/search`、`/library`、`/projects`、`/projects/:projectId/...`
+- canonical 路由树：`/home`、`/search`、`/library`、`/notebooks`、`/ai`、`/projects`、`/projects/:projectId/...`
 - 稳定的三栏 `Research workbench` shell
-- `Today intake` 与 `Discovery intake` 作为 pull lane intake board
-- 面向 personal / project 的 `Library inventory`
-- 只负责深读的 `Reader`
-- 私有笔记面的 `Notes Workspace`
+- 稠密的 `Search intake boards` 与面向 personal / project 的 `Library inventory`
+- document-first 的 `Reader`
+- 可独立访问且会停靠在 Reader 中的 `AI Workspace`
+- 私有的 `Notebook`
 - 共享 project-owned drafting surface 的 `Project Docs`
-- 由 native HTTP server 驱动的 discovery、settings、personal import、reading detail、private/shared note 保存、governed insight，以及 project-doc load/save/publish 接口
+- 由 native HTTP server 驱动的 discovery、settings、personal import、reading detail、notebook document load/save、AI workspace、private/shared note 保存、governed insight，以及 project-doc load/save/publish 接口
 - legacy `/spaces/...` 深链接仅保留为兼容 redirect，统一导向 `/projects/...`
 
 `space` 仍然是服务端权限、持久化与审计的权威边界。浏览器路由真相已经切换到 `/projects/...`；当 shared-space 流程需要保留上下文时，会通过显式 `spaceId` query 参数来携带，而不是继续把 `/spaces/...` 当成主路由树。
@@ -87,9 +88,11 @@
 ## 真实运行时说明
 
 - `/login` 仍然存在，但主浏览器流程从 `/home` 开始
-- `GET /api/discovery/today` 与 `GET /api/discovery/search?query=...` 支撑当前的 `Discovery & Intake` 切片
+- `GET /api/discovery/today` 与 `GET /api/discovery/search?query=...` 支撑当前 discovery 切片，但 `/today` 不再是 reviewer walkthrough 的 canonical 入口
 - `GET /api/library/personal` 与 `POST /api/library/personal/import` 由服务端托管个人导入归属
-- `GET /api/reading/:entryId`、`POST /api/reading/:entryId/notes`、`POST /api/reading/:entryId/insights` 支撑当前深读与 Notes / insight 相关表面
+- `GET /api/reading/:entryId`、`POST /api/reading/:entryId/notes`、`POST /api/reading/:entryId/insights` 支撑 document-first Reader 与 note / insight capture
+- `GET /api/notebooks/:id`、`GET /api/notebooks/:id/document`、`POST /api/notebooks/:id/document` 支撑 private notebook document model
+- `GET /api/ai/workspace` 支撑全局 / docked AI workspace 表面
 - `GET /api/writing/:spaceId/projects/:projectId/document` 与 `POST /api/writing/:spaceId/projects/:projectId/document` 现在支撑的是 `Project Docs`，不再是 user-owned Writer draft
 - `POST /api/writing/:docId/publish?spaceId=...` 与 governed-summary 路由仍然是 deterministic native demo 的一部分
 - `/api/spaces` 与 legacy `/spaces/...` 浏览器入口现在只是 demo/operator 便利或兼容 redirect，不再是 canonical workbench route tree
@@ -102,7 +105,7 @@
 - `npm run typecheck`
 - `npm run build`
 
-额外的定向验证还覆盖 canonical routing、personal / project 上下文切换、discovery/import seam、notebook/project projection boundary、project-doc ownership、三栏 shell、Reader/Notes Workspace/Project Docs 分离、native walkthrough，以及 packaged demo 文档。
+额外的定向验证还覆盖 canonical routing、personal / project 上下文切换、discovery/import seam、notebook/project projection boundary、project-doc ownership、三栏 shell、Search/Library density、Reader/AI/Notebook/Project Docs 分离、native walkthrough，以及 packaged demo 文档。
 
 ## 近期方向
 

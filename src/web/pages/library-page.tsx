@@ -284,6 +284,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
 
         <article
           className="panel library-inventory-panel library-inventory-surface"
+          data-density="dense"
           data-layout-mode="inventory"
           data-testid="library-inventory-surface"
         >

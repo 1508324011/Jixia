@@ -53,6 +53,7 @@ describe('library inventory layout', () => {
     renderWorkbench('/library');
 
     const inventorySurface = await screen.findByTestId('library-inventory-surface');
+    expect(inventorySurface).toHaveAttribute('data-density', 'dense');
     expect(inventorySurface).toHaveAttribute('data-layout-mode', 'inventory');
     expect(within(inventorySurface).getByText('Source')).toBeInTheDocument();
     expect(within(inventorySurface).getByText('Imported')).toBeInTheDocument();

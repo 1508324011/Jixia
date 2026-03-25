@@ -99,6 +99,7 @@ describe('library and project context', () => {
 
     renderWorkbench('/library');
     expect(await screen.findByRole('heading', { name: 'Library inventory' })).toBeInTheDocument();
+    expect(screen.getByTestId('library-inventory-surface')).toHaveAttribute('data-density', 'dense');
     expect(screen.getByText('Inventory view')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'All records' })).toBeInTheDocument();
     const personalEntryHeading = await screen.findByRole('heading', { name: 'Personal evidence note' });
@@ -121,6 +122,7 @@ describe('library and project context', () => {
 
     renderWorkbench('/projects/project-1/library?spaceId=shared-space');
     expect(await screen.findByRole('heading', { name: 'Library inventory' })).toBeInTheDocument();
+    expect(screen.getByTestId('library-inventory-surface')).toHaveAttribute('data-density', 'dense');
     expect(screen.getByText('Shared evidence shelf')).toBeInTheDocument();
     const projectEntryHeading = await screen.findByRole('heading', {
       name: 'Tumor board evidence record',

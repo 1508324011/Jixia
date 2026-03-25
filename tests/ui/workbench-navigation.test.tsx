@@ -11,6 +11,7 @@ function renderWorkbench(pathname = '/home') {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('workbench navigation', () => {
@@ -63,7 +64,7 @@ describe('workbench navigation', () => {
       ],
       resumeTargets: [
         {
-          description: 'Jump back into the question-driven synthesis lane for the active tumor board notebook.',
+          description: 'Reopen the private notebook document linked to the active tumor board paper.',
           kind: 'notebook',
           title: 'Resume notebook',
           to: '/projects/tumor-board/library/entry-1/notes',
@@ -104,6 +105,34 @@ describe('workbench navigation', () => {
         },
       ],
     };
+    const aiWorkspaceResponse = {
+      workspace: {
+        activeSessionId: 'session-1',
+        sessions: [
+          {
+            attachedEntries: [
+              {
+                canonicalId: 'pmid:654321',
+                entryId: 'entry-1',
+                paperAssetId: 'asset-1',
+                title: 'Tumor board biomarkers for rapid review',
+              },
+              {
+                canonicalId: 'pmid:222222',
+                entryId: 'entry-2',
+                paperAssetId: 'asset-2',
+                title: 'Signal pathway evidence for review escalation',
+              },
+            ],
+            createdAt: '2026-03-25T09:00:00.000Z',
+            id: 'session-1',
+            summary: 'Cross-paper reasoning stays in the AI workspace instead of inside Reader.',
+            title: 'Cross-paper biomarker synthesis',
+            updatedAt: '2026-03-25T09:20:00.000Z',
+          },
+        ],
+      },
+    };
 
     vi.stubGlobal(
       'fetch',
@@ -139,6 +168,13 @@ describe('workbench navigation', () => {
 
         if (url.endsWith('/api/notebooks')) {
           return new Response(JSON.stringify(notebooksResponse), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        if (url.includes('/api/ai/workspace')) {
+          return new Response(JSON.stringify(aiWorkspaceResponse), {
             headers: { 'Content-Type': 'application/json' },
             status: 200,
           });
@@ -274,6 +310,12 @@ describe('workbench navigation', () => {
       '/notebooks/notebook-2',
     );
 
+    await user.click(screen.getByRole('link', { name: 'AI' }));
+    expect(await screen.findByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
+    expect(screen.getByText('Cross-paper biomarker synthesis')).toBeInTheDocument();
+    expect(screen.getByLabelText('AI context attachments')).toBeInTheDocument();
+    expect(screen.getByText('Signal pathway evidence for review escalation')).toBeInTheDocument();
+
     await user.click(screen.getByRole('link', { name: 'Settings' }));
     expect(screen.getByLabelText('API Key')).toBeInTheDocument();
     expect(await screen.findByText('API key not configured')).toBeInTheDocument();
@@ -360,5 +402,91 @@ describe('workbench navigation', () => {
 
     const projectDocsLink = await screen.findByRole('link', { name: 'Open project docs' });
     expect(projectDocsLink).toHaveAttribute('href', '/projects/project-1/writing/doc-1');
+  });
+
+  it('keeps notebook, ai workspace, and project docs as separate reader exits', async () => {
+    const aiWorkspaceResponse = {
+      workspace: {
+        activeSessionId: 'session-1',
+        sessions: [
+          {
+            attachedEntries: [
+              {
+                canonicalId: 'pmid:111111',
+                entryId: 'entry-1',
+                paperAssetId: 'asset-1',
+                title: 'Tumor board biomarkers for rapid review',
+              },
+            ],
+            createdAt: '2026-03-25T09:00:00.000Z',
+            id: 'session-1',
+            summary: 'Dock the active AI conversation beside Reader without making Reader own it.',
+            title: 'Reader docking session',
+            updatedAt: '2026-03-25T09:10:00.000Z',
+          },
+        ],
+      },
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const url = input.toString();
+
+        if (url.endsWith('/api/reading/entry-1')) {
+          return new Response(
+            JSON.stringify({
+              asset: {
+                abstractText: 'Imported record for reader surface testing.',
+                canonicalId: 'pmid:111111',
+                id: 'asset-1',
+                title: 'Tumor board biomarkers for rapid review',
+              },
+              entry: {
+                id: 'entry-1',
+                visibility: 'space_shared',
+              },
+              insights: [],
+              notes: [
+                {
+                  content: 'Shared note',
+                  createdAt: '2026-03-24T09:00:00.000Z',
+                  id: 'note-1',
+                  visibility: 'space_shared',
+                },
+              ],
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
+        if (url.includes('/api/ai/workspace') && url.includes('entryId=entry-1')) {
+          return new Response(JSON.stringify(aiWorkspaceResponse), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }),
+    );
+
+    renderWorkbench('/projects/tumor-board/library/entry-1/reader');
+
+    expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
+    expect(screen.getByText('Reader docking session')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /open notebook/i })).toHaveAttribute(
+      'href',
+      '/projects/tumor-board/library/entry-1/notes',
+    );
+    expect(screen.getByRole('link', { name: /open ai workspace/i })).toHaveAttribute('href', '/ai');
+    expect(screen.getByRole('link', { name: /open project docs/i })).toHaveAttribute(
+      'href',
+      '/projects/tumor-board/writing/doc-1',
+    );
   });
 });

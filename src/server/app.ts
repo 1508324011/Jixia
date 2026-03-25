@@ -14,6 +14,7 @@ import type {
   GeneratedInsightRecord,
 } from '@shared/contracts/evidence';
 import type {
+  NotebookDocumentRecord,
   NotebookNoteRecord,
   NotebookQuestionRecord,
   NotebookRecord,
@@ -152,6 +153,7 @@ export interface JixiaAppState {
   libraryEntries: StoredLibraryEntry[];
   memberships: SpaceMembership[];
   nextSequence: number;
+  notebookDocuments: NotebookDocumentRecord[];
   notebookNotes: NotebookNoteRecord[];
   notebookQuestions: NotebookQuestionRecord[];
   notebookRecords: NotebookRecord[];
@@ -194,6 +196,7 @@ function createState(): JixiaAppState {
     libraryEntries: [],
     memberships: [],
     nextSequence: 0,
+    notebookDocuments: [],
     notebookNotes: [],
     notebookQuestions: [],
     notebookRecords: [],
@@ -236,6 +239,7 @@ function loadState(env: StorageRootEnv = process.env): JixiaAppState {
     libraryEntries: parsed.libraryEntries ?? initialState.libraryEntries,
     memberships: parsed.memberships ?? initialState.memberships,
     nextSequence: parsed.nextSequence ?? initialState.nextSequence,
+    notebookDocuments: parsed.notebookDocuments ?? initialState.notebookDocuments,
     notebookNotes: parsed.notebookNotes ?? initialState.notebookNotes,
     notebookQuestions: parsed.notebookQuestions ?? initialState.notebookQuestions,
     notebookRecords: parsed.notebookRecords ?? initialState.notebookRecords,
@@ -319,6 +323,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const notebookService = createNotebookService({
     libraryEntries: state.libraryEntries,
+    notebookDocuments: state.notebookDocuments,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },

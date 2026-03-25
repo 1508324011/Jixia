@@ -143,7 +143,7 @@ describe('native demo http surface', () => {
     });
   });
 
-  it('exposes seeded workbench APIs for the notebook-project walkthrough', async () => {
+  it('exposes seeded workbench APIs for the feeder-surface reader, ai workspace, notebook, and project-doc walkthrough', async () => {
     await withServer({}, async (baseUrl) => {
       const summaryResponse = await fetch(`${baseUrl}/api/workbench/summary`);
 
@@ -173,7 +173,16 @@ describe('native demo http surface', () => {
       expect(readingResponse.status).toBe(200);
 
       const readingResult = (await readingResponse.json()) as {
-        asset: { id: string };
+        asset: { abstractText: string; id: string; title: string };
+        document: {
+          sections: Array<{ body: string; title: string }>;
+          title: string;
+        };
+        retrieval: {
+          fullTextAvailable: boolean;
+          state: string;
+          summary: string;
+        };
         workspace: {
           companion?: {
             notebookPath: string;
@@ -191,6 +200,101 @@ describe('native demo http surface', () => {
           projectPath: '/projects/tumor-board',
           readerPath: `/projects/tumor-board/library/${entryId}/reader`,
         }),
+      );
+      expect(readingResult.retrieval).toEqual(
+        expect.objectContaining({
+          fullTextAvailable: true,
+          state: 'document-ready',
+          summary: 'Reading document ready',
+        }),
+      );
+      expect(readingResult.document).toEqual(
+        expect.objectContaining({
+          title: readingResult.asset.title,
+          sections: expect.arrayContaining([
+            expect.objectContaining({
+              title: 'Overview',
+              body: expect.stringContaining(readingResult.asset.abstractText),
+            }),
+          ]),
+        }),
+      );
+
+      const aiWorkspaceResponse = await fetch(`${baseUrl}/api/ai/workspace?entryId=${entryId}`);
+      expect(aiWorkspaceResponse.status).toBe(200);
+
+      const aiWorkspaceResult = (await aiWorkspaceResponse.json()) as {
+        workspace: {
+          activeSessionId: string | null;
+          sessions: Array<{
+            attachedEntries: Array<{ canonicalId: string; entryId: string; title: string }>;
+            title: string;
+          }>;
+        };
+      };
+      expect(aiWorkspaceResult.workspace.activeSessionId).toBeTruthy();
+      expect(aiWorkspaceResult.workspace.sessions).toContainEqual(
+        expect.objectContaining({
+          attachedEntries: expect.arrayContaining([
+            expect.objectContaining({
+              entryId,
+            }),
+          ]),
+        }),
+      );
+
+      const notebookSummaryResponse = await fetch(
+        `${baseUrl}/api/notebooks/${readingResult.workspace.notebookId}`,
+      );
+      expect(notebookSummaryResponse.status).toBe(200);
+
+      const notebookSummaryResult = (await notebookSummaryResponse.json()) as {
+        notebook: { notebookId: string; title: string };
+      };
+      expect(notebookSummaryResult.notebook).toEqual(
+        expect.objectContaining({ notebookId: readingResult.workspace.notebookId }),
+      );
+
+      const notebookDocumentResponse = await fetch(
+        `${baseUrl}/api/notebooks/${readingResult.workspace.notebookId}/document`,
+      );
+      expect(notebookDocumentResponse.status).toBe(200);
+
+      const notebookDocumentResult = (await notebookDocumentResponse.json()) as {
+        document: {
+          latestSnapshot: null | { content: string };
+          ownerType: string;
+          visibility: string;
+        };
+      };
+      expect(notebookDocumentResult.document).toEqual(
+        expect.objectContaining({
+          latestSnapshot: null,
+          ownerType: 'user',
+          visibility: 'private',
+        }),
+      );
+
+      const saveNotebookDocumentResponse = await fetch(
+        `${baseUrl}/api/notebooks/${readingResult.workspace.notebookId}/document`,
+        {
+          body: JSON.stringify({
+            content: 'Private notebook body about key mutation and next experiments.',
+            title: 'Tumor board notebook',
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+      expect(saveNotebookDocumentResponse.status).toBe(200);
+
+      const savedNotebookDocumentResult = (await saveNotebookDocumentResponse.json()) as {
+        document: { latestSnapshot: null | { content: string } };
+      };
+      expect(savedNotebookDocumentResult.document.latestSnapshot?.content).toBe(
+        'Private notebook body about key mutation and next experiments.',
       );
 
       const noteResponse = await fetch(`${baseUrl}/api/reading/${entryId}/notes`, {

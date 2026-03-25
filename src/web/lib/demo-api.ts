@@ -1,4 +1,7 @@
 import type {
+  AiWorkspaceResponse,
+} from '@shared/contracts/ai-workspace';
+import type {
   DiscoverySearchRequest,
   DiscoverySearchResponse,
   DiscoveryTodayResponse,
@@ -27,6 +30,7 @@ import type {
 } from '@shared/contracts/spaces';
 import type {
   NotebookDetailResponse,
+  NotebookDocumentResponse,
   NotebookListResponse,
 } from '@shared/contracts/notebook';
 import type { WorkbenchSummaryResponse } from '@shared/contracts/workbench';
@@ -139,6 +143,28 @@ export function createDemoApi(baseUrl = '') {
     getNotebook(notebookId: string): Promise<NotebookDetailResponse> {
       return requestDemoJson<NotebookDetailResponse>(baseUrl, `/api/notebooks/${notebookId}`);
     },
+    getNotebookDocument(notebookId: string): Promise<NotebookDocumentResponse> {
+      return requestDemoJson<NotebookDocumentResponse>(
+        baseUrl,
+        `/api/notebooks/${notebookId}/document`,
+      );
+    },
+    saveNotebookDocument(input: {
+      content: string;
+      notebookId: string;
+      title: string;
+    }): Promise<NotebookDocumentResponse> {
+      return requestJson<NotebookDocumentResponse>(
+        resolvePath(`/api/notebooks/${input.notebookId}/document`),
+        {
+          body: JSON.stringify({
+            content: input.content,
+            title: input.title,
+          }),
+          method: 'POST',
+        },
+      );
+    },
     searchDiscovery(
       query: string,
       options?: Omit<DiscoverySearchRequest, 'query'>,
@@ -161,6 +187,19 @@ export function createDemoApi(baseUrl = '') {
     },
     getReadingDetail(entryId: string): Promise<ReadingDetailView> {
       return requestJson<ReadingDetailView>(resolvePath(`/api/reading/${entryId}`));
+    },
+    getAiWorkspace(options?: { entryId?: string }): Promise<AiWorkspaceResponse> {
+      const requestUrl = new URL(resolvePath('/api/ai/workspace'), 'http://localhost');
+
+      if (options?.entryId) {
+        requestUrl.searchParams.set('entryId', options.entryId);
+      }
+
+      const requestPath = baseUrl
+        ? requestUrl.toString().replace('http://localhost', '')
+        : `${requestUrl.pathname}${requestUrl.search}`;
+
+      return requestJson<AiWorkspaceResponse>(requestPath);
     },
     createReadingNote(input: {
       body: string;
