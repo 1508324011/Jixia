@@ -106,6 +106,14 @@ describe('project writer flow', () => {
 
     expect(screen.getByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
     expect(screen.getByText('Shared document tree and current draft live here.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open active notebook' })).toHaveAttribute(
+      'href',
+      '/projects/project-1/library/entry-1/notes',
+    );
+    expect(screen.getByRole('link', { name: 'Open active reader' })).toHaveAttribute(
+      'href',
+      '/projects/project-1/library/entry-1/reader',
+    );
 
     expect(await screen.findByText('Promoted governed insight paragraph.')).toBeInTheDocument();
 
@@ -173,6 +181,14 @@ describe('project writer flow', () => {
     renderWorkbench('/projects/project-1?spaceId=review-space');
 
     expect(await screen.findByText('Review-space draft preview.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open active notebook' })).toHaveAttribute(
+      'href',
+      '/projects/project-1/library/entry-1/notes?spaceId=review-space',
+    );
+    expect(screen.getByRole('link', { name: 'Open active reader' })).toHaveAttribute(
+      'href',
+      '/projects/project-1/library/entry-1/reader?spaceId=review-space',
+    );
     expect(screen.getByRole('link', { name: 'Open project docs' })).toHaveAttribute(
       'href',
       '/projects/project-1/writing/doc-1?spaceId=review-space',
@@ -251,6 +267,12 @@ describe('project writer flow', () => {
         summary: 'Metadata imported',
       },
       workspace: {
+        companion: {
+          notebookPath: '/projects/project-1/library/entry-1/notes?spaceId=shared-space',
+          projectDocsPath: '/projects/project-1/writing/doc-1?spaceId=shared-space',
+          projectPath: '/projects/project-1?spaceId=shared-space',
+          readerPath: '/projects/project-1/library/entry-1/reader?spaceId=shared-space',
+        },
         notebookId: 'notebook-1',
         privateNotes: [
           {
@@ -316,7 +338,9 @@ describe('project writer flow', () => {
     renderWorkbench('/projects/project-1/library/entry-1/notes?spaceId=shared-space');
 
     expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
-    expect(screen.getByText('Private notebook body that stays in notebook only.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Private notebook body that stays in notebook only.'),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Insert into project docs' }));
 
@@ -325,8 +349,8 @@ describe('project writer flow', () => {
     await user.click(screen.getByRole('link', { name: 'Open project docs' }));
 
     expect(await screen.findByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
-    expect(screen.getByText('Reference rail')).toBeInTheDocument();
-    expect(screen.getByText('Key projected excerpt for the project document.')).toBeInTheDocument();
+    expect(await screen.findByText('Reference rail')).toBeInTheDocument();
+    expect(await screen.findByText('Key projected excerpt for the project document.')).toBeInTheDocument();
     expect(screen.queryByText('Notebook · notebook-1')).not.toBeInTheDocument();
   });
 });
