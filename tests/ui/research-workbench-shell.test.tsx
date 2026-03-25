@@ -26,4 +26,10 @@ describe('research workbench shell', () => {
       'full-width',
     );
   });
+
+  it('does not render a redundant personal lane panel in personal workbench routes', () => {
+    renderWorkbench('/library');
+
+    expect(screen.queryByText(/personal lane/i)).not.toBeInTheDocument();
+  });
 });

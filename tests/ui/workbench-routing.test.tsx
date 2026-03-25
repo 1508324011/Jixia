@@ -14,14 +14,16 @@ afterEach(() => {
 });
 
 describe('workbench routing', () => {
-  it('redirects authenticated users to /home and renders stable nav', () => {
+  it('redirects authenticated users to /home and renders the project-notebook top-level nav', () => {
     renderWorkbench();
 
-    expect(screen.getByRole('link', { name: '今日推荐' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '搜索' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '设置' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Search' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Notebooks' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '今日推荐' })).not.toBeInTheDocument();
   });
 
   it('redirects legacy /spaces library deep links to canonical /projects paths', async () => {
