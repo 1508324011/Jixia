@@ -57,6 +57,12 @@ describe('notes workspace', () => {
         summary: 'Metadata imported',
       },
       workspace: {
+        companion: {
+          notebookPath: '/projects/project-1/library/entry-1/notes?spaceId=shared-space',
+          projectDocsPath: '/projects/project-1/writing/doc-1?spaceId=shared-space',
+          projectPath: '/projects/project-1?spaceId=shared-space',
+          readerPath: '/projects/project-1/library/entry-1/reader?spaceId=shared-space',
+        },
         notebookId: 'notebook-1',
         privateNotes: [],
         questions: [
@@ -121,6 +127,10 @@ describe('notes workspace', () => {
     expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
     expect(screen.getByText('Notebook questions')).toBeInTheDocument();
     expect(screen.getByText('Notebook · notebook-1')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to project' })).toHaveAttribute(
+      'href',
+      '/projects/project-1?spaceId=shared-space',
+    );
 
     await user.click(screen.getByRole('button', { name: 'Which claim deserves a project-level reference?' }));
     expect(
@@ -182,6 +192,10 @@ describe('notes workspace', () => {
               summary: 'Metadata imported',
             },
             workspace: {
+              companion: {
+                notebookPath: '/library/entry-1/notes',
+                readerPath: '/library/entry-1/reader',
+              },
               notebookId: 'notebook-1',
               privateNotes: [],
               questions: [
@@ -216,5 +230,99 @@ describe('notes workspace', () => {
     expect(await screen.findByRole('heading', { name: 'Project docs' })).toBeInTheDocument();
     expect(screen.getByText('No project doc found')).toBeInTheDocument();
     expect(screen.queryByText('Project docs unavailable')).not.toBeInTheDocument();
+  });
+
+  it('loads notebook work directly from /notebooks/:notebookId without first entering through a reader route', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/notebooks/notebook-1')) {
+          return jsonResponse({
+            notebook: {
+              entryId: 'entry-1',
+              noteCount: 1,
+              notebookId: 'notebook-1',
+              notesPath: '/notebooks/notebook-1',
+              paperAssetId: 'asset-1',
+              paperTitle: 'Tumor board biomarkers for rapid review',
+              projectDocsPath: '/projects/tumor-board/writing/doc-1',
+              projectId: 'tumor-board',
+              readerPath: '/projects/tumor-board/library/entry-1/reader',
+              spaceId: 'shared-space',
+              title: 'Tumor board synthesis notebook',
+              updatedAt: '2026-03-24T09:00:00.000Z',
+              workspaceLabel: 'Tumor board workspace',
+              workspacePath: '/projects/tumor-board',
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/reading/entry-1')) {
+          return jsonResponse({
+            asset: {
+              abstractText: 'Imported PMID metadata for 654321',
+              canonicalId: 'pmid:654321',
+              createdAt: '2026-03-23T00:00:00.000Z',
+              id: 'asset-1',
+              title: 'Tumor board biomarkers for rapid review',
+            },
+            entry: {
+              addedAt: '2026-03-23T00:00:00.000Z',
+              id: 'entry-1',
+              paperAssetId: 'asset-1',
+              spaceId: 'shared-space',
+              visibility: 'space_shared',
+            },
+            insights: [],
+            notes: [],
+            retrieval: {
+              detail: 'Abstract metadata is ready for review, but full text stays outside this demo.',
+              fullTextAvailable: false,
+              state: 'metadata-only',
+              summary: 'Metadata imported',
+            },
+            workspace: {
+              companion: {
+                notebookPath: '/projects/tumor-board/library/entry-1/notes',
+                projectDocsPath: '/projects/tumor-board/writing/doc-1',
+                projectPath: '/projects/tumor-board',
+                readerPath: '/projects/tumor-board/library/entry-1/reader',
+              },
+              notebookId: 'notebook-1',
+              privateNotes: [],
+              questions: [
+                {
+                  id: 'question-1',
+                  prompt: 'What changes my interpretation of this paper?',
+                },
+              ],
+              sharedComments: [],
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/notebooks/notebook-1');
+
+    expect(await screen.findByRole('heading', { name: 'Notes workspace' })).toBeInTheDocument();
+    expect(screen.getByText('Notebook · notebook-1')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to notebooks' })).toHaveAttribute(
+      'href',
+      '/notebooks',
+    );
+    expect(screen.getByRole('link', { name: 'Back to reader' })).toHaveAttribute(
+      'href',
+      '/projects/tumor-board/library/entry-1/reader',
+    );
   });
 });

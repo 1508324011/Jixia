@@ -162,6 +162,12 @@ describe('reading evidence', () => {
         }),
       );
       expect(reopenedDetail?.workspace.notebookId).toMatch(/^notebook-/);
+      expect(reopenedDetail?.workspace.companion).toEqual(
+        expect.objectContaining({
+          notebookPath: `/library/${imported.entry.id}/notes`,
+          readerPath: `/library/${imported.entry.id}/reader`,
+        }),
+      );
       expect(reopenedDetail?.workspace.questions).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

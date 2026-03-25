@@ -35,8 +35,9 @@ export function NotebookQuestionList({
         <h2 className="panel-title">Notebook questions</h2>
         <p className="quiet-copy">Notebook · {notebookId}</p>
         <p className="quiet-copy">
-          Use the private lane to pressure-test {paperTitle} before anything becomes a project-owned
-          reference. Retrieval state · {retrievalSummary}. Current note count · {noteCount}
+          Use the private notebook to pressure-test {paperTitle} before anything becomes a
+          project-owned reference. Reader stays an evidence companion while drafting happens in the
+          notebook and project docs. Retrieval state · {retrievalSummary}. Current note count · {noteCount}
         </p>
       </div>
 

@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 import type {
+  NotebookSummaryView,
+} from '@shared/contracts/notebook';
+import type {
   NoteRecord,
   NoteVisibility,
   NotebookQuestionView,
@@ -25,6 +28,17 @@ const demoApi = createDemoApi();
 const DEFAULT_PROJECT_SPACE_ID = 'shared-space';
 const DEFAULT_PROJECT_DOCUMENT_ID = 'doc-1';
 
+function extractDocumentId(projectDocsPath?: string): string {
+  if (!projectDocsPath) {
+    return DEFAULT_PROJECT_DOCUMENT_ID;
+  }
+
+  const pathname = projectDocsPath.split('?')[0] ?? projectDocsPath;
+  const segments = pathname.split('/').filter(Boolean);
+
+  return segments.at(-1) ?? DEFAULT_PROJECT_DOCUMENT_ID;
+}
+
 function buildProjectDocsPath(
   projectId: string | undefined,
   documentId: string,
@@ -36,6 +50,24 @@ function buildProjectDocsPath(
   }
 
   const pathname = `/projects/${projectId}/writing/${documentId}`;
+
+  if (!preserveSpaceContext && spaceId === DEFAULT_PROJECT_SPACE_ID) {
+    return pathname;
+  }
+
+  return `${pathname}?spaceId=${encodeURIComponent(spaceId)}`;
+}
+
+function buildProjectPath(
+  projectId: string | undefined,
+  spaceId: string,
+  preserveSpaceContext = false,
+): string {
+  if (!projectId) {
+    return '';
+  }
+
+  const pathname = `/projects/${projectId}`;
 
   if (!preserveSpaceContext && spaceId === DEFAULT_PROJECT_SPACE_ID) {
     return pathname;
@@ -103,13 +135,19 @@ function appendNoteToDetail(detail: ReadingDetailView, note: NoteRecord): Readin
 
 export function NotesPage() {
   const [searchParams] = useSearchParams();
-  const { spaceId: routeSpaceId, projectId, entryId = 'entry-1' } = useParams();
-  const isPersonalMode = !projectId;
-  const spaceId = routeSpaceId ?? searchParams.get('spaceId') ?? undefined;
-  const hasExplicitSpaceContext = typeof spaceId === 'string' && spaceId.length > 0;
-  const resolvedSpaceId = spaceId ?? DEFAULT_PROJECT_SPACE_ID;
+  const {
+    spaceId: routeSpaceId,
+    projectId: routeProjectId,
+    entryId: routeEntryId,
+    notebookId,
+  } = useParams();
+  const isNotebookRoute = typeof notebookId === 'string' && notebookId.length > 0;
+  const routeSpaceContext = routeSpaceId ?? searchParams.get('spaceId') ?? undefined;
+  const hasExplicitSpaceContext =
+    typeof routeSpaceContext === 'string' && routeSpaceContext.length > 0;
 
   const [detail, setDetail] = useState<ReadingDetailView | null>(null);
+  const [notebookContext, setNotebookContext] = useState<NotebookSummaryView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -118,6 +156,10 @@ export function NotesPage() {
   const [privateNoteBody, setPrivateNoteBody] = useState('');
   const [activeQuestionId, setActiveQuestionId] = useState('');
   const [projectionMessage, setProjectionMessage] = useState<string | null>(null);
+  const entryId = routeEntryId ?? notebookContext?.entryId ?? 'entry-1';
+  const projectId = routeProjectId ?? notebookContext?.projectId;
+  const isPersonalMode = !projectId;
+  const resolvedSpaceId = routeSpaceContext ?? notebookContext?.spaceId ?? DEFAULT_PROJECT_SPACE_ID;
 
   useEffect(() => {
     let isCancelled = false;
@@ -127,16 +169,37 @@ export function NotesPage() {
       setLoadError(null);
 
       try {
+        if (isNotebookRoute && notebookId) {
+          const notebookResponse = await demoApi.getNotebook(notebookId);
+          const resolvedNotebook = notebookResponse.notebook;
+          const requiresExplicitNotebookSpace =
+            Boolean(resolvedNotebook.projectId) &&
+            resolvedNotebook.spaceId !== DEFAULT_PROJECT_SPACE_ID;
+          const readingDetail = requiresExplicitNotebookSpace
+            ? await getLegacyReadingDetail(resolvedNotebook.entryId, resolvedNotebook.spaceId)
+            : await demoApi.getReadingDetail(resolvedNotebook.entryId);
+
+          if (!isCancelled) {
+            setNotebookContext(resolvedNotebook);
+            setDetail(readingDetail);
+          }
+
+          return;
+        }
+
+        const fallbackEntryId = routeEntryId ?? 'entry-1';
         const readingDetail = hasExplicitSpaceContext
-          ? await getLegacyReadingDetail(entryId, resolvedSpaceId)
-          : await demoApi.getReadingDetail(entryId);
+          ? await getLegacyReadingDetail(fallbackEntryId, resolvedSpaceId)
+          : await demoApi.getReadingDetail(fallbackEntryId);
 
         if (!isCancelled) {
+          setNotebookContext(null);
           setDetail(readingDetail);
         }
       } catch (error) {
         if (!isCancelled) {
           setDetail(null);
+          setNotebookContext(null);
           setLoadError(
             error instanceof Error ? error.message : 'Failed to load the private notebook lane.',
           );
@@ -153,7 +216,7 @@ export function NotesPage() {
     return () => {
       isCancelled = true;
     };
-  }, [entryId, hasExplicitSpaceContext, resolvedSpaceId]);
+  }, [hasExplicitSpaceContext, isNotebookRoute, notebookId, resolvedSpaceId, routeEntryId]);
 
   const privateNotes = useMemo(
     () => (detail ? resolveNotesWorkspace(detail).privateNotes : []),
@@ -192,12 +255,17 @@ export function NotesPage() {
       return;
     }
 
+    const requiresExplicitApiSpaceContext = isNotebookRoute
+      ? Boolean(notebookContext?.projectId) &&
+        notebookContext?.spaceId !== DEFAULT_PROJECT_SPACE_ID
+      : hasExplicitSpaceContext;
+
     setIsSaving(true);
     setMutationError(null);
     setProjectionMessage(null);
 
     try {
-      const response = hasExplicitSpaceContext
+      const response = requiresExplicitApiSpaceContext
         ? await createLegacyReadingNote({
             body: privateNoteBody.trim(),
             entryId,
@@ -224,7 +292,10 @@ export function NotesPage() {
   }
 
   async function handleInsertIntoProjectDocs(): Promise<void> {
-    if (!projectId || !detail || !workspace || !latestPrivateNote) {
+    const resolvedProjectId = projectId;
+    const projectDocumentId = extractDocumentId(notebookContext?.projectDocsPath);
+
+    if (!resolvedProjectId || !detail || !workspace || !latestPrivateNote) {
       return;
     }
 
@@ -234,11 +305,11 @@ export function NotesPage() {
 
     try {
       await createProjectReference({
-        docId: DEFAULT_PROJECT_DOCUMENT_ID,
+        docId: projectDocumentId,
         noteId: latestPrivateNote.id,
         notebookId: workspace.notebookId,
         paperAssetId: detail.asset.id,
-        projectId,
+        projectId: resolvedProjectId,
         selectedText: latestPrivateNote.body,
         spaceId: resolvedSpaceId,
       });
@@ -258,7 +329,15 @@ export function NotesPage() {
     resolvedSpaceId,
     hasExplicitSpaceContext,
   );
-  const readerPath = buildReaderPath(projectId, entryId, resolvedSpaceId, hasExplicitSpaceContext);
+  const projectPath =
+    notebookContext?.workspacePath ??
+    workspace?.companion?.projectPath ??
+    buildProjectPath(projectId, resolvedSpaceId, hasExplicitSpaceContext);
+  const resolvedProjectDocsPath = notebookContext?.projectDocsPath ?? projectDocsPath;
+  const readerPath =
+    notebookContext?.readerPath ??
+    workspace?.companion?.readerPath ??
+    buildReaderPath(projectId, entryId, resolvedSpaceId, hasExplicitSpaceContext);
 
   return (
     <main className="page-shell">
@@ -381,11 +460,21 @@ export function NotesPage() {
       </section>
 
       <div className="button-row">
+        {isNotebookRoute ? (
+          <Link className="panel-link" to="/notebooks">
+            Back to notebooks
+          </Link>
+        ) : null}
+        {!isPersonalMode && projectPath ? (
+          <Link className="panel-link" to={projectPath}>
+            Back to project
+          </Link>
+        ) : null}
         <Link className="panel-link" to={readerPath}>
           Back to reader
         </Link>
-        {!isPersonalMode ? (
-          <Link className="panel-link" to={projectDocsPath}>
+        {!isPersonalMode && resolvedProjectDocsPath ? (
+          <Link className="panel-link" to={resolvedProjectDocsPath}>
             Open project docs
           </Link>
         ) : null}
