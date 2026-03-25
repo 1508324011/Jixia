@@ -2,6 +2,8 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> **Status update (2026-03-25):** This gap-closure plan is implemented and now serves as historical context only. The branch has moved beyond the intermediate intake/library-first recovery state described below. The active browser story on `demo-native-showcase` is now the notebook/project-first workbench flow under `/home`, `/projects`, `/notebooks`, `/library`, and canonical `/projects/:projectId/...` routes.
+
 **Goal:** Close the gap between the current `demo-native-showcase` branch and the previously approved Research Workbench Reset so the demo honestly delivers a full-width, usable `Intake → Inventory → Read → Think → Share/Write` workflow.
 
 **Architecture:** Treat the current branch as a partially completed reset, not as a failed prototype. Keep the ownership, contract, and server-first work already landed in place; finish the branch by correcting the workbench shell, restoring truthful personal/project boundaries, turning placeholder panes into real work surfaces, and updating the verification/docs layer to match the actual supported flow.

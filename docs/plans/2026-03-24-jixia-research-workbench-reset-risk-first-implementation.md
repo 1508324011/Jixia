@@ -8,7 +8,7 @@
 
 **Tech Stack:** React, React Router, TypeScript, Vite, Vitest, Node HTTP server, current `src/server/http-api.ts`, `src/server/app.ts`, `src/shared/contracts/*`, `src/web/pages/*`, `src/web/components/*`, and the demo-native-showcase runbook at `docs/runbooks/native-demo-showcase.md`.
 
-> **Execution status (2026-03-24):** Tasks 1–9 from this plan are implemented in `demo-native-showcase`, including browser-side notebook-to-project projection, the Project Docs reference rail, and the final truthfulness pass across docs and workflow tests. The remaining work is full verification, Oracle sanity review, and any follow-up fixes those checks uncover.
+> **Execution status (2026-03-25):** Tasks 1–9 from this plan are implemented in `demo-native-showcase`, including browser-side notebook-to-project projection, the Project Docs reference rail, and the final truthfulness pass across docs and workflow tests. The canonical walkthrough now starts at `/home`, moves through `Open tumor board workspace` and `Open active notebook`, uses the reader as an evidence companion, projects notebook material into `Project Docs`, and returns via `Back to project`. The remaining work is full verification, Oracle sanity review, and any follow-up fixes those checks uncover.
 
 ---
 
