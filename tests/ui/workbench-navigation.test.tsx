@@ -39,6 +39,71 @@ describe('workbench navigation', () => {
         title: 'Tumor board biomarkers for rapid review',
       },
     ];
+    const workbenchSummaryResponse = {
+      recentImports: [
+        {
+          addedAt: '2026-03-24T09:00:00.000Z',
+          canonicalId: 'pmid:123456',
+          entryId: 'entry-1',
+          projectId: 'tumor-board',
+          spaceId: 'shared-space',
+          title: 'Imported PMID paper 123456',
+          to: '/projects/tumor-board/library',
+        },
+      ],
+      recentProjects: [
+        {
+          activeNotebookCount: 1,
+          entryCount: 1,
+          projectId: 'tumor-board',
+          recentActivity: 'Recent activity · Notebook updated 2h ago',
+          spaceId: 'shared-space',
+          title: 'Tumor board workspace',
+        },
+      ],
+      resumeTargets: [
+        {
+          description: 'Jump back into the question-driven synthesis lane for the active tumor board notebook.',
+          kind: 'notebook',
+          title: 'Resume notebook',
+          to: '/projects/tumor-board/library/entry-1/notes',
+        },
+      ],
+    };
+    const notebooksResponse = {
+      notebooks: [
+        {
+          entryId: 'entry-1',
+          noteCount: 2,
+          notebookId: 'notebook-1',
+          notesPath: '/notebooks/notebook-1',
+          paperAssetId: 'asset-1',
+          paperTitle: 'Tumor board biomarkers for rapid review',
+          projectDocsPath: '/projects/tumor-board/writing/doc-1',
+          projectId: 'tumor-board',
+          readerPath: '/projects/tumor-board/library/entry-1/reader',
+          spaceId: 'shared-space',
+          title: 'Tumor board synthesis notebook',
+          updatedAt: '2026-03-24T09:00:00.000Z',
+          workspaceLabel: 'Tumor board workspace',
+          workspacePath: '/projects/tumor-board',
+        },
+        {
+          entryId: 'entry-2',
+          noteCount: 1,
+          notebookId: 'notebook-2',
+          notesPath: '/notebooks/notebook-2',
+          paperAssetId: 'asset-2',
+          paperTitle: 'Signal pathway evidence for review escalation',
+          readerPath: '/library/entry-2/reader',
+          spaceId: 'personal-space-user-alice',
+          title: 'Signal review notebook',
+          updatedAt: '2026-03-24T08:30:00.000Z',
+          workspaceLabel: 'Personal library',
+          workspacePath: '/library',
+        },
+      ],
+    };
 
     vi.stubGlobal(
       'fetch',
@@ -63,6 +128,20 @@ describe('workbench navigation', () => {
               status: 200,
             },
           );
+        }
+
+        if (url.endsWith('/api/workbench/summary')) {
+          return new Response(JSON.stringify(workbenchSummaryResponse), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        if (url.endsWith('/api/notebooks')) {
+          return new Response(JSON.stringify(notebooksResponse), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
         }
 
         if (url.endsWith('/api/discovery/today')) {
@@ -162,12 +241,15 @@ describe('workbench navigation', () => {
       }),
     );
 
-        renderWorkbench('/home');
+    renderWorkbench('/home');
 
-    await user.click(screen.getByRole('link', { name: '搜索' }));
-    expect(screen.getByRole('heading', { name: '外部搜索' })).toBeInTheDocument();
-    await user.clear(screen.getByLabelText('检索主题'));
-    await user.type(screen.getByLabelText('检索主题'), 'tumor board');
+    expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Notebooks' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Search' }));
+    expect(screen.getByRole('heading', { name: 'Search' })).toBeInTheDocument();
+    await user.clear(screen.getByLabelText('Search topic'));
+    await user.type(screen.getByLabelText('Search topic'), 'tumor board');
     await user.click(screen.getByRole('button', { name: 'Search intake boards' }));
     expect(
       await screen.findByRole('heading', { name: 'Tumor board biomarkers for rapid review' }),
@@ -182,9 +264,17 @@ describe('workbench navigation', () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Projects' }));
-    expect(screen.getByRole('heading', { name: '项目工作台' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /open tumor board workspace/i })).toBeInTheDocument();
+    expect(screen.getByText(/recent activity/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: '设置' }));
+    await user.click(screen.getByRole('link', { name: 'Notebooks' }));
+    expect(await screen.findByText('Signal review notebook')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open signal review notebook' })).toHaveAttribute(
+      'href',
+      '/notebooks/notebook-2',
+    );
+
+    await user.click(screen.getByRole('link', { name: 'Settings' }));
     expect(screen.getByLabelText('API Key')).toBeInTheDocument();
     expect(await screen.findByText('API key not configured')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Personal Library')).toBeInTheDocument();
@@ -210,11 +300,8 @@ describe('workbench navigation', () => {
       }),
     );
 
-    await user.click(screen.getByRole('link', { name: '今日推荐' }));
-    expect(screen.getByRole('heading', { name: '今日推荐' })).toBeInTheDocument();
-    expect(
-      await screen.findByRole('heading', { name: 'Tumor board biomarkers for rapid review' }),
-    ).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Home' }));
+    expect(screen.getByRole('heading', { name: 'Research workbench' })).toBeInTheDocument();
   });
 
   it('project surfaces link to canonical /projects project-doc routes', async () => {
