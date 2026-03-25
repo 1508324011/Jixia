@@ -91,9 +91,9 @@ export function createLibraryService(store: LibraryStore): LibraryService {
       return buildLibraryEntryView(store, input.actorSpaceId, input.actorUserId, entry);
     },
     async listEntries(input: ListLibraryEntriesRequest): Promise<LibraryEntryView[]> {
-      const matchingEntries = store.libraryEntries.filter(
-        (entry) => entry.spaceId === input.spaceId,
-      );
+      const matchingEntries = store.libraryEntries
+        .filter((entry) => entry.spaceId === input.spaceId)
+        .sort((left, right) => right.addedAt.localeCompare(left.addedAt));
 
       return matchingEntries.flatMap((entry) => {
         const view = buildLibraryEntryView(

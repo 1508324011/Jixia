@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -6,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { PubmedConnector } from '../../src/server/connectors/pubmed.connector';
 import { createJixiaApp } from '../../src/server/app';
+import { createHttpServer } from '../../src/server/http-server';
 
 function createStubPubmedConnector(): PubmedConnector {
   return {
@@ -32,6 +34,42 @@ function createStubPubmedConnector(): PubmedConnector {
       ];
     },
   };
+}
+
+async function withServer(storageRoot: string, run: (baseUrl: string) => Promise<void>): Promise<void> {
+  const httpServer = createHttpServer({
+    env: {
+      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-library-http.db')}`,
+      JIXIA_HOST: '127.0.0.1',
+      JIXIA_PORT: '3000',
+      JIXIA_STORAGE_ROOT: storageRoot,
+    },
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    httpServer.server.once('error', reject);
+    httpServer.server.listen(0, '127.0.0.1', () => {
+      httpServer.server.off('error', reject);
+      resolve();
+    });
+  });
+
+  const address = httpServer.server.address() as AddressInfo;
+
+  try {
+    await run(`http://127.0.0.1:${address.port}`);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
 }
 
 describe('library import', () => {
@@ -169,6 +207,57 @@ describe('library import', () => {
         entry: {
           visibility: 'private',
         },
+      });
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('exposes richer personal library metadata for inventory triage over HTTP', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-inventory-http-'));
+
+    try {
+      await withServer(storageRoot, async (baseUrl) => {
+        const importResponse = await fetch(`${baseUrl}/api/library/personal/import`, {
+          body: JSON.stringify({
+            sourceLocator: '654321',
+            sourceType: 'pmid',
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        });
+
+        expect(importResponse.status).toBe(201);
+
+        const response = await fetch(`${baseUrl}/api/library/personal`);
+
+        expect(response.status).toBe(200);
+
+        const result = (await response.json()) as {
+          entries: Array<{
+            abstractText?: string;
+            addedAt: string;
+            canonicalId: string;
+            createdAt?: string;
+            sourceLabel?: string;
+            sourceType?: string;
+            title: string;
+          }>;
+        };
+
+        expect(result.entries).toContainEqual(
+          expect.objectContaining({
+            canonicalId: 'pmid:654321',
+            sourceLabel: 'PubMed',
+            sourceType: 'pmid',
+            title: 'Imported PMID paper 654321',
+          }),
+        );
+        expect(result.entries[0]?.abstractText).toContain('Imported PMID metadata');
+        expect(result.entries[0]?.createdAt).toBeTruthy();
+        expect(result.entries[0]?.addedAt).toBeTruthy();
       });
     } finally {
       rmSync(storageRoot, { recursive: true, force: true });
