@@ -22,6 +22,20 @@ import {
 const demoApi = createDemoApi();
 const DEFAULT_PROJECT_SPACE_ID = 'shared-space';
 
+function buildProjectPath(
+  projectId: string,
+  spaceId: string,
+  preserveSpaceContext = false,
+): string {
+  const pathname = `/projects/${projectId}`;
+
+  if (!preserveSpaceContext && spaceId === DEFAULT_PROJECT_SPACE_ID) {
+    return pathname;
+  }
+
+  return `${pathname}?spaceId=${encodeURIComponent(spaceId)}`;
+}
+
 function buildNotesWorkspacePath(
   entryId: string,
   options: {
@@ -170,7 +184,7 @@ export function ReaderPage() {
   const privateNotes = workspace?.privateNotes ?? [];
   const projectComments = workspace?.sharedComments ?? [];
   const linkedSpaceContext = hasExplicitSpaceContext ? resolvedSpaceId : DEFAULT_PROJECT_SPACE_ID;
-  const projectDocsPath = projectId
+  const defaultProjectDocsPath = projectId
     ? buildProjectDocsPath(projectId, 'doc-1', linkedSpaceContext, hasExplicitSpaceContext)
     : null;
   const notesWorkspacePath = buildNotesWorkspacePath(
@@ -181,15 +195,21 @@ export function ReaderPage() {
       spaceId: linkedSpaceContext,
     },
   );
+  const notebookPath = workspace?.companion?.notebookPath ?? notesWorkspacePath;
+  const projectPath = projectId
+    ? (workspace?.companion?.projectPath ??
+      buildProjectPath(projectId, linkedSpaceContext, hasExplicitSpaceContext))
+    : null;
+  const resolvedProjectDocsPath = workspace?.companion?.projectDocsPath ?? defaultProjectDocsPath;
 
   return (
     <main className="page-shell">
       <header className="page-header">
-        <p className="page-kicker">Reading desk · single-paper focus · evidence review</p>
+        <p className="page-kicker">Evidence companion · paper review · notebook handoff</p>
         <h1 className="page-title">Reader</h1>
         <p className="page-description">
-          Stay with the paper here. Private thinking moves to Notes Workspace, and shared drafting
-          stays in Project Docs.
+          Review the evidence here, then move back into the notebook and project surfaces where
+          synthesis and drafting actually live.
         </p>
       </header>
 
@@ -230,10 +250,10 @@ export function ReaderPage() {
         </article>
 
         <aside className="panel paper-workspace">
-          <h2 className="panel-title">Evidence workspace</h2>
+          <h2 className="panel-title">Evidence companion</h2>
           <p className="quiet-copy">
-            Reader stays focused on evidence. Private notes and project docs now live on their own
-            surfaces.
+            Reader stays subordinate to notebook synthesis and project drafting. Use the companion
+            links to move back into the surfaces where decisions are made.
           </p>
           {detail ? (
             <PaperWorkspaceTabs
@@ -247,14 +267,25 @@ export function ReaderPage() {
 
           {detail ? (
             <div className="stack-sm">
-              <p className="quiet-copy">Notebook notes, shared comments, and retrieval status now live inside the tabbed workspace so each lane reflects a real backend boundary.</p>
+              <p className="quiet-copy">
+                Notebook prompts remain the synthesis scaffold in Notes Workspace, while reader keeps
+                the evidence, comments, and governed summaries close at hand.
+              </p>
 
               <div className="button-row">
+                <Link className="panel-link" to={notebookPath}>
+                  Back to notebook
+                </Link>
+                {projectPath ? (
+                  <Link className="panel-link" to={projectPath}>
+                    Back to project
+                  </Link>
+                ) : null}
                 <Link className="panel-link" to={notesWorkspacePath}>
                   Open notes workspace
                 </Link>
-                {projectDocsPath ? (
-                  <Link className="panel-link" to={projectDocsPath}>
+                {resolvedProjectDocsPath ? (
+                  <Link className="panel-link" to={resolvedProjectDocsPath}>
                     Open project docs
                   </Link>
                 ) : null}

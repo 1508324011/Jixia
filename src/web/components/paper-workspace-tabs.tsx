@@ -47,8 +47,9 @@ export function PaperWorkspaceTabs({
             ) : (
               <p className="quiet-copy">No private notes yet. Continue in Notes Workspace.</p>
             ),
-          description: 'Notebook material stays private until you deliberately project it.',
-          title: 'Private notebook lane',
+          description:
+            'Private notebook material stays anchored in Notes Workspace; reader only mirrors the evidence-linked state.',
+          title: 'Notebook companion state',
         };
       case 'shared-comments':
         return {
@@ -64,8 +65,8 @@ export function PaperWorkspaceTabs({
             ) : (
               <p className="quiet-copy">No shared comments yet.</p>
             ),
-          description: 'Project-visible comments stay separate from private notebook capture.',
-          title: 'Shared comments lane',
+          description: 'Project-visible comments stay available here while notebook synthesis remains separate.',
+          title: 'Shared discussion companion',
         };
       case 'retrieval':
         return {
@@ -78,7 +79,7 @@ export function PaperWorkspaceTabs({
               </p>
             </div>
           ),
-          description: 'Represent the real import boundary instead of implying full PDF support.',
+          description: 'Keep the evidence boundary visible without pretending the reader is the full synthesis workspace.',
           title: 'Retrieval state',
         };
       case 'ai':
@@ -105,8 +106,8 @@ export function PaperWorkspaceTabs({
               ) : null}
             </div>
           ),
-          description: 'Trace governed summaries and AI helper outputs back to evidence.',
-          title: 'AI helper content',
+          description: 'Trace governed summaries and AI helper outputs back to evidence before you return to notebook or project drafting.',
+          title: 'AI evidence companion',
         };
     }
   }, [activeTab, governedJob, insights, privateNotes, retrieval, sharedComments]);

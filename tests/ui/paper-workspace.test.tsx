@@ -74,6 +74,12 @@ describe('paper workspace', () => {
         summary: 'Metadata imported',
       },
       workspace: {
+        companion: {
+          notebookPath: '/projects/project-1/library/entry-1/notes',
+          projectDocsPath: '/projects/project-1/writing/doc-1',
+          projectPath: '/projects/project-1',
+          readerPath: '/projects/project-1/library/entry-1/reader',
+        },
         notebookId: 'notebook-1',
         privateNotes: [
           {
@@ -136,6 +142,14 @@ describe('paper workspace', () => {
 
     expect(screen.queryByRole('button', { name: 'Promote latest insight to Writer' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Private note' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to notebook' })).toHaveAttribute(
+      'href',
+      '/projects/project-1/library/entry-1/notes',
+    );
+    expect(screen.getByRole('link', { name: 'Back to project' })).toHaveAttribute(
+      'href',
+      '/projects/project-1',
+    );
     expect(screen.getByRole('link', { name: 'Open notes workspace' })).toHaveAttribute(
       'href',
       '/projects/project-1/library/entry-1/notes',
@@ -198,6 +212,10 @@ describe('paper workspace', () => {
         summary: 'Metadata imported',
       },
       workspace: {
+        companion: {
+          notebookPath: '/library/entry-1/notes',
+          readerPath: '/library/entry-1/reader',
+        },
         notebookId: 'notebook-personal-1',
         privateNotes: [],
         questions: [
@@ -233,6 +251,11 @@ describe('paper workspace', () => {
     expect(await screen.findByText('Personal evidence note')).toBeInTheDocument();
     expect(screen.getByText('Personal context')).toBeInTheDocument();
     expect(screen.queryByText('Project context · project-1')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to notebook' })).toHaveAttribute(
+      'href',
+      '/library/entry-1/notes',
+    );
+    expect(screen.queryByRole('link', { name: 'Back to project' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open notes workspace' })).toHaveAttribute(
       'href',
       '/library/entry-1/notes',
