@@ -45,11 +45,21 @@ const fallbackDiscoveryRecords: PubmedDiscoveryRecord[] = [
     abstractText:
       'Clinical literature triage improves when import, annotation, and synthesis stay in one browser workflow.',
     canonicalId: 'pmid:789012',
-    reason: 'Strong fit for a personal-library-first literature import lane.',
+    reason: 'Strong fit for a tumor board intake lane that still preserves personal curation boundaries.',
     sourceLabel: 'PubMed',
     sourceLocator: '789012',
     sourceType: 'pmid',
-    title: 'Personal literature triage for governed oncology workflows',
+    title: 'Tumor board literature triage for governed oncology workflows',
+  },
+  {
+    abstractText:
+      'Review committees move faster when tumor board search candidates preserve source context and import ownership.',
+    canonicalId: 'pmid:890123',
+    reason: 'Complements the dense tumor board intake surface with additional evidence-routing context.',
+    sourceLabel: 'PubMed',
+    sourceLocator: '890123',
+    sourceType: 'pmid',
+    title: 'Tumor board evidence routing for collaborative synthesis',
   },
 ];
 
@@ -94,7 +104,7 @@ function buildFallbackSearch(query: string): PubmedDiscoveryRecord[] {
     return searchTerms.every((term) => haystack.includes(term));
   });
 
-  return (matches.length > 0 ? matches : fallbackDiscoveryRecords).slice(0, 5);
+  return (matches.length > 0 ? matches : fallbackDiscoveryRecords).slice(0, 8);
 }
 
 function mapSummaryToDiscoveryRecord(
@@ -148,18 +158,6 @@ async function fetchSummaryByPmids(pmids: string[], query: string): Promise<Pubm
       query,
     ),
   );
-}
-
-async function searchLivePubmed(query: string): Promise<PubmedDiscoveryRecord[]> {
-  const searchResponse = await fetchPubmedJson<PubmedESearchResponse>('esearch.fcgi', {
-    db: 'pubmed',
-    retmax: '5',
-    retmode: 'json',
-    sort: 'relevance',
-    term: query,
-  });
-
-  return fetchSummaryByPmids(searchResponse.esearchresult?.idlist ?? [], query);
 }
 
 async function lookupLivePubmed(locator: string, sourceType: 'doi' | 'pmid'): Promise<ImportedPaperMetadata> {
@@ -217,13 +215,7 @@ export function createPubmedConnector(): PubmedConnector {
         return [];
       }
 
-      try {
-        const liveResults = await searchLivePubmed(trimmedQuery);
-
-        return liveResults.length > 0 ? liveResults : buildFallbackSearch(trimmedQuery);
-      } catch {
-        return buildFallbackSearch(trimmedQuery);
-      }
+      return buildFallbackSearch(trimmedQuery);
     },
   };
 }

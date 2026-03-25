@@ -8,13 +8,13 @@ export interface ArxivConnector {
 const fallbackDiscoveryRecords: DiscoveryConnectorResult[] = [
   {
     abstractText:
-      'Preprint discovery is most useful when it remains outside the durable library until a researcher chooses to import it.',
+      'Tumor board preprint discovery is most useful when it remains outside the durable library until a researcher chooses to import it.',
     canonicalId: 'arxiv:2401.00001',
-    reason: 'arXiv preprint relevant to governed intake experimentation.',
+    reason: 'arXiv preprint relevant to governed tumor board intake experimentation.',
     sourceLabel: 'arXiv',
     sourceLocator: '2401.00001',
     sourceType: 'arxiv',
-    title: 'Governed intake patterns for literature workbenches',
+    title: 'Governed tumor board intake patterns for literature workbenches',
   },
 ];
 

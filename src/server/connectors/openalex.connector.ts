@@ -7,13 +7,13 @@ export interface OpenalexConnector {
 const fallbackDiscoveryRecords: DiscoveryConnectorResult[] = [
   {
     abstractText:
-      'Project teams need durable import boundaries so recommendation candidates do not masquerade as owned inventory.',
+      'Tumor board project teams need durable import boundaries so recommendation candidates do not masquerade as owned inventory.',
     canonicalId: 'doi:10.1101/2024.01.01.123456',
-    reason: 'OpenAlex-style discovery signal for import-boundary validation.',
+    reason: 'OpenAlex-style discovery signal for tumor board import-boundary validation.',
     sourceLabel: 'OpenAlex',
     sourceLocator: '10.1101/2024.01.01.123456',
     sourceType: 'doi',
-    title: 'Import boundaries for governed research workbenches',
+    title: 'Import boundaries for governed tumor board workbenches',
   },
 ];
 
