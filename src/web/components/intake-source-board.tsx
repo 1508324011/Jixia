@@ -42,6 +42,16 @@ export function IntakeSourceBoard({
               <div className="stack-xs">
                 <h3 className="panel-title">{item.title}</h3>
                 <p className="quiet-copy">{item.reason}</p>
+                <dl className="intake-card__details">
+                  <div className="intake-card__detail">
+                    <dt className="field-label">Canonical source</dt>
+                    <dd>{item.canonicalId}</dd>
+                  </div>
+                  <div className="intake-card__detail">
+                    <dt className="field-label">Source label</dt>
+                    <dd>{item.sourceLabel}</dd>
+                  </div>
+                </dl>
                 <p className="quiet-copy intake-card__citation">
                   {item.sourceLabel} · {item.canonicalId}
                 </p>
