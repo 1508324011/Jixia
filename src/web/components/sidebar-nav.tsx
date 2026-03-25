@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
 
 const workbenchLinks = [
-  { label: '今日推荐', to: '/today' },
-  { label: '搜索', to: '/search' },
-  { label: 'Library', to: '/library' },
+  { label: 'Home', to: '/home' },
   { label: 'Projects', to: '/projects' },
-  { label: '设置', to: '/settings' },
+  { label: 'Search', to: '/search' },
+  { label: 'Library', to: '/library' },
+  { label: 'Notebooks', to: '/notebooks' },
+  { label: 'Settings', to: '/settings' },
 ] as const;
 
 export function SidebarNav() {

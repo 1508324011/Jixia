@@ -17,7 +17,7 @@ const demoProjectDocIdById: Record<string, string> = {
 export function WorkbenchLayout() {
   const { projectId } = useParams();
   const projectName = projectId ? demoProjectNameById[projectId] ?? projectId : null;
-  const label = projectName ? `Project / ${projectName}` : 'Personal';
+  const label = projectName ? `Project / ${projectName}` : 'Personal workbench';
   const variant = projectName ? 'project' : 'personal';
   const contextActions = projectId
     ? [
@@ -28,11 +28,7 @@ export function WorkbenchLayout() {
           to: `/projects/${projectId}/writing/${demoProjectDocIdById[projectId] ?? 'doc-1'}`,
         },
       ]
-    : [
-        { label: 'Today intake', to: '/today' },
-        { label: 'Library inventory', to: '/library' },
-        { label: 'Projects workspace', to: '/projects' },
-      ];
+    : [];
   const mainClassName = projectId
     ? 'workbench-main workbench-main--project'
     : 'workbench-main workbench-main--personal';

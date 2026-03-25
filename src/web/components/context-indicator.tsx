@@ -12,11 +12,11 @@ interface ContextIndicatorProps {
 }
 
 export function ContextIndicator({ actions, label, variant = 'personal' }: ContextIndicatorProps) {
-  const eyebrow = variant === 'project' ? 'Project alignment' : 'Personal lane';
+  const eyebrow = variant === 'project' ? 'Project alignment' : 'Workbench context';
   const summary =
     variant === 'project'
       ? 'Project-owned docs stay shared while notebook evidence is promoted deliberately.'
-      : 'Private intake stays lightweight until a paper, note, or doc is mature enough to promote.';
+      : 'Keep the right rail focused on current context and recent work instead of duplicating the primary navigation.';
 
   return (
     <section
@@ -28,13 +28,15 @@ export function ContextIndicator({ actions, label, variant = 'personal' }: Conte
         <span className="context-indicator__label">{label}</span>
       </div>
       <p className="quiet-copy">{summary}</p>
-      <div className="context-indicator__facts">
-        {actions.map((action) => (
-          <Link className="status-badge context-indicator__action" key={action.label} to={action.to}>
-            {action.label}
-          </Link>
-        ))}
-      </div>
+      {actions.length > 0 ? (
+        <div className="context-indicator__facts">
+          {actions.map((action) => (
+            <Link className="status-badge context-indicator__action" key={action.label} to={action.to}>
+              {action.label}
+            </Link>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
