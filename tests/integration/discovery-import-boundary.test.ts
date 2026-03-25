@@ -49,10 +49,15 @@ describe('discovery import boundary', () => {
 
     try {
       const baseUrl = await listenOnEphemeralPort(httpServer.server);
-      const search = await fetch(`${baseUrl}/api/discovery/search?q=${encodeURIComponent('oncology')}`);
+      const search = await fetch(
+        `${baseUrl}/api/discovery/search?q=${encodeURIComponent('oncology')}&page=1&pageSize=2`,
+      );
       const searchBody = await search.json();
       const candidate = searchBody.boards[0].items[0];
 
+      expect(searchBody.page).toBe(1);
+      expect(searchBody.pageSize).toBe(2);
+      expect(searchBody.total).toBeGreaterThanOrEqual(1);
       expect(candidate.objectType).toBe('external-candidate');
       expect(candidate.state).toBe('new');
 
