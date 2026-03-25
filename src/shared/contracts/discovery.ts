@@ -4,6 +4,10 @@ export type DiscoverySourceType = Exclude<ImportSourceType, 'upload'>;
 export type DiscoveryObjectType = 'external-candidate';
 export type DiscoveryItemState = 'new' | 'imported';
 
+export const DEFAULT_DISCOVERY_PAGE = 1;
+export const DEFAULT_DISCOVERY_PAGE_SIZE = 10;
+export const MAX_DISCOVERY_PAGE_SIZE = 25;
+
 export interface TodayRecommendation {
   abstractText?: string;
   canonicalId: string;
@@ -31,10 +35,20 @@ export interface DiscoveryTodayResponse {
   items: TodayRecommendation[];
 }
 
+export interface DiscoverySearchRequest {
+  page?: number;
+  pageSize?: number;
+  query: string;
+}
+
 export interface DiscoverySearchResponse {
   boards: DiscoveryBoard[];
+  hasNextPage: boolean;
   items: TodayRecommendation[];
+  page: number;
+  pageSize: number;
   query: string;
+  total: number;
 }
 
 export const discoveryContract = 'jixia-discovery-contract';

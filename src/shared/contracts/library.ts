@@ -34,10 +34,14 @@ export interface LibraryEntryView {
 }
 
 export interface LibraryListItem {
+  abstractText?: string;
   addedAt: string;
   canonicalId: string;
+  createdAt: string;
   entryId: string;
   paperAssetId: string;
+  sourceLabel: string;
+  sourceType: ImportSourceType;
   spaceId: string;
   title: string;
   visibility: LibraryEntryVisibility;
