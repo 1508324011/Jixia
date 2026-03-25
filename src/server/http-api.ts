@@ -1,5 +1,11 @@
+import {
+  DEFAULT_DISCOVERY_PAGE,
+  DEFAULT_DISCOVERY_PAGE_SIZE,
+  MAX_DISCOVERY_PAGE_SIZE,
+} from '@shared/contracts/discovery';
 import type {
   DiscoveryBoard,
+  DiscoverySearchRequest,
   DiscoverySearchResponse,
   DiscoveryTodayResponse,
   TodayRecommendation,
@@ -7,6 +13,7 @@ import type {
 import type { EvidenceSpanRecord } from '@shared/contracts/evidence';
 import type { GovernedJobResponse } from '@shared/contracts/jobs';
 import type {
+  ImportSourceType,
   LibraryEntryVisibility,
   LibraryListResponse,
 } from '@shared/contracts/library';
@@ -26,6 +33,17 @@ import type {
   DemoSpaceRecord,
   DemoSpaceResponse,
 } from '@shared/contracts/spaces';
+import type {
+  WorkbenchProjectSummary,
+  WorkbenchRecentImport,
+  WorkbenchResumeTarget,
+  WorkbenchSummaryResponse,
+} from '@shared/contracts/workbench';
+import type {
+  NotebookDetailResponse,
+  NotebookListResponse,
+  NotebookSummaryView as NotebookRouteView,
+} from '@shared/contracts/notebook';
 import type {
   WritingDocumentResponse,
   WritingDocumentView,
@@ -482,12 +500,33 @@ async function mapGovernedJobResponse(
 function toLibraryListResponse(
   entries: Awaited<ReturnType<JixiaApp['library']['listPersonalEntries']>>,
 ): LibraryListResponse {
+  function deriveLibrarySource(canonicalId: string): {
+    sourceLabel: string;
+    sourceType: ImportSourceType;
+  } {
+    const [rawPrefix] = canonicalId.split(':');
+
+    switch (rawPrefix) {
+      case 'pmid':
+        return { sourceLabel: 'PubMed', sourceType: 'pmid' };
+      case 'doi':
+        return { sourceLabel: 'DOI', sourceType: 'doi' };
+      case 'arxiv':
+        return { sourceLabel: 'arXiv', sourceType: 'arxiv' };
+      default:
+        return { sourceLabel: 'Uploaded file', sourceType: 'upload' };
+    }
+  }
+
   return {
     entries: entries.map(({ asset, entry }) => ({
+      abstractText: asset.abstractText,
       addedAt: entry.addedAt,
       canonicalId: asset.canonicalId,
+      createdAt: asset.createdAt,
       entryId: entry.id,
       paperAssetId: entry.paperAssetId,
+      ...deriveLibrarySource(asset.canonicalId),
       spaceId: entry.spaceId,
       title: asset.title,
       visibility: entry.visibility,
@@ -526,6 +565,42 @@ function toDiscoveryBoards(items: TodayRecommendation[]): DiscoveryBoard[] {
   }));
 }
 
+function parsePositiveIntegerParam(
+  value: string | null,
+  fallback: number,
+  options?: { max?: number },
+): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+
+  if (typeof options?.max === 'number') {
+    return Math.min(options.max, parsed);
+  }
+
+  return parsed;
+}
+
+function resolveDiscoverySearchRequest(requestUrl: URL): DiscoverySearchRequest {
+  return {
+    page: parsePositiveIntegerParam(
+      requestUrl.searchParams.get('page'),
+      DEFAULT_DISCOVERY_PAGE,
+    ),
+    pageSize: parsePositiveIntegerParam(
+      requestUrl.searchParams.get('pageSize'),
+      DEFAULT_DISCOVERY_PAGE_SIZE,
+      { max: MAX_DISCOVERY_PAGE_SIZE },
+    ),
+    query:
+      requestUrl.searchParams.get('query')?.trim() ||
+      requestUrl.searchParams.get('q')?.trim() ||
+      '',
+  };
+}
+
 function toReadingNoteResponse(
   note: Awaited<ReturnType<JixiaApp['reading']['createWorkbenchNote']>>,
 ): ReadingNoteResponse {
@@ -542,6 +617,270 @@ function toWritingDocumentResponse(
   document: NonNullable<Awaited<ReturnType<JixiaApp['writing']['getDocument']>>>,
 ): WritingDocumentResponse {
   return { document };
+}
+
+function humanizeProjectId(projectId: string): string {
+  const label = projectId.replace(/-/g, ' ');
+
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function buildProjectWorkbenchPath(projectId: string, spaceId: string, suffix = ''): string {
+  const basePath = suffix ? `/projects/${projectId}/${suffix}` : `/projects/${projectId}`;
+
+  if (spaceId === nativeDemoFixture.sharedSpaceId) {
+    return basePath;
+  }
+
+  return `${basePath}?spaceId=${encodeURIComponent(spaceId)}`;
+}
+
+function buildNotebookReaderPath(
+  entryId: string,
+  spaceId: string,
+  projectId?: string,
+): string {
+  if (!projectId) {
+    return `/library/${entryId}/reader`;
+  }
+
+  return buildProjectWorkbenchPath(projectId, spaceId, `library/${entryId}/reader`);
+}
+
+function buildNotebookWorkspacePath(spaceId: string, projectId?: string): string {
+  if (!projectId) {
+    return '/library';
+  }
+
+  return buildProjectWorkbenchPath(projectId, spaceId);
+}
+
+function derivePersonalNotebookTitle(paperTitle: string): string {
+  const words = paperTitle.trim().split(/\s+/).filter(Boolean);
+
+  if (words.length === 0) {
+    return 'Personal notebook';
+  }
+
+  return `${words.slice(0, 2).join(' ')} notebook`;
+}
+
+function latestNotebookActivityTimestamp(
+  entryAddedAt: string,
+  notes: Awaited<ReturnType<JixiaApp['notebook']['listNotes']>>,
+): string {
+  return notes.reduce(
+    (latestTimestamp, note) =>
+      note.createdAt.localeCompare(latestTimestamp) > 0 ? note.createdAt : latestTimestamp,
+    entryAddedAt,
+  );
+}
+
+function upsertNotebookSummary(
+  summaries: Map<string, NotebookRouteView>,
+  summary: NotebookRouteView,
+): void {
+  const existing = summaries.get(summary.notebookId);
+
+  if (!existing) {
+    summaries.set(summary.notebookId, summary);
+    return;
+  }
+
+  if (!existing.projectId && summary.projectId) {
+    summaries.set(summary.notebookId, summary);
+    return;
+  }
+
+  if (summary.updatedAt.localeCompare(existing.updatedAt) > 0) {
+    summaries.set(summary.notebookId, summary);
+  }
+}
+
+async function buildNotebookSummaryForEntry(
+  app: JixiaApp,
+  actorUserId: string,
+  item: Awaited<ReturnType<JixiaApp['library']['listPersonalEntries']>>[number],
+  options?: {
+    projectDocsPath?: string;
+    projectId?: string;
+    title?: string;
+    workspaceLabel?: string;
+  },
+): Promise<NotebookRouteView> {
+  const notebook =
+    app.notebook.getNotebookByPaperAsset({
+      ownerUserId: actorUserId,
+      paperAssetId: item.asset.id,
+    }) ??
+    (await app.notebook.getNotebookForLibraryEntry({
+      libraryEntryId: item.entry.id,
+      ownerUserId: actorUserId,
+    }));
+  const notes = await app.notebook.listNotes({
+    libraryEntryId: item.entry.id,
+    ownerUserId: actorUserId,
+  });
+
+  return {
+    entryId: item.entry.id,
+    noteCount: notes.length,
+    notebookId: notebook.id,
+    notesPath: `/notebooks/${notebook.id}`,
+    paperAssetId: item.asset.id,
+    paperTitle: item.asset.title,
+    projectDocsPath: options?.projectDocsPath,
+    projectId: options?.projectId,
+    readerPath: buildNotebookReaderPath(item.entry.id, item.entry.spaceId, options?.projectId),
+    spaceId: item.entry.spaceId,
+    title: options?.title ?? derivePersonalNotebookTitle(item.asset.title),
+    updatedAt: latestNotebookActivityTimestamp(item.entry.addedAt, notes),
+    workspaceLabel: options?.workspaceLabel ?? 'Personal library',
+    workspacePath: buildNotebookWorkspacePath(item.entry.spaceId, options?.projectId),
+  };
+}
+
+async function buildNotebookInventory(
+  app: JixiaApp,
+  actorUserId: string,
+): Promise<NotebookRouteView[]> {
+  const summaries = new Map<string, NotebookRouteView>();
+  const personalEntries = await app.library.listPersonalEntries(actorUserId);
+
+  for (const item of personalEntries) {
+    upsertNotebookSummary(summaries, await buildNotebookSummaryForEntry(app, actorUserId, item));
+  }
+
+  const spaces = await app.spaces.listSpaces(actorUserId);
+
+  for (const space of spaces.filter((candidate) => candidate.kind === 'shared')) {
+    const projectId = nativeDemoFixture.projectId;
+    const projectDocument = await app.writing.getDocument({
+      actorSpaceId: space.id,
+      actorUserId,
+      projectId,
+      spaceId: space.id,
+    });
+    const entries = await app.library.listEntries({
+      actorSpaceId: space.id,
+      actorUserId,
+      spaceId: space.id,
+    });
+
+    for (const item of entries) {
+      upsertNotebookSummary(
+        summaries,
+        await buildNotebookSummaryForEntry(app, actorUserId, item, {
+          projectDocsPath: projectDocument
+            ? buildProjectWorkbenchPath(projectId, space.id, `writing/${projectDocument.documentId}`)
+            : undefined,
+          projectId,
+          title: `${humanizeProjectId(projectId)} synthesis notebook`,
+          workspaceLabel: `${humanizeProjectId(projectId)} workspace`,
+        }),
+      );
+    }
+  }
+
+  return Array.from(summaries.values()).sort((left, right) =>
+    right.updatedAt.localeCompare(left.updatedAt) || left.title.localeCompare(right.title),
+  );
+}
+
+async function buildNotebookDetail(
+  app: JixiaApp,
+  actorUserId: string,
+  notebookId: string,
+): Promise<NotebookRouteView | null> {
+  const notebooks = await buildNotebookInventory(app, actorUserId);
+
+  return notebooks.find((candidate) => candidate.notebookId === notebookId) ?? null;
+}
+
+async function buildWorkbenchSummary(app: JixiaApp): Promise<WorkbenchSummaryResponse> {
+  const spaces = await app.spaces.listSpaces(nativeDemoFixture.actorUserId);
+  const sharedSpaces = spaces.filter((space) => space.kind === 'shared');
+  const recentProjects: WorkbenchProjectSummary[] = [];
+  const recentImports: WorkbenchRecentImport[] = [];
+  const resumeTargets: WorkbenchResumeTarget[] = [];
+
+  for (const space of sharedSpaces) {
+    const entries = await app.library.listEntries({
+      actorSpaceId: space.id,
+      actorUserId: nativeDemoFixture.actorUserId,
+      spaceId: space.id,
+    });
+    const sortedEntries = [...entries].sort((left, right) =>
+      right.entry.addedAt.localeCompare(left.entry.addedAt),
+    );
+    const latestEntry = sortedEntries[0] ?? null;
+    const projectDocument = await app.writing.getDocument({
+      actorSpaceId: space.id,
+      actorUserId: nativeDemoFixture.actorUserId,
+      projectId: nativeDemoFixture.projectId,
+      spaceId: space.id,
+    });
+
+    recentProjects.push({
+      activeNotebookCount: sortedEntries.length,
+      documentId: projectDocument?.documentId,
+      entryCount: sortedEntries.length,
+      projectId: nativeDemoFixture.projectId,
+      recentActivity: latestEntry
+        ? `Recent activity · Imported ${latestEntry.asset.title}`
+        : 'Recent activity · Shared project workspace is ready for new evidence.',
+      spaceId: space.id,
+      title: `${humanizeProjectId(nativeDemoFixture.projectId)} workspace`,
+    });
+
+    for (const { asset, entry } of sortedEntries) {
+      recentImports.push({
+        addedAt: entry.addedAt,
+        canonicalId: asset.canonicalId,
+        entryId: entry.id,
+        projectId: nativeDemoFixture.projectId,
+        spaceId: space.id,
+        title: asset.title,
+        to: buildProjectWorkbenchPath(nativeDemoFixture.projectId, space.id, 'library'),
+      });
+    }
+
+    if (latestEntry) {
+      resumeTargets.push({
+        description:
+          'Jump back into the question-driven synthesis lane for the active tumor board notebook.',
+        kind: 'notebook',
+        title: 'Resume notebook',
+        to: buildProjectWorkbenchPath(
+          nativeDemoFixture.projectId,
+          space.id,
+          `library/${latestEntry.entry.id}/notes`,
+        ),
+      });
+    }
+
+    if (projectDocument) {
+      resumeTargets.push({
+        description: 'Reopen the shared draft where notebook evidence is projected into project writing.',
+        kind: 'project-doc',
+        title: 'Open project docs',
+        to: buildProjectWorkbenchPath(
+          nativeDemoFixture.projectId,
+          space.id,
+          `writing/${projectDocument.documentId}`,
+        ),
+      });
+    }
+  }
+
+  recentProjects.sort((left, right) => right.spaceId.localeCompare(left.spaceId));
+  recentImports.sort((left, right) => right.addedAt.localeCompare(left.addedAt));
+
+  return {
+    recentImports,
+    recentProjects,
+    resumeTargets,
+  };
 }
 
 export async function resolveHttpApi(
@@ -563,19 +902,54 @@ export async function resolveHttpApi(
     }
 
     if ((method === 'GET' || method === 'HEAD') && pathname === '/api/discovery/search') {
-      const query =
-        requestUrl.searchParams.get('query')?.trim() ||
-        requestUrl.searchParams.get('q')?.trim() ||
-        '';
-      const items = query
-        ? await markImportedDiscoveryItems(app, await app.imports.searchDiscovery(query))
-        : [];
+      const searchRequest = resolveDiscoverySearchRequest(requestUrl);
+      const searchResult = searchRequest.query
+        ? await app.imports.searchDiscoveryPage(searchRequest)
+        : {
+            hasNextPage: false,
+            items: [],
+            page: searchRequest.page ?? DEFAULT_DISCOVERY_PAGE,
+            pageSize: searchRequest.pageSize ?? DEFAULT_DISCOVERY_PAGE_SIZE,
+            query: searchRequest.query,
+            total: 0,
+          };
+      const items = await markImportedDiscoveryItems(app, searchResult.items);
 
       return createJsonResponse(200, {
         boards: toDiscoveryBoards(items),
+        hasNextPage: searchResult.hasNextPage,
         items,
-        query,
+        page: searchResult.page,
+        pageSize: searchResult.pageSize,
+        query: searchResult.query,
+        total: searchResult.total,
       } satisfies DiscoverySearchResponse);
+    }
+
+    if ((method === 'GET' || method === 'HEAD') && pathname === '/api/workbench/summary') {
+      return createJsonResponse(200, await buildWorkbenchSummary(app));
+    }
+
+    if ((method === 'GET' || method === 'HEAD') && pathname === '/api/notebooks') {
+      const actorUserId = requestUrl.searchParams.get('userId')?.trim() || DEFAULT_WORKBENCH_USER_ID;
+
+      return createJsonResponse(200, {
+        notebooks: await buildNotebookInventory(app, actorUserId),
+      } satisfies NotebookListResponse);
+    }
+
+    const notebookDetailMatch = pathname.match(/^\/api\/notebooks\/([^/]+)$/);
+
+    if (notebookDetailMatch && (method === 'GET' || method === 'HEAD')) {
+      const actorUserId = requestUrl.searchParams.get('userId')?.trim() || DEFAULT_WORKBENCH_USER_ID;
+      const notebookId = decodePathSegment(notebookDetailMatch[1]);
+      const notebook = await buildNotebookDetail(app, actorUserId, notebookId);
+
+      if (!notebook) {
+        return createJsonResponse(404, { error: 'Notebook not found.' });
+      }
+
+      return createJsonResponse(200, { notebook } satisfies NotebookDetailResponse);
     }
 
     if (method === 'POST' && pathname === '/api/discovery/import') {
@@ -660,7 +1034,7 @@ export async function resolveHttpApi(
       } catch {
         detail = await app.reading.getDetail({
           actorSpaceId: nativeDemoFixture.sharedSpaceId,
-          actorUserId: nativeDemoFixture.actorUserId,
+          actorUserId: DEFAULT_WORKBENCH_USER_ID,
           libraryEntryId,
         });
       }
@@ -806,10 +1180,13 @@ export async function resolveHttpApi(
       const payload = parseCreateProjectReferenceRequest(requestBody);
       const actorSpaceId =
         payload.spaceId ?? requestUrl.searchParams.get('spaceId') ?? nativeDemoFixture.sharedSpaceId;
-      const actorUserId = resolveRouteActorUserId(
-        actorSpaceId,
-        payload.userId ?? requestUrl.searchParams.get('userId'),
-      );
+      const explicitUserId = payload.userId ?? requestUrl.searchParams.get('userId');
+      const actorUserId =
+        payload.sourceType === 'notebook-note' &&
+        actorSpaceId === nativeDemoFixture.sharedSpaceId &&
+        typeof explicitUserId !== 'string'
+          ? DEFAULT_WORKBENCH_USER_ID
+          : resolveRouteActorUserId(actorSpaceId, explicitUserId);
       const reference = await app.projectProjection.createReference({
         actorSpaceId,
         actorUserId,
@@ -962,17 +1339,7 @@ export async function resolveHttpApi(
         spaceId,
       });
 
-      return createJsonResponse(200, {
-        entries: entries.map(({ asset, entry }) => ({
-          addedAt: entry.addedAt,
-          canonicalId: asset.canonicalId,
-          entryId: entry.id,
-          paperAssetId: entry.paperAssetId,
-          spaceId: entry.spaceId,
-          title: asset.title,
-          visibility: entry.visibility,
-        })),
-      } satisfies LibraryListResponse);
+      return createJsonResponse(200, toLibraryListResponse(entries));
     }
 
     const libraryEntryMatch = matchPath(pathname, /^\/api\/library\/([^/]+)$/);

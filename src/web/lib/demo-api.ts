@@ -1,4 +1,5 @@
 import type {
+  DiscoverySearchRequest,
   DiscoverySearchResponse,
   DiscoveryTodayResponse,
 } from '@shared/contracts/discovery';
@@ -24,6 +25,11 @@ import type {
   DemoSpaceListResponse,
   DemoSpaceResponse,
 } from '@shared/contracts/spaces';
+import type {
+  NotebookDetailResponse,
+  NotebookListResponse,
+} from '@shared/contracts/notebook';
+import type { WorkbenchSummaryResponse } from '@shared/contracts/workbench';
 import type {
   PublishState,
   ProjectReferenceRecord,
@@ -95,9 +101,21 @@ function requestDemoJson<T>(baseUrl: string, pathname: string, init?: RequestIni
 }
 
 export function createDemoApi(baseUrl = '') {
-  function buildSearchUrl(pathname: string, query: string): string {
+  function buildSearchUrl(
+    pathname: string,
+    query: string,
+    options?: Omit<DiscoverySearchRequest, 'query'>,
+  ): string {
     const requestUrl = new URL(resolveApiUrl(baseUrl, pathname), 'http://localhost');
     requestUrl.searchParams.set('query', query);
+
+    if (typeof options?.page === 'number') {
+      requestUrl.searchParams.set('page', String(options.page));
+    }
+
+    if (typeof options?.pageSize === 'number') {
+      requestUrl.searchParams.set('pageSize', String(options.pageSize));
+    }
 
     return baseUrl
       ? requestUrl.toString().replace('http://localhost', '')
@@ -112,8 +130,22 @@ export function createDemoApi(baseUrl = '') {
     getTodayRecommendations(): Promise<DiscoveryTodayResponse> {
       return requestDemoJson<DiscoveryTodayResponse>(baseUrl, '/api/discovery/today');
     },
-    searchDiscovery(query: string): Promise<DiscoverySearchResponse> {
-      return requestJson<DiscoverySearchResponse>(buildSearchUrl('/api/discovery/search', query));
+    getWorkbenchSummary(): Promise<WorkbenchSummaryResponse> {
+      return requestDemoJson<WorkbenchSummaryResponse>(baseUrl, '/api/workbench/summary');
+    },
+    getNotebooks(): Promise<NotebookListResponse> {
+      return requestDemoJson<NotebookListResponse>(baseUrl, '/api/notebooks');
+    },
+    getNotebook(notebookId: string): Promise<NotebookDetailResponse> {
+      return requestDemoJson<NotebookDetailResponse>(baseUrl, `/api/notebooks/${notebookId}`);
+    },
+    searchDiscovery(
+      query: string,
+      options?: Omit<DiscoverySearchRequest, 'query'>,
+    ): Promise<DiscoverySearchResponse> {
+      return requestJson<DiscoverySearchResponse>(
+        buildSearchUrl('/api/discovery/search', query, options),
+      );
     },
     getPersonalLibraryEntries(): Promise<LibraryListResponse> {
       return requestJson<LibraryListResponse>(resolvePath('/api/library/personal'));
@@ -186,8 +218,8 @@ export function createDemoApi(baseUrl = '') {
           }),
           method: 'POST',
         },
-        );
-      },
+      );
+    },
     createProjectReference(
       input: CreateProjectReferenceInput,
     ): Promise<{ reference: ProjectReferenceRecord }> {
@@ -206,9 +238,9 @@ export function createDemoApi(baseUrl = '') {
         },
       );
     },
-      getWorkbenchSettings(): Promise<WorkbenchSettingsResponse> {
-        return requestJson<WorkbenchSettingsResponse>(resolvePath('/api/settings/me'));
-      },
+    getWorkbenchSettings(): Promise<WorkbenchSettingsResponse> {
+      return requestJson<WorkbenchSettingsResponse>(resolvePath('/api/settings/me'));
+    },
     saveWorkbenchSettings(
       input: UpdateWorkbenchSettingsRequest,
     ): Promise<WorkbenchSettingsResponse> {
