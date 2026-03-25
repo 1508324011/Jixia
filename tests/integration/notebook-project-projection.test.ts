@@ -39,6 +39,89 @@ async function closeServer(server: ReturnType<typeof createHttpServer>['server']
 }
 
 describe('notebook project projection', () => {
+  it('exposes notebook summaries and notebook detail routes without leaking private note bodies', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-notebook-routes-'));
+
+    try {
+      const seededApp = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
+      const sharedSpace = await seededApp.spaces.createSpace(
+        { kind: 'shared', name: 'Notebook Route Space' },
+        'user-alice',
+      );
+      const imported = await seededApp.imports.importPaper({
+        requestedByUserId: 'user-alice',
+        sourceLocator: '654321',
+        sourceType: 'pmid',
+        spaceId: sharedSpace.id,
+        visibility: 'space_shared',
+      });
+      await seededApp.reading.createWorkbenchNote({
+        authorUserId: 'user-alice',
+        body: 'Notebook detail should not expose this body on the summary route.',
+        libraryEntryId: imported.entry.id,
+        visibility: 'private',
+      });
+      const notebook = await seededApp.notebook.getNotebookForLibraryEntry({
+        libraryEntryId: imported.entry.id,
+        ownerUserId: 'user-alice',
+      });
+      await seededApp.writing.saveProjectDocument({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        citations: [{ paperAssetId: imported.asset.id }],
+        content: 'Shared writer draft before notebook relaunch.',
+        projectId: 'tumor-board',
+        spaceId: sharedSpace.id,
+        title: 'Tumor board literature synthesis',
+      });
+
+      const httpServer = createHttpServer({
+        env: {
+          JIXIA_HOST: '127.0.0.1',
+          JIXIA_STORAGE_ROOT: storageRoot,
+        },
+      });
+
+      try {
+        const baseUrl = await listenOnEphemeralPort(httpServer.server);
+        const listResponse = await fetch(`${baseUrl}/api/notebooks?userId=user-alice`);
+        const listBody = await listResponse.json();
+        const detailResponse = await fetch(`${baseUrl}/api/notebooks/${notebook.id}?userId=user-alice`);
+        const detailBody = await detailResponse.json();
+
+        expect(listResponse.status).toBe(200);
+        expect(listBody.notebooks).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              notebookId: notebook.id,
+              notesPath: `/notebooks/${notebook.id}`,
+              readerPath: `/projects/tumor-board/library/${imported.entry.id}/reader?spaceId=${sharedSpace.id}`,
+              title: 'Tumor board synthesis notebook',
+            }),
+          ]),
+        );
+        expect(detailResponse.status).toBe(200);
+        expect(detailBody.notebook).toEqual(
+          expect.objectContaining({
+            notebookId: notebook.id,
+            entryId: imported.entry.id,
+            workspacePath: `/projects/tumor-board?spaceId=${sharedSpace.id}`,
+          }),
+        );
+        expect(JSON.stringify(listBody)).not.toContain(
+          'Notebook detail should not expose this body on the summary route.',
+        );
+        expect(JSON.stringify(detailBody)).not.toContain(
+          'Notebook detail should not expose this body on the summary route.',
+        );
+      } finally {
+        await closeServer(httpServer.server);
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('creates project references without exposing notebook bodies and surfaces them in project docs', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-notebook-projection-'));
 

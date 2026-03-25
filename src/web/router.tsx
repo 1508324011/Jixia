@@ -4,6 +4,7 @@ import { WorkbenchLayout } from './components/workbench-layout';
 import { HomePage } from './pages/home-page';
 import { LibraryPage } from './pages/library-page';
 import { LoginPage } from './pages/login-page';
+import { NotebooksPage } from './pages/notebooks-page';
 import { NotesPage } from './pages/notes-page';
 import { ProjectPage } from './pages/project-page';
 import { ProjectsPage } from './pages/projects-page';
@@ -64,6 +65,8 @@ export function AppRouter() {
         <Route path="/library" element={<LibraryPage mode="personal" />} />
         <Route path="/library/:entryId/reader" element={<ReaderPage />} />
         <Route path="/library/:entryId/notes" element={<NotesPage />} />
+        <Route path="/notebooks" element={<NotebooksPage />} />
+        <Route path="/notebooks/:notebookId" element={<NotesPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/projects/:projectId" element={<ProjectPage />} />
         <Route path="/projects/:projectId/library" element={<LibraryPage />} />
