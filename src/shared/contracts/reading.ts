@@ -41,7 +41,15 @@ export interface ReadingRetrievalStateView {
   summary: string;
 }
 
+export interface ReadingCompanionView {
+  notebookPath: string;
+  projectDocsPath?: string;
+  projectPath?: string;
+  readerPath: string;
+}
+
 export interface ReadingWorkspaceView {
+  companion?: ReadingCompanionView;
   notebookId: string;
   privateNotes: NoteRecord[];
   questions: NotebookQuestionView[];
