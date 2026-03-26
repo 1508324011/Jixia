@@ -56,7 +56,7 @@ export function HomePage() {
   const featuredResumeTarget = summary?.resumeTargets[0] ?? null;
 
   return (
-    <main className="page-shell dashboard-page">
+    <main className="workbench-route workbench-route--home" data-testid="home-resumption-canvas">
       <header className="page-header">
         <p className="page-kicker">Editorial lab workbench</p>
         <h1 className="page-title">Research workbench</h1>
@@ -65,8 +65,8 @@ export function HomePage() {
         </p>
       </header>
 
-      <section className="stack-sm" aria-label="home desk">
-        <article className="hero-card home-hero">
+      <section className="home-resumption-surface" aria-label="home desk">
+        <article className="home-resumption-hero">
           <div className="stack-xs">
             <span className="intake-source-board__eyebrow">Workbench rhythm</span>
             <h2 className="panel-title">Resume the active notebook and shared project surfaces before starting a fresh intake loop.</h2>
@@ -74,35 +74,35 @@ export function HomePage() {
           <p className="quiet-copy">
             Home now acts as a resumption surface: recent projects stay visible, notebook continuations stay one click away, and imported evidence points back to the shared library it belongs to.
           </p>
-          {featuredResumeTarget ? (
-            <Link className="panel-link" to={featuredResumeTarget.to}>
-              Continue notebook synthesis
-            </Link>
-          ) : null}
+        {featuredResumeTarget ? (
+          <Link className="panel-link" to={featuredResumeTarget.to}>
+            Continue notebook synthesis
+          </Link>
+        ) : null}
         </article>
 
         {isLoading ? (
-          <section className="panel" aria-live="polite">
+          <section className="home-resumption-state" aria-live="polite">
             <h2 className="panel-title">Loading workbench summary…</h2>
             <p className="quiet-copy">Pulling the latest projects, notebook resumes, and imports into the home surface.</p>
           </section>
         ) : null}
 
         {errorMessage ? (
-          <section className="panel" aria-live="polite">
+          <section className="home-resumption-state" aria-live="polite">
             <h2 className="panel-title">Workbench summary unavailable</h2>
             <p className="quiet-copy">{errorMessage}</p>
           </section>
         ) : null}
 
         {summary ? (
-          <div className="panel-grid dashboard-grid">
-            <section className="panel home-desk-card" aria-label="Recent projects">
+          <div className="dashboard-grid home-resumption-grid">
+            <section className="home-resumption-lane" aria-label="Recent projects">
               <h2 className="panel-title">Recent projects</h2>
               {summary.recentProjects.length > 0 ? (
-                <div className="stack-sm">
+                <div className="stack-sm home-resumption-list">
                   {summary.recentProjects.map((project) => (
-                    <article key={`${project.spaceId}-${project.projectId}`} className="stack-xs">
+                    <article key={`${project.spaceId}-${project.projectId}`} className="home-resumption-item stack-xs">
                       <h3 className="panel-title">{project.title}</h3>
                       <p className="quiet-copy">{project.recentActivity}</p>
                       <p className="quiet-copy">
@@ -119,12 +119,12 @@ export function HomePage() {
               )}
             </section>
 
-            <section className="panel home-desk-card" aria-label="Continue working">
+            <section className="home-resumption-lane" aria-label="Continue working">
               <h2 className="panel-title">Continue working</h2>
               {summary.resumeTargets.length > 0 ? (
-                <div className="stack-sm">
+                <div className="stack-sm home-resumption-list">
                   {summary.resumeTargets.map((target) => (
-                    <article key={`${target.kind}-${target.to}`} className="stack-xs">
+                    <article key={`${target.kind}-${target.to}`} className="home-resumption-item stack-xs">
                       <h3 className="panel-title">{target.title}</h3>
                       <p className="quiet-copy">{target.description}</p>
                       <Link className="panel-link" to={target.to}>
@@ -138,12 +138,12 @@ export function HomePage() {
               )}
             </section>
 
-            <section className="panel home-desk-card" aria-label="Recent imports">
+            <section className="home-resumption-lane" aria-label="Recent imports">
               <h2 className="panel-title">Recent imports</h2>
               {summary.recentImports.length > 0 ? (
-                <div className="stack-sm">
+                <div className="stack-sm home-resumption-list">
                   {summary.recentImports.map((item) => (
-                    <article key={item.entryId} className="stack-xs">
+                    <article key={item.entryId} className="home-resumption-item stack-xs">
                       <h3 className="panel-title">{item.title}</h3>
                       <p className="quiet-copy">Imported from {item.canonicalId} and routed into the shared project inventory.</p>
                       <Link className="panel-link" to={item.to}>

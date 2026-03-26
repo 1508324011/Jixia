@@ -46,6 +46,29 @@ const workbenchSummaryResponse = {
 };
 
 describe('home page', () => {
+  it('renders Home as one workbench resumption canvas instead of dashboard cards', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const url = input.toString();
+
+        if (url.endsWith('/api/workbench/summary')) {
+          return new Response(JSON.stringify(workbenchSummaryResponse), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }),
+    );
+
+    renderHomePage();
+
+    expect(await screen.findByTestId('home-resumption-canvas')).toBeInTheDocument();
+    expect(screen.getByLabelText('Recent projects')).not.toHaveClass('panel');
+  });
+
   it('renders recent projects and continue-working entries on Home', async () => {
     vi.stubGlobal(
       'fetch',
