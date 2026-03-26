@@ -8,6 +8,10 @@
 
 **Tech Stack:** React, React Router, TypeScript, Vite, Vitest, current `src/web` shell/components/styles, and existing workbench tests in `tests/ui`.
 
+## Status update after finish pass
+
+As of `2026-03-26`, the shell primitives in this plan are implemented on `demo-native-showcase`, and the follow-on finish pass in `docs/plans/2026-03-26-jixia-shell-decard-consistency-finish-implementation.md` closes the remaining route-level card drift. The current branch state now includes the top-level `/projects` open-view-strip fix, a de-carded `Home` resumption canvas, a flattened `Reader` workspace with docked AI/support lanes, and shared `workbench-route` grammar across `Home`, `Projects`, `Search`, `Library`, `Notebooks`, and `AI`. The task list below remains the record of the original shell-primitives implementation work.
+
 ---
 
 ## Phase-one rules

@@ -4,7 +4,7 @@
 
 ## Implemented status
 
-As of `2026-03-26`, this phase-one shell is implemented on `demo-native-showcase`. The current source now ships the approved Activity Rail + Compact Sidebar split, a lightweight route-backed open-view strip, an `editor-canvas` main surface, and an inspector-style right rail through `src/web/components/workbench-layout.tsx`, `src/web/components/activity-rail.tsx`, `src/web/components/workbench-sidebar.tsx`, and `src/web/components/workbench-open-view-strip.tsx`. The analysis below remains the rationale for the design, but the shell is no longer only a proposal.
+As of `2026-03-26`, this phase-one shell is implemented on `demo-native-showcase`. The current source now ships the approved Activity Rail + Compact Sidebar split, a lightweight route-backed open-view strip, an `editor-canvas` main surface, and an inspector-style right rail through `src/web/components/workbench-layout.tsx`, `src/web/components/activity-rail.tsx`, `src/web/components/workbench-sidebar.tsx`, and `src/web/components/workbench-open-view-strip.tsx`. The follow-on finish pass also removes the remaining route-card drift across `Home`, `Projects`, `Search`, `Library`, `Notebooks`, and `AI`, plus flattens `Reader` into one dominant reading workspace through the route-level updates in `src/web/pages/*.tsx` and the supporting shell CSS in `src/web/styles/app.css`. The analysis below remains the rationale for the design, but the shell is no longer only a proposal.
 
 ## Scope of this design
 
