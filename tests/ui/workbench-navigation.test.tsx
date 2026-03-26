@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,11 +10,67 @@ function renderWorkbench(pathname = '/home') {
 }
 
 afterEach(() => {
+  cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe('workbench navigation', () => {
+  it('renders the IDE Classic Lite shell chrome alongside navigation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const url = input.toString();
+
+        if (url.endsWith('/api/workbench/summary')) {
+          return new Response(JSON.stringify({
+            recentImports: [],
+            recentProjects: [],
+            resumeTargets: [],
+          }), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        if (url.endsWith('/api/discovery/today')) {
+          return new Response(JSON.stringify({ boards: [], items: [] }), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        if (url.endsWith('/api/library/personal')) {
+          return new Response(JSON.stringify({ entries: [] }), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        if (url.endsWith('/api/settings/me')) {
+          return new Response(JSON.stringify({
+            apiKeyConfigured: false,
+            defaultImportTarget: 'personal-library',
+          }), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }),
+    );
+
+    renderWorkbench('/home');
+
+    expect(screen.getByTestId('workbench-activity-rail')).toBeInTheDocument();
+    expect(screen.getByTestId('workbench-compact-sidebar')).toBeInTheDocument();
+    expect(screen.getByTestId('workbench-open-view-strip')).toBeInTheDocument();
+    expect(screen.getByTestId('workbench-left-rail')).toBeInTheDocument();
+    expect(screen.getByTestId('workbench-main-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('workbench-context-rail')).toBeInTheDocument();
+  });
+
   it('sidebar switches among approved top-level surfaces', async () => {
     const user = userEvent.setup();
     const personalLibraryEntries: Array<{

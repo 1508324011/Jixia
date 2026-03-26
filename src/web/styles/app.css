@@ -25,10 +25,11 @@ a {
 
 .app-shell {
   min-height: 100vh;
-  padding: var(--jixia-space-6) var(--jixia-space-4);
+  padding: var(--jixia-space-3);
   background:
-    radial-gradient(circle at top left, rgba(181, 119, 77, 0.08), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(245, 243, 240, 0.92));
+    radial-gradient(circle at top left, rgba(181, 119, 77, 0.08), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(43, 58, 103, 0.08), transparent 32%),
+    linear-gradient(180deg, rgba(248, 245, 240, 0.98), rgba(239, 234, 227, 0.98));
 }
 
 .page-shell {
@@ -107,10 +108,11 @@ a {
 
 .workbench-shell {
   display: grid;
-  gap: var(--jixia-space-4);
+  gap: var(--jixia-space-3);
   align-items: start;
   width: 100%;
   margin: 0 auto;
+  min-height: calc(100vh - (var(--jixia-space-3) * 2));
 }
 
 .workbench-left-rail,
@@ -126,26 +128,161 @@ a {
   align-content: start;
 }
 
-.workbench-context-rail[data-rail-variant='supporting'] {
+.workbench-left-rail {
+  gap: var(--jixia-space-3);
+}
+
+.workbench-main {
+  gap: var(--jixia-space-3);
+}
+
+.workbench-main__canvas {
+  display: grid;
+  min-width: 0;
+}
+
+.workbench-main__canvas > .page-shell {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: clamp(1rem, 2vw, 1.4rem) 0 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workbench-main[data-layout-mode='editor-canvas'] {
+  align-content: start;
+}
+
+.workbench-activity-rail {
+  display: grid;
+  gap: var(--jixia-space-4);
+  justify-items: center;
+  padding: var(--jixia-space-4) var(--jixia-space-2);
+  border: 1px solid rgba(43, 58, 103, 0.08);
+  border-radius: calc(var(--jixia-radius-lg) + 2px);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(242, 237, 229, 0.96)),
+    radial-gradient(circle at top center, rgba(43, 58, 103, 0.12), transparent 44%);
+}
+
+.workbench-activity-rail__header,
+.workbench-activity-rail__actions,
+.workbench-sidebar,
+.workbench-open-view-strip__header {
+  display: grid;
   gap: var(--jixia-space-2);
 }
 
-.workbench-context-rail[data-rail-variant='supporting'] .context-indicator,
-.workbench-context-rail[data-rail-variant='supporting'] .recent-opened-panel {
+.workbench-activity-rail__brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 999px;
+  background: rgba(43, 58, 103, 0.92);
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.workbench-activity-rail__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.85rem;
+  height: 2.85rem;
+  border: 1px solid rgba(43, 58, 103, 0.1);
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--jixia-ink);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+}
+
+.workbench-activity-rail__action:hover,
+.workbench-activity-rail__action--active {
+  border-color: rgba(43, 58, 103, 0.18);
+  background: rgba(43, 58, 103, 0.12);
+}
+
+.workbench-sidebar {
+  gap: var(--jixia-space-3);
+  min-width: 0;
+}
+
+.workbench-sidebar__eyebrow,
+.workbench-open-view-strip__eyebrow {
+  color: var(--jixia-warm);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workbench-sidebar__summary,
+.workbench-open-view-strip__summary {
+  margin: 0;
+  color: var(--jixia-text-muted);
+  font-size: 0.92rem;
+}
+
+.workbench-sidebar .sidebar-nav {
+  position: static;
+}
+
+.workbench-open-view-strip {
+  display: grid;
+  gap: var(--jixia-space-3);
+  padding: var(--jixia-space-3) var(--jixia-space-4);
+  border: 1px solid rgba(43, 58, 103, 0.08);
+  border-radius: calc(var(--jixia-radius-lg) + 2px);
+  background:
+    linear-gradient(180deg, rgba(252, 249, 244, 0.96), rgba(245, 240, 232, 0.98)),
+    radial-gradient(circle at top left, rgba(181, 119, 77, 0.1), transparent 30%);
+}
+
+.workbench-open-view-strip__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--jixia-space-2);
+}
+
+.workbench-open-view-strip__item {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid rgba(43, 58, 103, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--jixia-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.workbench-open-view-strip__item--active {
+  border-color: rgba(43, 58, 103, 0.18);
+  background: rgba(43, 58, 103, 0.12);
+  color: var(--jixia-ink);
+}
+
+.workbench-context-rail[data-rail-variant='inspector'] {
+  gap: var(--jixia-space-2);
+}
+
+.workbench-context-rail[data-rail-variant='inspector'] .context-indicator,
+.workbench-context-rail[data-rail-variant='inspector'] .recent-opened-panel {
   box-shadow: none;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(244, 239, 232, 0.92)),
     radial-gradient(circle at top right, rgba(43, 58, 103, 0.06), transparent 38%);
-}
-
-.workbench-main--personal {
-  align-content: start;
-}
-
-.workbench-main > .page-shell {
-  width: 100%;
-  max-width: none;
-  margin: 0;
 }
 
 .sidebar-nav {
@@ -156,6 +293,12 @@ a {
   border-radius: var(--jixia-radius-lg);
   background: rgba(251, 249, 246, 0.92);
   box-shadow: var(--jixia-shadow);
+}
+
+.sidebar-nav--compact {
+  gap: var(--jixia-space-3);
+  padding: var(--jixia-space-3);
+  box-shadow: none;
 }
 
 .sidebar-nav__brand,
@@ -748,7 +891,14 @@ a {
 
 @media (min-width: 960px) {
   .workbench-shell {
-    grid-template-columns: minmax(216px, 236px) minmax(0, 1fr) minmax(248px, 296px);
+    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr) minmax(220px, 264px);
+  }
+
+  .workbench-left-rail {
+    grid-template-columns: 76px minmax(0, 1fr);
+    align-items: start;
+    position: sticky;
+    top: var(--jixia-space-3);
   }
 
   .dashboard-layout {
@@ -776,9 +926,8 @@ a {
     justify-content: flex-end;
   }
 
-  .sidebar-nav {
-    position: sticky;
-    top: var(--jixia-space-4);
+  .workbench-main__canvas > .page-shell {
+    padding-top: var(--jixia-space-2);
   }
 }
 
