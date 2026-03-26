@@ -253,7 +253,7 @@ export function ReaderPage() {
   const resolvedProjectDocsPath = workspace?.companion?.projectDocsPath ?? defaultProjectDocsPath;
 
   return (
-    <main className="page-shell">
+    <main className="workbench-route workbench-route--reader" data-testid="reader-workspace-canvas">
       <header className="page-header">
         <p className="page-kicker">Reading surface · linked notebook · docked AI</p>
         <h1 className="page-title">{isLoading || isAiLoading ? 'Loading Reader…' : 'Reader'}</h1>
@@ -272,7 +272,7 @@ export function ReaderPage() {
       </section>
 
       <section className="reader-page" aria-label="reading layout">
-        <article className="panel paper-surface reader-document-surface">
+        <article className="reader-document-surface">
           {isLoading ? (
             <>
               <h2 className="panel-title">Loading reading detail…</h2>
@@ -307,15 +307,16 @@ export function ReaderPage() {
           )}
         </article>
 
-        <aside className="panel paper-workspace reader-support-rail">
+        <aside className="reader-support-rail">
           {aiWorkspace ? (
             <AiWorkspaceShell
               description="Dock the active AI conversation beside Reader while keeping notebook and project docs as separate surfaces."
               headingLevel="h2"
               workspace={aiWorkspace}
+              variant="docked"
             />
           ) : (
-            <section className="stack-sm" aria-label="AI workspace shell">
+            <section className="ai-workspace-shell ai-workspace-shell--docked stack-sm" aria-label="AI workspace shell">
               <div className="stack-xs">
                 <h2 className="panel-title">AI Workspace</h2>
                 <p className="quiet-copy">

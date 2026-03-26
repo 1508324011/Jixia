@@ -1,5 +1,4 @@
 import { render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/web/app';
@@ -25,7 +24,6 @@ afterEach(() => {
 
 describe('paper workspace', () => {
   it('keeps deep reading, private notes, and project docs on separate surfaces', async () => {
-    const user = userEvent.setup();
     const readingDetail = {
       asset: {
         abstractText: 'Imported PMID metadata for 654321',
@@ -155,8 +153,10 @@ describe('paper workspace', () => {
 
     renderWorkbench('/projects/project-1/library/entry-1/reader');
 
+    expect(await screen.findByTestId('reader-workspace-canvas')).toBeInTheDocument();
     expect(await screen.findByText('Tumor board biomarkers for rapid review')).toBeInTheDocument();
     const readerCanvas = await screen.findByTestId('reader-document-canvas');
+    expect(readerCanvas.closest('article')).not.toHaveClass('panel');
     expect(within(readerCanvas).getByText('Overview')).toBeInTheDocument();
     expect(
       within(readerCanvas).getByText(
@@ -170,6 +170,7 @@ describe('paper workspace', () => {
     expect(screen.getByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
     expect(screen.getByText('Tumor board evidence review')).toBeInTheDocument();
     const aiAttachments = screen.getByLabelText('AI context attachments');
+    expect(aiAttachments).not.toHaveClass('panel');
     expect(within(aiAttachments).getByText('Tumor board biomarkers for rapid review')).toBeInTheDocument();
     expect(within(aiAttachments).getByText('pmid:654321')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open notebook' })).toHaveAttribute(
