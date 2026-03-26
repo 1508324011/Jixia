@@ -67,6 +67,83 @@ describe('workbench chrome', () => {
           );
         }
 
+        if (url.includes('/api/reading/') && !url.includes('/notes')) {
+          return new Response(
+            JSON.stringify({
+              asset: {
+                abstractText: 'Reader chrome test abstract',
+                canonicalId: 'pmid:reader-test',
+                createdAt: '2026-03-26T00:00:00.000Z',
+                id: 'asset-reader-test',
+                title: 'Reader chrome test paper',
+              },
+              document: {
+                sections: [
+                  {
+                    body: 'Reader chrome test body',
+                    id: 'section-reader-test',
+                    title: 'Overview',
+                  },
+                ],
+                title: 'Reader chrome test paper',
+              },
+              entry: {
+                addedAt: '2026-03-26T00:00:00.000Z',
+                id: 'entry-1',
+                paperAssetId: 'asset-reader-test',
+                spaceId: 'shared-space',
+                visibility: 'space_shared',
+              },
+              insights: [],
+              notes: [],
+              retrieval: {
+                detail: 'Reader chrome test retrieval detail',
+                fullTextAvailable: true,
+                state: 'document-ready',
+                summary: 'Reading document ready',
+              },
+              workspace: {
+                companion: {
+                  notebookPath: '/projects/tumor-board/library/entry-1/notes',
+                  projectDocsPath: '/projects/tumor-board/writing/doc-1',
+                  projectPath: '/projects/tumor-board',
+                  readerPath: '/projects/tumor-board/library/entry-1/reader',
+                },
+                notebookId: 'notebook-reader-test',
+                sharedComments: [],
+              },
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
+        if (url.includes('/api/ai/workspace') && url.includes('entryId=entry-1')) {
+          return new Response(
+            JSON.stringify({
+              workspace: {
+                activeSessionId: 'session-reader-test',
+                sessions: [
+                  {
+                    attachedEntries: [],
+                    createdAt: '2026-03-26T00:00:00.000Z',
+                    id: 'session-reader-test',
+                    summary: 'Reader chrome test AI summary',
+                    title: 'Reader chrome AI session',
+                    updatedAt: '2026-03-26T00:00:00.000Z',
+                  },
+                ],
+              },
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
         throw new Error(`Unexpected fetch request: ${url}`);
       }),
     );
@@ -160,6 +237,43 @@ afterEach(() => {
     renderWorkbench('/projects/tumor-board/library/entry-1/notes');
 
     expect(screen.getByText('Open · Project notes')).toBeInTheDocument();
+  });
+
+  it('labels the top-level /projects route correctly in the open-view strip', () => {
+    renderWorkbench('/projects');
+
+    expect(screen.getByText('Open · Projects')).toBeInTheDocument();
+    expect(screen.queryByText('Open · Home')).not.toBeInTheDocument();
+  });
+
+  it('renders Home as one workbench resumption canvas instead of dashboard cards', async () => {
+    renderWorkbench('/home');
+
+    expect(await screen.findByTestId('home-resumption-canvas')).toBeInTheDocument();
+    expect(screen.getByLabelText('Recent projects')).not.toHaveClass('panel');
+  });
+
+  it('renders Reader as one dominant reading workspace instead of stacked boxed panels', async () => {
+    renderWorkbench('/projects/tumor-board/library/entry-1/reader');
+
+    expect(await screen.findByTestId('reader-workspace-canvas')).toBeInTheDocument();
+    expect(screen.getByTestId('reader-document-canvas').closest('article')).not.toHaveClass('panel');
+    expect(screen.getByLabelText('AI context attachments')).not.toHaveClass('panel');
+  });
+
+  it('keeps the primary workbench routes on one route-shell grammar instead of mixing page-shell cards with workbench chrome', () => {
+    const routes = ['/home', '/projects', '/search', '/library', '/notebooks', '/ai'];
+
+    for (const route of routes) {
+      renderWorkbench(route);
+
+      const routeMain = screen.getByRole('main');
+
+      expect(routeMain).toHaveClass('workbench-route');
+      expect(routeMain).not.toHaveClass('page-shell');
+
+      cleanup();
+    }
   });
 
   it('provides consistent shell surface ordering across all workbench routes', () => {

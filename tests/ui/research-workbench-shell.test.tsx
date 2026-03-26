@@ -22,6 +22,8 @@ describe('research workbench shell', () => {
     expect(screen.getByTestId('workbench-left-rail')).toBeInTheDocument();
     expect(screen.getByTestId('workbench-main-surface')).toBeInTheDocument();
     expect(screen.getByTestId('workbench-context-rail')).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveClass('workbench-route');
+    expect(screen.getByRole('main')).not.toHaveClass('page-shell');
   });
 
   it('activity rail provides primary navigation actions', () => {

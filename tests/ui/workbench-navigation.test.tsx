@@ -71,6 +71,38 @@ describe('workbench navigation', () => {
     expect(screen.getByTestId('workbench-context-rail')).toBeInTheDocument();
   });
 
+  it('keeps the top-level /projects route labeled as Projects in the open-view strip', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const url = input.toString();
+
+        if (url.endsWith('/api/workbench/summary')) {
+          return new Response(
+            JSON.stringify({
+              recentImports: [],
+              recentProjects: [],
+              resumeTargets: [],
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }),
+    );
+
+    renderWorkbench('/projects');
+
+    expect(await screen.findByText('Open · Projects')).toBeInTheDocument();
+    expect(screen.queryByText('Open · Home')).not.toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveClass('workbench-route');
+    expect(screen.getByRole('main')).not.toHaveClass('page-shell');
+  });
+
   it('sidebar switches among approved top-level surfaces', async () => {
     const user = userEvent.setup();
     const personalLibraryEntries: Array<{
@@ -354,6 +386,8 @@ describe('workbench navigation', () => {
     expect(
       await screen.findByRole('heading', { name: 'Tumor board biomarkers for rapid review' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveClass('workbench-route');
+    expect(screen.getByTestId('library-inventory-surface')).not.toHaveClass('panel');
 
     await user.click(screen.getByRole('link', { name: 'Projects' }));
     expect(await screen.findByRole('link', { name: /open tumor board workspace/i })).toBeInTheDocument();
