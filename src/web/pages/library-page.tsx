@@ -216,7 +216,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
   }
 
   return (
-    <main className="page-shell page-shell--wide">
+    <main className="workbench-route workbench-route--library">
       <header className="page-header">
         <p className="page-kicker">{kicker}</p>
         <h1 className="page-title">Library</h1>
@@ -231,7 +231,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
 
       <section aria-label="library list" className="library-workbench">
         {!isPersonalMode ? (
-          <article className="panel stack-sm">
+          <article className="library-import-surface stack-sm">
             <h2 className="panel-title">Import paper</h2>
             <p className="quiet-copy">
               Bring one more deterministic DOI, PMID, or arXiv record into the shared shelf before
@@ -283,7 +283,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
         ) : null}
 
         <article
-          className="panel library-inventory-panel library-inventory-surface"
+          className="library-inventory-panel library-inventory-surface"
           data-density="dense"
           data-layout-mode="inventory"
           data-testid="library-inventory-surface"
@@ -303,7 +303,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
           </div>
 
           {isLoadingEntries ? (
-            <article className="panel">
+            <article className="library-state-card">
               <h2 className="panel-title">Loading library entries…</h2>
               <p className="quiet-copy">
                 {isPersonalMode
@@ -314,14 +314,14 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
           ) : null}
 
           {libraryError ? (
-            <article className="panel">
+            <article className="library-state-card">
               <h2 className="panel-title">Library unavailable</h2>
               <p className="quiet-copy">{libraryError}</p>
             </article>
           ) : null}
 
           {!isLoadingEntries && !libraryError && filteredEntries.length === 0 ? (
-            <article className="panel">
+            <article className="library-state-card">
               <h2 className="panel-title">No imported literature yet</h2>
               <p className="quiet-copy">
                 {isPersonalMode
@@ -333,7 +333,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
 
           {!isLoadingEntries && !libraryError
             ? filteredEntries.map((entry) => (
-                <article className="panel library-entry-card" key={entry.entryId}>
+                <article className="library-entry-card" key={entry.entryId}>
                   <div className="stack-xs">
                     <span className="intake-source-board__eyebrow">
                       {isPersonalMode ? 'Personal inventory row' : 'Project inventory row'}

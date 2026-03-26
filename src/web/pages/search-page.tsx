@@ -144,7 +144,7 @@ export function SearchPage() {
   const hasMatches = (searchResult?.total ?? 0) > 0;
 
   return (
-    <main className="page-shell">
+    <main className="workbench-route workbench-route--search">
       <header className="page-header">
         <p className="page-kicker">Discovery intake</p>
         <h1 className="page-title">Search</h1>
@@ -154,7 +154,7 @@ export function SearchPage() {
         </p>
       </header>
 
-      <section className="panel search-surface">
+      <section className="search-surface search-surface--workbench">
         <form
           className="field-stack"
           onSubmit={(event) => {
@@ -184,7 +184,7 @@ export function SearchPage() {
       </section>
 
       {hasSearchResult ? (
-        <section className="panel search-results-toolbar" aria-label="search pagination summary">
+        <section className="search-results-toolbar search-results-toolbar--workbench" aria-label="search pagination summary">
           <div className="stack-xs">
             <p className="field-label">Search window</p>
             <p className="search-results-summary">{formatSearchWindow(searchResult)}</p>
@@ -216,7 +216,7 @@ export function SearchPage() {
       ) : null}
 
       {!isLoading && hasSearchResult && !hasMatches ? (
-        <section className="panel">
+        <section className="search-empty-state">
           <p className="quiet-copy">No discovery candidates matched this search.</p>
         </section>
       ) : null}

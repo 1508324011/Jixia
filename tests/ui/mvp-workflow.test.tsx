@@ -565,12 +565,14 @@ describe('mvp workflow shell', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveClass('workbench-route');
     expect(
       await screen.findByText('Context · Tumor Board Shared Space / tumor-board'),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('context bar')).toHaveTextContent(
       'Context · Tumor Board Shared Space / tumor-board',
     );
+    expect(screen.getByTestId('library-inventory-surface')).not.toHaveClass('panel');
     expect(screen.getByText('Project · tumor-board')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open reader' })).toBeInTheDocument();
   });

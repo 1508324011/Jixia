@@ -201,6 +201,8 @@ describe('native demo workflow', () => {
     render(<App />);
 
     expect(await screen.findByText('Imported PMID paper 123456')).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveClass('workbench-route');
+    expect(screen.getByTestId('library-inventory-surface')).not.toHaveClass('panel');
     expect(screen.queryByText('Loading state placeholder')).not.toBeInTheDocument();
     expect(screen.queryByText('Empty shelf placeholder')).not.toBeInTheDocument();
   });
