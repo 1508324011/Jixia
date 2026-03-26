@@ -47,7 +47,7 @@ export function AiWorkspacePage() {
   }, []);
 
   return (
-    <main className="page-shell">
+    <main className="workbench-route workbench-route--ai">
       <header className="page-header">
         <p className="page-kicker">Global research workspace</p>
         <h1 className="page-title">AI Workspace</h1>
@@ -58,13 +58,13 @@ export function AiWorkspacePage() {
       </header>
 
       {isLoading ? (
-        <section className="panel stack-sm" aria-label="ai workspace overview">
+        <section className="ai-workspace-state stack-sm" aria-label="ai workspace overview">
           <p className="quiet-copy">
             Loading active sessions and their attached reading context.
           </p>
         </section>
       ) : errorMessage ? (
-        <section className="panel stack-sm" aria-label="ai workspace overview">
+        <section className="ai-workspace-state stack-sm" aria-label="ai workspace overview">
           <p className="quiet-copy">{errorMessage}</p>
         </section>
       ) : workspace ? (
@@ -72,6 +72,7 @@ export function AiWorkspacePage() {
           description="Keep governed conversations, reading follow-ups, and cross-paper synthesis in one independent workspace instead of burying them inside Reader or Notebook routes."
           headingLevel="h2"
           showHeading={false}
+          variant="docked"
           workspace={workspace}
         />
       ) : null}
