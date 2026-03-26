@@ -21,7 +21,7 @@ The currently approved milestone remains **Unified Intake & Deep Reading Workben
 - `Project Docs` remain project-owned shared writing objects
 - notebook-to-project crossing happens only through the explicit **Insert into project docs** projection flow, which creates a project-owned reference without exposing notebook bodies
 
-This means the demo can now truthfully show the rebuilt shell, dense Search/Library feeder surfaces, the document-first Reader, docked AI, browser-side projection, and shared Project Docs. It does **not** claim that automatic recommendation ranking or the full `Push lane` are already complete.
+This means the demo can now truthfully show the rebuilt IDE Classic Lite shell with a persistent activity rail, compact sidebar, top open-view strip, dominant editor canvas, dense Search/Library feeder surfaces, the document-first Reader, docked AI, browser-side projection, and shared Project Docs. It does **not** claim that automatic recommendation ranking or the full `Push lane` are already complete.
 
 ## Runtime contract
 
@@ -84,7 +84,7 @@ Home -> Projects -> Library -> Reader -> AI Workspace / Notebook -> Project Docs
 
 ### A. Feeder-surface walkthrough
 
-1. Open **Research workbench** at `/home` and confirm the three-pane shell is present.
+1. Open **Research workbench** at `/home` and confirm the IDE Classic Lite shell is present: activity rail on the far left, compact sidebar, top open-view strip, dominant center canvas, and quieter inspector rail on the right.
 2. In **Recent projects**, click **Open tumor board workspace** and confirm the project overview offers **Open active reader**, **Open active notebook**, and **Open project docs** as sibling surfaces rather than one embedded desk.
 3. In **Recent imports**, click **Open project library** and confirm the browser lands in the dense project `Library` feeder surface.
 4. Confirm the library inventory is broad, scan-friendly, and still preserves the row actions **Open notebook**, **Open reader**, and **Open project docs**.
@@ -119,7 +119,7 @@ If you want to verify the intake side of the same architecture, open `/search`, 
 ## What this demo proves
 
 - the native reset path restores a known server-owned state
-- the rebuilt browser shell is a stable three-pane `Research workbench`
+- the rebuilt browser shell now uses an IDE Classic Lite `Research workbench` frame with a persistent activity rail, compact sidebar, open-view strip, dominant editor canvas, and quieter inspector rail
 - Search and Library now behave as dense feeder surfaces into deeper work
 - `Reader` is now document-first on the left with docked AI and supporting context on the right
 - `AI Workspace` is global, independent, and reachable both directly and from Reader
