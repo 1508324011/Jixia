@@ -8,6 +8,10 @@
 
 **Tech Stack:** React, React Router, TypeScript, Vite, Vitest, current `src/web` pages/components/styles, `src/web/lib/demo-api.ts`, `src/shared/contracts/*`, `src/server/http-api.ts`, `src/server/services/*`, and `docs/runbooks/native-demo-showcase.md`.
 
+## Status update after shell implementation
+
+As of `2026-03-26`, the shell-density portion of this broader redesign is now implemented by the follow-on shell plan in `docs/plans/2026-03-26-jixia-ide-classic-lite-shell-implementation.md`. The active demo shell now uses an activity rail, compact sidebar, top open-view strip, `editor-canvas` main surface, and quieter inspector rail. Keep this document as the broader redesign sequence, but treat the newer shell plan and current source files as the source of truth for shell-only behavior on `demo-native-showcase`.
+
 ---
 
 ## Planning baseline

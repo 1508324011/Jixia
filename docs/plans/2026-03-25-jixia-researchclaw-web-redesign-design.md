@@ -2,6 +2,10 @@
 
 **Goal:** Redesign the Jixia web workbench so it feels closer to ResearchClaw in shell density, reading continuity, and workbench composition while keeping Jixia's server-first ownership model and replacing the current question-driven notebook with a private Notion-like cloud document.
 
+## Status update after shell implementation
+
+As of `2026-03-26`, `demo-native-showcase` now ships the shell-only IDE Classic Lite phase described by the follow-on shell plan. The live workbench now includes a persistent activity rail, a compact sidebar, a route-backed open-view strip, an `editor-canvas` main surface, and an inspector-style right rail. The historical observations below remain useful as rationale for why this redesign was needed, but shell-specific source evidence that referred to the old centered `page-shell` framing should be read as pre-implementation context rather than the current branch state.
+
 ## Why this redesign exists
 
 The current `demo-native-showcase` branch has already proven important foundational work:
