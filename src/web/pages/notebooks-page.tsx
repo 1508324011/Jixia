@@ -55,7 +55,7 @@ export function NotebooksPage() {
   }, []);
 
   return (
-    <main className="page-shell">
+    <main className="workbench-route workbench-route--notebooks">
       <header className="page-header">
         <p className="page-kicker">Notebook workbench</p>
         <h1 className="page-title">Notebooks</h1>
@@ -66,18 +66,18 @@ export function NotebooksPage() {
 
       <div className="panel-grid top-level-surface-grid">
         {isLoading ? (
-          <section className="panel">
+          <section className="notebooks-surface notebooks-surface--state">
             <h2 className="panel-title">Loading notebooks…</h2>
             <p className="quiet-copy">Collecting notebook contexts across personal and project work.</p>
           </section>
         ) : errorMessage ? (
-          <section className="panel">
+          <section className="notebooks-surface notebooks-surface--state">
             <h2 className="panel-title">Notebook inventory unavailable</h2>
             <p className="quiet-copy">{errorMessage}</p>
           </section>
         ) : notebooks.length > 0 ? (
           notebooks.map((notebook) => (
-            <section key={notebook.notebookId} className="panel stack-sm">
+            <section key={notebook.notebookId} className="notebooks-surface notebooks-surface--entry stack-sm">
               <div className="stack-xs">
                 <p className="page-kicker">{notebook.workspaceLabel}</p>
                 <h2 className="panel-title">{notebook.title}</h2>
@@ -110,7 +110,7 @@ export function NotebooksPage() {
             </section>
           ))
         ) : (
-          <section className="panel">
+          <section className="notebooks-surface notebooks-surface--state">
             <h2 className="panel-title">No notebooks yet</h2>
             <p className="quiet-copy">
               Notebook routes become active as soon as imported evidence is ready for synthesis.

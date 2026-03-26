@@ -58,7 +58,7 @@ export function ProjectsPage() {
   }, []);
 
   return (
-    <main className="page-shell">
+    <main className="workbench-route workbench-route--projects">
       <header className="page-header">
         <p className="page-kicker">Recent activity</p>
         <h1 className="page-title">Projects</h1>
@@ -67,21 +67,21 @@ export function ProjectsPage() {
 
       <div className="panel-grid top-level-surface-grid">
         {isLoading ? (
-          <section className="panel" aria-live="polite">
+          <section className="projects-surface projects-surface--state" aria-live="polite">
             <h2 className="panel-title">Loading project inventory…</h2>
             <p className="quiet-copy">Gathering recent activity and notebook status from shared workspaces.</p>
           </section>
         ) : null}
 
         {errorMessage ? (
-          <section className="panel" aria-live="polite">
+          <section className="projects-surface projects-surface--state" aria-live="polite">
             <h2 className="panel-title">Project inventory unavailable</h2>
             <p className="quiet-copy">{errorMessage}</p>
           </section>
         ) : null}
 
         {summary?.recentProjects.map((project) => (
-          <section key={`${project.spaceId}-${project.projectId}`} className="panel">
+          <section key={`${project.spaceId}-${project.projectId}`} className="projects-surface projects-surface--project">
             <h2 className="panel-title">{project.title}</h2>
             <p className="quiet-copy">{formatRecentActivity(project.recentActivity)}</p>
             <p className="quiet-copy">
@@ -107,7 +107,7 @@ export function ProjectsPage() {
         ))}
 
         {summary && summary.recentProjects.length === 0 ? (
-          <section className="panel">
+          <section className="projects-surface projects-surface--state">
             <h2 className="panel-title">No shared projects yet</h2>
             <p className="quiet-copy">Once a shared workspace accumulates library entries or project docs, it will appear here as a resumable project surface.</p>
           </section>
