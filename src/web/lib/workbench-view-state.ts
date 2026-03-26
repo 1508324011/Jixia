@@ -15,6 +15,10 @@ function getProjectId(pathname: string) {
 }
 
 function getCurrentView(pathname: string): WorkbenchView {
+  if (pathname === '/projects' || pathname.startsWith('/projects?')) {
+    return { current: true, label: 'Projects', to: '/projects' };
+  }
+
   if (pathname.startsWith('/projects/') && pathname.includes('/writing/')) {
     return { current: true, label: 'Project docs', to: pathname };
   }
