@@ -21,7 +21,7 @@ describe('research workbench shell', () => {
     expect(screen.getByTestId('workbench-open-view-strip')).toBeInTheDocument();
     expect(screen.getByTestId('workbench-left-rail')).toBeInTheDocument();
     expect(screen.getByTestId('workbench-main-surface')).toBeInTheDocument();
-    expect(screen.getByTestId('workbench-context-rail')).toBeInTheDocument();
+    expect(screen.queryByTestId('workbench-context-rail')).not.toBeInTheDocument();
     expect(screen.getByRole('main')).toHaveClass('workbench-route');
     expect(screen.getByRole('main')).not.toHaveClass('page-shell');
   });
@@ -34,17 +34,13 @@ describe('research workbench shell', () => {
     expect(activityRail).toHaveAttribute('data-rail-variant', 'activity');
   });
 
-  it('compact sidebar displays top-level navigation links', () => {
-    renderWorkbench('/home');
+  it('compact sidebar displays contextual mode content instead of duplicate global navigation', () => {
+    renderWorkbench('/projects');
 
     expect(screen.getByTestId('workbench-compact-sidebar')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Search' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Notebooks' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'AI' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByTestId('workbench-contextual-sidebar')).toBeInTheDocument();
+    expect(screen.getByText('Project workspaces')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
   });
 
   it('open-view strip shows currently open views for quick switching', () => {
@@ -55,13 +51,13 @@ describe('research workbench shell', () => {
     expect(openViewStrip).toHaveAttribute('data-strip-variant', 'open-views');
   });
 
-  it('renders a stable three-pane workbench shell with persistent context surfaces', () => {
+  it('renders a stable compact shell without default recent-opened filler', () => {
     renderWorkbench();
 
     expect(screen.getByTestId('workbench-left-rail')).toBeInTheDocument();
     expect(screen.getByTestId('workbench-main-surface')).toBeInTheDocument();
-    expect(screen.getByTestId('workbench-context-rail')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '最近打开' })).toBeInTheDocument();
+    expect(screen.queryByTestId('workbench-context-rail')).not.toBeInTheDocument();
+    expect(screen.queryByText('最近打开')).not.toBeInTheDocument();
   });
 
   it('renders a desktop workbench shell without page-width constraining the main surface', () => {
@@ -73,8 +69,8 @@ describe('research workbench shell', () => {
     );
   });
 
-  it('keeps the context rail as an inspector-style supporting surface', () => {
-    renderWorkbench('/home');
+  it('keeps the context rail as a minimal inspector on project routes only', () => {
+    renderWorkbench('/projects/tumor-board');
 
     const contextRail = screen.getByTestId('workbench-context-rail');
     expect(contextRail).toHaveAttribute('data-rail-variant', 'inspector');

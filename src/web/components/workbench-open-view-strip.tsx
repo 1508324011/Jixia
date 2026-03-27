@@ -13,13 +13,6 @@ export function WorkbenchOpenViewStrip() {
       data-strip-variant="open-views"
       data-testid="workbench-open-view-strip"
     >
-      <div className="workbench-open-view-strip__header stack-xs">
-        <span className="workbench-open-view-strip__eyebrow">Open views</span>
-        <p className="workbench-open-view-strip__summary">
-          Surface the current lane and its adjacent work surfaces without switching the whole shell grammar.
-        </p>
-      </div>
-
       <div className="workbench-open-view-strip__items">
         {views.map((view) => (
           <NavLink

@@ -255,12 +255,7 @@ export function ReaderPage() {
   return (
     <main className="workbench-route workbench-route--reader" data-testid="reader-workspace-canvas">
       <header className="page-header">
-        <p className="page-kicker">Reading surface · linked notebook · docked AI</p>
         <h1 className="page-title">{isLoading || isAiLoading ? 'Loading Reader…' : 'Reader'}</h1>
-        <p className="page-description">
-          Review the evidence here, then continue into Notebook, AI Workspace, or Project Docs
-          without collapsing those surfaces into the reader route.
-        </p>
       </header>
 
       <section aria-label="context bar" className="context-bar">
@@ -283,16 +278,8 @@ export function ReaderPage() {
               <h2 className="panel-title">Reader unavailable</h2>
               <p className="quiet-copy">{loadError}</p>
             </>
-            ) : detail ? (
+          ) : detail ? (
               <>
-                <div className="reader-document-surface__intro stack-xs">
-                  <p className="page-kicker">Document-first reading canvas</p>
-                  <p className="quiet-copy">
-                    Read on the left, keep AI docked on the right, and exit into Notebook or
-                    Project Docs without turning Reader back into a companion-tab shell.
-                  </p>
-                </div>
-
                 <ReaderDocumentCanvas
                   canonicalId={detail.asset.canonicalId}
                   document={readingDocument ?? resolveReadingDocument(detail)}
@@ -406,11 +393,6 @@ export function ReaderPage() {
               </section>
 
               <div className="stack-sm">
-                <p className="quiet-copy">
-                  Reader passes the current paper context into AI Workspace, but Notebook stays
-                  private and Project Docs stay project-owned.
-                </p>
-
                 <div className="button-row">
                   <Link className="panel-link" to={notebookPath}>
                     Open notebook

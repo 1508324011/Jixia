@@ -171,19 +171,15 @@ afterEach(() => {
     expect(screen.getByRole('link', { name: 'Settings mode' })).toBeInTheDocument();
   });
 
-  it('renders compact sidebar with top-level navigation links', () => {
-    renderWorkbench('/home');
+  it('renders compact sidebar as contextual mode content instead of duplicate global navigation', () => {
+    renderWorkbench('/projects');
 
     const compactSidebar = screen.getByTestId('workbench-compact-sidebar');
     expect(compactSidebar).toBeInTheDocument();
-    
-    expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Search' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Notebooks' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'AI' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+
+    expect(screen.getByTestId('workbench-contextual-sidebar')).toBeInTheDocument();
+    expect(screen.getByText('Project workspaces')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
   });
 
   it('renders open-view strip for quick access to currently open views', () => {
@@ -194,11 +190,33 @@ afterEach(() => {
     expect(openViewStrip).toHaveAttribute('data-strip-variant', 'open-views');
   });
 
+  it('renders the compact shell without sidebar or strip explainer copy', () => {
+    renderWorkbench('/library');
+
+    expect(screen.queryByText('IDE Classic Lite')).not.toBeInTheDocument();
+    expect(screen.queryByText(/keep primary navigation compact/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Open views')).not.toBeInTheDocument();
+    expect(screen.queryByText(/surface the current lane/i)).not.toBeInTheDocument();
+  });
+
+  it('does not render recent-opened filler cards in the default compact shell', () => {
+    renderWorkbench('/home');
+
+    expect(screen.queryByText('最近打开')).not.toBeInTheDocument();
+  });
+
   it('maintains inspector-style context rail for project and personal contexts', () => {
     renderWorkbench('/projects/tumor-board');
 
     const contextRail = screen.getByTestId('workbench-context-rail');
     expect(contextRail).toHaveAttribute('data-rail-variant', 'inspector');
+    expect(screen.queryByText(/project-owned docs stay shared while notebook evidence is promoted deliberately/i)).not.toBeInTheDocument();
+
+    cleanup();
+
+    renderWorkbench('/home');
+
+    expect(screen.queryByTestId('workbench-context-rail')).not.toBeInTheDocument();
   });
 
   it('renders shell correctly on /home route', () => {
@@ -208,7 +226,7 @@ afterEach(() => {
     expect(screen.getByTestId('workbench-compact-sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('workbench-open-view-strip')).toBeInTheDocument();
     expect(screen.getByTestId('workbench-main-surface')).toBeInTheDocument();
-    expect(screen.getByTestId('workbench-context-rail')).toBeInTheDocument();
+    expect(screen.queryByTestId('workbench-context-rail')).not.toBeInTheDocument();
   });
 
   it('renders shell correctly on /projects route', () => {
@@ -218,7 +236,7 @@ afterEach(() => {
     expect(screen.getByTestId('workbench-compact-sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('workbench-open-view-strip')).toBeInTheDocument();
     expect(screen.getByTestId('workbench-main-surface')).toBeInTheDocument();
-    expect(screen.getByTestId('workbench-context-rail')).toBeInTheDocument();
+    expect(screen.queryByTestId('workbench-context-rail')).not.toBeInTheDocument();
   });
 
   it('labels the today route in the open-view strip', () => {
@@ -276,6 +294,31 @@ afterEach(() => {
     }
   });
 
+  it('keeps primary routes concise instead of leading with large explanatory page headers', async () => {
+    renderWorkbench('/search');
+    expect(screen.queryByText(/search across the current discovery sources/i)).not.toBeInTheDocument();
+
+    cleanup();
+    renderWorkbench('/projects');
+    expect(screen.queryByText(/review shared workspaces as real inventories/i)).not.toBeInTheDocument();
+
+    cleanup();
+    renderWorkbench('/library');
+    expect(screen.queryByText(/review imported literature entries/i)).not.toBeInTheDocument();
+
+    cleanup();
+    renderWorkbench('/notebooks');
+    expect(screen.queryByText(/private notebook documents stay separate/i)).not.toBeInTheDocument();
+
+    cleanup();
+    renderWorkbench('/ai');
+    expect(screen.queryByText(/keep governed conversations, reading follow-ups/i)).not.toBeInTheDocument();
+
+    cleanup();
+    renderWorkbench('/projects/tumor-board/library/entry-1/reader');
+    expect(screen.queryByText(/review the evidence here, then continue into notebook/i)).not.toBeInTheDocument();
+  });
+
   it('provides consistent shell surface ordering across all workbench routes', () => {
     const routes = ['/home', '/today', '/projects', '/library', '/search', '/notebooks', '/ai', '/settings'];
 
@@ -286,13 +329,10 @@ afterEach(() => {
       const compactSidebar = screen.getByTestId('workbench-compact-sidebar');
       const mainSurface = screen.getByTestId('workbench-main-surface');
       const openViewStrip = screen.getByTestId('workbench-open-view-strip');
-      const contextRail = screen.getByTestId('workbench-context-rail');
-
       expect(activityRail).toBeInTheDocument();
       expect(compactSidebar).toBeInTheDocument();
       expect(mainSurface).toBeInTheDocument();
       expect(openViewStrip).toBeInTheDocument();
-      expect(contextRail).toBeInTheDocument();
 
       cleanup();
     }

@@ -13,10 +13,6 @@ interface ContextIndicatorProps {
 
 export function ContextIndicator({ actions, label, variant = 'personal' }: ContextIndicatorProps) {
   const eyebrow = variant === 'project' ? 'Project alignment' : 'Workbench context';
-  const summary =
-    variant === 'project'
-      ? 'Project-owned docs stay shared while notebook evidence is promoted deliberately.'
-      : 'Keep the right rail focused on current context and recent work instead of duplicating the primary navigation.';
 
   return (
     <section
@@ -27,7 +23,6 @@ export function ContextIndicator({ actions, label, variant = 'personal' }: Conte
         <span className="context-indicator__eyebrow">{eyebrow}</span>
         <span className="context-indicator__label">{label}</span>
       </div>
-      <p className="quiet-copy">{summary}</p>
       {actions.length > 0 ? (
         <div className="context-indicator__facts">
           {actions.map((action) => (
