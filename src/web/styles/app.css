@@ -162,6 +162,14 @@ a {
   min-width: 0;
 }
 
+.workbench-route > .page-header {
+  gap: var(--jixia-space-1);
+}
+
+.workbench-route > .page-header .page-title {
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+}
+
 .workbench-route--home {
   align-content: start;
 }
@@ -292,6 +300,60 @@ a {
   min-width: 0;
 }
 
+.workbench-contextual-sidebar,
+.workbench-contextual-sidebar__list {
+  display: grid;
+  gap: var(--jixia-space-3);
+}
+
+.workbench-contextual-sidebar {
+  min-width: 0;
+  padding: var(--jixia-space-2) var(--jixia-space-3);
+  border: 1px solid rgba(43, 58, 103, 0.08);
+  border-radius: calc(var(--jixia-radius-lg) + 2px);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(244, 239, 232, 0.92)),
+    radial-gradient(circle at top left, rgba(43, 58, 103, 0.06), transparent 34%);
+}
+
+.workbench-contextual-sidebar__eyebrow {
+  color: var(--jixia-warm);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workbench-contextual-sidebar__title {
+  margin: 0;
+  color: var(--jixia-ink);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.workbench-contextual-sidebar__item-meta {
+  margin: 0;
+  color: var(--jixia-text-muted);
+  font-size: 0.9rem;
+}
+
+.workbench-contextual-sidebar__item {
+  display: grid;
+  gap: var(--jixia-space-1);
+  padding-top: var(--jixia-space-3);
+  border-top: 1px solid rgba(43, 58, 103, 0.08);
+}
+
+.workbench-contextual-sidebar__item:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.workbench-contextual-sidebar__item-label {
+  color: var(--jixia-ink);
+  font-size: 0.95rem;
+}
+
 .workbench-sidebar__eyebrow,
 .workbench-open-view-strip__eyebrow {
   color: var(--jixia-warm);
@@ -354,8 +416,8 @@ a {
 
 .workbench-open-view-strip {
   display: grid;
-  gap: var(--jixia-space-3);
-  padding: var(--jixia-space-3) var(--jixia-space-4);
+  gap: var(--jixia-space-2);
+  padding: var(--jixia-space-2) var(--jixia-space-3);
   border: 1px solid rgba(43, 58, 103, 0.08);
   border-radius: calc(var(--jixia-radius-lg) + 2px);
   background:
@@ -372,12 +434,13 @@ a {
 .workbench-open-view-strip__item {
   display: inline-flex;
   align-items: center;
-  min-height: 2.25rem;
-  padding: 0.45rem 0.85rem;
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
   border: 1px solid rgba(43, 58, 103, 0.08);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.82);
   color: var(--jixia-text);
+  font-size: 0.9rem;
   font-weight: 600;
   text-decoration: none;
 }
@@ -458,8 +521,8 @@ a {
 
 .context-indicator {
   display: grid;
-  gap: var(--jixia-space-3);
-  padding: var(--jixia-space-4);
+  gap: var(--jixia-space-2);
+  padding: var(--jixia-space-3);
   border: 1px solid var(--jixia-border);
   border-radius: var(--jixia-radius-lg);
   background:
@@ -514,6 +577,7 @@ a {
 
 .context-indicator__facts {
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--jixia-space-2);
 }
 
 .context-indicator__action {
