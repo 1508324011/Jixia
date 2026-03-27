@@ -123,7 +123,8 @@ describe('library and project context', () => {
     renderWorkbench('/projects/project-1/library?spaceId=shared-space');
     expect(await screen.findByRole('heading', { name: 'Library inventory' })).toBeInTheDocument();
     expect(screen.getByTestId('library-inventory-surface')).toHaveAttribute('data-density', 'dense');
-    expect(screen.getByText('Shared evidence shelf')).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveClass('workbench-route');
+    expect(screen.queryByText('Shared evidence shelf')).not.toBeInTheDocument();
     const projectEntryHeading = await screen.findByRole('heading', {
       name: 'Tumor board evidence record',
     });

@@ -784,6 +784,8 @@ describe('native demo workflow', () => {
 
     await user.click(screen.getByRole('button', { name: 'Search intake boards' }));
 
+    expect(screen.queryByText(/search across the current discovery sources/i)).not.toBeInTheDocument();
+
     const pubmedLane = await screen.findByRole('region', { name: 'PubMed intake lane' });
     expect(within(pubmedLane).getByText('Curated abstract snippet for rapid triage.')).toBeInTheDocument();
     expect(screen.getByText('Showing 1-2 of 12')).toBeInTheDocument();

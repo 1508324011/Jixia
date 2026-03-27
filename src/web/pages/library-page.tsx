@@ -72,12 +72,6 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
 
   const activeSpace = spacesData?.spaces.find((space) => space.spaceId === resolvedSpaceId);
   const visibilityFallback = activeSpace?.visibility ?? 'space_shared';
-  const kicker = isPersonalMode
-    ? 'Personal library · imported references · ready to sort'
-    : 'Shared space · curated collection · visibility-aware entries';
-  const description = isPersonalMode
-    ? 'Review imported literature entries and decide what stays private versus what should move into a project workspace.'
-    : 'Review imported literature entries, metadata, and reading readiness inside the selected space.';
   const contextLabel = isPersonalMode
     ? 'Personal context'
     : `Context · ${activeSpace?.name ?? resolvedSpaceId} / ${resolvedProjectId}`;
@@ -88,8 +82,6 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
   const sourceLabel = isPersonalMode
     ? 'personal import'
     : activeSpace?.importLocator ?? 'pmid import';
-  const inventoryLabel = isPersonalMode ? 'Personal evidence shelf' : 'Shared evidence shelf';
-
   function buildProjectLibraryPath(entryId: string, suffix: 'notes' | 'reader'): string {
     return buildCanonicalProjectPath(
       `/projects/${resolvedProjectId}/library/${entryId}/${suffix}`,
@@ -218,9 +210,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
   return (
     <main className="workbench-route workbench-route--library">
       <header className="page-header">
-        <p className="page-kicker">{kicker}</p>
         <h1 className="page-title">Library</h1>
-        <p className="page-description">{description}</p>
       </header>
 
       <section aria-label="context bar" className="context-bar">
@@ -233,10 +223,6 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
         {!isPersonalMode ? (
           <article className="library-import-surface stack-sm">
             <h2 className="panel-title">Import paper</h2>
-            <p className="quiet-copy">
-              Bring one more deterministic DOI, PMID, or arXiv record into the shared shelf before
-              opening the reader.
-            </p>
             <p className="quiet-copy">{importLabel}</p>
             <form
               className="stack-sm"
@@ -288,12 +274,11 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
           data-layout-mode="inventory"
           data-testid="library-inventory-surface"
         >
-          <div className="library-inventory-panel__header">
-            <div className="stack-xs">
-              <span className="intake-source-board__eyebrow">Inventory surface</span>
-              <h2 className="panel-title">Library inventory</h2>
-              <p className="quiet-copy">{inventoryLabel}</p>
-            </div>
+            <div className="library-inventory-panel__header">
+              <div className="stack-xs">
+                <span className="intake-source-board__eyebrow">Inventory surface</span>
+                <h2 className="panel-title">Library inventory</h2>
+              </div>
             <LibraryFilters
               activeView={activeView}
               onQueryChange={setInventoryQuery}

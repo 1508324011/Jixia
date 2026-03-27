@@ -146,12 +146,7 @@ export function SearchPage() {
   return (
     <main className="workbench-route workbench-route--search">
       <header className="page-header">
-        <p className="page-kicker">Discovery intake</p>
         <h1 className="page-title">Search</h1>
-        <p className="page-description">
-          Search across the current discovery sources, then decide what deserves a place inside the
-          personal inventory.
-        </p>
       </header>
 
       <section className="search-surface search-surface--workbench">
@@ -175,10 +170,6 @@ export function SearchPage() {
             Search intake boards
           </button>
         </form>
-        <p className="quiet-copy">
-          Search results stay source-grouped and page-aware so import actions remain stable while you
-          triage external evidence.
-        </p>
         {isLoading ? <p className="quiet-copy">Searching discovery sources…</p> : null}
         {errorMessage ? <p className="quiet-copy">{errorMessage}</p> : null}
       </section>
