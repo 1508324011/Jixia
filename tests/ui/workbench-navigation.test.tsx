@@ -68,7 +68,7 @@ describe('workbench navigation', () => {
     expect(screen.getByTestId('workbench-open-view-strip')).toBeInTheDocument();
     expect(screen.getByTestId('workbench-left-rail')).toBeInTheDocument();
     expect(screen.getByTestId('workbench-main-surface')).toBeInTheDocument();
-    expect(screen.getByTestId('workbench-context-rail')).toBeInTheDocument();
+    expect(screen.queryByTestId('workbench-context-rail')).not.toBeInTheDocument();
   });
 
   it('keeps the top-level /projects route labeled as Projects in the open-view strip', async () => {
@@ -101,6 +101,38 @@ describe('workbench navigation', () => {
     expect(screen.queryByText('Open · Home')).not.toBeInTheDocument();
     expect(screen.getByRole('main')).toHaveClass('workbench-route');
     expect(screen.getByRole('main')).not.toHaveClass('page-shell');
+  });
+
+  it('does not repeat the global route list as text navigation inside the second column', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const url = input.toString();
+
+        if (url.endsWith('/api/workbench/summary')) {
+          return new Response(
+            JSON.stringify({
+              recentImports: [],
+              recentProjects: [],
+              resumeTargets: [],
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }),
+    );
+
+    renderWorkbench('/projects');
+
+    expect(await screen.findByText('Open · Projects')).toBeInTheDocument();
+    expect(screen.getByTestId('workbench-contextual-sidebar')).toBeInTheDocument();
+    expect(screen.getByText('Project workspaces')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
   });
 
   it('sidebar switches among approved top-level surfaces', async () => {
@@ -367,10 +399,10 @@ describe('workbench navigation', () => {
 
     renderWorkbench('/home');
 
-    expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Notebooks' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Home mode' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Notebooks mode' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Search' }));
+    await user.click(screen.getByRole('link', { name: 'Search mode' }));
     expect(screen.getByRole('heading', { name: 'Search' })).toBeInTheDocument();
     await user.clear(screen.getByLabelText('Search topic'));
     await user.type(screen.getByLabelText('Search topic'), 'tumor board');
@@ -381,7 +413,7 @@ describe('workbench navigation', () => {
     await user.click(screen.getByRole('button', { name: '导入到个人 Library' }));
     expect(await screen.findByRole('button', { name: '已进入个人 Library' })).toBeDisabled();
 
-    await user.click(screen.getByRole('link', { name: 'Library' }));
+    await user.click(screen.getByRole('link', { name: 'Library mode' }));
     expect(screen.getByRole('heading', { name: 'Library' })).toBeInTheDocument();
     expect(
       await screen.findByRole('heading', { name: 'Tumor board biomarkers for rapid review' }),
@@ -389,24 +421,25 @@ describe('workbench navigation', () => {
     expect(screen.getByRole('main')).toHaveClass('workbench-route');
     expect(screen.getByTestId('library-inventory-surface')).not.toHaveClass('panel');
 
-    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    await user.click(screen.getByRole('link', { name: 'Projects mode' }));
     expect(await screen.findByRole('link', { name: /open tumor board workspace/i })).toBeInTheDocument();
-    expect(screen.getByText(/recent activity/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.queryByText(/recent activity/i)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Notebooks' }));
+    await user.click(screen.getByRole('link', { name: 'Notebooks mode' }));
     expect(await screen.findByText('Signal review notebook')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open signal review notebook' })).toHaveAttribute(
       'href',
       '/notebooks/notebook-2',
     );
 
-    await user.click(screen.getByRole('link', { name: 'AI' }));
+    await user.click(screen.getByRole('link', { name: 'AI mode' }));
     expect(await screen.findByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
     expect(screen.getByText('Cross-paper biomarker synthesis')).toBeInTheDocument();
     expect(screen.getByLabelText('AI context attachments')).toBeInTheDocument();
     expect(screen.getByText('Signal pathway evidence for review escalation')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Settings' }));
+    await user.click(screen.getByRole('link', { name: 'Settings mode' }));
     expect(screen.getByLabelText('API Key')).toBeInTheDocument();
     expect(await screen.findByText('API key not configured')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Personal Library')).toBeInTheDocument();
@@ -432,7 +465,7 @@ describe('workbench navigation', () => {
       }),
     );
 
-    await user.click(screen.getByRole('link', { name: 'Home' }));
+    await user.click(screen.getByRole('link', { name: 'Home mode' }));
     expect(screen.getByRole('heading', { name: 'Research workbench' })).toBeInTheDocument();
   });
 

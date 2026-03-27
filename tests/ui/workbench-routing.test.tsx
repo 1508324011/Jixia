@@ -17,13 +17,13 @@ describe('workbench routing', () => {
   it('redirects authenticated users to /home and renders the top-level workbench nav', () => {
     renderWorkbench();
 
-    expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Search' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Notebooks' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'AI' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Home mode' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Projects mode' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Search mode' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Library mode' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Notebooks mode' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'AI mode' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings mode' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '今日推荐' })).not.toBeInTheDocument();
   });
 
