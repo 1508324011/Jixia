@@ -60,9 +60,7 @@ export function ProjectsPage() {
   return (
     <main className="workbench-route workbench-route--projects">
       <header className="page-header">
-        <p className="page-kicker">Recent activity</p>
         <h1 className="page-title">Projects</h1>
-        <p className="page-description">Review shared workspaces as real inventories with notebook counts, import volume, and direct links back to docs.</p>
       </header>
 
       <div className="panel-grid top-level-surface-grid">

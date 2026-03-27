@@ -56,7 +56,8 @@ describe('projects page', () => {
 
     renderProjectsPage();
 
-    expect(await screen.findByRole('link', { name: /open tumor board workspace/i })).toBeInTheDocument();
-    expect(screen.getByText(/recent activity/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /open tumor board workspace/i })).toBeInTheDocument();
+    expect(screen.queryByText(/recent activity/i)).not.toBeInTheDocument();
   });
 });
