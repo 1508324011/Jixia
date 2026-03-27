@@ -1,4 +1,4 @@
-import { Outlet, useParams } from 'react-router-dom';
+import { Outlet, useLocation, useParams } from 'react-router-dom';
 
 import { ActivityRail } from './activity-rail';
 import { ContextIndicator } from './context-indicator';
@@ -17,6 +17,7 @@ const demoProjectDocIdById: Record<string, string> = {
 };
 
 export function WorkbenchLayout() {
+  const location = useLocation();
   const { projectId } = useParams();
   const projectName = projectId ? demoProjectNameById[projectId] ?? projectId : null;
   const label = projectName ? `Project / ${projectName}` : 'Personal workbench';
@@ -34,6 +35,9 @@ export function WorkbenchLayout() {
   const mainClassName = projectId
     ? 'workbench-main workbench-main--project'
     : 'workbench-main workbench-main--personal';
+  const showRecentOpenedPanel = location.pathname.startsWith('/today');
+  const showContextIndicator = Boolean(projectId);
+  const showContextRail = showContextIndicator || showRecentOpenedPanel;
 
   return (
     <div className="workbench-shell">
@@ -50,14 +54,18 @@ export function WorkbenchLayout() {
         </div>
       </div>
 
-      <aside
-        className="workbench-context-rail"
-        data-rail-variant="inspector"
-        data-testid="workbench-context-rail"
-      >
-        <ContextIndicator actions={contextActions} label={label} variant={variant} />
-        <RecentOpenedPanel />
-      </aside>
+      {showContextRail ? (
+        <aside
+          className="workbench-context-rail"
+          data-rail-variant="inspector"
+          data-testid="workbench-context-rail"
+        >
+          {showContextIndicator ? (
+            <ContextIndicator actions={contextActions} label={label} variant={variant} />
+          ) : null}
+          {showRecentOpenedPanel ? <RecentOpenedPanel /> : null}
+        </aside>
+      ) : null}
     </div>
   );
 }
