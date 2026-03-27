@@ -58,27 +58,20 @@ export function HomePage() {
   return (
     <main className="workbench-route workbench-route--home" data-testid="home-resumption-canvas">
       <header className="page-header">
-        <p className="page-kicker">Editorial lab workbench</p>
         <h1 className="page-title">Research workbench</h1>
-        <p className="page-description">
-          Resume active projects, reopen notebook synthesis, and move back into shared docs without rebuilding context by hand.
-        </p>
       </header>
 
       <section className="home-resumption-surface" aria-label="home desk">
         <article className="home-resumption-hero">
           <div className="stack-xs">
-            <span className="intake-source-board__eyebrow">Workbench rhythm</span>
-            <h2 className="panel-title">Resume the active notebook and shared project surfaces before starting a fresh intake loop.</h2>
+            <span className="intake-source-board__eyebrow">Resume lane</span>
+            <h2 className="panel-title">Continue active work</h2>
           </div>
-          <p className="quiet-copy">
-            Home now acts as a resumption surface: recent projects stay visible, notebook continuations stay one click away, and imported evidence points back to the shared library it belongs to.
-          </p>
-        {featuredResumeTarget ? (
-          <Link className="panel-link" to={featuredResumeTarget.to}>
-            Continue notebook synthesis
-          </Link>
-        ) : null}
+          {featuredResumeTarget ? (
+            <Link className="panel-link" to={featuredResumeTarget.to}>
+              Continue notebook synthesis
+            </Link>
+          ) : null}
         </article>
 
         {isLoading ? (

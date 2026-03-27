@@ -67,6 +67,8 @@ describe('home page', () => {
 
     expect(await screen.findByTestId('home-resumption-canvas')).toBeInTheDocument();
     expect(screen.getByLabelText('Recent projects')).not.toHaveClass('panel');
+    expect(screen.queryByText(/resume active projects, reopen notebook synthesis/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/home now acts as a resumption surface/i)).not.toBeInTheDocument();
   });
 
   it('renders recent projects and continue-working entries on Home', async () => {
@@ -93,11 +95,26 @@ describe('home page', () => {
     expect(screen.getByRole('link', { name: /resume notebook/i })).toBeInTheDocument();
   });
 
-  it('renders actionable recent-opened links in the context rail', () => {
+  it('keeps the compact shell free of recent-opened filler cards on Home', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const url = input.toString();
+
+        if (url.endsWith('/api/workbench/summary')) {
+          return new Response(JSON.stringify(workbenchSummaryResponse), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }),
+    );
+
     renderHomePage();
 
-    expect(
-      screen.getByRole('link', { name: /signal pathways in shared tumor boards/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId('home-resumption-canvas')).toBeInTheDocument();
+    expect(screen.queryByText('最近打开')).not.toBeInTheDocument();
   });
 });
