@@ -21,7 +21,7 @@ The currently approved milestone remains **Unified Intake & Deep Reading Workben
 - `Project Docs` remain project-owned shared writing objects
 - notebook-to-project crossing happens only through the explicit **Insert into project docs** projection flow, which creates a project-owned reference without exposing notebook bodies
 
-This means the demo can now truthfully show the rebuilt IDE Classic Lite shell with a persistent activity rail, compact sidebar, top open-view strip, dominant editor canvas, dense Search/Library feeder surfaces, the document-first Reader, docked AI, browser-side projection, and shared Project Docs. The shell primitives landed first, and the finish pass on this branch closes the remaining dashboard/card drift so `Home`, `Projects`, `Search`, `Library`, `Notebooks`, and `AI` now read as one continuous workbench instead of new chrome wrapped around old page cards. It does **not** claim that automatic recommendation ranking or the full `Push lane` are already complete.
+This means the demo can now truthfully show the rebuilt workbench shell in its compact state: a single global `Activity Rail`, a contextual second column, a denser open-view strip, a dominant editor canvas, dense Search/Library feeder surfaces, the document-first Reader, docked AI, browser-side projection, and shared Project Docs. The shell primitives landed first, the finish pass closed the remaining dashboard/card drift, and the compact-shell pass now removes repeated navigation, default right-rail filler, and large explanatory chrome so `Home`, `Projects`, `Search`, `Library`, `Notebooks`, and `AI` read as one concise workbench rather than chrome wrapped around old page cards. It does **not** claim that automatic recommendation ranking or the full `Push lane` are already complete.
 
 ## Runtime contract
 
@@ -84,11 +84,11 @@ Home -> Projects -> Library -> Reader -> AI Workspace / Notebook -> Project Docs
 
 ### A. Feeder-surface walkthrough
 
-1. Open **Research workbench** at `/home` and confirm the IDE Classic Lite shell is present: activity rail on the far left, compact sidebar, top open-view strip, dominant center canvas, and quieter inspector rail on the right. The finish pass should now make `Home` read as a de-carded resumption canvas rather than a stack of bordered dashboard tiles.
+1. Open **Research workbench** at `/home` and confirm the compact workbench shell is present: the far-left Activity Rail is the only global mode switcher, the second column is contextual instead of a repeated route list, the top open-view strip is compact and tool-like, the center canvas dominates, and `Home` reads as a de-carded resumption surface without a default right-rail filler.
 2. In **Recent projects**, click **Open tumor board workspace** and confirm the project overview offers **Open active reader**, **Open active notebook**, and **Open project docs** as sibling surfaces rather than one embedded desk.
 3. In **Recent imports**, click **Open project library** and confirm the browser lands in the dense project `Library` feeder surface.
 4. Confirm the library inventory is broad, scan-friendly, and still preserves the row actions **Open notebook**, **Open reader**, and **Open project docs**.
-5. Click **Open reader** on the seeded imported paper and confirm the browser lands in **Reader** with a document-first canvas on the left, **AI Workspace** docked on the right, and **Reader supporting context** below the AI shell. The Reader route should now feel flattened into one reading workspace instead of stacked boxed panels.
+5. Click **Open reader** on the seeded imported paper and confirm the browser lands in **Reader** with a document-first canvas on the left, **AI Workspace** docked on the right, and **Reader supporting context** below the AI shell. The Reader route should now feel flattened into one reading workspace instead of stacked boxed panels, and the shell should no longer waste space on repeated explanatory header copy.
 6. In Reader, confirm **Open notebook**, **Open AI workspace**, **Open project docs**, and **Back to project** are all visible as exits rather than the page’s defining architecture.
 7. Click **Open notebook** and confirm the browser lands in **Notebook** with the shared `document-editor` surface and the textbox labeled **Private notebook document**.
 8. Type a private notebook note, click **Save notebook**, then confirm the saved notebook content persists in the editor.
@@ -119,8 +119,9 @@ If you want to verify the intake side of the same architecture, open `/search`, 
 ## What this demo proves
 
 - the native reset path restores a known server-owned state
-- the rebuilt browser shell now uses an IDE Classic Lite `Research workbench` frame with a persistent activity rail, compact sidebar, open-view strip, dominant editor canvas, and quieter inspector rail
+- the rebuilt browser shell now uses a compact `Research workbench` frame with one global `Activity Rail`, a contextual second column, a compressed open-view strip, a dominant editor canvas, and a conditional inspector rail
 - the finish pass removes the remaining Home/Reader/primary-route page-card drift so the main workbench routes now share one route-shell grammar
+- the compact-shell pass removes repeated sidebar navigation, default recent-opened filler, and oversized route-explainer copy so the shell reads like one tool rather than shell plus repeated page-level navigation
 - Search and Library now behave as dense feeder surfaces into deeper work
 - `Reader` is now document-first on the left with docked AI and supporting context on the right
 - `AI Workspace` is global, independent, and reachable both directly and from Reader
