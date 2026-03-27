@@ -49,12 +49,7 @@ export function AiWorkspacePage() {
   return (
     <main className="workbench-route workbench-route--ai">
       <header className="page-header">
-        <p className="page-kicker">Global research workspace</p>
         <h1 className="page-title">AI Workspace</h1>
-        <p className="page-description">
-          Keep governed conversations, reading follow-ups, and cross-paper synthesis in one
-          independent workspace instead of burying them inside Reader or Notebook routes.
-        </p>
       </header>
 
       {isLoading ? (

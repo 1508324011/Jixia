@@ -80,9 +80,10 @@ describe('ai workspace page', () => {
     renderWorkbench('/ai');
 
     expect(await screen.findByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
-    expect(screen.getByLabelText('AI sessions')).toBeInTheDocument();
-    expect(screen.getByText('Cross-paper biomarker synthesis')).toBeInTheDocument();
-    expect(screen.getByText('Draft introduction notes')).toBeInTheDocument();
+    const aiShell = screen.getByLabelText('AI workspace shell');
+    expect(within(aiShell).getByRole('heading', { name: 'AI sessions' })).toBeInTheDocument();
+    expect(within(aiShell).getByText('Cross-paper biomarker synthesis')).toBeInTheDocument();
+    expect(within(aiShell).getByText('Draft introduction notes')).toBeInTheDocument();
 
     const attachments = screen.getByLabelText('AI context attachments');
     expect(within(attachments).getByText('Tumor board biomarkers for rapid review')).toBeInTheDocument();

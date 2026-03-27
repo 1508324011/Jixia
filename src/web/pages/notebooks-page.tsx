@@ -57,11 +57,7 @@ export function NotebooksPage() {
   return (
     <main className="workbench-route workbench-route--notebooks">
       <header className="page-header">
-        <p className="page-kicker">Notebook workbench</p>
         <h1 className="page-title">Notebooks</h1>
-        <p className="page-description">
-          Private notebook documents stay separate from reader and project docs until you reopen or deliberately project material.
-        </p>
       </header>
 
       <div className="panel-grid top-level-surface-grid">

@@ -78,7 +78,7 @@ describe('notebooks page', () => {
     renderWorkbench('/notebooks');
 
     expect(await screen.findByRole('heading', { name: 'Notebooks' })).toBeInTheDocument();
-    expect(screen.getByText(/Private notebook documents stay separate/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Private notebook documents stay separate/i)).not.toBeInTheDocument();
     expect(screen.getByText('Tumor board synthesis notebook')).toBeInTheDocument();
     expect(screen.getByText('Signal review notebook')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open notebook document' })).toHaveAttribute(
