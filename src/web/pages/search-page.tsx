@@ -149,7 +149,7 @@ export function SearchPage() {
         <h1 className="page-title">Search</h1>
       </header>
 
-      <section className="search-surface search-surface--workbench">
+      <section className="search-surface search-surface--workbench workbench-surface">
         <form
           className="field-stack"
           onSubmit={(event) => {
@@ -175,14 +175,13 @@ export function SearchPage() {
       </section>
 
       {hasSearchResult ? (
-        <section className="search-results-toolbar search-results-toolbar--workbench" aria-label="search pagination summary">
-          <div className="stack-xs">
+        <section
+          className="search-results-toolbar search-results-toolbar--workbench workbench-surface"
+          aria-label="search pagination summary"
+        >
+          <div className="workbench-row">
             <p className="field-label">Search window</p>
             <p className="search-results-summary">{formatSearchWindow(searchResult)}</p>
-            <p className="quiet-copy">
-              Page {searchResult.page} keeps result density stable while preserving truthful import
-              state per candidate.
-            </p>
           </div>
 
           <div className="button-row search-results-pagination">
@@ -207,9 +206,9 @@ export function SearchPage() {
       ) : null}
 
       {!isLoading && hasSearchResult && !hasMatches ? (
-        <section className="search-empty-state">
+        <div className="workbench-row">
           <p className="quiet-copy">No discovery candidates matched this search.</p>
-        </section>
+        </div>
       ) : null}
 
       <section

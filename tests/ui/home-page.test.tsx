@@ -90,7 +90,7 @@ describe('home page', () => {
 
     renderHomePage();
 
-    expect(await screen.findByRole('heading', { name: /recent projects/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Recent projects' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /open tumor board workspace/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /resume notebook/i })).toBeInTheDocument();
   });

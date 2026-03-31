@@ -62,40 +62,36 @@ export function HomePage() {
       </header>
 
       <section className="home-resumption-surface" aria-label="home desk">
-        <article className="home-resumption-hero">
-          <div className="stack-xs">
-            <span className="intake-source-board__eyebrow">Resume lane</span>
-            <h2 className="panel-title">Continue active work</h2>
-          </div>
+        <div className="workbench-row">
+          <span className="workbench-eyebrow">Resume lane</span>
+          <h2 className="workbench-label">Continue active work</h2>
           {featuredResumeTarget ? (
             <Link className="panel-link" to={featuredResumeTarget.to}>
               Continue notebook synthesis
             </Link>
           ) : null}
-        </article>
+        </div>
 
         {isLoading ? (
-          <section className="home-resumption-state" aria-live="polite">
-            <h2 className="panel-title">Loading workbench summary…</h2>
-            <p className="quiet-copy">Pulling the latest projects, notebook resumes, and imports into the home surface.</p>
-          </section>
+          <div className="workbench-row">
+            <p className="quiet-copy">Loading workbench summary…</p>
+          </div>
         ) : null}
 
         {errorMessage ? (
-          <section className="home-resumption-state" aria-live="polite">
-            <h2 className="panel-title">Workbench summary unavailable</h2>
+          <div className="workbench-row">
             <p className="quiet-copy">{errorMessage}</p>
-          </section>
+          </div>
         ) : null}
 
         {summary ? (
-          <div className="dashboard-grid home-resumption-grid">
+          <div className="home-resumption-grid">
             <section className="home-resumption-lane" aria-label="Recent projects">
-              <h2 className="panel-title">Recent projects</h2>
+              <h2 className="workbench-label">Recent projects</h2>
               {summary.recentProjects.length > 0 ? (
-                <div className="stack-sm home-resumption-list">
+                <div className="home-resumption-list">
                   {summary.recentProjects.map((project) => (
-                    <article key={`${project.spaceId}-${project.projectId}`} className="home-resumption-item stack-xs">
+                    <article key={`${project.spaceId}-${project.projectId}`} className="workbench-row">
                       <h3 className="panel-title">{project.title}</h3>
                       <p className="quiet-copy">{project.recentActivity}</p>
                       <p className="quiet-copy">
@@ -113,11 +109,11 @@ export function HomePage() {
             </section>
 
             <section className="home-resumption-lane" aria-label="Continue working">
-              <h2 className="panel-title">Continue working</h2>
+              <h2 className="workbench-label">Continue working</h2>
               {summary.resumeTargets.length > 0 ? (
-                <div className="stack-sm home-resumption-list">
+                <div className="home-resumption-list">
                   {summary.resumeTargets.map((target) => (
-                    <article key={`${target.kind}-${target.to}`} className="home-resumption-item stack-xs">
+                    <article key={`${target.kind}-${target.to}`} className="workbench-row">
                       <h3 className="panel-title">{target.title}</h3>
                       <p className="quiet-copy">{target.description}</p>
                       <Link className="panel-link" to={target.to}>
@@ -132,11 +128,11 @@ export function HomePage() {
             </section>
 
             <section className="home-resumption-lane" aria-label="Recent imports">
-              <h2 className="panel-title">Recent imports</h2>
+              <h2 className="workbench-label">Recent imports</h2>
               {summary.recentImports.length > 0 ? (
-                <div className="stack-sm home-resumption-list">
+                <div className="home-resumption-list">
                   {summary.recentImports.map((item) => (
-                    <article key={item.entryId} className="home-resumption-item stack-xs">
+                    <article key={item.entryId} className="workbench-row">
                       <h3 className="panel-title">{item.title}</h3>
                       <p className="quiet-copy">Imported from {item.canonicalId} and routed into the shared project inventory.</p>
                       <Link className="panel-link" to={item.to}>
