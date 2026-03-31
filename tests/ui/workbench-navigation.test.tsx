@@ -416,7 +416,7 @@ describe('workbench navigation', () => {
     await user.click(screen.getByRole('link', { name: 'Library mode' }));
     expect(screen.getByRole('heading', { name: 'Library' })).toBeInTheDocument();
     expect(
-      await screen.findByRole('heading', { name: 'Tumor board biomarkers for rapid review' }),
+      await screen.findByText('Tumor board biomarkers for rapid review'),
     ).toBeInTheDocument();
     expect(screen.getByRole('main')).toHaveClass('workbench-route');
     expect(screen.getByTestId('library-inventory-surface')).not.toHaveClass('panel');

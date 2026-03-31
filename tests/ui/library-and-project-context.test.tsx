@@ -102,8 +102,8 @@ describe('library and project context', () => {
     expect(screen.getByTestId('library-inventory-surface')).toHaveAttribute('data-density', 'dense');
     expect(screen.getByText('Inventory view')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'All records' })).toBeInTheDocument();
-    const personalEntryHeading = await screen.findByRole('heading', { name: 'Personal evidence note' });
-    const personalEntry = personalEntryHeading.closest('article');
+    const personalEntryLabel = await screen.findByRole('heading', { name: 'Personal evidence note' });
+    const personalEntry = personalEntryLabel.closest('article');
     expect(personalEntry).not.toBeNull();
     if (!personalEntry) {
       throw new Error('Expected personal entry article to be rendered.');
@@ -125,10 +125,8 @@ describe('library and project context', () => {
     expect(screen.getByTestId('library-inventory-surface')).toHaveAttribute('data-density', 'dense');
     expect(screen.getByRole('main')).toHaveClass('workbench-route');
     expect(screen.queryByText('Shared evidence shelf')).not.toBeInTheDocument();
-    const projectEntryHeading = await screen.findByRole('heading', {
-      name: 'Tumor board evidence record',
-    });
-    const projectEntry = projectEntryHeading.closest('article');
+    const projectEntryLabel = await screen.findByRole('heading', { name: 'Tumor board evidence record' });
+    const projectEntry = projectEntryLabel.closest('article');
     expect(projectEntry).not.toBeNull();
     if (!projectEntry) {
       throw new Error('Expected project entry article to be rendered.');
