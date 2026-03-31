@@ -2,7 +2,7 @@
 
 This runbook resets the branch to a deterministic server-backed demo and walks a reviewer through the strongest truthful browser story now available on `demo-native-showcase`: start from `/home`, confirm the editorial-lab `Research workbench`, open the seeded tumor-board project, continue into the dense project library, open a paper in the document-first `Reader`, continue in the docked `AI Workspace` or the private `Notebook`, then verify the shared `Project Docs` surface on the seeded tumor-board project. The branch still runs natively on Node, uses user-owned runtime paths, and avoids Docker or sudo for the primary showcase path.
 
-The downstream demo branch now carries the implemented reset from Tasks 1–6: canonical `/projects/...` routes, dense Search/Library feeder surfaces, an independent global `AI Workspace`, a fully private document-first `Notebook`, a document-first `Reader`, and project-owned `Project Docs` with a visible `Reference rail`.
+The downstream demo branch now carries the implemented reset from the March workbench passes: canonical `/projects/...` routes, dense Search/Library feeder surfaces, an independent global `AI Workspace`, a fully private document-first `Notebook`, a document-first `Reader`, and project-owned `Project Docs` with a visible `Reference rail`.
 
 ## Inherited current host beta path
 
@@ -21,7 +21,7 @@ The currently approved milestone remains **Unified Intake & Deep Reading Workben
 - `Project Docs` remain project-owned shared writing objects
 - notebook-to-project crossing happens only through the explicit **Insert into project docs** projection flow, which creates a project-owned reference without exposing notebook bodies
 
-This means the demo can now truthfully show the rebuilt workbench shell in its compact state: a single global `Activity Rail`, a contextual second column, a denser open-view strip, a dominant editor canvas, dense Search/Library feeder surfaces, the document-first Reader, docked AI, browser-side projection, and shared Project Docs. The shell primitives landed first, the finish pass closed the remaining dashboard/card drift, and the compact-shell pass now removes repeated navigation, default right-rail filler, and large explanatory chrome so `Home`, `Projects`, `Search`, `Library`, `Notebooks`, and `AI` read as one concise workbench rather than chrome wrapped around old page cards. It does **not** claim that automatic recommendation ranking or the full `Push lane` are already complete.
+This means the demo can now truthfully show the rebuilt workbench shell in its compact state: a single global `Activity Rail`, a contextual second column, a denser open-view strip, a dominant editor canvas, dense Search/Library feeder surfaces, the document-first Reader, docked AI, browser-side projection, and shared Project Docs. The shell primitives landed first, and the compact-shell pass removed repeated navigation, default right-rail filler, and large explanatory chrome from the main workbench routes so `Home`, `Projects`, `Search`, `Library`, `Notebook`, `Notebooks`, and `AI` read much more like one concise workbench rather than chrome wrapped around old page cards. It does **not** claim that shell convergence is complete across every route yet: companion surfaces such as `Project`, `Today`, `Project Docs`, and `Settings` still retain parts of the older `page-shell` presentation. It also does **not** claim that automatic recommendation ranking or the full `Push lane` are already complete.
 
 ## Runtime contract
 
@@ -84,7 +84,7 @@ Home -> Projects -> Library -> Reader -> AI Workspace / Notebook -> Project Docs
 
 ### A. Feeder-surface walkthrough
 
-1. Open **Research workbench** at `/home` and confirm the compact workbench shell is present: the far-left Activity Rail is the only global mode switcher, the second column is contextual instead of a repeated route list, the top open-view strip is compact and tool-like, the center canvas dominates, and `Home` reads as a de-carded resumption surface without a default right-rail filler.
+1. Open **Research workbench** at `/home` and confirm the compact workbench shell is present: the far-left Activity Rail is the only global mode switcher, the second column is contextual instead of a repeated route list, the top open-view strip is compact and tool-like, the center canvas dominates, and `Home` reads as a more de-carded resumption surface without a default right-rail filler.
 2. In **Recent projects**, click **Open tumor board workspace** and confirm the project overview offers **Open active reader**, **Open active notebook**, and **Open project docs** as sibling surfaces rather than one embedded desk.
 3. In **Recent imports**, click **Open project library** and confirm the browser lands in the dense project `Library` feeder surface.
 4. Confirm the library inventory is broad, scan-friendly, and still preserves the row actions **Open notebook**, **Open reader**, and **Open project docs**.
@@ -120,8 +120,8 @@ If you want to verify the intake side of the same architecture, open `/search`, 
 
 - the native reset path restores a known server-owned state
 - the rebuilt browser shell now uses a compact `Research workbench` frame with one global `Activity Rail`, a contextual second column, a compressed open-view strip, a dominant editor canvas, and a conditional inspector rail
-- the finish pass removes the remaining Home/Reader/primary-route page-card drift so the main workbench routes now share one route-shell grammar
-- the compact-shell pass removes repeated sidebar navigation, default recent-opened filler, and oversized route-explainer copy so the shell reads like one tool rather than shell plus repeated page-level navigation
+- the compact-shell pass removes repeated sidebar navigation, default recent-opened filler, and oversized route-explainer copy from the main workbench routes so the shell reads more like one tool rather than shell plus repeated page-level navigation
+- shell convergence is materially advanced but not complete yet; several companion routes still retain older `page-shell` presentation patterns
 - Search and Library now behave as dense feeder surfaces into deeper work
 - `Reader` is now document-first on the left with docked AI and supporting context on the right
 - `AI Workspace` is global, independent, and reachable both directly and from Reader
