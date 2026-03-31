@@ -62,26 +62,22 @@ export function NotebooksPage() {
 
       <div className="panel-grid top-level-surface-grid">
         {isLoading ? (
-          <section className="notebooks-surface notebooks-surface--state">
-            <h2 className="panel-title">Loading notebooks…</h2>
-            <p className="quiet-copy">Collecting notebook contexts across personal and project work.</p>
-          </section>
+          <div className="workbench-row">
+            <p className="quiet-copy">Loading notebooks…</p>
+          </div>
         ) : errorMessage ? (
-          <section className="notebooks-surface notebooks-surface--state">
-            <h2 className="panel-title">Notebook inventory unavailable</h2>
+          <div className="workbench-row">
             <p className="quiet-copy">{errorMessage}</p>
-          </section>
+          </div>
         ) : notebooks.length > 0 ? (
           notebooks.map((notebook) => (
-            <section key={notebook.notebookId} className="notebooks-surface notebooks-surface--entry stack-sm">
-              <div className="stack-xs">
-                <p className="page-kicker">{notebook.workspaceLabel}</p>
-                <h2 className="panel-title">{notebook.title}</h2>
-                <p className="quiet-copy">{notebook.paperTitle}</p>
-                <p className="quiet-copy">
-                  {notebook.noteCount} private notes · Updated {notebook.updatedAt}
-                </p>
-              </div>
+            <section key={notebook.notebookId} className="workbench-surface--section">
+              <p className="workbench-eyebrow">{notebook.workspaceLabel}</p>
+              <h2 className="panel-title">{notebook.title}</h2>
+              <p className="quiet-copy">{notebook.paperTitle}</p>
+              <p className="quiet-copy">
+                {notebook.noteCount} private notes · Updated {notebook.updatedAt}
+              </p>
               <div className="button-row">
                 <Link className="panel-link" to={notebook.notesPath}>
                   {toNotebookActionLabel(notebook)}
@@ -106,12 +102,11 @@ export function NotebooksPage() {
             </section>
           ))
         ) : (
-          <section className="notebooks-surface notebooks-surface--state">
-            <h2 className="panel-title">No notebooks yet</h2>
+          <div className="workbench-row">
             <p className="quiet-copy">
               Notebook routes become active as soon as imported evidence is ready for synthesis.
             </p>
-          </section>
+          </div>
         )}
       </div>
     </main>

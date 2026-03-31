@@ -157,6 +157,8 @@ describe('notes workspace', () => {
     renderWorkbench('/projects/project-1/library/entry-1/notes?spaceId=shared-space');
 
     expect(await screen.findByRole('heading', { name: 'Notebook' })).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveClass('workbench-route');
+    expect(screen.getByRole('main')).not.toHaveClass('page-shell');
     expect(screen.queryByText('Notebook questions')).not.toBeInTheDocument();
     expect(screen.getByTestId('document-editor')).toBeInTheDocument();
     const notebookEditor = await screen.findByRole('textbox', {
@@ -377,6 +379,8 @@ describe('notes workspace', () => {
     renderWorkbench('/notebooks/notebook-1');
 
     expect(await screen.findByRole('heading', { name: 'Notebook' })).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveClass('workbench-route');
+    expect(screen.getByRole('main')).not.toHaveClass('page-shell');
     expect(screen.getByDisplayValue('Direct notebook route content.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Back to notebooks' })).toHaveAttribute(
       'href',

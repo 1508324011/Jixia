@@ -333,7 +333,7 @@ export function NotesPage() {
     : 'No notebook snapshot saved yet.';
 
   return (
-    <main className="page-shell">
+    <main className="workbench-route workbench-route--notebooks" data-testid="notebook-workspace-canvas">
       <header className="page-header">
         <p className="page-kicker">Private notebook document</p>
         <h1 className="page-title">Notebook</h1>
@@ -350,20 +350,18 @@ export function NotesPage() {
         <span className="status-badge">{privateNotes.length} private notes</span>
       </section>
 
-      <section className="panel-grid" aria-label="notes workspace layout">
-        <article className="panel">
+      <section className="workbench-surface" aria-label="notes workspace layout">
+        <article className="workbench-surface">
           {isLoading ? (
-            <>
-              <h2 className="panel-title">Loading notebook…</h2>
+            <div className="workbench-row">
               <p className="quiet-copy">Gathering the notebook document and current paper context.</p>
-            </>
+            </div>
           ) : loadError ? (
-            <>
-              <h2 className="panel-title">Notebook unavailable</h2>
+            <div className="workbench-row">
               <p className="quiet-copy">{loadError}</p>
-            </>
+            </div>
           ) : detail && notebookSummary && notebookDocument ? (
-            <div className="stack-sm">
+            <div className="workbench-surface">
               <DocumentEditor
                 textareaId="notebook-document"
                 label="Private notebook document"
@@ -387,7 +385,7 @@ export function NotesPage() {
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
 
               {detail.workspace.sharedComments.length > 0 ? (
-                <div className="stack-xs">
+                <div className="workbench-row--compact">
                   <h3 className="panel-title">Reader-owned shared comments</h3>
                   {detail.workspace.sharedComments.map((note) => (
                     <p key={note.id} className="quiet-copy">
@@ -398,7 +396,7 @@ export function NotesPage() {
               ) : null}
 
               {!isPersonalMode ? (
-                <div className="stack-xs">
+                <div className="workbench-row--compact">
                   <h3 className="panel-title">Project projection</h3>
                   <p className="quiet-copy">
                     Promote a deliberate excerpt into Project Docs without leaking the notebook body
