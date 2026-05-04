@@ -2,23 +2,27 @@
 
 Jixia is a server-first research collaboration platform for laboratory teams.
 It is designed to run on a lab-hosted server, keep authoritative data on the server side,
-and organize research work around spaces, shared literature assets, reading workflows,
-versioned writing, and governed AI jobs.
+and organize research work around project collaboration, literature assets, reading workflows,
+versioned writing, and governed AI jobs. The current recovery direction is:
+**Space is governance. Project is collaboration.**
 
 ## Current Phase
 
 The repository now includes two aligned layers:
 
 1. a server-first backend scaffold for spaces, library, reading, writing, and governed AI jobs
-2. the first scholarly web workflow shell for `Spaces -> Library -> Reader -> Writing`
+2. a project-first browser shell that loads real server-owned projects before entering library, reader, and writing lanes
 
 Bootstrap guardrails remain in place, but the project has moved beyond repository-only setup.
-The current branch state reflects a verified Task 10 shell rather than a placeholder web entry.
+The active product baseline is `docs/plans/design.md`; older Space-first plans are historical
+server-first scaffolding notes unless reconciled with the project-first recovery plan.
 
 ## Planning Documents
 
 Detailed design and implementation plans live under `docs/plans/`:
 
+- `design.md` — current target product baseline
+- `2026-05-03-jixia-project-first-recovery-plan.md` — active project-first recovery plan
 - `2026-03-20-jixia-open-source-bootstrap-design.md`
 - `2026-03-20-jixia-open-source-bootstrap-implementation.md`
 - `2026-03-20-jixia-platform-design.md`
@@ -26,14 +30,21 @@ Detailed design and implementation plans live under `docs/plans/`:
 - `2026-03-21-jixia-task-10-ui-direction-notes.md`
 - `2026-03-22-jixia-task-11-deployment-implementation.md`
 
-## Task 10 Status
+## Project-first Recovery Status
 
-Task 10's first browser workflow shell is complete on this branch.
+The current branch now carries the first project-first recovery slice on top of the earlier browser-runtime shell work.
 The web layer now includes:
 
 - `src/web/app.tsx` and `src/web/router.tsx`
-- page shells for spaces, library, reader, and writing
-- minimal design tokens and shared shell styling
+- a new `src/web/components/app-shell.tsx` that brings in a ResearchClaw-inspired sidebar, top bar, and shared page chrome
+- page shells for projects, spaces, search, library, reader, writing, jobs, and settings
+- upgraded donor-style design tokens, Tailwind/PostCSS support, and shared shell styling
+- shared `Project`, `ProjectMember`, and `ScopeRef` contracts plus server APIs for project creation, listing, lookup, and membership management
+- project routes that use server-loaded project state instead of hardcoded `shared-space` or `tumor-board` context
+- browser-facing `/api/*` routes for spaces, credentials, and jobs, plus a live SSE job stream endpoint
+- browser-facing library/import routes plus presenter-backed `spaces`, `search`, and `library` pages
+- browser-facing reading routes plus a presenter-backed `reader` page with detail, note, and insight actions
+- a typed web client and presenter layer now backing `spaces`, `search`, `library`, `reader`, `jobs`, and `settings`
 - governance-visible UI cues for visibility, shared context, publish state, and governed AI/job language
 - UI workflow tests covering the main navigation path and direct deep links
 
@@ -42,18 +53,19 @@ The web layer now includes:
 Latest branch verification evidence:
 
 - `npm run typecheck`
-- `npm test` → 16 files / 48 tests passing
+- `npm test` → 21 files / 56 tests passing
 - `npm run build`
 
-This means the current shell is ready for interface review and manual workflow walkthroughs,
-even though it is still a shell rather than a fully connected product frontend.
+This means the current shell is now backed by real browser-facing runtime slices for project membership,
+jobs/settings, library/search, and reader flows, even though the broader Notebook, Project Docs, AI job scoping,
+and Prisma-backed runtime migrations remain future recovery phases.
 
 ## Near-Term Direction
 
 The next delivery focus has two tracks:
 
 1. exercise Task 11 on a Docker-capable operator machine and extend the runtime past the current shell-and-health deployment boundary
-2. continue from the Task 10 shell toward real server-backed web interactions
+2. continue from the Task 10 shell toward deeper server-backed web interactions beyond the current spaces/search/library/reader/jobs/settings slices
 
 The Task 10 handoff note in `docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md`
 records what shipped, what was verified, and what still belongs to the next phase.
@@ -61,8 +73,8 @@ records what shipped, what was verified, and what still belongs to the next phas
 ## Task 11 Operator Runbook
 
 Task 11 turns the verified Task 10 shell into a reproducibly runnable lab-server package.
-The current runtime starts a minimal Node 22 HTTP server, serves the built Task 10 web shell,
-and exposes `GET /health`. It does not yet imply full browser-side live data integration.
+The current runtime starts a Node 22 HTTP server, serves the built Task 10 web shell,
+and now exposes `GET /health` together with the same-origin browser API routes used by the current spaces/search/library/reader/jobs/settings slices.
 
 ### Prerequisites
 
