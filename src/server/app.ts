@@ -50,6 +50,10 @@ import {
   type HealthRoutes,
 } from './routes/health.routes';
 import {
+  createProjectsRoutes,
+  type ProjectsRoutes,
+} from './routes/projects.routes';
+import {
   createSpacesRoutes,
   type SpacesRoutes,
 } from './routes/spaces.routes';
@@ -72,6 +76,11 @@ import { createJobBus } from './jobs/job-bus';
 import { createJobRunner, type StoredJob } from './jobs/job-runner';
 import { createLibraryService } from './services/library.service';
 import { createReadingService } from './services/reading.service';
+import {
+  createProjectsService,
+  type StoredProject,
+  type StoredProjectMember,
+} from './services/projects.service';
 import {
   createSpacesService,
   type StoredSpace,
@@ -114,6 +123,8 @@ export interface JixiaAppState {
   nextSequence: number;
   notes: NoteRecord[];
   paperAssets: StoredPaperAsset[];
+  projectMembers: StoredProjectMember[];
+  projects: StoredProject[];
   spaces: StoredSpace[];
   writingDocs: StoredWritingDoc[];
 }
@@ -125,6 +136,7 @@ export interface JixiaApp {
   jobs: JobsRoutes;
   jobStream: JobStreamRoutes;
   library: LibraryRoutes;
+  projects: ProjectsRoutes;
   reading: ReadingRoutes;
   spaces: SpacesRoutes;
   writing: WritingRoutes;
@@ -145,6 +157,8 @@ function createState(): JixiaAppState {
     nextSequence: 0,
     notes: [],
     paperAssets: [],
+    projectMembers: [],
+    projects: [],
     spaces: [],
     writingDocs: [],
   };
@@ -178,6 +192,8 @@ function loadState(env: StorageRootEnv = process.env): JixiaAppState {
     nextSequence: parsed.nextSequence ?? initialState.nextSequence,
     notes: parsed.notes ?? initialState.notes,
     paperAssets: parsed.paperAssets ?? initialState.paperAssets,
+    projectMembers: parsed.projectMembers ?? initialState.projectMembers,
+    projects: parsed.projects ?? initialState.projects,
     spaces: parsed.spaces ?? initialState.spaces,
     writingDocs: parsed.writingDocs ?? initialState.writingDocs,
   };
@@ -210,6 +226,16 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       return nextId(state, prefix);
     },
     persist,
+    spaces: state.spaces,
+  });
+  const projectsService = createProjectsService({
+    memberships: state.memberships,
+    nextId(prefix: string): string {
+      return nextId(state, prefix);
+    },
+    persist,
+    projectMembers: state.projectMembers,
+    projects: state.projects,
     spaces: state.spaces,
   });
   const importService = createImportService({
@@ -318,6 +344,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       spaces: state.spaces,
     }),
     library: createLibraryRoutes(libraryService),
+    projects: createProjectsRoutes(projectsService),
     reading: createReadingRoutes(readingService),
     spaces: createSpacesRoutes(spacesService),
     writing: createWritingRoutes(writingService),
