@@ -38,10 +38,13 @@ describe('http server project api', () => {
 
       try {
         const createdSpace = await fetch(
-          `${server.url}/api/spaces?actorUserId=user-alice`,
+          `${server.url}/api/spaces`,
           {
             body: JSON.stringify({ kind: 'shared', name: 'HTTP Projects' }),
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-alice',
+            },
             method: 'POST',
           },
         ).then((response) => response.json() as Promise<{ id: string }>);
@@ -114,10 +117,13 @@ describe('http server project api', () => {
 
       try {
         const createdSpace = await fetch(
-          `${server.url}/api/spaces?actorUserId=user-alice`,
+          `${server.url}/api/spaces`,
           {
             body: JSON.stringify({ kind: 'shared', name: 'HTTP Impersonation' }),
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-alice',
+            },
             method: 'POST',
           },
         ).then((response) => response.json() as Promise<{ id: string }>);

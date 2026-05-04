@@ -38,18 +38,21 @@ describe("http server phase 2 api", () => {
 
       try {
         const createdSpace = await fetch(
-          `${server.url}/api/spaces?actorUserId=user-alice`,
+          `${server.url}/api/spaces`,
           {
             body: JSON.stringify({ kind: "shared", name: "Phase 2 Shared" }),
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-jixia-actor": "user-alice",
+            },
             method: "POST",
           },
         ).then((response) => response.json() as Promise<{ id: string }>);
         expect(createdSpace.id).toMatch(/^space-/);
 
-        const listedSpaces = await fetch(
-          `${server.url}/api/spaces?actorUserId=user-alice`,
-        ).then((response) => response.json() as Promise<Array<{ id: string }>>);
+        const listedSpaces = await fetch(`${server.url}/api/spaces`, {
+          headers: { "x-jixia-actor": "user-alice" },
+        }).then((response) => response.json() as Promise<Array<{ id: string }>>);
         expect(listedSpaces.map((space) => space.id)).toContain(
           createdSpace.id,
         );
@@ -58,9 +61,11 @@ describe("http server phase 2 api", () => {
           body: JSON.stringify({
             provider: "openai",
             rawSecret: "http-phase2-credential-placeholder",
-            userId: "user-alice",
           }),
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-jixia-actor": "user-alice",
+          },
           method: "POST",
         }).then(
           (response) => response.json() as Promise<{ credentialRef: string }>,
@@ -72,10 +77,12 @@ describe("http server phase 2 api", () => {
             credentialRef: credential.credentialRef,
             kind: "ai.summary",
             payload: { prompt: "Phase 2 over HTTP." },
-            requestedByUserId: "user-alice",
             spaceId: createdSpace.id,
           }),
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-jixia-actor": "user-alice",
+          },
           method: "POST",
         }).then(
           (response) =>
@@ -83,27 +90,23 @@ describe("http server phase 2 api", () => {
         );
         expect(createdJob.status).toBe("queued");
 
-        const jobs = await fetch(
-          `${server.url}/api/jobs?actorSpaceId=${createdSpace.id}&actorUserId=user-alice`,
-        ).then((response) => response.json() as Promise<Array<{ id: string }>>);
+        const jobs = await fetch(`${server.url}/api/jobs?spaceId=${createdSpace.id}`, {
+          headers: { "x-jixia-actor": "user-alice" },
+        }).then((response) => response.json() as Promise<Array<{ id: string }>>);
         expect(jobs.map((job) => job.id)).toContain(createdJob.id);
 
         const completedJob = await fetch(
           `${server.url}/api/jobs/${createdJob.id}/run`,
           {
-            body: JSON.stringify({
-              actorSpaceId: createdSpace.id,
-              actorUserId: "user-alice",
-            }),
-            headers: { "Content-Type": "application/json" },
+            headers: { "x-jixia-actor": "user-alice" },
             method: "POST",
           },
         ).then((response) => response.json() as Promise<{ status: string }>);
         expect(completedJob.status).toBe("succeeded");
 
-        const events = await fetch(
-          `${server.url}/api/jobs/${createdJob.id}/events?actorSpaceId=${createdSpace.id}&actorUserId=user-alice`,
-        ).then(
+        const events = await fetch(`${server.url}/api/jobs/${createdJob.id}/events`, {
+          headers: { "x-jixia-actor": "user-alice" },
+        }).then(
           (response) => response.json() as Promise<Array<{ status: string }>>,
         );
         expect(events.map((event) => event.status)).toEqual([

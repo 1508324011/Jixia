@@ -38,30 +38,36 @@ describe("http server phase 4 reader slice", () => {
 
       try {
         const createdSpace = await fetch(
-          `${server.url}/api/spaces?actorUserId=user-alice`,
+          `${server.url}/api/spaces`,
           {
             body: JSON.stringify({ kind: "shared", name: "Phase 4 Shared" }),
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-jixia-actor": "user-alice",
+            },
             method: "POST",
           },
         ).then((response) => response.json() as Promise<{ id: string }>);
 
         const importedRecord = await fetch(`${server.url}/api/import/paper`, {
           body: JSON.stringify({
-            requestedByUserId: "user-alice",
             sourceLocator: "10.1000/reading-demo",
             sourceType: "doi",
             spaceId: createdSpace.id,
             visibility: "space_shared",
           }),
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-jixia-actor": "user-alice",
+          },
           method: "POST",
         }).then(
           (response) => response.json() as Promise<{ entry: { id: string } }>,
         );
 
         const detail = await fetch(
-          `${server.url}/api/reading/${importedRecord.entry.id}?actorSpaceId=${createdSpace.id}&actorUserId=user-alice`,
+          `${server.url}/api/reading/${importedRecord.entry.id}`,
+          { headers: { "x-jixia-actor": "user-alice" } },
         ).then(
           (response) =>
             response.json() as Promise<{
@@ -76,13 +82,14 @@ describe("http server phase 4 reader slice", () => {
 
         const note = await fetch(`${server.url}/api/reading/notes`, {
           body: JSON.stringify({
-            actorSpaceId: createdSpace.id,
-            authorUserId: "user-alice",
             body: "This paper matters for the shared review.",
             libraryEntryId: importedRecord.entry.id,
             visibility: "space_shared",
           }),
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-jixia-actor": "user-alice",
+          },
           method: "POST",
         }).then(
           (response) =>
@@ -92,22 +99,24 @@ describe("http server phase 4 reader slice", () => {
 
         const insight = await fetch(`${server.url}/api/reading/insights`, {
           body: JSON.stringify({
-            actorSpaceId: createdSpace.id,
             evidenceSpans: [
               { endOffset: 18, quote: "shared review data", startOffset: 0 },
             ],
             libraryEntryId: importedRecord.entry.id,
-            startedByUserId: "user-alice",
             summary: "The imported paper supports the shared review workflow.",
             title: "AI summary",
           }),
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-jixia-actor": "user-alice",
+          },
           method: "POST",
         }).then((response) => response.json() as Promise<{ summary: string }>);
         expect(insight.summary).toContain("shared review workflow");
 
         const updatedDetail = await fetch(
-          `${server.url}/api/reading/${importedRecord.entry.id}?actorSpaceId=${createdSpace.id}&actorUserId=user-alice`,
+          `${server.url}/api/reading/${importedRecord.entry.id}`,
+          { headers: { "x-jixia-actor": "user-alice" } },
         ).then(
           (response) =>
             response.json() as Promise<{

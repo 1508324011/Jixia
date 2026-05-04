@@ -38,23 +38,28 @@ describe("http server phase 3 library slice", () => {
 
       try {
         const createdSpace = await fetch(
-          `${server.url}/api/spaces?actorUserId=user-alice`,
+          `${server.url}/api/spaces`,
           {
             body: JSON.stringify({ kind: "shared", name: "Phase 3 Shared" }),
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-jixia-actor": "user-alice",
+            },
             method: "POST",
           },
         ).then((response) => response.json() as Promise<{ id: string }>);
 
         const importedRecord = await fetch(`${server.url}/api/import/paper`, {
           body: JSON.stringify({
-            requestedByUserId: "user-alice",
             sourceLocator: "10.1000/jixia-demo",
             sourceType: "doi",
             spaceId: createdSpace.id,
             visibility: "space_shared",
           }),
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-jixia-actor": "user-alice",
+          },
           method: "POST",
         }).then(
           (response) =>
@@ -68,7 +73,8 @@ describe("http server phase 3 library slice", () => {
         expect(importedRecord.entry.spaceId).toBe(createdSpace.id);
 
         const libraryEntries = await fetch(
-          `${server.url}/api/library?actorSpaceId=${createdSpace.id}&actorUserId=user-alice&spaceId=${createdSpace.id}`,
+          `${server.url}/api/library?spaceId=${createdSpace.id}`,
+          { headers: { "x-jixia-actor": "user-alice" } },
         ).then(
           (response) =>
             response.json() as Promise<Array<{ entry: { id: string } }>>,
@@ -78,7 +84,8 @@ describe("http server phase 3 library slice", () => {
         );
 
         const libraryEntry = await fetch(
-          `${server.url}/api/library/${importedRecord.entry.id}?actorSpaceId=${createdSpace.id}&actorUserId=user-alice`,
+          `${server.url}/api/library/${importedRecord.entry.id}`,
+          { headers: { "x-jixia-actor": "user-alice" } },
         ).then(
           (response) =>
             response.json() as Promise<{ asset: { canonicalId: string } }>,
