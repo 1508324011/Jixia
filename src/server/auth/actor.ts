@@ -32,10 +32,22 @@ function parseBearerActor(authorization: string | null): string | null {
 
 export function getActor(source: ActorSource): ActorContext {
   const devHeaderActor = normalizeHeaderValue(source.headers[DEV_ACTOR_HEADER]);
+  const normalizedDevHeaderActor = devHeaderActor?.trim() || null;
   const bearerActor = parseBearerActor(
     normalizeHeaderValue(source.headers.authorization),
   );
-  const userId = devHeaderActor ?? bearerActor;
+
+  if (
+    normalizedDevHeaderActor &&
+    bearerActor &&
+    normalizedDevHeaderActor !== bearerActor
+  ) {
+    throw new Error(
+      "Conflicting actor sessions were provided by transport headers.",
+    );
+  }
+
+  const userId = normalizedDevHeaderActor ?? bearerActor;
 
   if (!userId) {
     throw new Error(
@@ -52,5 +64,16 @@ export function assertNoActorImpersonation(
 ): void {
   if (claimedUserId && claimedUserId !== actor.userId) {
     throw new Error("Request body actor does not match the server-derived actor.");
+  }
+}
+
+export function assertNoSpaceContextMismatch(
+  expectedSpaceId: string,
+  claimedSpaceId: string | undefined,
+): void {
+  if (claimedSpaceId && claimedSpaceId !== expectedSpaceId) {
+    throw new Error(
+      "Request space context does not match the requested resource space.",
+    );
   }
 }
