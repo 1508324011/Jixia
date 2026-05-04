@@ -12,6 +12,7 @@ import type { SpaceMembership } from '@shared/contracts/spaces';
 import {
   createPrismaClient,
   createProjectRepository,
+  createSpaceRepository,
   readDatabaseUrl,
 } from '../db';
 import {
@@ -243,21 +244,39 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const persist = (): void => {
     persistState(state, options.env);
   };
+  const prismaClient = createPrismaClient({ url: resolveAppDatabaseUrl(options.env) });
+  const spaceRepository = createSpaceRepository(prismaClient);
   const spacesService = createSpacesService({
-    memberships: state.memberships,
+    legacyMirror: {
+      syncMembership(record): void {
+        const existingMembership = state.memberships.find(
+          (membership) =>
+            membership.spaceId === record.spaceId && membership.userId === record.userId,
+        );
+
+        if (!existingMembership) {
+          state.memberships.push(record);
+          persist();
+        }
+      },
+      syncSpace(record): void {
+        const existingSpace = state.spaces.find((space) => space.id === record.id);
+
+        if (!existingSpace) {
+          state.spaces.push(record);
+          persist();
+        }
+      },
+    },
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
-    persist,
-    spaces: state.spaces,
+    repository: spaceRepository,
   });
-  const projectRepository = createProjectRepository(
-    createPrismaClient({ url: resolveAppDatabaseUrl(options.env) }),
-  );
+  const projectRepository = createProjectRepository(prismaClient);
   const projectsService = createProjectsService({
-    memberships: state.memberships,
     projectRepository,
-    spaces: state.spaces,
+    spaceRepository,
   });
   const importService = createImportService({
     arxivConnector: options.connectors?.arxiv ?? createArxivConnector(),
