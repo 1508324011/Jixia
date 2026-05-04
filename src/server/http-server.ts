@@ -9,7 +9,11 @@ import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createJixiaApp } from "./app";
-import { assertNoActorImpersonation, getActor } from "./auth/actor";
+import {
+  assertNoActorImpersonation,
+  assertNoSpaceContextMismatch,
+  getActor,
+} from "./auth/actor";
 import {
   readRuntimeConfig,
   type RuntimeConfig,
@@ -153,14 +157,8 @@ function requireQueryParam(requestUrl: URL, key: string): string {
   return value;
 }
 
-function parseJobAccessQuery(requestUrl: URL): {
-  actorSpaceId: string;
-  actorUserId: string;
-} {
-  return {
-    actorSpaceId: requireQueryParam(requestUrl, "actorSpaceId"),
-    actorUserId: requireQueryParam(requestUrl, "actorUserId"),
-  };
+function optionalQueryParam(requestUrl: URL, key: string): string | undefined {
+  return requestUrl.searchParams.get(key) ?? undefined;
 }
 
 async function handleApiRequest(
@@ -179,18 +177,20 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/spaces" && method === "GET") {
-      const actorUserId = requireQueryParam(requestUrl, "actorUserId");
+      const actor = getActor(request);
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
         response,
         200,
-        await app.spaces.listSpaces({ actorUserId }),
+        await app.spaces.listSpaces({ actorUserId: actor.userId }),
         method,
       );
       return true;
     }
 
     if (pathname === "/api/spaces" && method === "POST") {
-      const actorUserId = requireQueryParam(requestUrl, "actorUserId");
+      const actor = getActor(request);
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       const body = await readJsonBody<{
         description?: string;
         kind: "personal" | "shared";
@@ -200,21 +200,29 @@ async function handleApiRequest(
       sendJson(
         response,
         200,
-        await app.spaces.createSpace(body, actorUserId),
+        await app.spaces.createSpace(body, actor.userId),
         method,
       );
       return true;
     }
 
     if (pathname === "/api/library" && method === "GET") {
-      const actorSpaceId = requireQueryParam(requestUrl, "actorSpaceId");
-      const actorUserId = requireQueryParam(requestUrl, "actorUserId");
+      const actor = getActor(request);
       const spaceId = requireQueryParam(requestUrl, "spaceId");
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      assertNoSpaceContextMismatch(
+        spaceId,
+        optionalQueryParam(requestUrl, "actorSpaceId"),
+      );
 
       sendJson(
         response,
         200,
-        await app.library.listEntries({ actorSpaceId, actorUserId, spaceId }),
+        await app.library.listEntries({
+          actorSpaceId: spaceId,
+          actorUserId: actor.userId,
+          spaceId,
+        }),
         method,
       );
       return true;
@@ -307,44 +315,56 @@ async function handleApiRequest(
 
     const libraryEntryMatch = pathname.match(/^\/api\/library\/([^/]+)$/);
     if (libraryEntryMatch && method === "GET") {
+      const actor = getActor(request);
       const [, entryId] = libraryEntryMatch;
-      const actorSpaceId = requireQueryParam(requestUrl, "actorSpaceId");
-      const actorUserId = requireQueryParam(requestUrl, "actorUserId");
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
 
       sendJson(
         response,
         200,
-        await app.library.getEntry({ actorSpaceId, actorUserId, entryId }),
+        await app.library.getEntry({
+          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
+          actorUserId: actor.userId,
+          entryId,
+        }),
         method,
       );
       return true;
     }
 
     if (pathname === "/api/import/paper" && method === "POST") {
+      const actor = getActor(request);
       const body = await readJsonBody<{
-        requestedByUserId: string;
+        requestedByUserId?: string;
         sourceLocator: string;
         sourceType: "doi" | "pmid" | "arxiv";
         spaceId: string;
         visibility: "private" | "space_shared" | "published_to_project";
       }>(request);
 
-      sendJson(response, 200, await app.imports.importPaper(body), method);
+      assertNoActorImpersonation(actor, body.requestedByUserId);
+
+      sendJson(
+        response,
+        200,
+        await app.imports.importPaper(body, actor.userId),
+        method,
+      );
       return true;
     }
 
     const readingDetailMatch = pathname.match(/^\/api\/reading\/([^/]+)$/);
     if (readingDetailMatch && method === "GET") {
+      const actor = getActor(request);
       const [, entryId] = readingDetailMatch;
-      const actorSpaceId = requireQueryParam(requestUrl, "actorSpaceId");
-      const actorUserId = requireQueryParam(requestUrl, "actorUserId");
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
 
       sendJson(
         response,
         200,
         await app.reading.getDetail({
-          actorSpaceId,
-          actorUserId,
+          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
+          actorUserId: actor.userId,
           libraryEntryId: entryId,
         }),
         method,
@@ -353,36 +373,62 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/reading/notes" && method === "POST") {
+      const actor = getActor(request);
       const body = await readJsonBody<{
-        actorSpaceId: string;
-        authorUserId: string;
+        actorSpaceId?: string;
+        authorUserId?: string;
         body: string;
         libraryEntryId: string;
         visibility: "private" | "space_shared";
       }>(request);
 
-      sendJson(response, 200, await app.reading.createNote(body), method);
+      assertNoActorImpersonation(actor, body.authorUserId);
+
+      sendJson(
+        response,
+        200,
+        await app.reading.createNote({
+          actorSpaceId: body.actorSpaceId,
+          actorUserId: actor.userId,
+          authorUserId: body.authorUserId,
+          body: body.body,
+          libraryEntryId: body.libraryEntryId,
+          visibility: body.visibility,
+        }),
+        method,
+      );
       return true;
     }
 
     if (pathname === "/api/reading/insights" && method === "POST") {
+      const actor = getActor(request);
       const body = await readJsonBody<{
-        actorSpaceId: string;
+        actorSpaceId?: string;
         evidenceSpans: Array<{
           endOffset: number;
           quote: string;
           startOffset: number;
         }>;
         libraryEntryId: string;
-        startedByUserId: string;
+        startedByUserId?: string;
         summary: string;
         title: string;
       }>(request);
 
+      assertNoActorImpersonation(actor, body.startedByUserId);
+
       sendJson(
         response,
         200,
-        await app.reading.saveGeneratedInsight(body),
+        await app.reading.saveGeneratedInsight({
+          actorSpaceId: body.actorSpaceId,
+          actorUserId: actor.userId,
+          evidenceSpans: body.evidenceSpans,
+          libraryEntryId: body.libraryEntryId,
+          startedByUserId: body.startedByUserId,
+          summary: body.summary,
+          title: body.title,
+        }),
         method,
       );
       return true;
@@ -392,71 +438,99 @@ async function handleApiRequest(
       /^\/api\/spaces\/([^/]+)\/memberships$/,
     );
     if (membershipsMatch && method === "GET") {
+      const actor = getActor(request);
       const [, spaceId] = membershipsMatch;
       sendJson(
         response,
         200,
-        await app.spaces.listMemberships({ spaceId }),
+        await app.spaces.listMemberships({ spaceId }, actor.userId),
         method,
       );
       return true;
     }
 
     if (pathname === "/api/credentials" && method === "GET") {
-      const userId = requireQueryParam(requestUrl, "userId");
+      const actor = getActor(request);
+      const userId = optionalQueryParam(requestUrl, "userId");
+      assertNoActorImpersonation(actor, userId);
       sendJson(
         response,
         200,
-        await app.credentials.listCredentials({ userId }),
+        await app.credentials.listCredentials({ userId }, actor.userId),
         method,
       );
       return true;
     }
 
     if (pathname === "/api/credentials" && method === "POST") {
+      const actor = getActor(request);
       const body = await readJsonBody<{
         provider: string;
         rawSecret: string;
-        userId: string;
+        userId?: string;
       }>(request);
+      assertNoActorImpersonation(actor, body.userId);
       sendJson(
         response,
         200,
-        await app.credentials.createCredential(body),
+        await app.credentials.createCredential(body, actor.userId),
         method,
       );
       return true;
     }
 
     if (pathname === "/api/jobs" && method === "GET") {
-      const accessQuery = parseJobAccessQuery(requestUrl);
-      sendJson(response, 200, await app.jobs.listJobs(accessQuery), method);
+      const actor = getActor(request);
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      sendJson(
+        response,
+        200,
+        await app.jobs.listJobs({
+          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
+          actorUserId: actor.userId,
+          spaceId: optionalQueryParam(requestUrl, "spaceId"),
+        }),
+        method,
+      );
       return true;
     }
 
     if (pathname === "/api/jobs" && method === "POST") {
+      const actor = getActor(request);
       const body = await readJsonBody<{
         credentialRef: string;
         kind: string;
         payload: Record<string, unknown>;
-        requestedByUserId: string;
+        requestedByUserId?: string;
         spaceId: string;
       }>(request);
-      sendJson(response, 200, await app.jobs.createJob(body), method);
+      assertNoActorImpersonation(actor, body.requestedByUserId);
+      sendJson(
+        response,
+        200,
+        await app.jobs.createJob(body, actor.userId),
+        method,
+      );
       return true;
     }
 
     const jobRunMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/run$/);
     if (jobRunMatch && method === "POST") {
+      const actor = getActor(request);
       const [, jobId] = jobRunMatch;
       const body = await readJsonBody<{
-        actorSpaceId: string;
-        actorUserId: string;
+        actorSpaceId?: string;
+        actorUserId?: string;
       }>(request);
+      assertNoActorImpersonation(actor, body.actorUserId);
       sendJson(
         response,
         200,
-        await app.jobs.runJob({ ...body, jobId }),
+        await app.jobs.runJob({
+          actorSpaceId: body.actorSpaceId,
+          actorUserId: actor.userId,
+          jobId,
+        }),
         method,
       );
       return true;
@@ -464,12 +538,17 @@ async function handleApiRequest(
 
     const jobEventsMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/events$/);
     if (jobEventsMatch && method === "GET") {
+      const actor = getActor(request);
       const [, jobId] = jobEventsMatch;
-      const accessQuery = parseJobAccessQuery(requestUrl);
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
         response,
         200,
-        app.jobStream.listEvents({ ...accessQuery, jobId }),
+        app.jobStream.listEvents({
+          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
+          actorUserId: actor.userId,
+          jobId,
+        }),
         method,
       );
       return true;
@@ -477,22 +556,29 @@ async function handleApiRequest(
 
     const jobStreamMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/stream$/);
     if (jobStreamMatch && method === "GET") {
+      const actor = getActor(request);
       const [, jobId] = jobStreamMatch;
-      const accessQuery = parseJobAccessQuery(requestUrl);
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      const accessQuery = {
+        actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
+        actorUserId: actor.userId,
+        jobId,
+      };
 
-      response.writeHead(200, {
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-        "Content-Type": "text/event-stream; charset=utf-8",
-      });
-      response.write(app.jobStream.toSse({ ...accessQuery, jobId }));
-
+      const initialEvents = app.jobStream.toSse({ ...accessQuery, jobId });
       const unsubscribe = app.jobStream.subscribe(
         { ...accessQuery, jobId },
         (event) => {
           response.write(`event: job\ndata: ${JSON.stringify(event)}\n\n`);
         },
       );
+
+      response.writeHead(200, {
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "Content-Type": "text/event-stream; charset=utf-8",
+      });
+      response.write(initialEvents);
 
       request.on("close", () => {
         unsubscribe();
@@ -504,12 +590,17 @@ async function handleApiRequest(
 
     const jobAuditMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/audit$/);
     if (jobAuditMatch && method === "GET") {
+      const actor = getActor(request);
       const [, jobId] = jobAuditMatch;
-      const accessQuery = parseJobAccessQuery(requestUrl);
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
         response,
         200,
-        await app.jobs.listAuditRecords({ ...accessQuery, jobId }),
+        await app.jobs.listAuditRecords({
+          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
+          actorUserId: actor.userId,
+          jobId,
+        }),
         method,
       );
       return true;
@@ -517,12 +608,17 @@ async function handleApiRequest(
 
     const jobMatch = pathname.match(/^\/api\/jobs\/([^/]+)$/);
     if (jobMatch && method === "GET") {
+      const actor = getActor(request);
       const [, jobId] = jobMatch;
-      const accessQuery = parseJobAccessQuery(requestUrl);
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
         response,
         200,
-        await app.jobs.getJob({ ...accessQuery, jobId }),
+        await app.jobs.getJob({
+          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
+          actorUserId: actor.userId,
+          jobId,
+        }),
         method,
       );
       return true;
