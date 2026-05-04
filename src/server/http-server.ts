@@ -230,6 +230,7 @@ async function handleApiRequest(
 
     if (pathname === "/api/projects" && method === "GET") {
       const actor = getActor(request);
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(response, 200, await app.projects.listProjects(actor.userId), method);
       return true;
     }
@@ -268,6 +269,7 @@ async function handleApiRequest(
     if (projectMembersMatch && method === "GET") {
       const actor = getActor(request);
       const [, projectId] = projectMembersMatch;
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
         response,
         200,
@@ -304,6 +306,7 @@ async function handleApiRequest(
     if (projectMatch && method === "GET") {
       const actor = getActor(request);
       const [, projectId] = projectMatch;
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
         response,
         200,
