@@ -1,14 +1,29 @@
-export type ImportSourceType = 'doi' | 'pmid' | 'arxiv' | 'upload';
+export type ImportSourceType = "doi" | "pmid" | "arxiv" | "upload";
 
 export type LibraryEntryVisibility =
-  | 'private'
-  | 'space_shared'
-  | 'published_to_project';
+  | "private"
+  | "space_shared"
+  | "published_to_project";
 
 export interface ImportPaperAssetRequest {
   sourceType: ImportSourceType;
   sourceLocator: string;
   requestedByUserId: string;
+}
+
+export interface ImportLibraryEntryRequest {
+  requestedByUserId: string;
+  sourceLocator: string;
+  sourceType: "doi" | "pmid" | "arxiv";
+  spaceId: string;
+  visibility: LibraryEntryVisibility;
+}
+
+export interface UploadPdfToLibraryRequest {
+  pdfContents: string;
+  requestedByUserId: string;
+  spaceId: string;
+  visibility: LibraryEntryVisibility;
 }
 
 export interface PaperAssetRecord {
@@ -32,4 +47,10 @@ export interface LibraryEntryView {
   asset: PaperAssetRecord;
 }
 
-export const libraryContract = 'jixia-library-contract';
+export interface ListLibraryEntriesQuery {
+  actorSpaceId: string;
+  actorUserId: string;
+  spaceId: string;
+}
+
+export const libraryContract = "jixia-library-contract";

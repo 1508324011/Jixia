@@ -1,12 +1,27 @@
 export type JobStatus =
-  | 'queued'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled';
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 
 export interface JobStatusQuery {
   jobId: string;
+}
+
+export interface JobAccessQuery {
+  actorSpaceId: string;
+  actorUserId: string;
+}
+
+export interface ListJobsQuery extends JobAccessQuery {}
+
+export interface CreateJobRequest {
+  credentialRef: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  requestedByUserId: string;
+  spaceId: string;
 }
 
 export interface JobRecord {
@@ -25,4 +40,8 @@ export interface JobEventRecord {
   recordedAt: string;
 }
 
-export const jobsContract = 'jixia-jobs-contract';
+export interface RunJobRequest extends JobAccessQuery {
+  jobId: string;
+}
+
+export const jobsContract = "jixia-jobs-contract";

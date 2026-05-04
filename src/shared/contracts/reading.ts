@@ -1,4 +1,7 @@
-export type NoteVisibility = 'private' | 'space_shared';
+import type { GeneratedInsightRecord, EvidenceSpanRecord } from "./evidence";
+import type { LibraryEntryRecord, PaperAssetRecord } from "./library";
+
+export type NoteVisibility = "private" | "space_shared";
 
 export interface NoteRecord {
   id: string;
@@ -24,4 +27,33 @@ export interface ReadingStateRecord {
   lastReadAt: string;
 }
 
-export const readingContract = 'jixia-reading-contract';
+export interface ReadingDetail {
+  asset: PaperAssetRecord;
+  entry: LibraryEntryRecord;
+  insights: GeneratedInsightRecord[];
+  notes: NoteRecord[];
+}
+
+export interface GetReadingDetailQuery {
+  actorSpaceId: string;
+  actorUserId: string;
+}
+
+export interface CreateReadingNoteRequest {
+  actorSpaceId: string;
+  authorUserId: string;
+  body: string;
+  libraryEntryId: string;
+  visibility: NoteVisibility;
+}
+
+export interface SaveReadingInsightRequest {
+  actorSpaceId: string;
+  evidenceSpans: Omit<EvidenceSpanRecord, "paperAssetId">[];
+  libraryEntryId: string;
+  startedByUserId: string;
+  summary: string;
+  title: string;
+}
+
+export const readingContract = "jixia-reading-contract";

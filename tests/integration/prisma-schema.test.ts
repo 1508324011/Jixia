@@ -9,6 +9,8 @@ describe('prisma schema', () => {
     expect(schema).toContain('model User');
     expect(schema).toContain('model Space');
     expect(schema).toContain('model Membership');
+    expect(schema).toContain('model Project');
+    expect(schema).toContain('model ProjectMember');
     expect(schema).toContain('model PaperAsset');
     expect(schema).toContain('model LibraryEntry');
     expect(schema).toContain('model Note');
@@ -23,6 +25,10 @@ describe('prisma schema', () => {
     expect(schema).toContain('model AuditLog');
 
     expect(schema).toMatch(/model Space[\s\S]*\n\s+kind\s+SpaceKind/);
+    expect(schema).toMatch(/model Project[\s\S]*\n\s+spaceId\s+String/);
+    expect(schema).toMatch(
+      /model ProjectMember[\s\S]*@@unique\(\[projectId, userId\]\)/,
+    );
     expect(schema).toMatch(/model Note[\s\S]*\n\s+libraryEntryId\s+String/);
     expect(schema).toMatch(
       /model Conversation[\s\S]*\n\s+libraryEntryId\s+String/,

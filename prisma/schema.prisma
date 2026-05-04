@@ -17,6 +17,17 @@ enum SpaceRole {
   viewer
 }
 
+enum ProjectStatus {
+  active
+  archived
+}
+
+enum ProjectRole {
+  owner
+  editor
+  viewer
+}
+
 enum LibraryEntryVisibility {
   private
   space_shared
@@ -57,6 +68,8 @@ model User {
   providerCredentials ProviderCredential[]
   jobs                Job[]                @relation("JobRequestedBy")
   auditLogs           AuditLog[]
+  createdProjects     Project[]            @relation("ProjectCreatedBy")
+  projectMemberships  ProjectMember[]
 }
 
 model Space {
@@ -71,6 +84,33 @@ model Space {
   writingDocs  WritingDoc[]
   jobs         Job[]
   auditLogs    AuditLog[]
+  projects     Project[]
+}
+
+model Project {
+  id              String          @id @default(cuid())
+  spaceId         String
+  name            String
+  description     String?
+  status          ProjectStatus   @default(active)
+  createdByUserId String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  space           Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdBy       User            @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  members         ProjectMember[]
+}
+
+model ProjectMember {
+  id        String      @id @default(cuid())
+  projectId String
+  userId    String
+  role      ProjectRole
+  joinedAt  DateTime    @default(now())
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
 }
 
 model Membership {

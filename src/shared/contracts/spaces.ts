@@ -1,6 +1,6 @@
-export type SpaceKind = 'personal' | 'shared';
+export type SpaceKind = "personal" | "shared";
 
-export type SpaceRole = 'owner' | 'editor' | 'viewer';
+export type SpaceRole = "owner" | "editor" | "viewer";
 
 export interface CreateSpaceRequest {
   name: string;
@@ -10,6 +10,10 @@ export interface CreateSpaceRequest {
 
 export interface MembershipQuery {
   spaceId: string;
+}
+
+export interface ListSpacesQuery {
+  actorUserId: string;
 }
 
 export interface SpaceSummary {
@@ -26,4 +30,4 @@ export interface SpaceMembership {
   joinedAt: string;
 }
 
-export const spacesContract = 'jixia-spaces-contract';
+export const spacesContract = "jixia-spaces-contract";

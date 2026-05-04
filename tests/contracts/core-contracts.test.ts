@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import * as jobs from '../../src/shared/contracts/jobs';
 import * as library from '../../src/shared/contracts/library';
+import * as projects from '../../src/shared/contracts/projects';
 import * as reading from '../../src/shared/contracts/reading';
 import * as spaces from '../../src/shared/contracts/spaces';
 import * as writing from '../../src/shared/contracts/writing';
@@ -19,6 +20,15 @@ import type {
   LibraryEntryView,
   PaperAssetRecord,
 } from '../../src/shared/contracts/library';
+import type {
+  CreateProjectRequest,
+  ProjectListItem,
+  ProjectMemberRecord,
+  ProjectMemberRole,
+  ProjectRecord,
+  ProjectStatus,
+  ScopeRef,
+} from '../../src/shared/contracts/projects';
 import type {
   ConversationRecord,
   NoteRecord,
@@ -73,6 +83,45 @@ describe('core contracts', () => {
 
     expect(createSpaceShape.name).toBe('Computational Biology');
     expectTypeOf<SpaceKind>().toEqualTypeOf<'personal' | 'shared'>();
+  });
+
+  it('exports project-first collaboration payloads and explicit scope refs', () => {
+    expect(projects).toBeTruthy();
+
+    const personalScope: ScopeRef = { type: 'user', id: 'user_001' };
+    const projectScope: ScopeRef = { type: 'project', id: 'project_001' };
+    const createProjectRequest: CreateProjectRequest = {
+      name: 'Project-first recovery',
+      spaceId: 'space_001',
+      status: 'active',
+    };
+    const project: ProjectRecord = {
+      createdAt: '2026-05-03T00:00:00.000Z',
+      createdByUserId: 'user_001',
+      id: 'project_001',
+      name: 'Project-first recovery',
+      spaceId: 'space_001',
+      status: 'active',
+      updatedAt: '2026-05-03T00:00:00.000Z',
+    };
+    const membership: ProjectMemberRecord = {
+      joinedAt: '2026-05-03T00:00:00.000Z',
+      projectId: project.id,
+      role: 'owner',
+      userId: 'user_001',
+    };
+    const listItem: ProjectListItem = { membership, project };
+
+    expect(personalScope.type).toBe('user');
+    expect(projectScope.type).toBe('project');
+    expect(createProjectRequest.spaceId).toBe('space_001');
+    expect(listItem.membership.role).toBe('owner');
+    expect(projects.projectsContract).toBe('jixia-projects-contract');
+
+    expectTypeOf<ProjectStatus>().toEqualTypeOf<'active' | 'archived'>();
+    expectTypeOf<ProjectMemberRole>().toEqualTypeOf<
+      'owner' | 'editor' | 'viewer'
+    >();
   });
 
   it('exports asset import and library entry payloads', () => {
