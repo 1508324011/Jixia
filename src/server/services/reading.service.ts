@@ -17,11 +17,23 @@ import type { StoredLibraryEntry, StoredPaperAsset } from "./import.service";
 import type { StoredSpace } from "./spaces.service";
 import type { EvidenceLinkService } from "./evidence-link.service";
 
-export interface CreateNoteRequest extends CreateReadingNoteRequest {}
+export interface CreateNoteRequest
+  extends Omit<CreateReadingNoteRequest, "actorSpaceId" | "authorUserId"> {
+  actorSpaceId?: string;
+  actorUserId?: string;
+  authorUserId?: string;
+}
 
-export interface SaveGeneratedInsightRequest extends SaveReadingInsightRequest {}
+export interface SaveGeneratedInsightRequest
+  extends Omit<SaveReadingInsightRequest, "actorSpaceId" | "startedByUserId"> {
+  actorSpaceId?: string;
+  actorUserId?: string;
+  startedByUserId?: string;
+}
 
 export interface GetReadingDetailRequest extends GetReadingDetailQuery {
+  actorSpaceId?: string;
+  actorUserId: string;
   libraryEntryId: string;
 }
 
@@ -44,6 +56,17 @@ export interface ReadingService {
   saveGeneratedInsight(
     input: SaveGeneratedInsightRequest,
   ): Promise<GeneratedInsightRecord>;
+}
+
+function assertSpaceContextMatches(
+  expectedSpaceId: string,
+  claimedSpaceId: string | undefined,
+): void {
+  if (claimedSpaceId && claimedSpaceId !== expectedSpaceId) {
+    throw new Error(
+      "Request space context does not match the requested resource space.",
+    );
+  }
 }
 
 function getLibraryContext(
@@ -84,10 +107,11 @@ function getLibraryContext(
 function assertEntryAccess(
   store: ReadingStore,
   actorUserId: string,
-  actorSpaceId: string,
   libraryEntryId: string,
+  claimedSpaceId: string | undefined,
 ): void {
   const { entry, space } = getLibraryContext(store, libraryEntryId);
+  assertSpaceContextMatches(entry.spaceId, claimedSpaceId);
   const actorHasResourceMembership = store.memberships.some(
     (membership) =>
       membership.spaceId === entry.spaceId && membership.userId === actorUserId,
@@ -95,7 +119,7 @@ function assertEntryAccess(
 
   assertCanReadResource({
     actorHasResourceMembership,
-    actorSpaceId,
+    actorSpaceId: entry.spaceId,
     actorUserId,
     resourceOwnerUserId: space.ownerUserId,
     resourceSpaceId: entry.spaceId,
@@ -132,15 +156,21 @@ export function createReadingService(store: ReadingStore): ReadingService {
         throw new Error(`Space ${entry.spaceId} does not exist.`);
       }
 
+      assertSpaceContextMatches(entry.spaceId, input.actorSpaceId);
+
       const actorHasResourceMembership = store.memberships.some(
         (membership) =>
           membership.spaceId === entry.spaceId &&
           membership.userId === input.actorUserId,
       );
 
+      if (!actorHasResourceMembership) {
+        throw new Error("Access denied for the requested space resource.");
+      }
+
       assertCanReadResource({
         actorHasResourceMembership,
-        actorSpaceId: input.actorSpaceId,
+        actorSpaceId: entry.spaceId,
         actorUserId: input.actorUserId,
         resourceOwnerUserId: space.ownerUserId,
         resourceSpaceId: entry.spaceId,
@@ -166,7 +196,7 @@ export function createReadingService(store: ReadingStore): ReadingService {
 
           return canReadResource({
             actorHasResourceMembership,
-            actorSpaceId: input.actorSpaceId,
+            actorSpaceId: entry.spaceId,
             actorUserId: input.actorUserId,
             resourceOwnerUserId: note.authorUserId,
             resourceSpaceId: entry.spaceId,
@@ -176,15 +206,27 @@ export function createReadingService(store: ReadingStore): ReadingService {
       };
     },
     async createNote(input: CreateNoteRequest): Promise<NoteRecord> {
+      const effectiveActorUserId = input.actorUserId ?? input.authorUserId;
+
+      if (!effectiveActorUserId) {
+        throw new Error("Reading note creation requires an actor user id.");
+      }
+
+      if (input.authorUserId && input.authorUserId !== effectiveActorUserId) {
+        throw new Error(
+          "Request body actor does not match the server-derived actor.",
+        );
+      }
+
       assertEntryAccess(
         store,
-        input.authorUserId,
-        input.actorSpaceId,
+        effectiveActorUserId,
         input.libraryEntryId,
+        input.actorSpaceId,
       );
 
       const note: NoteRecord = {
-        authorUserId: input.authorUserId,
+        authorUserId: effectiveActorUserId,
         body: input.body,
         createdAt: new Date().toISOString(),
         id: store.nextId("note"),
@@ -200,11 +242,23 @@ export function createReadingService(store: ReadingStore): ReadingService {
     async saveGeneratedInsight(
       input: SaveGeneratedInsightRequest,
     ): Promise<GeneratedInsightRecord> {
+      const effectiveActorUserId = input.actorUserId ?? input.startedByUserId;
+
+      if (!effectiveActorUserId) {
+        throw new Error("Reading insight creation requires an actor user id.");
+      }
+
+      if (input.startedByUserId && input.startedByUserId !== effectiveActorUserId) {
+        throw new Error(
+          "Request body actor does not match the server-derived actor.",
+        );
+      }
+
       assertEntryAccess(
         store,
-        input.startedByUserId,
-        input.actorSpaceId,
+        effectiveActorUserId,
         input.libraryEntryId,
+        input.actorSpaceId,
       );
 
       const { asset } = getLibraryContext(store, input.libraryEntryId);
@@ -213,7 +267,7 @@ export function createReadingService(store: ReadingStore): ReadingService {
         createdAt,
         id: store.nextId("conversation"),
         libraryEntryId: input.libraryEntryId,
-        startedByUserId: input.startedByUserId,
+        startedByUserId: effectiveActorUserId,
         title: input.title,
       };
 
