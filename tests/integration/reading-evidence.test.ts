@@ -44,7 +44,7 @@ describe('reading evidence', () => {
           libraryEntryId: imported.entry.id,
           visibility: 'space_shared',
         }),
-      ).rejects.toThrow(/access denied/i);
+      ).rejects.toThrow(/space context/i);
 
       const note = await app.reading.createNote({
         actorSpaceId: aliceShared.id,

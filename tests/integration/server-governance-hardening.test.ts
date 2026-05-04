@@ -46,14 +46,14 @@ describe('server governance hardening', () => {
           actorUserId: 'user-bob',
           entryId: imported.entry.id,
         }),
-      ).rejects.toThrow(/access denied/i);
+      ).rejects.toThrow(/space context/i);
       await expect(
         app.reading.getDetail({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           libraryEntryId: imported.entry.id,
         }),
-      ).rejects.toThrow(/access denied/i);
+      ).rejects.toThrow(/space context/i);
       await expect(
         app.writing.saveDocument({
           actorSpaceId: bobPersonal.id,
@@ -221,28 +221,28 @@ describe('server governance hardening', () => {
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).rejects.toThrow(/access denied/i);
+      ).rejects.toThrow(/space context/i);
       await expect(
         app.jobs.listAuditRecords({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).rejects.toThrow(/access denied/i);
+      ).rejects.toThrow(/space context/i);
       expect(() =>
         app.jobStream.listEvents({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).toThrow(/access denied/i);
+      ).toThrow(/space context/i);
       expect(() =>
         app.jobStream.toSse({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).toThrow(/access denied/i);
+      ).toThrow(/space context/i);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }

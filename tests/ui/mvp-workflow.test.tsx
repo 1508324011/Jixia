@@ -43,7 +43,29 @@ function installFetchMock() {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const requestUrl = new URL(String(input), window.location.origin);
     const headers = new Headers(init?.headers);
-    const actor = headers.get('x-jixia-actor') ?? 'user-alice';
+    const actor = headers.get('x-jixia-actor');
+
+    if (requestUrl.pathname.startsWith('/api/')) {
+      const protectedRoute = requestUrl.pathname !== '/api/health';
+
+      if (protectedRoute && !actor) {
+        return Response.json(
+          { error: 'Missing server-derived actor session.' },
+          { status: 401 },
+        );
+      }
+
+      if (
+        requestUrl.searchParams.has('actorUserId') ||
+        requestUrl.searchParams.has('actorSpaceId') ||
+        requestUrl.searchParams.has('userId')
+      ) {
+        return Response.json(
+          { error: 'Actor authority must travel by session header only.' },
+          { status: 400 },
+        );
+      }
+    }
 
     if (requestUrl.pathname === '/api/projects' && init?.method === 'POST') {
       return Response.json(projectFixture);
