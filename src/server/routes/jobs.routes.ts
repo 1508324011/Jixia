@@ -1,6 +1,6 @@
 import type { SpaceMembership } from "@shared/contracts/spaces";
 
-import type { JobRecord, ListJobsQuery } from "@shared/contracts/jobs";
+import type { JobRecord } from "@shared/contracts/jobs";
 
 import {
   assertSafeJobPayload,
@@ -17,14 +17,20 @@ export interface CreateJobRequest {
   credentialRef: string;
   kind: string;
   payload: Record<string, unknown>;
-  requestedByUserId: string;
+  requestedByUserId?: string;
   spaceId: string;
 }
 
+export interface ListJobsRequest {
+  actorSpaceId?: string;
+  actorUserId: string;
+  spaceId?: string;
+}
+
 export interface JobsRoutes {
-  createJob(input: CreateJobRequest): Promise<JobRecord>;
+  createJob(input: CreateJobRequest, actorUserId?: string): Promise<JobRecord>;
   getJob(input: JobAccessRequest): Promise<JobRecord>;
-  listJobs(input: ListJobsQuery): Promise<JobRecord[]>;
+  listJobs(input: ListJobsRequest): Promise<JobRecord[]>;
   listAuditRecords(input: JobAccessRequest): Promise<AuditLogRecord[]>;
   runJob(input: JobAccessRequest): Promise<JobRecord>;
 }
@@ -43,7 +49,22 @@ export interface JobsRouteStore {
 
 export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
   return {
-    async createJob(input: CreateJobRequest): Promise<JobRecord> {
+    async createJob(
+      input: CreateJobRequest,
+      actorUserId?: string,
+    ): Promise<JobRecord> {
+      const effectiveUserId = actorUserId ?? input.requestedByUserId;
+
+      if (!effectiveUserId) {
+        throw new Error("Jobs require an actor user id.");
+      }
+
+      if (actorUserId && input.requestedByUserId && input.requestedByUserId !== actorUserId) {
+        throw new Error(
+          "Request body actor does not match the server-derived actor.",
+        );
+      }
+
       const space = store.spaces.find(
         (candidate) => candidate.id === input.spaceId,
       );
@@ -60,14 +81,14 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
         throw new Error(`Credential ${input.credentialRef} does not exist.`);
       }
 
-      if (credential.userId !== input.requestedByUserId) {
+      if (credential.userId !== effectiveUserId) {
         throw new Error("Credentials may only be used by their owner.");
       }
 
       const actorHasMembership = store.memberships.some(
         (membership) =>
           membership.spaceId === input.spaceId &&
-          membership.userId === input.requestedByUserId,
+          membership.userId === effectiveUserId,
       );
 
       if (!actorHasMembership) {
@@ -82,7 +103,7 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
         id: store.nextId("job"),
         kind: input.kind,
         payload: JSON.stringify(input.payload),
-        requestedByUserId: input.requestedByUserId,
+        requestedByUserId: effectiveUserId,
         spaceId: input.spaceId,
         status: "queued",
       };
@@ -98,7 +119,7 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
       });
       store.auditService.createRecord({
         action: "job.created",
-        actorUserId: input.requestedByUserId,
+        actorUserId: effectiveUserId,
         detail: `Created ${job.kind} with credential ${credential.credentialRef}.`,
         jobId: job.id,
         spaceId: input.spaceId,
@@ -123,12 +144,32 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
         status: job.status,
       };
     },
-    async listJobs(input: ListJobsQuery): Promise<JobRecord[]> {
+    async listJobs(input: ListJobsRequest): Promise<JobRecord[]> {
+      const targetSpaceId = input.spaceId;
+
+      if (input.actorSpaceId && input.actorSpaceId !== input.spaceId) {
+        throw new Error(
+          'Request space context does not match the requested resource space.',
+        );
+      }
+
+      if (targetSpaceId) {
+        const actorHasMembership = store.memberships.some(
+          (membership) =>
+            membership.spaceId === targetSpaceId &&
+            membership.userId === input.actorUserId,
+        );
+
+        if (!actorHasMembership) {
+          throw new Error('Access denied for the requested space resource.');
+        }
+      }
+
       return store.jobs
         .filter(
           (job) =>
-            job.spaceId === input.actorSpaceId &&
-            job.requestedByUserId === input.actorUserId,
+            job.requestedByUserId === input.actorUserId &&
+            (!targetSpaceId || job.spaceId === targetSpaceId),
         )
         .map((job) => ({
           createdAt: job.createdAt,

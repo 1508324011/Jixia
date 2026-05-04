@@ -4,8 +4,8 @@ import type { StoredSpace } from '../services/spaces.service';
 import type { StoredJob } from './job-runner';
 
 export interface JobAccessRequest {
-  actorSpaceId: string;
   actorUserId: string;
+  actorSpaceId?: string;
   jobId: string;
 }
 
@@ -93,11 +93,13 @@ export function findAuthorizedJob(
       membership.userId === input.actorUserId,
   );
 
-  if (
-    input.actorSpaceId !== job.spaceId ||
-    input.actorUserId !== job.requestedByUserId ||
-    !actorHasMembership
-  ) {
+  if (input.actorSpaceId && input.actorSpaceId !== job.spaceId) {
+    throw new Error(
+      'Request space context does not match the requested resource space.',
+    );
+  }
+
+  if (input.actorUserId !== job.requestedByUserId || !actorHasMembership) {
     throw new Error('Access denied for the requested space resource.');
   }
 
