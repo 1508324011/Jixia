@@ -30,9 +30,12 @@ export function useSpacesPresenter(): SpacesViewModel {
         demoActorContext.actorUserId,
       );
 
-      const nextCards = await Promise.all(
-        nextSpaces.map(async (space) => {
-          const memberships = await apiClient.listMemberships(space.id);
+        const nextCards = await Promise.all(
+          nextSpaces.map(async (space) => {
+          const memberships = await apiClient.listMemberships(
+            space.id,
+            demoActorContext.actorUserId,
+          );
           return {
             membershipCount: memberships.length,
             summary: space,

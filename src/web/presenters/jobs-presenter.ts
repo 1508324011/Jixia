@@ -57,10 +57,10 @@ export function useJobsPresenter(): JobsViewModel {
       }
 
       const nextJobs = sortJobs(
-        await apiClient.listJobs({
-          actorSpaceId: nextSpaces[0].id,
-          actorUserId: demoActorContext.actorUserId,
-        }),
+        await apiClient.listJobs(
+          demoActorContext.actorUserId,
+          nextSpaces[0].id,
+        ),
       );
       setJobs(nextJobs);
 
@@ -70,11 +70,10 @@ export function useJobsPresenter(): JobsViewModel {
       }
 
       setEvents(
-        await apiClient.listJobEvents({
-          actorSpaceId: nextSpaces[0].id,
-          actorUserId: demoActorContext.actorUserId,
-          jobId: nextJobs[0].id,
-        }),
+        await apiClient.listJobEvents(
+          demoActorContext.actorUserId,
+          nextJobs[0].id,
+        ),
       );
     } catch (presenterError) {
       setError(
@@ -98,7 +97,6 @@ export function useJobsPresenter(): JobsViewModel {
 
     subscriptionRef.current = apiClient.subscribeToJobEvents(
       {
-        actorSpaceId,
         actorUserId: demoActorContext.actorUserId,
         jobId: activeJob.id,
       },
@@ -152,10 +150,9 @@ export function useJobsPresenter(): JobsViewModel {
         demoActorContext.actorUserId,
       );
       if (nextCredentials.length === 0) {
-        await apiClient.createCredential({
+        await apiClient.createCredential(demoActorContext.actorUserId, {
           provider: "openai",
           rawSecret: "local-demo-credential-placeholder",
-          userId: demoActorContext.actorUserId,
         });
         nextCredentials = await apiClient.listCredentials(
           demoActorContext.actorUserId,
@@ -167,11 +164,10 @@ export function useJobsPresenter(): JobsViewModel {
         throw new Error("No credential is available for the sample job.");
       }
 
-      const createdJob = await apiClient.createJob({
+      const createdJob = await apiClient.createJob(demoActorContext.actorUserId, {
         credentialRef: credential.credentialRef,
         kind: "ai.summary",
         payload: { prompt: "Summarize the current shared research lane." },
-        requestedByUserId: demoActorContext.actorUserId,
         spaceId: nextActorSpaceId,
       });
 
@@ -180,11 +176,7 @@ export function useJobsPresenter(): JobsViewModel {
       setJobs((currentJobs) => sortJobs([createdJob, ...currentJobs]));
       setEvents([]);
 
-      await apiClient.runJob({
-        actorSpaceId: nextActorSpaceId,
-        actorUserId: demoActorContext.actorUserId,
-        jobId: createdJob.id,
-      });
+      await apiClient.runJob(demoActorContext.actorUserId, createdJob.id);
 
       await refresh();
     } catch (presenterError) {

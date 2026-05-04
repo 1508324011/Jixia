@@ -7,12 +7,10 @@ import type {
   JobEventRecord,
   JobStatusQuery,
   JobRecord,
-  RunJobRequest,
 } from "@shared/contracts/jobs";
 import type {
   ImportLibraryEntryRequest,
   LibraryEntryView,
-  ListLibraryEntriesQuery,
 } from "@shared/contracts/library";
 import type {
   AddProjectMemberRequest,
@@ -47,6 +45,19 @@ export interface JobAccessContext {
   actorSpaceId: string;
   actorUserId: string;
 }
+
+type CreateCredentialPayload = Omit<CreateCredentialRequest, "userId">;
+type CreateJobPayload = Omit<CreateJobRequest, "requestedByUserId">;
+type CreateReadingNotePayload = Omit<
+  CreateReadingNoteRequest,
+  "actorSpaceId" | "authorUserId"
+>;
+type ImportPaperPayload = Omit<ImportLibraryEntryRequest, "requestedByUserId">;
+type ReadingDetailRequest = Omit<GetReadingDetailQuery, "actorUserId" | "actorSpaceId">;
+type SaveReadingInsightPayload = Omit<
+  SaveReadingInsightRequest,
+  "actorSpaceId" | "startedByUserId"
+>;
 
 interface RequestOptions extends RequestInit {
   query?: Record<string, string | undefined>;
@@ -126,36 +137,77 @@ interface JobEventSubscription {
 }
 
 function subscribeToJobEvents(
-  input: JobStatusQuery & JobAccessContext,
+  input: JobStatusQuery & { actorUserId: string },
   onEvent: (event: JobEventRecord) => void,
-  onError?: (error: Event) => void,
+  onError?: (error: unknown) => void,
 ): JobEventSubscription {
-  if (
-    typeof window === "undefined" ||
-    typeof window.EventSource === "undefined"
-  ) {
+  if (typeof window === "undefined" || typeof fetch === "undefined") {
     return { close() {} };
   }
 
-  const source = new window.EventSource(
-    buildUrl(`/api/jobs/${input.jobId}/stream`, {
-      actorSpaceId: input.actorSpaceId,
-      actorUserId: input.actorUserId,
-    }),
-  );
+  const controller = new AbortController();
 
-  source.addEventListener("job", (event) => {
-    const messageEvent = event as MessageEvent<string>;
-    onEvent(JSON.parse(messageEvent.data) as JobEventRecord);
-  });
+  void (async () => {
+    try {
+      const response = await fetch(buildUrl(`/api/jobs/${input.jobId}/stream`), {
+        headers: {
+          "x-jixia-actor": input.actorUserId,
+        },
+        signal: controller.signal,
+      });
 
-  if (onError) {
-    source.addEventListener("error", onError);
-  }
+      if (!response.ok) {
+        throw new ApiError(await readErrorMessage(response), response.status);
+      }
+
+      if (!response.body) {
+        throw new Error("Live job stream is unavailable.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        while (true) {
+          const separatorIndex = buffer.indexOf("\n\n");
+
+          if (separatorIndex === -1) {
+            break;
+          }
+
+          const rawEvent = buffer.slice(0, separatorIndex);
+          buffer = buffer.slice(separatorIndex + 2);
+
+          const dataLine = rawEvent
+            .split("\n")
+            .find((line) => line.startsWith("data: "));
+
+          if (!dataLine) {
+            continue;
+          }
+
+          onEvent(JSON.parse(dataLine.slice(6)) as JobEventRecord);
+        }
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        onError?.(error);
+      }
+    }
+  })();
 
   return {
     close() {
-      source.close();
+      controller.abort();
     },
   };
 }
@@ -172,14 +224,19 @@ export const apiClient = {
       method: "POST",
     });
   },
-  createCredential(input: CreateCredentialRequest): Promise<CredentialRecord> {
-    return requestJson("/api/credentials", {
+  createCredential(
+    actorUserId: string,
+    input: CreateCredentialPayload,
+  ): Promise<CredentialRecord> {
+    return requestSessionJson("/api/credentials", {
+      actorUserId,
       body: JSON.stringify(input),
       method: "POST",
     });
   },
-  createJob(input: CreateJobRequest): Promise<JobRecord> {
-    return requestJson("/api/jobs", {
+  createJob(actorUserId: string, input: CreateJobPayload): Promise<JobRecord> {
+    return requestSessionJson("/api/jobs", {
+      actorUserId,
       body: JSON.stringify(input),
       method: "POST",
     });
@@ -194,8 +251,12 @@ export const apiClient = {
       method: "POST",
     });
   },
-  createReadingNote(input: CreateReadingNoteRequest): Promise<NoteRecord> {
-    return requestJson("/api/reading/notes", {
+  createReadingNote(
+    actorUserId: string,
+    input: CreateReadingNotePayload,
+  ): Promise<NoteRecord> {
+    return requestSessionJson("/api/reading/notes", {
+      actorUserId,
       body: JSON.stringify(input),
       method: "POST",
     });
@@ -204,41 +265,33 @@ export const apiClient = {
     actorUserId: string,
     input: CreateSpaceRequest,
   ): Promise<SpaceSummary> {
-    return requestJson("/api/spaces", {
+    return requestSessionJson("/api/spaces", {
+      actorUserId,
       body: JSON.stringify(input),
       method: "POST",
-      query: { actorUserId },
     });
   },
   listCredentials(userId: string): Promise<CredentialRecord[]> {
-    return requestJson("/api/credentials", { query: { userId } });
+    return requestSessionJson("/api/credentials", { actorUserId: userId });
   },
-  listLibraryEntries(
-    input: ListLibraryEntriesQuery,
-  ): Promise<LibraryEntryView[]> {
-    return requestJson("/api/library", {
+  listLibraryEntries(actorUserId: string, spaceId: string): Promise<LibraryEntryView[]> {
+    return requestSessionJson("/api/library", {
+      actorUserId,
       query: {
-        actorSpaceId: input.actorSpaceId,
-        actorUserId: input.actorUserId,
-        spaceId: input.spaceId,
+        spaceId,
       },
     });
   },
-  listJobEvents(
-    input: JobStatusQuery & JobAccessContext,
-  ): Promise<JobEventRecord[]> {
-    return requestJson(`/api/jobs/${input.jobId}/events`, {
-      query: {
-        actorSpaceId: input.actorSpaceId,
-        actorUserId: input.actorUserId,
-      },
+  listJobEvents(actorUserId: string, jobId: string): Promise<JobEventRecord[]> {
+    return requestSessionJson(`/api/jobs/${jobId}/events`, {
+      actorUserId,
     });
   },
-  listJobs(input: JobAccessContext): Promise<JobRecord[]> {
-    return requestJson("/api/jobs", {
+  listJobs(actorUserId: string, spaceId?: string): Promise<JobRecord[]> {
+    return requestSessionJson("/api/jobs", {
+      actorUserId,
       query: {
-        actorSpaceId: input.actorSpaceId,
-        actorUserId: input.actorUserId,
+        spaceId,
       },
     });
   },
@@ -253,42 +306,48 @@ export const apiClient = {
   listProjects(actorUserId: string): Promise<ProjectListItem[]> {
     return requestSessionJson("/api/projects", { actorUserId });
   },
-  listMemberships(spaceId: string): Promise<SpaceMembership[]> {
-    return requestJson(`/api/spaces/${spaceId}/memberships`);
+  listMemberships(
+    spaceId: string,
+    actorUserId: string,
+  ): Promise<SpaceMembership[]> {
+    return requestSessionJson(`/api/spaces/${spaceId}/memberships`, {
+      actorUserId,
+    });
   },
   listSpaces(actorUserId: string): Promise<SpaceSummary[]> {
-    return requestJson("/api/spaces", { query: { actorUserId } });
+    return requestSessionJson("/api/spaces", { actorUserId });
   },
-  importPaper(input: ImportLibraryEntryRequest): Promise<LibraryEntryView> {
-    return requestJson("/api/import/paper", {
+  importPaper(
+    actorUserId: string,
+    input: ImportPaperPayload,
+  ): Promise<LibraryEntryView> {
+    return requestSessionJson("/api/import/paper", {
+      actorUserId,
       body: JSON.stringify(input),
       method: "POST",
     });
   },
   getReadingDetail(
+    actorUserId: string,
     entryId: string,
-    input: GetReadingDetailQuery,
+    _input?: ReadingDetailRequest,
   ): Promise<ReadingDetail | null> {
-    return requestJson(`/api/reading/${entryId}`, {
-      query: {
-        actorSpaceId: input.actorSpaceId,
-        actorUserId: input.actorUserId,
-      },
+    return requestSessionJson(`/api/reading/${entryId}`, {
+      actorUserId,
     });
   },
-  runJob(input: RunJobRequest): Promise<JobRecord> {
-    return requestJson(`/api/jobs/${input.jobId}/run`, {
-      body: JSON.stringify({
-        actorSpaceId: input.actorSpaceId,
-        actorUserId: input.actorUserId,
-      }),
+  runJob(actorUserId: string, jobId: string): Promise<JobRecord> {
+    return requestSessionJson(`/api/jobs/${jobId}/run`, {
+      actorUserId,
       method: "POST",
     });
   },
   saveReadingInsight(
-    input: SaveReadingInsightRequest,
+    actorUserId: string,
+    input: SaveReadingInsightPayload,
   ): Promise<import("@shared/contracts/evidence").GeneratedInsightRecord> {
-    return requestJson("/api/reading/insights", {
+    return requestSessionJson("/api/reading/insights", {
+      actorUserId,
       body: JSON.stringify(input),
       method: "POST",
     });

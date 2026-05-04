@@ -99,8 +99,7 @@ export function useSearchPresenter(): SearchViewModel {
           setSelectedSpaceId(createdSpace.id);
         }
 
-        const nextRecord = await apiClient.importPaper({
-          requestedByUserId: demoActorContext.actorUserId,
+        const nextRecord = await apiClient.importPaper(demoActorContext.actorUserId, {
           sourceLocator: input.sourceLocator,
           sourceType: input.sourceType,
           spaceId: nextSpaceId,

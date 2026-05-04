@@ -44,14 +44,14 @@ export function useReaderPresenter(
       return;
     }
 
-    try {
-      setIsLoading(true);
-      setError(null);
-      const nextDetail = await apiClient.getReadingDetail(entryId, {
-        actorSpaceId: projectContext.project.project.spaceId,
-        actorUserId: demoActorContext.actorUserId,
-      });
-      setDetail(nextDetail);
+      try {
+        setIsLoading(true);
+        setError(null);
+        const nextDetail = await apiClient.getReadingDetail(
+          demoActorContext.actorUserId,
+          entryId,
+        );
+        setDetail(nextDetail);
     } catch (presenterError) {
       setDetail(null);
       setError(
@@ -78,9 +78,7 @@ export function useReaderPresenter(
       try {
         setIsMutating(true);
         setError(null);
-        await apiClient.createReadingNote({
-          actorSpaceId: projectContext.project.project.spaceId,
-          authorUserId: demoActorContext.actorUserId,
+        await apiClient.createReadingNote(demoActorContext.actorUserId, {
           body,
           libraryEntryId: entryId,
           visibility,
@@ -105,20 +103,18 @@ export function useReaderPresenter(
       return;
     }
 
-    try {
-      setIsMutating(true);
-      setError(null);
-      await apiClient.saveReadingInsight({
-        actorSpaceId: projectContext.project.project.spaceId,
-        evidenceSpans: [
-          {
-            endOffset: 18,
+      try {
+        setIsMutating(true);
+        setError(null);
+        await apiClient.saveReadingInsight(demoActorContext.actorUserId, {
+          evidenceSpans: [
+            {
+              endOffset: 18,
             quote: "shared review data",
             startOffset: 0,
           },
         ],
         libraryEntryId: entryId,
-        startedByUserId: demoActorContext.actorUserId,
         summary: "The imported paper supports the shared review workflow.",
         title: "AI summary",
       });

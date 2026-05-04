@@ -38,15 +38,14 @@ export function useSettingsPresenter(): SettingsViewModel {
   }, [refresh]);
 
   const createSampleCredential = useCallback(async () => {
-    try {
-      setIsMutating(true);
-      setError(null);
-      await apiClient.createCredential({
-        provider: "openai",
-        rawSecret: "local-settings-credential-placeholder",
-        userId: demoActorContext.actorUserId,
-      });
-      await refresh();
+      try {
+        setIsMutating(true);
+        setError(null);
+        await apiClient.createCredential(demoActorContext.actorUserId, {
+          provider: "openai",
+          rawSecret: "local-settings-credential-placeholder",
+        });
+        await refresh();
     } catch (presenterError) {
       setError(
         presenterError instanceof Error

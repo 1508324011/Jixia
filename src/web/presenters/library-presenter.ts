@@ -28,14 +28,13 @@ export function useLibraryPresenter(projectId: string): LibraryViewModel {
       return;
     }
 
-    try {
-      setIsLoading(true);
-      setError(null);
-      const nextEntries = await apiClient.listLibraryEntries({
-        actorSpaceId: projectContext.project.project.spaceId,
-        actorUserId: demoActorContext.actorUserId,
-        spaceId: projectContext.project.project.spaceId,
-      });
+      try {
+        setIsLoading(true);
+        setError(null);
+        const nextEntries = await apiClient.listLibraryEntries(
+          demoActorContext.actorUserId,
+          projectContext.project.project.spaceId,
+        );
 
       setEntries(nextEntries.length > 0 ? nextEntries : []);
     } catch (presenterError) {
