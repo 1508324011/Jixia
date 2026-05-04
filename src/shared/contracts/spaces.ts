@@ -13,7 +13,8 @@ export interface MembershipQuery {
 }
 
 export interface ListSpacesQuery {
-  actorUserId: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  actorUserId?: string;
 }
 
 export interface SpaceSummary {

@@ -8,11 +8,13 @@ export type LibraryEntryVisibility =
 export interface ImportPaperAssetRequest {
   sourceType: ImportSourceType;
   sourceLocator: string;
-  requestedByUserId: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  requestedByUserId?: string;
 }
 
 export interface ImportLibraryEntryRequest {
-  requestedByUserId: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  requestedByUserId?: string;
   sourceLocator: string;
   sourceType: "doi" | "pmid" | "arxiv";
   spaceId: string;
@@ -21,7 +23,8 @@ export interface ImportLibraryEntryRequest {
 
 export interface UploadPdfToLibraryRequest {
   pdfContents: string;
-  requestedByUserId: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  requestedByUserId?: string;
   spaceId: string;
   visibility: LibraryEntryVisibility;
 }
@@ -48,8 +51,10 @@ export interface LibraryEntryView {
 }
 
 export interface ListLibraryEntriesQuery {
-  actorSpaceId: string;
-  actorUserId: string;
+  /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
+  actorSpaceId?: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  actorUserId?: string;
   spaceId: string;
 }
 

@@ -8,11 +8,13 @@ export interface CredentialRecord {
 export interface CreateCredentialRequest {
   provider: string;
   rawSecret: string;
-  userId: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  userId?: string;
 }
 
 export interface ListCredentialsQuery {
-  userId: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  userId?: string;
 }
 
 export const credentialsContract = "jixia-credentials-contract";

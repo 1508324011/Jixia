@@ -10,17 +10,22 @@ export interface JobStatusQuery {
 }
 
 export interface JobAccessQuery {
-  actorSpaceId: string;
-  actorUserId: string;
+  /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
+  actorSpaceId?: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  actorUserId?: string;
 }
 
-export interface ListJobsQuery extends JobAccessQuery {}
+export interface ListJobsQuery extends JobAccessQuery {
+  spaceId?: string;
+}
 
 export interface CreateJobRequest {
   credentialRef: string;
   kind: string;
   payload: Record<string, unknown>;
-  requestedByUserId: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  requestedByUserId?: string;
   spaceId: string;
 }
 

@@ -35,23 +35,29 @@ export interface ReadingDetail {
 }
 
 export interface GetReadingDetailQuery {
-  actorSpaceId: string;
-  actorUserId: string;
+  /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
+  actorSpaceId?: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  actorUserId?: string;
 }
 
 export interface CreateReadingNoteRequest {
-  actorSpaceId: string;
-  authorUserId: string;
+  /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
+  actorSpaceId?: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  authorUserId?: string;
   body: string;
   libraryEntryId: string;
   visibility: NoteVisibility;
 }
 
 export interface SaveReadingInsightRequest {
-  actorSpaceId: string;
+  /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
+  actorSpaceId?: string;
   evidenceSpans: Omit<EvidenceSpanRecord, "paperAssetId">[];
   libraryEntryId: string;
-  startedByUserId: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  startedByUserId?: string;
   summary: string;
   title: string;
 }
