@@ -16,20 +16,37 @@ export interface LibraryStore {
 }
 
 export interface GetLibraryEntryRequest {
-  actorSpaceId: string;
+  actorSpaceId?: string;
   actorUserId: string;
   entryId: string;
 }
 
+export interface ListLibraryEntriesRequest
+  extends Omit<ListLibraryEntriesQuery, "actorUserId"> {
+  actorSpaceId?: string;
+  actorUserId: string;
+}
+
 export interface LibraryService {
   getEntry(input: GetLibraryEntryRequest): Promise<LibraryEntryView | null>;
-  listEntries(input: ListLibraryEntriesQuery): Promise<LibraryEntryView[]>;
+  listEntries(input: ListLibraryEntriesRequest): Promise<LibraryEntryView[]>;
+}
+
+function assertSpaceContextMatches(
+  expectedSpaceId: string,
+  claimedSpaceId: string | undefined,
+): void {
+  if (claimedSpaceId && claimedSpaceId !== expectedSpaceId) {
+    throw new Error(
+      "Request space context does not match the requested resource space.",
+    );
+  }
 }
 
 export function createLibraryService(store: LibraryStore): LibraryService {
   return {
     async listEntries(
-      input: ListLibraryEntriesQuery,
+      input: ListLibraryEntriesRequest,
     ): Promise<LibraryEntryView[]> {
       const space = store.spaces.find(
         (candidate) => candidate.id === input.spaceId,
@@ -39,15 +56,21 @@ export function createLibraryService(store: LibraryStore): LibraryService {
         throw new Error(`Space ${input.spaceId} does not exist.`);
       }
 
+      assertSpaceContextMatches(input.spaceId, input.actorSpaceId);
+
       const actorHasResourceMembership = store.memberships.some(
         (membership) =>
           membership.spaceId === input.spaceId &&
           membership.userId === input.actorUserId,
       );
 
+      if (!actorHasResourceMembership) {
+        throw new Error("Access denied for the requested space resource.");
+      }
+
       assertCanReadResource({
         actorHasResourceMembership,
-        actorSpaceId: input.actorSpaceId,
+        actorSpaceId: input.spaceId,
         actorUserId: input.actorUserId,
         resourceOwnerUserId: space.ownerUserId,
         resourceSpaceId: input.spaceId,
@@ -109,15 +132,21 @@ export function createLibraryService(store: LibraryStore): LibraryService {
         throw new Error(`Space ${entry.spaceId} does not exist.`);
       }
 
+      assertSpaceContextMatches(entry.spaceId, input.actorSpaceId);
+
       const actorHasResourceMembership = store.memberships.some(
         (membership) =>
           membership.spaceId === entry.spaceId &&
           membership.userId === input.actorUserId,
       );
 
+      if (!actorHasResourceMembership) {
+        throw new Error("Access denied for the requested space resource.");
+      }
+
       assertCanReadResource({
         actorHasResourceMembership,
-        actorSpaceId: input.actorSpaceId,
+        actorSpaceId: entry.spaceId,
         actorUserId: input.actorUserId,
         resourceOwnerUserId: space.ownerUserId,
         resourceSpaceId: entry.spaceId,
