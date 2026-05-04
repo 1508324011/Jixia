@@ -10,6 +10,11 @@ import type { ConversationRecord, NoteRecord } from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import {
+  createPrismaClient,
+  createProjectRepository,
+  readDatabaseUrl,
+} from '../db';
+import {
   createArxivConnector,
   type ArxivConnector,
 } from './connectors/arxiv.connector';
@@ -106,7 +111,11 @@ export interface CreateJixiaAppOptions {
     arxiv?: ArxivConnector;
     pubmed?: PubmedConnector;
   };
-  env?: StorageRootEnv;
+  env?: JixiaAppEnv;
+}
+
+export interface JixiaAppEnv extends StorageRootEnv {
+  JIXIA_DATABASE_URL?: string;
 }
 
 export interface JixiaAppState {
@@ -215,6 +224,20 @@ function nextId(state: JixiaAppState, prefix: string): string {
   return `${prefix}-${state.nextSequence}`;
 }
 
+function resolveAppDatabaseUrl(env: JixiaAppEnv = process.env): string {
+  const configuredDatabaseUrl = env.JIXIA_DATABASE_URL?.trim();
+
+  if (configuredDatabaseUrl) {
+    return configuredDatabaseUrl;
+  }
+
+  if (env.JIXIA_STORAGE_ROOT?.trim()) {
+    return `file:${join(resolveStorageRoot(env), 'jixia.db')}`;
+  }
+
+  return readDatabaseUrl(env as NodeJS.ProcessEnv);
+}
+
 export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const state = loadState(options.env);
   const persist = (): void => {
@@ -228,14 +251,12 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     persist,
     spaces: state.spaces,
   });
+  const projectRepository = createProjectRepository(
+    createPrismaClient({ url: resolveAppDatabaseUrl(options.env) }),
+  );
   const projectsService = createProjectsService({
     memberships: state.memberships,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
-    },
-    persist,
-    projectMembers: state.projectMembers,
-    projects: state.projects,
+    projectRepository,
     spaces: state.spaces,
   });
   const importService = createImportService({

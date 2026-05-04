@@ -43,14 +43,32 @@ describe('prisma schema', () => {
   });
 
   it('creates typed database entrypoints and repositories', () => {
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    const clientEntrypoint = readFileSync('src/db/client.ts', 'utf8');
+    const dbIndex = readFileSync('src/db/index.ts', 'utf8');
+
     expect(existsSync('src/db/client.ts')).toBe(true);
     expect(existsSync('src/db/index.ts')).toBe(true);
+    expect(existsSync('src/db/repositories/project.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/space.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/library.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/job.repository.ts')).toBe(true);
+    expect(clientEntrypoint).toContain('PrismaClient');
+    expect(clientEntrypoint).toContain('createPrismaClient');
+    expect(dbIndex).toContain('createProjectRepository');
+    expect(packageJson.scripts?.['prisma:generate']).toBe('prisma generate');
+    expect(packageJson.scripts?.prebuild).toBe('npm run prisma:generate');
+    expect(packageJson.scripts?.pretest).toBe('npm run prisma:generate');
+    expect(packageJson.scripts?.pretypecheck).toBe('npm run prisma:generate');
   });
 
   it('keeps db repositories decoupled from shared transport contracts', () => {
+    const projectRepository = readFileSync(
+      'src/db/repositories/project.repository.ts',
+      'utf8',
+    );
     const spaceRepository = readFileSync(
       'src/db/repositories/space.repository.ts',
       'utf8',
@@ -64,8 +82,21 @@ describe('prisma schema', () => {
       'utf8',
     );
 
+    expect(projectRepository).not.toContain('@shared/contracts/');
     expect(spaceRepository).not.toContain('@shared/contracts/');
     expect(libraryRepository).not.toContain('@shared/contracts/');
     expect(jobRepository).not.toContain('@shared/contracts/');
+  });
+
+  it('keeps project service authority out of legacy json project arrays', () => {
+    const projectService = readFileSync(
+      'src/server/services/projects.service.ts',
+      'utf8',
+    );
+
+    expect(projectService).not.toContain('store.projects.push');
+    expect(projectService).not.toContain('store.projectMembers.push');
+    expect(projectService).not.toContain('store.projects.filter');
+    expect(projectService).not.toContain('store.projectMembers.filter');
   });
 });
