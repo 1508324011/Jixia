@@ -35,7 +35,10 @@ export interface SpacesService {
     actorUserId: string,
   ): Promise<SpaceSummary>;
   listSpaces(query: ListSpacesQuery): Promise<SpaceSummary[]>;
-  listMemberships(query: MembershipQuery): Promise<SpaceMembership[]>;
+  listMemberships(
+    query: MembershipQuery,
+    actorUserId?: string,
+  ): Promise<SpaceMembership[]>;
 }
 
 function findSpace(store: SpacesStore, spaceId: string): StoredSpace {
@@ -80,7 +83,21 @@ export function createSpacesService(store: SpacesStore): SpacesService {
         name: space.name,
       };
     },
-    async listMemberships(query: MembershipQuery): Promise<SpaceMembership[]> {
+    async listMemberships(
+      query: MembershipQuery,
+      actorUserId?: string,
+    ): Promise<SpaceMembership[]> {
+      if (actorUserId) {
+        const actorHasMembership = store.memberships.some(
+          (membership) =>
+            membership.spaceId === query.spaceId && membership.userId === actorUserId,
+        );
+
+        if (!actorHasMembership) {
+          throw new Error("Access denied for the requested space resource.");
+        }
+      }
+
       return store.memberships.filter(
         (membership) => membership.spaceId === query.spaceId,
       );

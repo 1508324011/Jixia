@@ -18,7 +18,10 @@ export interface SpacesRoutes {
     actorUserId: string,
   ): Promise<SpaceSummary>;
   listSpaces(query: ListSpacesQuery): Promise<SpaceSummary[]>;
-  listMemberships(query: MembershipQuery): Promise<SpaceMembership[]>;
+  listMemberships(
+    query: MembershipQuery,
+    actorUserId?: string,
+  ): Promise<SpaceMembership[]>;
 }
 
 export function createSpacesRoutes(service: SpacesService): SpacesRoutes {
@@ -35,8 +38,11 @@ export function createSpacesRoutes(service: SpacesService): SpacesRoutes {
     listSpaces(query: ListSpacesQuery): Promise<SpaceSummary[]> {
       return service.listSpaces(query);
     },
-    listMemberships(query: MembershipQuery): Promise<SpaceMembership[]> {
-      return service.listMemberships(query);
+    listMemberships(
+      query: MembershipQuery,
+      actorUserId?: string,
+    ): Promise<SpaceMembership[]> {
+      return service.listMemberships(query, actorUserId);
     },
   };
 }
