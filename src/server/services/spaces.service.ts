@@ -1,12 +1,13 @@
-import type { LibraryEntryVisibility } from '@shared/contracts/library';
+import type { LibraryEntryVisibility } from "@shared/contracts/library";
 import type {
   CreateSpaceRequest,
+  ListSpacesQuery,
   MembershipQuery,
   SpaceMembership,
   SpaceSummary,
-} from '@shared/contracts/spaces';
+} from "@shared/contracts/spaces";
 
-import { assertCanReadResource } from '../policies/access-policy';
+import { assertCanReadResource } from "../policies/access-policy";
 
 export interface StoredSpace extends SpaceSummary {
   description?: string;
@@ -33,6 +34,7 @@ export interface SpacesService {
     input: CreateSpaceRequest,
     actorUserId: string,
   ): Promise<SpaceSummary>;
+  listSpaces(query: ListSpacesQuery): Promise<SpaceSummary[]>;
   listMemberships(query: MembershipQuery): Promise<SpaceMembership[]>;
 }
 
@@ -56,7 +58,7 @@ export function createSpacesService(store: SpacesStore): SpacesService {
       const space: StoredSpace = {
         createdAt,
         description: input.description,
-        id: store.nextId('space'),
+        id: store.nextId("space"),
         kind: input.kind,
         name: input.name,
         ownerUserId: actorUserId,
@@ -65,7 +67,7 @@ export function createSpacesService(store: SpacesStore): SpacesService {
       store.spaces.push(space);
       store.memberships.push({
         joinedAt: createdAt,
-        role: 'owner',
+        role: "owner",
         spaceId: space.id,
         userId: actorUserId,
       });
@@ -82,6 +84,22 @@ export function createSpacesService(store: SpacesStore): SpacesService {
       return store.memberships.filter(
         (membership) => membership.spaceId === query.spaceId,
       );
+    },
+    async listSpaces(query: ListSpacesQuery): Promise<SpaceSummary[]> {
+      const visibleSpaceIds = new Set(
+        store.memberships
+          .filter((membership) => membership.userId === query.actorUserId)
+          .map((membership) => membership.spaceId),
+      );
+
+      return store.spaces
+        .filter((space) => visibleSpaceIds.has(space.id))
+        .map((space) => ({
+          createdAt: space.createdAt,
+          id: space.id,
+          kind: space.kind,
+          name: space.name,
+        }));
     },
     async assertCanReadResource(request: SpaceAccessRequest): Promise<void> {
       const resourceSpace = findSpace(store, request.resourceSpaceId);

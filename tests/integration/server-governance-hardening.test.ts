@@ -87,7 +87,7 @@ describe('server governance hardening', () => {
       );
       const credential = await app.credentials.createCredential({
         provider: 'openai',
-        rawSecret: 'sk-validator',
+        rawSecret: 'validator-credential-placeholder',
         userId: 'user-alice',
       });
       const doc = await app.writing.createDocument({
@@ -141,7 +141,7 @@ describe('server governance hardening', () => {
       );
       const credential = await firstApp.credentials.createCredential({
         provider: 'openai',
-        rawSecret: 'sk-persisted-secret',
+        rawSecret: 'persisted-credential-placeholder',
         userId: 'user-alice',
       });
       const job = await firstApp.jobs.createJob({
@@ -180,9 +180,9 @@ describe('server governance hardening', () => {
       ]);
       expect(stream).toContain('"status":"queued"');
       expect(stream).toContain('"status":"succeeded"');
-      expect(persistedState).not.toContain('sk-persisted-secret');
+      expect(persistedState).not.toContain('persisted-credential-placeholder');
       expect(persistedState).not.toContain(
-        Buffer.from('sk-persisted-secret', 'utf8').toString('base64'),
+        Buffer.from('persisted-credential-placeholder', 'utf8').toString('base64'),
       );
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
@@ -204,7 +204,7 @@ describe('server governance hardening', () => {
       );
       const credential = await app.credentials.createCredential({
         provider: 'openai',
-        rawSecret: 'sk-job-guard',
+        rawSecret: 'job-guard-credential-placeholder',
         userId: 'user-alice',
       });
       const job = await app.jobs.createJob({
@@ -259,7 +259,7 @@ describe('server governance hardening', () => {
       );
       const credential = await app.credentials.createCredential({
         provider: 'openai',
-        rawSecret: 'sk-payload-guard',
+        rawSecret: 'payload-guard-credential-placeholder',
         userId: 'user-alice',
       });
       const persistedStatePath = join(storageRoot, 'server-state.json');
@@ -269,7 +269,7 @@ describe('server governance hardening', () => {
           credentialRef: credential.credentialRef,
           kind: 'ai.summary',
           payload: {
-            apiKey: 'sk-should-not-persist',
+            apiKey: 'do-not-persist-this-placeholder',
             prompt: 'Refuse unsafe payloads.',
           },
           requestedByUserId: 'user-alice',
@@ -280,7 +280,7 @@ describe('server governance hardening', () => {
       if (existsSync(persistedStatePath)) {
         const persistedState = readFileSync(persistedStatePath, 'utf8');
 
-        expect(persistedState).not.toContain('sk-should-not-persist');
+        expect(persistedState).not.toContain('do-not-persist-this-placeholder');
       }
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });

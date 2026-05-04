@@ -1,54 +1,28 @@
+import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type {
-  GeneratedInsightRecord,
-  EvidenceSpanRecord,
-} from '@shared/contracts/evidence';
-import type { LibraryEntryView } from '@shared/contracts/library';
-import type {
+  CreateReadingNoteRequest,
   ConversationRecord,
+  GetReadingDetailQuery,
   NoteRecord,
-  NoteVisibility,
-} from '@shared/contracts/reading';
-import type { SpaceMembership } from '@shared/contracts/spaces';
+  ReadingDetail,
+  SaveReadingInsightRequest,
+} from "@shared/contracts/reading";
+import type { SpaceMembership } from "@shared/contracts/spaces";
 
 import {
   assertCanReadResource,
   canReadResource,
-} from '../policies/access-policy';
-import type {
-  StoredLibraryEntry,
-  StoredPaperAsset,
-} from './import.service';
-import type { StoredSpace } from './spaces.service';
-import type { EvidenceLinkService } from './evidence-link.service';
+} from "../policies/access-policy";
+import type { StoredLibraryEntry, StoredPaperAsset } from "./import.service";
+import type { StoredSpace } from "./spaces.service";
+import type { EvidenceLinkService } from "./evidence-link.service";
 
-export interface CreateNoteRequest {
-  actorSpaceId: string;
-  authorUserId: string;
-  body: string;
+export interface CreateNoteRequest extends CreateReadingNoteRequest {}
+
+export interface SaveGeneratedInsightRequest extends SaveReadingInsightRequest {}
+
+export interface GetReadingDetailRequest extends GetReadingDetailQuery {
   libraryEntryId: string;
-  visibility: NoteVisibility;
-}
-
-export interface SaveGeneratedInsightRequest {
-  actorSpaceId: string;
-  evidenceSpans: Omit<EvidenceSpanRecord, 'paperAssetId'>[];
-  libraryEntryId: string;
-  startedByUserId: string;
-  summary: string;
-  title: string;
-}
-
-export interface GetReadingDetailRequest {
-  actorSpaceId: string;
-  actorUserId: string;
-  libraryEntryId: string;
-}
-
-export interface ReadingDetail {
-  asset: LibraryEntryView['asset'];
-  entry: LibraryEntryView['entry'];
-  insights: GeneratedInsightRecord[];
-  notes: NoteRecord[];
 }
 
 export interface ReadingStore {
@@ -72,7 +46,10 @@ export interface ReadingService {
   ): Promise<GeneratedInsightRecord>;
 }
 
-function getLibraryContext(store: ReadingStore, libraryEntryId: string): {
+function getLibraryContext(
+  store: ReadingStore,
+  libraryEntryId: string,
+): {
   asset: StoredPaperAsset;
   entry: StoredLibraryEntry;
   space: StoredSpace;
@@ -93,7 +70,9 @@ function getLibraryContext(store: ReadingStore, libraryEntryId: string): {
     throw new Error(`Paper asset ${entry.paperAssetId} does not exist.`);
   }
 
-  const space = store.spaces.find((candidate) => candidate.id === entry.spaceId);
+  const space = store.spaces.find(
+    (candidate) => candidate.id === entry.spaceId,
+  );
 
   if (!space) {
     throw new Error(`Space ${entry.spaceId} does not exist.`);
@@ -145,7 +124,9 @@ export function createReadingService(store: ReadingStore): ReadingService {
         return null;
       }
 
-      const space = store.spaces.find((candidate) => candidate.id === entry.spaceId);
+      const space = store.spaces.find(
+        (candidate) => candidate.id === entry.spaceId,
+      );
 
       if (!space) {
         throw new Error(`Space ${entry.spaceId} does not exist.`);
@@ -195,13 +176,18 @@ export function createReadingService(store: ReadingStore): ReadingService {
       };
     },
     async createNote(input: CreateNoteRequest): Promise<NoteRecord> {
-      assertEntryAccess(store, input.authorUserId, input.actorSpaceId, input.libraryEntryId);
+      assertEntryAccess(
+        store,
+        input.authorUserId,
+        input.actorSpaceId,
+        input.libraryEntryId,
+      );
 
       const note: NoteRecord = {
         authorUserId: input.authorUserId,
         body: input.body,
         createdAt: new Date().toISOString(),
-        id: store.nextId('note'),
+        id: store.nextId("note"),
         libraryEntryId: input.libraryEntryId,
         visibility: input.visibility,
       };
@@ -225,7 +211,7 @@ export function createReadingService(store: ReadingStore): ReadingService {
       const createdAt = new Date().toISOString();
       const conversation: ConversationRecord = {
         createdAt,
-        id: store.nextId('conversation'),
+        id: store.nextId("conversation"),
         libraryEntryId: input.libraryEntryId,
         startedByUserId: input.startedByUserId,
         title: input.title,
@@ -237,7 +223,7 @@ export function createReadingService(store: ReadingStore): ReadingService {
         conversationId: conversation.id,
         createdAt,
         evidenceSpans: input.evidenceSpans,
-        id: store.nextId('insight'),
+        id: store.nextId("insight"),
         libraryEntryId: input.libraryEntryId,
         paperAssetId: asset.id,
         summary: input.summary,

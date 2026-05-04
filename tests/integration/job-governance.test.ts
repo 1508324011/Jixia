@@ -18,12 +18,12 @@ describe('job governance', () => {
       );
       const credential = await app.credentials.createCredential({
         provider: 'openai',
-        rawSecret: 'sk-test-secret',
+        rawSecret: 'test-credential-placeholder',
         userId: 'user-alice',
       });
 
       expect(credential.credentialRef).toMatch(/^cred-/);
-      expect(JSON.stringify(credential)).not.toContain('sk-test-secret');
+      expect(JSON.stringify(credential)).not.toContain('test-credential-placeholder');
 
       const job = await app.jobs.createJob({
         credentialRef: credential.credentialRef,
@@ -34,7 +34,7 @@ describe('job governance', () => {
       });
 
       expect(job.status).toBe('queued');
-      expect(JSON.stringify(job)).not.toContain('sk-test-secret');
+      expect(JSON.stringify(job)).not.toContain('test-credential-placeholder');
 
       const completed = await app.jobs.runJob({
         actorSpaceId: sharedSpace.id,

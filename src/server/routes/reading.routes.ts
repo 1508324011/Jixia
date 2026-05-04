@@ -1,13 +1,12 @@
-import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
-import type { NoteRecord } from '@shared/contracts/reading';
+import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
+import type { NoteRecord, ReadingDetail } from "@shared/contracts/reading";
 
 import type {
   CreateNoteRequest,
   GetReadingDetailRequest,
-  ReadingDetail,
   ReadingService,
   SaveGeneratedInsightRequest,
-} from '../services/reading.service';
+} from "../services/reading.service";
 
 export interface ReadingRoutes {
   createNote(input: CreateNoteRequest): Promise<NoteRecord>;

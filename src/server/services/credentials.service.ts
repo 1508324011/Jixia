@@ -1,22 +1,13 @@
 import type {
-  EncryptedSecretPayload,
-  SecretBox,
-} from '../security/secret-box';
+  CreateCredentialRequest,
+  CredentialRecord,
+  ListCredentialsQuery,
+} from "@shared/contracts/credentials";
 
-export interface CredentialRecord {
-  createdAt: string;
-  credentialRef: string;
-  provider: string;
-  userId: string;
-}
+import type { EncryptedSecretPayload, SecretBox } from "../security/secret-box";
 
-export interface StoredCredential extends CredentialRecord, EncryptedSecretPayload {}
-
-export interface CreateCredentialRequest {
-  provider: string;
-  rawSecret: string;
-  userId: string;
-}
+export interface StoredCredential
+  extends CredentialRecord, EncryptedSecretPayload {}
 
 export interface CredentialsStore {
   credentials: StoredCredential[];
@@ -28,6 +19,7 @@ export interface CredentialsStore {
 export interface CredentialsService {
   createCredential(input: CreateCredentialRequest): Promise<CredentialRecord>;
   getStoredCredential(credentialRef: string): StoredCredential | null;
+  listCredentials(query: ListCredentialsQuery): Promise<CredentialRecord[]>;
 }
 
 export function createCredentialsService(
@@ -39,7 +31,7 @@ export function createCredentialsService(
     ): Promise<CredentialRecord> {
       const credential: StoredCredential = {
         createdAt: new Date().toISOString(),
-        credentialRef: store.nextId('cred'),
+        credentialRef: store.nextId("cred"),
         ...store.secretBox.encrypt(input.rawSecret),
         provider: input.provider,
         userId: input.userId,
@@ -61,6 +53,18 @@ export function createCredentialsService(
           (credential) => credential.credentialRef === credentialRef,
         ) ?? null
       );
+    },
+    async listCredentials(
+      query: ListCredentialsQuery,
+    ): Promise<CredentialRecord[]> {
+      return store.credentials
+        .filter((credential) => credential.userId === query.userId)
+        .map((credential) => ({
+          createdAt: credential.createdAt,
+          credentialRef: credential.credentialRef,
+          provider: credential.provider,
+          userId: credential.userId,
+        }));
     },
   };
 }

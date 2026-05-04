@@ -1,15 +1,20 @@
-import type { LibraryEntryVisibility, LibraryEntryRecord } from '@shared/contracts/library';
+import type {
+  ImportLibraryEntryRequest,
+  LibraryEntryRecord,
+  LibraryEntryVisibility,
+  UploadPdfToLibraryRequest,
+} from "@shared/contracts/library";
 
-import type { SpaceMembership } from '@shared/contracts/spaces';
+import type { SpaceMembership } from "@shared/contracts/spaces";
 
-import type { ArxivConnector } from '../connectors/arxiv.connector';
+import type { ArxivConnector } from "../connectors/arxiv.connector";
 import type {
   ImportedPaperMetadata,
   PubmedConnector,
-} from '../connectors/pubmed.connector';
-import { createPaperPdfStorageKey } from '../storage/asset-key';
-import type { FileStore } from '../storage/file-store';
-import type { StoredSpace } from './spaces.service';
+} from "../connectors/pubmed.connector";
+import { createPaperPdfStorageKey } from "../storage/asset-key";
+import type { FileStore } from "../storage/file-store";
+import type { StoredSpace } from "./spaces.service";
 
 export interface StoredPaperAsset {
   abstractText?: string;
@@ -22,21 +27,6 @@ export interface StoredPaperAsset {
 }
 
 export interface StoredLibraryEntry extends LibraryEntryRecord {}
-
-export interface UploadPdfRequest {
-  pdfContents: string;
-  requestedByUserId: string;
-  spaceId: string;
-  visibility: LibraryEntryVisibility;
-}
-
-export interface ImportPaperRequest {
-  requestedByUserId: string;
-  sourceLocator: string;
-  sourceType: 'doi' | 'pmid' | 'arxiv';
-  spaceId: string;
-  visibility: LibraryEntryVisibility;
-}
 
 export interface ImportedLibraryRecord {
   asset: StoredPaperAsset;
@@ -56,15 +46,15 @@ export interface ImportStore {
 }
 
 export interface ImportService {
-  importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord>;
-  uploadPdf(input: UploadPdfRequest): Promise<ImportedLibraryRecord>;
+  importPaper(input: ImportLibraryEntryRequest): Promise<ImportedLibraryRecord>;
+  uploadPdf(input: UploadPdfToLibraryRequest): Promise<ImportedLibraryRecord>;
 }
 
 async function resolveImportedMetadata(
   store: ImportStore,
-  input: ImportPaperRequest,
+  input: ImportLibraryEntryRequest,
 ): Promise<ImportedPaperMetadata> {
-  if (input.sourceType === 'arxiv') {
+  if (input.sourceType === "arxiv") {
     return store.arxivConnector.lookup(input.sourceLocator);
   }
 
@@ -77,7 +67,9 @@ function createLibraryEntry(
   paperAssetId: string,
   visibility: LibraryEntryVisibility,
 ): StoredLibraryEntry {
-  const paperAsset = store.paperAssets.find((asset) => asset.id === paperAssetId);
+  const paperAsset = store.paperAssets.find(
+    (asset) => asset.id === paperAssetId,
+  );
 
   if (!paperAsset) {
     throw new Error(`Paper asset ${paperAssetId} does not exist.`);
@@ -99,7 +91,7 @@ function createLibraryEntry(
 
   const entry: StoredLibraryEntry = {
     addedAt: new Date().toISOString(),
-    id: store.nextId('entry'),
+    id: store.nextId("entry"),
     paperAssetId,
     spaceId,
     visibility,
@@ -128,16 +120,18 @@ function assertCanWriteToSpace(
   );
 
   if (!actorHasMembership) {
-    throw new Error('Access denied for the requested space resource.');
+    throw new Error("Access denied for the requested space resource.");
   }
 }
 
 export function createImportService(store: ImportStore): ImportService {
   return {
-    async uploadPdf(input: UploadPdfRequest): Promise<ImportedLibraryRecord> {
+    async uploadPdf(
+      input: UploadPdfToLibraryRequest,
+    ): Promise<ImportedLibraryRecord> {
       assertCanWriteToSpace(store, input.requestedByUserId, input.spaceId);
 
-      const assetId = store.nextId('asset');
+      const assetId = store.nextId("asset");
       const storageKey = await store.fileStore.writeText(
         createPaperPdfStorageKey(assetId),
         input.pdfContents,
@@ -164,7 +158,9 @@ export function createImportService(store: ImportStore): ImportService {
         ),
       };
     },
-    async importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord> {
+    async importPaper(
+      input: ImportLibraryEntryRequest,
+    ): Promise<ImportedLibraryRecord> {
       assertCanWriteToSpace(store, input.requestedByUserId, input.spaceId);
 
       const metadata = await resolveImportedMetadata(store, input);
@@ -178,7 +174,7 @@ export function createImportService(store: ImportStore): ImportService {
             abstractText: metadata.abstractText,
             canonicalId: metadata.canonicalId,
             createdAt: new Date().toISOString(),
-            id: store.nextId('asset'),
+            id: store.nextId("asset"),
             importedByUserId: input.requestedByUserId,
             title: metadata.title,
           };
