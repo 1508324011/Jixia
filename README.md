@@ -40,7 +40,7 @@ The web layer now includes:
 - page shells for projects, spaces, search, library, reader, writing, jobs, and settings
 - upgraded donor-style design tokens, Tailwind/PostCSS support, and shared shell styling
 - shared `Project`, `ProjectMember`, and `ScopeRef` contracts plus server APIs for project creation, listing, lookup, and membership management
-- project routes that use server-loaded project state instead of hardcoded `shared-space` or `tumor-board` context
+- project routes backed by Prisma/SQLite `Project` and `ProjectMember` authority instead of hardcoded `shared-space`, `tumor-board`, or legacy JSON project arrays
 - browser-facing `/api/*` routes for spaces, credentials, and jobs, plus a live SSE job stream endpoint
 - browser-facing library/import routes plus presenter-backed `spaces`, `search`, and `library` pages
 - browser-facing reading routes plus a presenter-backed `reader` page with detail, note, and insight actions
@@ -53,12 +53,12 @@ The web layer now includes:
 Latest branch verification evidence:
 
 - `npm run typecheck`
-- `npm test` → 21 files / 56 tests passing
+- `npm test` → 22 files / 65 tests passing
 - `npm run build`
 
-This means the current shell is now backed by real browser-facing runtime slices for project membership,
+This means the current shell is now backed by real browser-facing runtime slices for Prisma-backed project membership,
 jobs/settings, library/search, and reader flows, even though the broader Notebook, Project Docs, AI job scoping,
-and Prisma-backed runtime migrations remain future recovery phases.
+and non-project Prisma-backed runtime migrations remain future recovery phases.
 
 ## Near-Term Direction
 
@@ -88,17 +88,17 @@ Copy `.env.example` to `.env` and fill in operator-specific values.
 
 - `JIXIA_STORAGE_ROOT` controls where Jixia persists server-managed storage assets.
   On a lab server, keep this on durable storage such as `/var/lib/jixia/storage`.
-- The current Task 11 runtime persists its server state to
+- The current runtime still persists legacy non-project server state to
   `JIXIA_STORAGE_ROOT/server-state.json`.
-- `JIXIA_DATABASE_URL` remains a reserved runtime boundary for the next DB-backed phase.
-  Keep the recommended future-compatible path at `file:/var/lib/jixia/data/jixia.db`.
+- `JIXIA_DATABASE_URL` controls the SQLite database used for Prisma-backed
+  `Project` and `ProjectMember` authority. Keep it on durable storage such as
+  `file:/var/lib/jixia/data/jixia.db` so project collaboration survives restarts.
 - `JIXIA_HOST` controls the bind host. Use `127.0.0.1` for local-only runs and `0.0.0.0`
   when the process is containerized or needs to listen on the lab network.
 - `JIXIA_PORT` controls the HTTP port. Task 11 uses `3000` as the default runtime port.
 
-Persist `/var/lib/jixia/storage` on the lab server so `server-state.json` survives restarts.
-Keep `/var/lib/jixia/data` reserved for the next runtime phase so the future database file can
-land on persistent storage without changing the operator contract.
+Persist both `/var/lib/jixia/storage` and `/var/lib/jixia/data` on the lab server:
+`server-state.json` still backs legacy domains, while SQLite now backs project collaboration.
 
 ### Local Node startup path
 
@@ -119,6 +119,6 @@ docker compose up --build
 ```
 
 The included `docker-compose.yml` maps the runtime port, pins `JIXIA_STORAGE_ROOT` to the mounted
-`/var/lib/jixia/storage` path, keeps `JIXIA_DATABASE_URL` on the mounted `/var/lib/jixia/data`
-path as a reserved runtime boundary, and persists the Task 11 state file at
+`/var/lib/jixia/storage` path, points `JIXIA_DATABASE_URL` at the mounted `/var/lib/jixia/data`
+path for Prisma-backed project collaboration, and persists the legacy state file at
 `/var/lib/jixia/storage/server-state.json`.

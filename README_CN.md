@@ -38,7 +38,7 @@ bootstrap 护栏仍然保留，但项目已经不再只是仓库初始化状态�
 - projects、spaces、search、library、reader、writing、jobs、settings 页面壳
 - 升级后的 donor 风格 design token、Tailwind/PostCSS 支撑与共享页面样式
 - 新增共享的 `Project`、`ProjectMember`、`ScopeRef` contracts，以及用于创建、列表、读取和成员管理的服务端 API
-- project routes 使用服务端加载的 Project 状态，不再把 `shared-space` 或 `tumor-board` 这类硬编码上下文作为权威状态
+- project routes 使用 Prisma/SQLite 中的 `Project` 与 `ProjectMember` 作为权威状态，不再依赖 `shared-space`、`tumor-board` 这类硬编码上下文或旧的 JSON project 数组
 - 面向浏览器的 `/api/*` routes（spaces、credentials、jobs）以及 live SSE job stream endpoint
 - 面向浏览器的 library/import routes，以及已经接到 `spaces`、`search`、`library` 页面的真实 vertical slice
 - 面向浏览器的 reading routes，以及已经接到 `reader` 页面的 detail / note / insight vertical slice
@@ -51,11 +51,11 @@ bootstrap 护栏仍然保留，但项目已经不再只是仓库初始化状态�
 当前分支最近一次验证结果：
 
 - `npm run typecheck`
-- `npm test` → 21 个测试文件 / 56 个测试全部通过
+- `npm test` → 22 个测试文件 / 65 个测试全部通过
 - `npm run build`
 
-这意味着当前 UI 已经接到 project membership、jobs/settings、library/search 与 reader 的真实 browser-facing runtime slice，
-但 Notebook、Project Docs、AI job scope 与 Prisma-backed runtime migration 仍属于后续恢复阶段。
+这意味着当前 UI 已经接到 Prisma-backed project membership、jobs/settings、library/search 与 reader 的真实 browser-facing runtime slice，
+但 Notebook、Project Docs、AI job scope 以及非 Project 领域的 Prisma-backed runtime migration 仍属于后续恢复阶段。
 
 ## 近期方向
 
@@ -84,17 +84,16 @@ Task 11 的目标是把已经验证过的 Task 10 Web 壳收敛成一个可重�
 
 - `JIXIA_STORAGE_ROOT` 用来控制 Jixia 的服务端持久化存储目录。
   实验室服务器建议使用 `/var/lib/jixia/storage` 这样的持久盘路径。
-- 当前 Task 11 运行时实际会把服务端状态持久化到
+- 当前运行时仍会把非 Project 领域的旧服务端状态持久化到
   `JIXIA_STORAGE_ROOT/server-state.json`。
-- `JIXIA_DATABASE_URL` 目前仍是面向下一阶段 DB-backed 运行时的保留的运行时边界。
-  为了保持后续兼容，建议继续使用 `file:/var/lib/jixia/data/jixia.db`。
+- `JIXIA_DATABASE_URL` 控制 Prisma-backed `Project` 与 `ProjectMember` 权威数据使用的 SQLite 数据库。
+  建议放在 `file:/var/lib/jixia/data/jixia.db` 这样的持久路径，确保项目协作数据重启后仍然存在。
 - `JIXIA_HOST` 控制绑定地址。本地仅自用时可使用 `127.0.0.1`；
   在 Docker 或需要对实验室网络提供服务时使用 `0.0.0.0`。
 - `JIXIA_PORT` 控制 HTTP 监听端口。Task 11 的默认端口为 `3000`。
 
-实验室服务器至少需要持久化 `/var/lib/jixia/storage`，确保 `server-state.json`
-在重启后仍然存在。`/var/lib/jixia/data` 则继续保留给下一阶段的数据库运行时，
-这样未来接入真实 DB 时无需改变 operator 合同。
+实验室服务器需要同时持久化 `/var/lib/jixia/storage` 与 `/var/lib/jixia/data`：
+`server-state.json` 仍然支撑旧领域，SQLite 现在已经支撑 Project 协作数据。
 
 ### 本地 Node 启动路径
 
@@ -115,6 +114,6 @@ docker compose up --build
 ```
 
 仓库内置的 `docker-compose.yml` 会映射运行端口，把 `JIXIA_STORAGE_ROOT`
-固定到挂载后的 `/var/lib/jixia/storage`，把 `JIXIA_DATABASE_URL` 固定到挂载后的
-`/var/lib/jixia/data` 以保留后续兼容性，并将 Task 11 的状态文件持久化到
+固定到挂载后的 `/var/lib/jixia/storage`，并把 `JIXIA_DATABASE_URL` 指向挂载后的
+`/var/lib/jixia/data`，用于 Prisma-backed Project 协作数据，同时继续将旧状态文件持久化到
 `/var/lib/jixia/storage/server-state.json`。
