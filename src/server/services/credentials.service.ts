@@ -17,9 +17,15 @@ export interface CredentialsStore {
 }
 
 export interface CredentialsService {
-  createCredential(input: CreateCredentialRequest): Promise<CredentialRecord>;
+  createCredential(
+    input: CreateCredentialRequest,
+    actorUserId?: string,
+  ): Promise<CredentialRecord>;
   getStoredCredential(credentialRef: string): StoredCredential | null;
-  listCredentials(query: ListCredentialsQuery): Promise<CredentialRecord[]>;
+  listCredentials(
+    query: ListCredentialsQuery,
+    actorUserId?: string,
+  ): Promise<CredentialRecord[]>;
 }
 
 export function createCredentialsService(
@@ -28,13 +34,26 @@ export function createCredentialsService(
   return {
     async createCredential(
       input: CreateCredentialRequest,
+      actorUserId?: string,
     ): Promise<CredentialRecord> {
+      const effectiveUserId = actorUserId ?? input.userId;
+
+      if (!effectiveUserId) {
+        throw new Error("Credentials require an actor user id.");
+      }
+
+      if (actorUserId && input.userId && input.userId !== actorUserId) {
+        throw new Error(
+          "Request body actor does not match the server-derived actor.",
+        );
+      }
+
       const credential: StoredCredential = {
         createdAt: new Date().toISOString(),
         credentialRef: store.nextId("cred"),
         ...store.secretBox.encrypt(input.rawSecret),
         provider: input.provider,
-        userId: input.userId,
+        userId: effectiveUserId,
       };
 
       store.credentials.push(credential);
@@ -56,9 +75,22 @@ export function createCredentialsService(
     },
     async listCredentials(
       query: ListCredentialsQuery,
+      actorUserId?: string,
     ): Promise<CredentialRecord[]> {
+      const effectiveUserId = actorUserId ?? query.userId;
+
+      if (!effectiveUserId) {
+        throw new Error("Credentials require an actor user id.");
+      }
+
+      if (actorUserId && query.userId && query.userId !== actorUserId) {
+        throw new Error(
+          "Request actor does not match the server-derived actor.",
+        );
+      }
+
       return store.credentials
-        .filter((credential) => credential.userId === query.userId)
+        .filter((credential) => credential.userId === effectiveUserId)
         .map((credential) => ({
           createdAt: credential.createdAt,
           credentialRef: credential.credentialRef,

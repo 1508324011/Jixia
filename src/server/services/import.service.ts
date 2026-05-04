@@ -46,8 +46,14 @@ export interface ImportStore {
 }
 
 export interface ImportService {
-  importPaper(input: ImportLibraryEntryRequest): Promise<ImportedLibraryRecord>;
-  uploadPdf(input: UploadPdfToLibraryRequest): Promise<ImportedLibraryRecord>;
+  importPaper(
+    input: ImportLibraryEntryRequest,
+    actorUserId?: string,
+  ): Promise<ImportedLibraryRecord>;
+  uploadPdf(
+    input: UploadPdfToLibraryRequest,
+    actorUserId?: string,
+  ): Promise<ImportedLibraryRecord>;
 }
 
 async function resolveImportedMetadata(
@@ -128,8 +134,21 @@ export function createImportService(store: ImportStore): ImportService {
   return {
     async uploadPdf(
       input: UploadPdfToLibraryRequest,
+      actorUserId?: string,
     ): Promise<ImportedLibraryRecord> {
-      assertCanWriteToSpace(store, input.requestedByUserId, input.spaceId);
+      const effectiveUserId = actorUserId ?? input.requestedByUserId;
+
+      if (!effectiveUserId) {
+        throw new Error("Library import requires an actor user id.");
+      }
+
+      if (actorUserId && input.requestedByUserId && input.requestedByUserId !== actorUserId) {
+        throw new Error(
+          "Request body actor does not match the server-derived actor.",
+        );
+      }
+
+      assertCanWriteToSpace(store, effectiveUserId, input.spaceId);
 
       const assetId = store.nextId("asset");
       const storageKey = await store.fileStore.writeText(
@@ -140,7 +159,7 @@ export function createImportService(store: ImportStore): ImportService {
         canonicalId: `upload:${assetId}`,
         createdAt: new Date().toISOString(),
         id: assetId,
-        importedByUserId: input.requestedByUserId,
+        importedByUserId: effectiveUserId,
         storageKey,
         title: `Uploaded paper ${assetId}`,
       };
@@ -160,8 +179,21 @@ export function createImportService(store: ImportStore): ImportService {
     },
     async importPaper(
       input: ImportLibraryEntryRequest,
+      actorUserId?: string,
     ): Promise<ImportedLibraryRecord> {
-      assertCanWriteToSpace(store, input.requestedByUserId, input.spaceId);
+      const effectiveUserId = actorUserId ?? input.requestedByUserId;
+
+      if (!effectiveUserId) {
+        throw new Error("Library import requires an actor user id.");
+      }
+
+      if (actorUserId && input.requestedByUserId && input.requestedByUserId !== actorUserId) {
+        throw new Error(
+          "Request body actor does not match the server-derived actor.",
+        );
+      }
+
+      assertCanWriteToSpace(store, effectiveUserId, input.spaceId);
 
       const metadata = await resolveImportedMetadata(store, input);
       const existingAsset = store.paperAssets.find(
@@ -175,7 +207,7 @@ export function createImportService(store: ImportStore): ImportService {
             canonicalId: metadata.canonicalId,
             createdAt: new Date().toISOString(),
             id: store.nextId("asset"),
-            importedByUserId: input.requestedByUserId,
+            importedByUserId: effectiveUserId,
             title: metadata.title,
           };
 

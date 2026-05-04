@@ -7,8 +7,14 @@ import type {
 import type { CredentialsService } from "../services/credentials.service";
 
 export interface CredentialsRoutes {
-  createCredential(input: CreateCredentialRequest): Promise<CredentialRecord>;
-  listCredentials(query: ListCredentialsQuery): Promise<CredentialRecord[]>;
+  createCredential(
+    input: CreateCredentialRequest,
+    actorUserId?: string,
+  ): Promise<CredentialRecord>;
+  listCredentials(
+    query: ListCredentialsQuery,
+    actorUserId?: string,
+  ): Promise<CredentialRecord[]>;
 }
 
 export function createCredentialsRoutes(
@@ -17,11 +23,15 @@ export function createCredentialsRoutes(
   return {
     createCredential(
       input: CreateCredentialRequest,
+      actorUserId?: string,
     ): Promise<CredentialRecord> {
-      return service.createCredential(input);
+      return service.createCredential(input, actorUserId);
     },
-    listCredentials(query: ListCredentialsQuery): Promise<CredentialRecord[]> {
-      return service.listCredentials(query);
+    listCredentials(
+      query: ListCredentialsQuery,
+      actorUserId?: string,
+    ): Promise<CredentialRecord[]> {
+      return service.listCredentials(query, actorUserId);
     },
   };
 }
