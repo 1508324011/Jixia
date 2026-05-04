@@ -7,6 +7,7 @@ import type {
 } from "@shared/contracts/spaces";
 
 import type {
+  SpaceListRequest,
   SpaceAccessRequest,
   SpacesService,
 } from "../services/spaces.service";
@@ -17,10 +18,10 @@ export interface SpacesRoutes {
     input: CreateSpaceRequest,
     actorUserId: string,
   ): Promise<SpaceSummary>;
-  listSpaces(query: ListSpacesQuery): Promise<SpaceSummary[]>;
+  listSpaces(query: SpaceListRequest | ListSpacesQuery): Promise<SpaceSummary[]>;
   listMemberships(
     query: MembershipQuery,
-    actorUserId?: string,
+    actorUserId: string,
   ): Promise<SpaceMembership[]>;
 }
 
@@ -35,12 +36,16 @@ export function createSpacesRoutes(service: SpacesService): SpacesRoutes {
     ): Promise<SpaceSummary> {
       return service.createSpace(input, actorUserId);
     },
-    listSpaces(query: ListSpacesQuery): Promise<SpaceSummary[]> {
-      return service.listSpaces(query);
+    listSpaces(query: SpaceListRequest | ListSpacesQuery): Promise<SpaceSummary[]> {
+      if (!query.actorUserId) {
+        throw new Error("Space listing requires an actor user id.");
+      }
+
+      return service.listSpaces({ actorUserId: query.actorUserId });
     },
     listMemberships(
       query: MembershipQuery,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<SpaceMembership[]> {
       return service.listMemberships(query, actorUserId);
     },
