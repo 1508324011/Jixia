@@ -18,3 +18,16 @@ export {
   type PersistedProjectWithMembership,
   type ProjectRepository,
 } from './repositories/project.repository';
+
+export {
+  createSpaceRepository,
+  initializeSpacePersistence,
+  type AddSpaceMembershipParams,
+  type CreateSpaceParams,
+  type MembershipLookup,
+  type PersistedSpaceKind,
+  type PersistedSpaceMembershipRecord,
+  type PersistedSpaceRecord,
+  type PersistedSpaceRole,
+  type SpaceRepository,
+} from './repositories/space.repository';

@@ -29,6 +29,9 @@ describe('prisma schema', () => {
     expect(schema).toMatch(
       /model ProjectMember[\s\S]*@@unique\(\[projectId, userId\]\)/,
     );
+    expect(schema).toMatch(
+      /model Membership[\s\S]*@@unique\(\[spaceId, userId\]\)/,
+    );
     expect(schema).toMatch(/model Note[\s\S]*\n\s+libraryEntryId\s+String/);
     expect(schema).toMatch(
       /model Conversation[\s\S]*\n\s+libraryEntryId\s+String/,
@@ -58,6 +61,7 @@ describe('prisma schema', () => {
     expect(clientEntrypoint).toContain('PrismaClient');
     expect(clientEntrypoint).toContain('createPrismaClient');
     expect(dbIndex).toContain('createProjectRepository');
+    expect(dbIndex).toContain('createSpaceRepository');
     expect(packageJson.scripts?.['prisma:generate']).toBe('prisma generate');
     expect(packageJson.scripts?.prebuild).toBe('npm run prisma:generate');
     expect(packageJson.scripts?.pretest).toBe('npm run prisma:generate');
@@ -98,5 +102,17 @@ describe('prisma schema', () => {
     expect(projectService).not.toContain('store.projectMembers.push');
     expect(projectService).not.toContain('store.projects.filter');
     expect(projectService).not.toContain('store.projectMembers.filter');
+  });
+
+  it('keeps space service authority out of legacy json space arrays', () => {
+    const spaceService = readFileSync('src/server/services/spaces.service.ts', 'utf8');
+
+    expect(spaceService).not.toContain('store.spaces.push');
+    expect(spaceService).not.toContain('store.memberships.push');
+    expect(spaceService).not.toContain('store.spaces.filter');
+    expect(spaceService).not.toContain('store.memberships.filter');
+    expect(spaceService).toContain('repository.listSpacesForActor');
+    expect(spaceService).toContain('repository.listMemberships');
+    expect(spaceService).toContain('repository.getMembership');
   });
 });
