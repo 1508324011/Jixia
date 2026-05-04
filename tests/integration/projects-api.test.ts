@@ -104,7 +104,7 @@ describe('projects api', () => {
       );
       const spaceMemberships = await app.spaces.listMemberships({
         spaceId: sharedSpace.id,
-      });
+      }, 'user-alice');
 
       expect(bobProject.membership.role).toBe('viewer');
       expect(bobMembers.map((member) => member.userId)).toEqual([

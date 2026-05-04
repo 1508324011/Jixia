@@ -6,19 +6,16 @@ import type {
   ProjectMemberRecord,
   ProjectRecord,
 } from '@shared/contracts/projects';
-import type { SpaceMembership } from '@shared/contracts/spaces';
 
-import type { ProjectRepository } from '../../db';
-import type { StoredSpace } from './spaces.service';
+import type { ProjectRepository, SpaceRepository } from '../../db';
 
 export interface StoredProject extends ProjectRecord {}
 
 export interface StoredProjectMember extends ProjectMemberRecord {}
 
 export interface ProjectsStore {
-  memberships: SpaceMembership[];
   projectRepository: ProjectRepository;
-  spaces: StoredSpace[];
+  spaceRepository: SpaceRepository;
 }
 
 export interface ProjectsService {
@@ -43,27 +40,25 @@ export interface ProjectsService {
   listProjects(actorUserId: string): Promise<ProjectListItem[]>;
 }
 
-function findSpace(store: ProjectsStore, spaceId: string): StoredSpace {
-  const space = store.spaces.find((candidate) => candidate.id === spaceId);
+async function assertSpaceMembership(
+  repository: SpaceRepository,
+  spaceId: string,
+  userId: string,
+): Promise<void> {
+  const space = await repository.findSpace(spaceId);
 
   if (!space) {
     throw new Error(`Space ${spaceId} does not exist.`);
   }
 
-  return space;
-}
+  try {
+    await repository.denyNonMember(spaceId, userId);
+  } catch (error) {
+    if (error instanceof Error && /access denied/i.test(error.message)) {
+      throw new Error('Access denied for the requested governance space.');
+    }
 
-function assertSpaceMembership(
-  store: ProjectsStore,
-  spaceId: string,
-  userId: string,
-): void {
-  const hasMembership = store.memberships.some(
-    (membership) => membership.spaceId === spaceId && membership.userId === userId,
-  );
-
-  if (!hasMembership) {
-    throw new Error('Access denied for the requested governance space.');
+    throw error;
   }
 }
 
@@ -94,7 +89,7 @@ async function getActorProjectMembership(
 }
 
 export function createProjectsService(store: ProjectsStore): ProjectsService {
-  const { projectRepository } = store;
+  const { projectRepository, spaceRepository } = store;
 
   return {
     async addProjectMember(
@@ -124,8 +119,7 @@ export function createProjectsService(store: ProjectsStore): ProjectsService {
       input: CreateProjectRequest,
       actorUserId: string,
     ): Promise<ProjectListItem> {
-      findSpace(store, input.spaceId);
-      assertSpaceMembership(store, input.spaceId, actorUserId);
+      await assertSpaceMembership(spaceRepository, input.spaceId, actorUserId);
 
       return projectRepository.createProject(
         {
