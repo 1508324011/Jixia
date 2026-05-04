@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { resolveStorageRoot, type StorageRootEnv } from './storage/storage-root';
 
 const DEFAULT_DATABASE_URL = 'file:./prisma/dev.db';
@@ -39,13 +41,29 @@ function readPort(value: string | undefined): number {
   return parsedPort;
 }
 
+function readDatabaseUrl(env: RuntimeConfigEnv, storageRoot: string): string {
+  const configuredDatabaseUrl = env.JIXIA_DATABASE_URL?.trim();
+
+  if (configuredDatabaseUrl) {
+    return configuredDatabaseUrl;
+  }
+
+  if (env.JIXIA_STORAGE_ROOT?.trim()) {
+    return `file:${join(storageRoot, 'jixia.db')}`;
+  }
+
+  return DEFAULT_DATABASE_URL;
+}
+
 export function readRuntimeConfig(
   env: RuntimeConfigEnv = process.env,
 ): RuntimeConfig {
+  const storageRoot = resolveStorageRoot(env);
+
   return {
-    databaseUrl: readTrimmedValue(env.JIXIA_DATABASE_URL, DEFAULT_DATABASE_URL),
+    databaseUrl: readDatabaseUrl(env, storageRoot),
     host: readTrimmedValue(env.JIXIA_HOST, DEFAULT_HOST),
     port: readPort(env.JIXIA_PORT),
-    storageRoot: resolveStorageRoot(env),
+    storageRoot,
   };
 }

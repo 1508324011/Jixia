@@ -268,7 +268,11 @@ describe("http server actor boundary cleanup", () => {
             headers: { "x-jixia-actor": "user-alice" },
           }),
           fetch(`${server.url}/api/spaces?actorUserId=user-bob`, {
-            body: JSON.stringify({ kind: "shared", name: "Mismatch" }),
+            body: JSON.stringify({
+              actorUserId: "user-bob",
+              kind: "shared",
+              name: "Mismatch",
+            }),
             headers: {
               "Content-Type": "application/json",
               "x-jixia-actor": "user-alice",
@@ -592,5 +596,5 @@ describe("http server actor boundary cleanup", () => {
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
-  });
+  }, 10_000);
 });

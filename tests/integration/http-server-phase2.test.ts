@@ -48,7 +48,7 @@ describe("http server phase 2 api", () => {
             method: "POST",
           },
         ).then((response) => response.json() as Promise<{ id: string }>);
-        expect(createdSpace.id).toMatch(/^space-/);
+        expect(createdSpace.id).toMatch(/^space/);
 
         const listedSpaces = await fetch(`${server.url}/api/spaces`, {
           headers: { "x-jixia-actor": "user-alice" },

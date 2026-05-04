@@ -192,15 +192,24 @@ async function handleApiRequest(
       const actor = getActor(request);
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       const body = await readJsonBody<{
+        actorUserId?: string;
         description?: string;
         kind: "personal" | "shared";
         name: string;
       }>(request);
+      assertNoActorImpersonation(actor, body.actorUserId);
 
       sendJson(
         response,
         200,
-        await app.spaces.createSpace(body, actor.userId),
+        await app.spaces.createSpace(
+          {
+            description: body.description,
+            kind: body.kind,
+            name: body.name,
+          },
+          actor.userId,
+        ),
         method,
       );
       return true;
@@ -443,6 +452,7 @@ async function handleApiRequest(
     if (membershipsMatch && method === "GET") {
       const actor = getActor(request);
       const [, spaceId] = membershipsMatch;
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
         response,
         200,
@@ -696,7 +706,12 @@ export function createHttpServer(
 
   const runtimeEnv = options.env ?? process.env;
   const runtimeConfig = readRuntimeConfig(runtimeEnv);
-  const app = createJixiaApp({ env: runtimeEnv });
+  const app = createJixiaApp({
+    env: {
+      ...runtimeEnv,
+      JIXIA_DATABASE_URL: runtimeConfig.databaseUrl,
+    },
+  });
   const server = createServer((request, response) => {
     const method = request.method ?? "GET";
 
