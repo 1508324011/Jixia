@@ -1,4 +1,4 @@
-import type { SpaceMembership } from "@shared/contracts/spaces";
+import type { SpaceRepository } from "../../db";
 
 import type { JobRecord } from "@shared/contracts/jobs";
 
@@ -11,7 +11,6 @@ import type { JobRunner, StoredJob } from "../jobs/job-runner";
 import type { JobBus } from "../jobs/job-bus";
 import type { AuditLogRecord, AuditService } from "../services/audit.service";
 import type { StoredCredential } from "../services/credentials.service";
-import type { StoredSpace } from "../services/spaces.service";
 
 export interface CreateJobRequest {
   credentialRef: string;
@@ -28,7 +27,7 @@ export interface ListJobsRequest {
 }
 
 export interface JobsRoutes {
-  createJob(input: CreateJobRequest, actorUserId?: string): Promise<JobRecord>;
+  createJob(input: CreateJobRequest, actorUserId: string): Promise<JobRecord>;
   getJob(input: JobAccessRequest): Promise<JobRecord>;
   listJobs(input: ListJobsRequest): Promise<JobRecord[]>;
   listAuditRecords(input: JobAccessRequest): Promise<AuditLogRecord[]>;
@@ -41,33 +40,24 @@ export interface JobsRouteStore {
   jobBus: JobBus;
   jobRunner: JobRunner;
   jobs: StoredJob[];
-  memberships: SpaceMembership[];
   nextId(prefix: string): string;
   persist(): void;
-  spaces: StoredSpace[];
+  spaceRepository: SpaceRepository;
 }
 
 export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
   return {
     async createJob(
       input: CreateJobRequest,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<JobRecord> {
-      const effectiveUserId = actorUserId ?? input.requestedByUserId;
-
-      if (!effectiveUserId) {
-        throw new Error("Jobs require an actor user id.");
-      }
-
-      if (actorUserId && input.requestedByUserId && input.requestedByUserId !== actorUserId) {
+      if (input.requestedByUserId && input.requestedByUserId !== actorUserId) {
         throw new Error(
           "Request body actor does not match the server-derived actor.",
         );
       }
 
-      const space = store.spaces.find(
-        (candidate) => candidate.id === input.spaceId,
-      );
+      const space = await store.spaceRepository.findSpace(input.spaceId);
 
       if (!space) {
         throw new Error(`Space ${input.spaceId} does not exist.`);
@@ -81,19 +71,11 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
         throw new Error(`Credential ${input.credentialRef} does not exist.`);
       }
 
-      if (credential.userId !== effectiveUserId) {
+      if (credential.userId !== actorUserId) {
         throw new Error("Credentials may only be used by their owner.");
       }
 
-      const actorHasMembership = store.memberships.some(
-        (membership) =>
-          membership.spaceId === input.spaceId &&
-          membership.userId === effectiveUserId,
-      );
-
-      if (!actorHasMembership) {
-        throw new Error("Access denied for the requested space resource.");
-      }
+      await store.spaceRepository.denyNonMember(input.spaceId, actorUserId);
 
       assertSafeJobPayload(input.payload);
 
@@ -103,7 +85,7 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
         id: store.nextId("job"),
         kind: input.kind,
         payload: JSON.stringify(input.payload),
-        requestedByUserId: effectiveUserId,
+        requestedByUserId: actorUserId,
         spaceId: input.spaceId,
         status: "queued",
       };
@@ -119,7 +101,7 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
       });
       store.auditService.createRecord({
         action: "job.created",
-        actorUserId: effectiveUserId,
+        actorUserId,
         detail: `Created ${job.kind} with credential ${credential.credentialRef}.`,
         jobId: job.id,
         spaceId: input.spaceId,
@@ -134,7 +116,7 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
       };
     },
     async getJob(input: JobAccessRequest): Promise<JobRecord> {
-      const job = findAuthorizedJob(store, input);
+      const job = await findAuthorizedJob(store, input);
 
       return {
         createdAt: job.createdAt,
@@ -146,6 +128,7 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
     },
     async listJobs(input: ListJobsRequest): Promise<JobRecord[]> {
       const targetSpaceId = input.spaceId;
+      const allowedSpaceIds = new Set<string>();
 
       if (input.actorSpaceId && input.actorSpaceId !== input.spaceId) {
         throw new Error(
@@ -154,22 +137,30 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
       }
 
       if (targetSpaceId) {
-        const actorHasMembership = store.memberships.some(
-          (membership) =>
-            membership.spaceId === targetSpaceId &&
-            membership.userId === input.actorUserId,
-        );
+        await store.spaceRepository.denyNonMember(targetSpaceId, input.actorUserId);
+        allowedSpaceIds.add(targetSpaceId);
+      }
 
-        if (!actorHasMembership) {
-          throw new Error('Access denied for the requested space resource.');
-        }
+      if (!targetSpaceId) {
+        const uniqueSpaceIds = [...new Set(store.jobs.map((job) => job.spaceId))];
+
+        await Promise.all(
+          uniqueSpaceIds.map(async (spaceId) => {
+            try {
+              await store.spaceRepository.denyNonMember(spaceId, input.actorUserId);
+              allowedSpaceIds.add(spaceId);
+            } catch {
+              // Ignore spaces where the actor has no persisted membership.
+            }
+          }),
+        );
       }
 
       return store.jobs
         .filter(
           (job) =>
             job.requestedByUserId === input.actorUserId &&
-            (!targetSpaceId || job.spaceId === targetSpaceId),
+            allowedSpaceIds.has(job.spaceId),
         )
         .map((job) => ({
           createdAt: job.createdAt,
@@ -180,12 +171,12 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
         }));
     },
     async listAuditRecords(input: JobAccessRequest): Promise<AuditLogRecord[]> {
-      const job = findAuthorizedJob(store, input);
+      const job = await findAuthorizedJob(store, input);
 
       return store.auditService.listByJob(job.id);
     },
     async runJob(input: JobAccessRequest): Promise<JobRecord> {
-      const job = findAuthorizedJob(store, input);
+      const job = await findAuthorizedJob(store, input);
 
       return store.jobRunner.run(job.id);
     },

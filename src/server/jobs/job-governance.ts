@@ -1,6 +1,5 @@
-import type { SpaceMembership } from '@shared/contracts/spaces';
+import type { SpaceRepository } from '../../db';
 
-import type { StoredSpace } from '../services/spaces.service';
 import type { StoredJob } from './job-runner';
 
 export interface JobAccessRequest {
@@ -11,8 +10,7 @@ export interface JobAccessRequest {
 
 export interface JobGovernanceStore {
   jobs: StoredJob[];
-  memberships: SpaceMembership[];
-  spaces: StoredSpace[];
+  spaceRepository: SpaceRepository;
 }
 
 const SAFE_JOB_PAYLOAD_KEYS = new Set(['credentialref']);
@@ -71,27 +69,21 @@ export function assertSafeJobPayload(
   }
 }
 
-export function findAuthorizedJob(
+export async function findAuthorizedJob(
   store: JobGovernanceStore,
   input: JobAccessRequest,
-): StoredJob {
+): Promise<StoredJob> {
   const job = store.jobs.find((candidate) => candidate.id === input.jobId);
 
   if (!job) {
     throw new Error(`Job ${input.jobId} does not exist.`);
   }
 
-  const space = store.spaces.find((candidate) => candidate.id === job.spaceId);
+  const space = await store.spaceRepository.findSpace(job.spaceId);
 
   if (!space) {
     throw new Error(`Space ${job.spaceId} does not exist.`);
   }
-
-  const actorHasMembership = store.memberships.some(
-    (membership) =>
-      membership.spaceId === job.spaceId &&
-      membership.userId === input.actorUserId,
-  );
 
   if (input.actorSpaceId && input.actorSpaceId !== job.spaceId) {
     throw new Error(
@@ -99,7 +91,9 @@ export function findAuthorizedJob(
     );
   }
 
-  if (input.actorUserId !== job.requestedByUserId || !actorHasMembership) {
+  await store.spaceRepository.denyNonMember(job.spaceId, input.actorUserId);
+
+  if (input.actorUserId !== job.requestedByUserId) {
     throw new Error('Access denied for the requested space resource.');
   }
 

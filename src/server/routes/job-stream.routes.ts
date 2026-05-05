@@ -8,12 +8,12 @@ import {
 import type { JobBus } from "../jobs/job-bus";
 
 export interface JobStreamRoutes {
-  listEvents(input: JobAccessRequest): JobEventRecord[];
+  listEvents(input: JobAccessRequest): Promise<JobEventRecord[]>;
   subscribe(
     input: JobAccessRequest,
     listener: (event: JobEventRecord) => void,
-  ): () => void;
-  toSse(input: JobAccessRequest): string;
+  ): Promise<() => void>;
+  toSse(input: JobAccessRequest): Promise<string>;
 }
 
 export interface JobStreamRouteStore extends JobGovernanceStore {
@@ -24,21 +24,21 @@ export function createJobStreamRoutes(
   store: JobStreamRouteStore,
 ): JobStreamRoutes {
   return {
-    listEvents(input: JobAccessRequest): JobEventRecord[] {
-      const job = findAuthorizedJob(store, input);
+    async listEvents(input: JobAccessRequest): Promise<JobEventRecord[]> {
+      const job = await findAuthorizedJob(store, input);
 
       return store.jobBus.listEvents(job.id);
     },
-    subscribe(
+    async subscribe(
       input: JobAccessRequest,
       listener: (event: JobEventRecord) => void,
-    ): () => void {
-      const job = findAuthorizedJob(store, input);
+    ): Promise<() => void> {
+      const job = await findAuthorizedJob(store, input);
 
       return store.jobBus.subscribe(job.id, listener);
     },
-    toSse(input: JobAccessRequest): string {
-      const job = findAuthorizedJob(store, input);
+    async toSse(input: JobAccessRequest): Promise<string> {
+      const job = await findAuthorizedJob(store, input);
 
       return store.jobBus.toSse(job.id);
     },
