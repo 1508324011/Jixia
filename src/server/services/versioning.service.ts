@@ -4,7 +4,9 @@ import type {
   WritingDocRecord,
 } from '@shared/contracts/writing';
 
-import type { StoredPaperAsset } from './import.service';
+import type { PersistedLibraryEntryView } from '../../db';
+
+import type { LibraryService } from './library.service';
 
 export interface StoredDocVersion {
   content: string;
@@ -18,18 +20,31 @@ export interface SaveVersionRequest {
   citations: Array<Pick<CitationLinkRecord, 'evidenceSpan' | 'paperAssetId'>>;
   content: string;
   writingDoc: WritingDocRecord;
+  actorSpaceId: string;
+  actorUserId: string;
 }
 
 export interface VersioningStore {
   citationLinks: CitationLinkRecord[];
   docVersions: StoredDocVersion[];
+  libraryService: LibraryService;
   nextId(prefix: string): string;
-  paperAssets: StoredPaperAsset[];
   persist(): void;
 }
 
 export interface VersioningService {
   saveVersion(input: SaveVersionRequest): Promise<WritingDocSnapshot>;
+}
+
+function citationMatchesAuthorizedEntry(
+  citation: Pick<CitationLinkRecord, 'evidenceSpan' | 'paperAssetId'>,
+  view: PersistedLibraryEntryView,
+): boolean {
+  if (view.asset.id === citation.paperAssetId) {
+    return true;
+  }
+
+  return view.entry.id === citation.paperAssetId;
 }
 
 export function createVersioningService(
@@ -38,12 +53,33 @@ export function createVersioningService(
   return {
     async saveVersion(input: SaveVersionRequest): Promise<WritingDocSnapshot> {
       for (const citation of input.citations) {
-        const paperAsset = store.paperAssets.find(
-          (asset) => asset.id === citation.paperAssetId,
-        );
+        const authorizedEntry = await store.libraryService
+          .assertCanAccessEntry(
+            citation.paperAssetId,
+            input.actorUserId,
+            input.actorSpaceId,
+          )
+          .catch((error) => {
+            if (
+              error instanceof Error &&
+              new RegExp(
+                `^Library entry ${citation.paperAssetId} does not exist\\.$`,
+              ).test(error.message)
+            ) {
+              return store.libraryService.assertCanAccessPaperAsset(
+                citation.paperAssetId,
+                input.actorUserId,
+                input.actorSpaceId,
+              );
+            }
 
-        if (!paperAsset) {
-          throw new Error(`Paper asset ${citation.paperAssetId} does not exist.`);
+            throw error;
+          });
+
+        if (!citationMatchesAuthorizedEntry(citation, authorizedEntry)) {
+          throw new Error(
+            `Citation ${citation.paperAssetId} does not match an authorized library entry.`,
+          );
         }
       }
 

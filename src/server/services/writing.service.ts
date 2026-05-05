@@ -3,10 +3,8 @@ import type {
   WritingDocRecord,
   WritingDocSnapshot,
 } from '@shared/contracts/writing';
-import type { SpaceMembership } from '@shared/contracts/spaces';
+import type { SpaceRepository } from '../../db';
 
-import type { StoredPaperAsset } from './import.service';
-import type { StoredSpace } from './spaces.service';
 import type { StoredDocVersion, VersioningService } from './versioning.service';
 
 export interface CreateDocumentRequest {
@@ -38,11 +36,9 @@ export interface StoredWritingDoc extends WritingDocRecord {
 
 export interface WritingStore {
   docVersions: StoredDocVersion[];
-  memberships: SpaceMembership[];
   nextId(prefix: string): string;
-  paperAssets: StoredPaperAsset[];
   persist(): void;
-  spaces: StoredSpace[];
+  spaceRepository: SpaceRepository;
   versioningService: VersioningService;
   writingDocs: StoredWritingDoc[];
 }
@@ -68,32 +64,28 @@ function findDocument(
   return document;
 }
 
-function assertActorMembership(
+async function assertActorMembership(
   store: WritingStore,
   actorUserId: string,
   spaceId: string,
-): void {
-  const actorHasMembership = store.memberships.some(
-    (membership) =>
-      membership.spaceId === spaceId && membership.userId === actorUserId,
-  );
-
-  if (!actorHasMembership) {
-    throw new Error('Access denied for the requested space resource.');
-  }
+): Promise<void> {
+  await store.spaceRepository.denyNonMember(spaceId, actorUserId);
 }
 
-function assertDocumentAccess(
+async function assertDocumentAccess(
+  store: WritingStore,
   actorSpaceId: string,
   actorUserId: string,
   document: StoredWritingDoc,
-): void {
+): Promise<void> {
   if (
     actorSpaceId !== document.spaceId ||
     actorUserId !== document.ownerUserId
   ) {
     throw new Error('Access denied for the requested writing document.');
   }
+
+  await assertActorMembership(store, actorUserId, document.spaceId);
 }
 
 export function createWritingService(store: WritingStore): WritingService {
@@ -101,9 +93,7 @@ export function createWritingService(store: WritingStore): WritingService {
     async createDocument(
       input: CreateDocumentRequest,
     ): Promise<WritingDocRecord> {
-      const spaceExists = store.spaces.some(
-        (space) => space.id === input.spaceId,
-      );
+      const spaceExists = await store.spaceRepository.findSpace(input.spaceId);
 
       if (!spaceExists) {
         throw new Error(`Space ${input.spaceId} does not exist.`);
@@ -117,7 +107,7 @@ export function createWritingService(store: WritingStore): WritingService {
         throw new Error('Access denied for the requested writing document.');
       }
 
-      assertActorMembership(store, input.actorUserId, input.spaceId);
+      await assertActorMembership(store, input.actorUserId, input.spaceId);
 
       const document: StoredWritingDoc = {
         createdAt: new Date().toISOString(),
@@ -135,9 +125,16 @@ export function createWritingService(store: WritingStore): WritingService {
     },
     async saveDocument(input: SaveDocumentRequest): Promise<WritingDocSnapshot> {
       const document = findDocument(store, input.docId);
-      assertDocumentAccess(input.actorSpaceId, input.actorUserId, document);
+      await assertDocumentAccess(
+        store,
+        input.actorSpaceId,
+        input.actorUserId,
+        document,
+      );
 
       return store.versioningService.saveVersion({
+        actorSpaceId: input.actorSpaceId,
+        actorUserId: input.actorUserId,
         citations: input.citations,
         content: input.content,
         writingDoc: document,
@@ -147,7 +144,12 @@ export function createWritingService(store: WritingStore): WritingService {
       input: TransitionPublishStateRequest,
     ): Promise<WritingDocRecord> {
       const document = findDocument(store, input.docId);
-      assertDocumentAccess(input.actorSpaceId, input.actorUserId, document);
+      await assertDocumentAccess(
+        store,
+        input.actorSpaceId,
+        input.actorUserId,
+        document,
+      );
       document.publishState = input.publishState;
       store.persist();
 
