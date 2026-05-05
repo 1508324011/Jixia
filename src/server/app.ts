@@ -75,10 +75,7 @@ import {
   createAuditService,
   type AuditLogRecord,
 } from './services/audit.service';
-import {
-  createImportService,
-  type StoredPaperAsset,
-} from './services/import.service';
+import { createImportService } from './services/import.service';
 import { createEvidenceLinkService } from './services/evidence-link.service';
 import { createJobBus } from './jobs/job-bus';
 import { createJobRunner, type StoredJob } from './jobs/job-runner';
@@ -131,15 +128,32 @@ export interface JixiaAppState {
   insights: GeneratedInsightRecord[];
   jobEvents: JobEventRecord[];
   jobs: StoredJob[];
-  libraryEntries: LegacyStoredLibraryEntry[];
+  legacyLibraryEntries: LegacyStoredLibraryEntry[];
+  legacyPaperAssets: LegacyStoredPaperAsset[];
   memberships: SpaceMembership[];
   nextSequence: number;
   notes: NoteRecord[];
-  paperAssets: StoredPaperAsset[];
   projectMembers: StoredProjectMember[];
   projects: StoredProject[];
   spaces: StoredSpace[];
   writingDocs: StoredWritingDoc[];
+}
+
+type SerializedJixiaAppState = Partial<
+  Omit<JixiaAppState, 'legacyLibraryEntries' | 'legacyPaperAssets'>
+> & {
+  libraryEntries?: LegacyStoredLibraryEntry[];
+  paperAssets?: LegacyStoredPaperAsset[];
+};
+
+interface LegacyStoredPaperAsset {
+  abstractText?: string;
+  canonicalId: string;
+  createdAt: string;
+  id: string;
+  importedByUserId: string;
+  storageKey?: string;
+  title: string;
 }
 
 interface LegacyStoredLibraryEntry {
@@ -173,11 +187,11 @@ function createState(): JixiaAppState {
     insights: [],
     jobEvents: [],
     jobs: [],
-    libraryEntries: [],
+    legacyLibraryEntries: [],
+    legacyPaperAssets: [],
     memberships: [],
     nextSequence: 0,
     notes: [],
-    paperAssets: [],
     projectMembers: [],
     projects: [],
     spaces: [],
@@ -203,7 +217,7 @@ function loadState(env: StorageRootEnv = process.env): JixiaAppState {
     return initialState;
   }
 
-  const parsed = JSON.parse(readFileSync(statePath, 'utf8')) as Partial<JixiaAppState>;
+  const parsed = JSON.parse(readFileSync(statePath, 'utf8')) as SerializedJixiaAppState;
 
   return {
     auditLogs: parsed.auditLogs ?? initialState.auditLogs,
@@ -214,11 +228,12 @@ function loadState(env: StorageRootEnv = process.env): JixiaAppState {
     insights: parsed.insights ?? initialState.insights,
     jobEvents: parsed.jobEvents ?? initialState.jobEvents,
     jobs: parsed.jobs ?? initialState.jobs,
-    libraryEntries: parsed.libraryEntries ?? initialState.libraryEntries,
+    legacyLibraryEntries:
+      parsed.libraryEntries ?? initialState.legacyLibraryEntries,
+    legacyPaperAssets: parsed.paperAssets ?? initialState.legacyPaperAssets,
     memberships: parsed.memberships ?? initialState.memberships,
     nextSequence: parsed.nextSequence ?? initialState.nextSequence,
     notes: parsed.notes ?? initialState.notes,
-    paperAssets: parsed.paperAssets ?? initialState.paperAssets,
     projectMembers: parsed.projectMembers ?? initialState.projectMembers,
     projects: parsed.projects ?? initialState.projects,
     spaces: parsed.spaces ?? initialState.spaces,
@@ -231,9 +246,31 @@ function persistState(
   env: StorageRootEnv = process.env,
 ): void {
   const rootDirectory = resolveStorageRoot(env);
+  const memberships = state.memberships;
+  const spaces = state.spaces;
 
   mkdirSync(rootDirectory, { recursive: true });
-  writeFileSync(resolveAppStatePath(env), JSON.stringify(state, null, 2));
+  const serializedState: SerializedJixiaAppState = {
+    auditLogs: state.auditLogs,
+    citationLinks: state.citationLinks,
+    conversations: state.conversations,
+    credentials: state.credentials,
+    docVersions: state.docVersions,
+    insights: state.insights,
+    jobEvents: state.jobEvents,
+    jobs: state.jobs,
+    libraryEntries: state.legacyLibraryEntries,
+    memberships,
+    nextSequence: state.nextSequence,
+    notes: state.notes,
+    paperAssets: state.legacyPaperAssets,
+    projectMembers: state.projectMembers,
+    projects: state.projects,
+    spaces,
+    writingDocs: state.writingDocs,
+  };
+
+  writeFileSync(resolveAppStatePath(env), JSON.stringify(serializedState, null, 2));
 }
 
 function markLibraryBootstrapComplete(
@@ -266,6 +303,29 @@ function resolveAppDatabaseUrl(env: JixiaAppEnv = process.env): string {
   }
 
   return readDatabaseUrl(env as NodeJS.ProcessEnv);
+}
+
+function hasLegacyLibraryBootstrapInput(
+  state: Pick<JixiaAppState, 'legacyLibraryEntries' | 'legacyPaperAssets'>,
+): boolean {
+  return state.legacyPaperAssets.length > 0 || state.legacyLibraryEntries.length > 0;
+}
+
+function resolveLegacyLibraryBootstrapInput(
+  state: Pick<JixiaAppState, 'legacyLibraryEntries' | 'legacyPaperAssets'>,
+  libraryBootstrapMarkerExists: boolean,
+): BootstrapLegacyLibraryInput {
+  if (libraryBootstrapMarkerExists || !hasLegacyLibraryBootstrapInput(state)) {
+    return {
+      assets: [],
+      entries: [],
+    };
+  }
+
+  return {
+    assets: state.legacyPaperAssets,
+    entries: state.legacyLibraryEntries,
+  };
 }
 
 function createBootstrappedLibraryRepository(
@@ -352,16 +412,13 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const projectRepository = createProjectRepository(prismaClient);
   const libraryBootstrapMarkerPath = resolveLibraryBootstrapMarkerPath(options.env);
-  const shouldBootstrapLegacyLibrary =
-    !existsSync(libraryBootstrapMarkerPath) && state.paperAssets.length > 0;
-  const legacyAssets = shouldBootstrapLegacyLibrary ? state.paperAssets : [];
-  const legacyEntries = shouldBootstrapLegacyLibrary ? state.libraryEntries : [];
+  const legacyLibraryBootstrapInput = resolveLegacyLibraryBootstrapInput(
+    state,
+    existsSync(libraryBootstrapMarkerPath),
+  );
   const libraryRepository = createBootstrappedLibraryRepository(
     createLibraryRepository(prismaClient),
-    {
-      assets: legacyAssets,
-      entries: legacyEntries,
-    },
+    legacyLibraryBootstrapInput,
     () => markLibraryBootstrapComplete(options.env),
   );
   const projectsService = createProjectsService({

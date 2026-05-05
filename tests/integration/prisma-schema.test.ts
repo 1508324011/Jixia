@@ -189,6 +189,11 @@ describe('prisma schema', () => {
     expect(libraryRepository).not.toContain('update: {}');
 
     expect(appWiring).toContain('createBootstrappedLibraryRepository');
+    expect(appWiring).toContain('resolveLegacyLibraryBootstrapInput');
+    expect(appWiring).toContain('parsed.paperAssets');
+    expect(appWiring).toContain('parsed.libraryEntries');
+    expect(appWiring).not.toContain('state.paperAssets');
+    expect(appWiring).not.toContain('state.libraryEntries');
     expect(appWiring).not.toContain('paperAssets: state.paperAssets');
     expect(appWiring).not.toContain('libraryEntries: state.libraryEntries');
 
