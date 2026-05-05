@@ -140,10 +140,15 @@ describe('core contracts', () => {
       createdAt: '2026-03-21T00:00:00.000Z',
     };
     const entry: LibraryEntryRecord = {
+      addedByUserId: 'user_001',
       id: 'entry_001',
+      scope: { type: 'user', id: 'user_001' },
+      scopeType: 'user',
+      scopeId: 'user_001',
       spaceId: 'space_001',
       paperAssetId: 'asset_001',
       visibility: 'space_shared',
+      createdAt: '2026-03-21T00:00:00.000Z',
       addedAt: '2026-03-21T00:00:00.000Z',
     };
     const entryView: LibraryEntryView = {
@@ -153,6 +158,7 @@ describe('core contracts', () => {
 
     expect(importRequest.sourceType).toBe('doi');
     expect(entryView.entry.paperAssetId).toBe('asset_001');
+    expect(entryView.entry.scope).toEqual({ type: 'user', id: 'user_001' });
 
     const libraryEntryShape: {
       entry: LibraryEntryRecord;
