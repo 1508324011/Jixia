@@ -32,8 +32,13 @@ const importedEntryFixture = {
   },
   entry: {
     addedAt: '2026-05-03T00:00:00.000Z',
+    addedByUserId: 'user-alice',
+    createdAt: '2026-05-03T00:00:00.000Z',
     id: 'entry-recovery',
     paperAssetId: 'asset-recovery',
+    scope: { type: 'project', id: 'project-recovery' },
+    scopeId: 'project-recovery',
+    scopeType: 'project',
     spaceId: 'space-recovery',
     visibility: 'space_shared',
   },

@@ -39,6 +39,23 @@ export function useSearchPresenter(): SearchViewModel {
   const [error, setError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
+  const selectedProject = useMemo(
+    () => projects.find((item) => item.project.id === selectedProjectId) ?? null,
+    [projects, selectedProjectId],
+  );
+
+  const selectProjectId = useCallback(
+    (projectId: string) => {
+      setSelectedProjectId(projectId);
+
+      const project = projects.find((item) => item.project.id === projectId);
+      if (project) {
+        setSelectedSpaceId(project.project.spaceId);
+      }
+    },
+    [projects],
+  );
+
   useEffect(() => {
     void (async () => {
       try {
@@ -81,11 +98,13 @@ export function useSearchPresenter(): SearchViewModel {
         setIsImporting(true);
         setError(null);
 
-        let nextSpaceId =
-          selectedSpaceId ||
-          projects.find((item) => item.project.id === selectedProjectId)?.project
-            .spaceId ||
-          "";
+        if (selectedProjectId && !selectedProject) {
+          throw new Error(
+            `Project ${selectedProjectId} is not visible to the current actor.`,
+          );
+        }
+
+        let nextSpaceId = selectedProject?.project.spaceId ?? selectedSpaceId;
         if (!nextSpaceId) {
           const createdSpace = await apiClient.createSpace(
             demoActorContext.actorUserId,
@@ -100,6 +119,9 @@ export function useSearchPresenter(): SearchViewModel {
         }
 
         const nextRecord = await apiClient.importPaper(demoActorContext.actorUserId, {
+          ...(selectedProjectId
+            ? { scope: { id: selectedProjectId, type: "project" as const } }
+            : { scope: { id: demoActorContext.actorUserId, type: "user" as const } }),
           sourceLocator: input.sourceLocator,
           sourceType: input.sourceType,
           spaceId: nextSpaceId,
@@ -117,7 +139,7 @@ export function useSearchPresenter(): SearchViewModel {
         setIsImporting(false);
       }
     },
-    [projects, selectedProjectId, selectedSpaceId],
+    [selectedProject, selectedProjectId, selectedSpaceId],
   );
 
   return useMemo(
@@ -128,7 +150,7 @@ export function useSearchPresenter(): SearchViewModel {
       isImporting,
       projects,
       selectedProjectId,
-      setSelectedProjectId,
+      setSelectedProjectId: selectProjectId,
       selectedSpaceId,
       setSelectedSpaceId,
       spaces,
@@ -139,6 +161,7 @@ export function useSearchPresenter(): SearchViewModel {
       importedRecord,
       isImporting,
       projects,
+      selectProjectId,
       selectedProjectId,
       selectedSpaceId,
       spaces,
