@@ -21,17 +21,22 @@ describe('server governance hardening', () => {
         { kind: 'shared', name: 'Alice Shared' },
         'user-alice',
       );
+      const project = await app.projects.createProject(
+        { name: 'Alice Hardening Project', spaceId: aliceShared.id },
+        'user-alice',
+      );
       const bobPersonal = await app.spaces.createSpace(
         { kind: 'personal', name: 'Bob Personal' },
         'user-bob',
       );
       const imported = await app.imports.importPaper({
+        scope: { id: project.project.id, type: 'project' },
         requestedByUserId: 'user-alice',
         sourceLocator: '10.1000/hardening-demo',
         sourceType: 'doi',
         spaceId: aliceShared.id,
         visibility: 'private',
-      });
+      }, 'user-alice');
       const doc = await app.writing.createDocument({
         actorSpaceId: aliceShared.id,
         actorUserId: 'user-alice',
@@ -46,14 +51,14 @@ describe('server governance hardening', () => {
           actorUserId: 'user-bob',
           entryId: imported.entry.id,
         }),
-      ).rejects.toThrow(/space context/i);
+      ).rejects.toThrow(/access denied/i);
       await expect(
         app.reading.getDetail({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           libraryEntryId: imported.entry.id,
         }),
-      ).rejects.toThrow(/space context/i);
+      ).rejects.toThrow(/access denied/i);
       await expect(
         app.writing.saveDocument({
           actorSpaceId: bobPersonal.id,
@@ -100,13 +105,14 @@ describe('server governance hardening', () => {
 
       await expect(
         app.imports.importPaper({
+          scope: { id: 'project-missing', type: 'project' },
           requestedByUserId: 'user-alice',
           sourceLocator: '10.1000/missing-space',
           sourceType: 'doi',
           spaceId: 'space-missing',
           visibility: 'space_shared',
-        }),
-      ).rejects.toThrow(/space space-missing does not exist/i);
+        }, 'user-alice'),
+      ).rejects.toThrow(/project project-missing does not exist/i);
       await expect(
         app.writing.saveDocument({
           actorSpaceId: sharedSpace.id,
@@ -123,7 +129,7 @@ describe('server governance hardening', () => {
           payload: { prompt: 'Summarize.' },
           requestedByUserId: 'user-alice',
           spaceId: 'space-missing',
-        }),
+        }, 'user-alice'),
       ).rejects.toThrow(/space space-missing does not exist/i);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
@@ -150,7 +156,7 @@ describe('server governance hardening', () => {
         payload: { prompt: 'Persist me.' },
         requestedByUserId: 'user-alice',
         spaceId: sharedSpace.id,
-      });
+      }, 'user-alice');
 
       const secondApp = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
       const completed = await secondApp.jobs.runJob({
@@ -163,7 +169,7 @@ describe('server governance hardening', () => {
         actorUserId: 'user-alice',
         jobId: job.id,
       });
-      const stream = secondApp.jobStream.toSse({
+      const stream = await secondApp.jobStream.toSse({
         actorSpaceId: sharedSpace.id,
         actorUserId: 'user-alice',
         jobId: job.id,
@@ -213,7 +219,7 @@ describe('server governance hardening', () => {
         payload: { prompt: 'Protect this job.' },
         requestedByUserId: 'user-alice',
         spaceId: aliceShared.id,
-      });
+      }, 'user-alice');
 
       await expect(
         app.jobs.runJob({
@@ -229,20 +235,20 @@ describe('server governance hardening', () => {
           jobId: job.id,
         }),
       ).rejects.toThrow(/space context/i);
-      expect(() =>
+      await expect(
         app.jobStream.listEvents({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).toThrow(/space context/i);
-      expect(() =>
+      ).rejects.toThrow(/space context/i);
+      await expect(
         app.jobStream.toSse({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).toThrow(/space context/i);
+      ).rejects.toThrow(/space context/i);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
@@ -274,7 +280,7 @@ describe('server governance hardening', () => {
           },
           requestedByUserId: 'user-alice',
           spaceId: sharedSpace.id,
-        }),
+        }, 'user-alice'),
       ).rejects.toThrow(/payload must not contain raw secrets/i);
 
       if (existsSync(persistedStatePath)) {

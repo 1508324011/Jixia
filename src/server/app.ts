@@ -11,8 +11,11 @@ import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import {
   createPrismaClient,
+  createLibraryRepository,
   createProjectRepository,
   createSpaceRepository,
+  type BootstrapLegacyLibraryInput,
+  type LibraryRepository,
   readDatabaseUrl,
 } from '../db';
 import {
@@ -74,7 +77,6 @@ import {
 } from './services/audit.service';
 import {
   createImportService,
-  type StoredLibraryEntry,
   type StoredPaperAsset,
 } from './services/import.service';
 import { createEvidenceLinkService } from './services/evidence-link.service';
@@ -106,6 +108,7 @@ import {
 } from './storage/storage-root';
 
 const APP_STATE_FILE = 'server-state.json';
+const LIBRARY_BOOTSTRAP_MARKER_FILE = '.library-prisma-bootstrap-complete';
 
 export interface CreateJixiaAppOptions {
   connectors?: {
@@ -128,7 +131,7 @@ export interface JixiaAppState {
   insights: GeneratedInsightRecord[];
   jobEvents: JobEventRecord[];
   jobs: StoredJob[];
-  libraryEntries: StoredLibraryEntry[];
+  libraryEntries: LegacyStoredLibraryEntry[];
   memberships: SpaceMembership[];
   nextSequence: number;
   notes: NoteRecord[];
@@ -137,6 +140,14 @@ export interface JixiaAppState {
   projects: StoredProject[];
   spaces: StoredSpace[];
   writingDocs: StoredWritingDoc[];
+}
+
+interface LegacyStoredLibraryEntry {
+  addedAt: string;
+  id: string;
+  paperAssetId: string;
+  spaceId: string;
+  visibility: 'private' | 'space_shared' | 'published_to_project';
 }
 
 export interface JixiaApp {
@@ -176,6 +187,12 @@ function createState(): JixiaAppState {
 
 function resolveAppStatePath(env: StorageRootEnv = process.env): string {
   return join(resolveStorageRoot(env), APP_STATE_FILE);
+}
+
+function resolveLibraryBootstrapMarkerPath(
+  env: StorageRootEnv = process.env,
+): string {
+  return join(resolveStorageRoot(env), LIBRARY_BOOTSTRAP_MARKER_FILE);
 }
 
 function loadState(env: StorageRootEnv = process.env): JixiaAppState {
@@ -219,6 +236,18 @@ function persistState(
   writeFileSync(resolveAppStatePath(env), JSON.stringify(state, null, 2));
 }
 
+function markLibraryBootstrapComplete(
+  env: StorageRootEnv = process.env,
+): void {
+  const rootDirectory = resolveStorageRoot(env);
+
+  mkdirSync(rootDirectory, { recursive: true });
+  writeFileSync(
+    resolveLibraryBootstrapMarkerPath(env),
+    JSON.stringify({ completedAt: new Date().toISOString() }, null, 2),
+  );
+}
+
 function nextId(state: JixiaAppState, prefix: string): string {
   state.nextSequence += 1;
 
@@ -237,6 +266,54 @@ function resolveAppDatabaseUrl(env: JixiaAppEnv = process.env): string {
   }
 
   return readDatabaseUrl(env as NodeJS.ProcessEnv);
+}
+
+function createBootstrappedLibraryRepository(
+  repository: LibraryRepository,
+  legacyInput: BootstrapLegacyLibraryInput,
+  onBootstrapped: () => void,
+): LibraryRepository {
+  let bootstrapped: Promise<void> | null = null;
+
+  async function ensureBootstrapped(): Promise<void> {
+    bootstrapped ??= repository
+      .bootstrapLegacyLibrary(legacyInput)
+      .then(onBootstrapped);
+
+    await bootstrapped;
+  }
+
+  return {
+    async bootstrapLegacyLibrary(input: BootstrapLegacyLibraryInput): Promise<void> {
+      await ensureBootstrapped();
+      await repository.bootstrapLegacyLibrary(input);
+    },
+    async findPaperAsset(assetId) {
+      await ensureBootstrapped();
+
+      return repository.findPaperAsset(assetId);
+    },
+    async getLibraryEntry(entryId) {
+      await ensureBootstrapped();
+
+      return repository.getLibraryEntry(entryId);
+    },
+    async importScopedEntry(input) {
+      await ensureBootstrapped();
+
+      return repository.importScopedEntry(input);
+    },
+    async listLibraryEntriesForAsset(paperAssetId) {
+      await ensureBootstrapped();
+
+      return repository.listLibraryEntriesForAsset(paperAssetId);
+    },
+    async listLibraryEntriesForScope(scope) {
+      await ensureBootstrapped();
+
+      return repository.listLibraryEntriesForScope(scope);
+    },
+  };
 }
 
 export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
@@ -274,6 +351,19 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     repository: spaceRepository,
   });
   const projectRepository = createProjectRepository(prismaClient);
+  const libraryBootstrapMarkerPath = resolveLibraryBootstrapMarkerPath(options.env);
+  const shouldBootstrapLegacyLibrary =
+    !existsSync(libraryBootstrapMarkerPath) && state.paperAssets.length > 0;
+  const legacyAssets = shouldBootstrapLegacyLibrary ? state.paperAssets : [];
+  const legacyEntries = shouldBootstrapLegacyLibrary ? state.libraryEntries : [];
+  const libraryRepository = createBootstrappedLibraryRepository(
+    createLibraryRepository(prismaClient),
+    {
+      assets: legacyAssets,
+      entries: legacyEntries,
+    },
+    () => markLibraryBootstrapComplete(options.env),
+  );
   const projectsService = createProjectsService({
     projectRepository,
     spaceRepository,
@@ -281,54 +371,41 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const importService = createImportService({
     arxivConnector: options.connectors?.arxiv ?? createArxivConnector(),
     fileStore: createFileStore(options.env),
-    libraryEntries: state.libraryEntries,
-    memberships: state.memberships,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
-    },
-    paperAssets: state.paperAssets,
-    persist,
+    libraryRepository,
+    projectRepository,
     pubmedConnector: options.connectors?.pubmed ?? createPubmedConnector(),
-    spaces: state.spaces,
   });
   const libraryService = createLibraryService({
-    libraryEntries: state.libraryEntries,
-    memberships: state.memberships,
-    paperAssets: state.paperAssets,
-    spaces: state.spaces,
+    libraryRepository,
+    projectRepository,
   });
   const readingService = createReadingService({
     conversations: state.conversations,
     evidenceLinkService: createEvidenceLinkService(),
     insights: state.insights,
-    libraryEntries: state.libraryEntries,
-    memberships: state.memberships,
+    libraryService,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
     notes: state.notes,
-    paperAssets: state.paperAssets,
     persist,
-    spaces: state.spaces,
   });
   const versioningService = createVersioningService({
     citationLinks: state.citationLinks,
     docVersions: state.docVersions,
+    libraryService,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
-    paperAssets: state.paperAssets,
     persist,
   });
   const writingService = createWritingService({
     docVersions: state.docVersions,
-    memberships: state.memberships,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
-    paperAssets: state.paperAssets,
     persist,
-    spaces: state.spaces,
+    spaceRepository,
     versioningService,
     writingDocs: state.writingDocs,
   });
@@ -364,12 +441,11 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     jobBus,
     jobRunner,
     jobs: state.jobs,
-    memberships: state.memberships,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
     persist,
-    spaces: state.spaces,
+    spaceRepository,
   });
 
   return {
@@ -380,8 +456,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     jobStream: createJobStreamRoutes({
       jobBus,
       jobs: state.jobs,
-      memberships: state.memberships,
-      spaces: state.spaces,
+      spaceRepository,
     }),
     library: createLibraryRoutes(libraryService),
     projects: createProjectsRoutes(projectsService),
