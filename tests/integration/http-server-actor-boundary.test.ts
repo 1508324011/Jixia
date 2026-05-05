@@ -63,8 +63,23 @@ async function importPaper(
   actorUserId: string,
   spaceId: string,
 ) {
+  const project = await fetch(`${serverUrl}/api/projects`, {
+    body: JSON.stringify({
+      name: `${actorUserId} actor-boundary project`,
+      spaceId,
+    }),
+    headers: {
+      "Content-Type": "application/json",
+      "x-jixia-actor": actorUserId,
+    },
+    method: "POST",
+  }).then(
+    (response) => response.json() as Promise<{ project: { id: string } }>,
+  );
+
   const response = await fetch(`${serverUrl}/api/import/paper`, {
     body: JSON.stringify({
+      scope: { id: project.project.id, type: "project" },
       sourceLocator: `10.1000/${actorUserId}-actor-boundary`,
       sourceType: "doi",
       spaceId,
@@ -77,7 +92,9 @@ async function importPaper(
     method: "POST",
   });
 
-  return (await response.json()) as { entry: { id: string } };
+  const imported = (await response.json()) as { entry: { id: string } };
+
+  return { ...imported, projectId: project.project.id };
 }
 
 async function createJob(
@@ -279,10 +296,10 @@ describe("http server actor boundary cleanup", () => {
             },
             method: "POST",
           }),
-          fetch(`${server.url}/api/library?spaceId=${createdSpace.id}&actorUserId=user-bob`, {
+          fetch(`${server.url}/api/library?scopeType=project&scopeId=${importedRecord.projectId}&spaceId=${createdSpace.id}&actorUserId=user-bob`, {
             headers: { "x-jixia-actor": "user-alice" },
           }),
-          fetch(`${server.url}/api/library?spaceId=${createdSpace.id}&actorSpaceId=space-bob`, {
+          fetch(`${server.url}/api/library?scopeType=project&scopeId=${importedRecord.projectId}&spaceId=${createdSpace.id}&actorSpaceId=space-bob`, {
             headers: { "x-jixia-actor": "user-alice" },
           }),
           fetch(`${server.url}/api/library/${importedRecord.entry.id}?actorUserId=user-bob`, {
@@ -500,7 +517,7 @@ describe("http server actor boundary cleanup", () => {
           fetch(`${server.url}/api/credentials`, {
             headers: { "x-jixia-actor": "user-alice" },
           }),
-          fetch(`${server.url}/api/library?spaceId=${createdSpace.id}`, {
+          fetch(`${server.url}/api/library?scopeType=project&scopeId=${importedRecord.projectId}&spaceId=${createdSpace.id}`, {
             headers: { "x-jixia-actor": "user-alice" },
           }),
           fetch(`${server.url}/api/reading/${importedRecord.entry.id}`, {

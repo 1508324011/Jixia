@@ -48,9 +48,24 @@ describe("http server phase 4 reader slice", () => {
             method: "POST",
           },
         ).then((response) => response.json() as Promise<{ id: string }>);
+        const project = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({
+            name: "Phase 4 Project",
+            spaceId: createdSpace.id,
+          }),
+          headers: {
+            "Content-Type": "application/json",
+            "x-jixia-actor": "user-alice",
+          },
+          method: "POST",
+        }).then(
+          (response) =>
+            response.json() as Promise<{ project: { id: string; spaceId: string } }>,
+        );
 
         const importedRecord = await fetch(`${server.url}/api/import/paper`, {
           body: JSON.stringify({
+            scope: { id: project.project.id, type: "project" },
             sourceLocator: "10.1000/reading-demo",
             sourceType: "doi",
             spaceId: createdSpace.id,

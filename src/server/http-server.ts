@@ -147,18 +147,27 @@ async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
   return JSON.parse(rawBody) as T;
 }
 
-function requireQueryParam(requestUrl: URL, key: string): string {
-  const value = requestUrl.searchParams.get(key);
-
-  if (!value) {
-    throw new Error(`Missing required query parameter: ${key}`);
-  }
-
-  return value;
-}
-
 function optionalQueryParam(requestUrl: URL, key: string): string | undefined {
   return requestUrl.searchParams.get(key) ?? undefined;
+}
+
+function parseLibraryScope(requestUrl: URL):
+  | { type: "project"; id: string }
+  | { type: "user"; id: string }
+  | undefined {
+  const scopeType = optionalQueryParam(requestUrl, "scopeType");
+  const scopeId = optionalQueryParam(requestUrl, "scopeId");
+  const projectId = optionalQueryParam(requestUrl, "projectId");
+
+  if (scopeType || scopeId) {
+    if ((scopeType !== "user" && scopeType !== "project") || !scopeId) {
+      throw new Error("Library scope requires scopeType user/project and scopeId.");
+    }
+
+    return { id: scopeId, type: scopeType };
+  }
+
+  return projectId ? { id: projectId, type: "project" } : undefined;
 }
 
 async function handleApiRequest(
@@ -217,19 +226,25 @@ async function handleApiRequest(
 
     if (pathname === "/api/library" && method === "GET") {
       const actor = getActor(request);
-      const spaceId = requireQueryParam(requestUrl, "spaceId");
+      const requestedScope = parseLibraryScope(requestUrl);
+      const spaceId = optionalQueryParam(requestUrl, "spaceId") ?? "";
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
-      assertNoSpaceContextMismatch(
-        spaceId,
-        optionalQueryParam(requestUrl, "actorSpaceId"),
-      );
+      if (spaceId && !requestedScope) {
+        assertNoSpaceContextMismatch(
+          spaceId,
+          optionalQueryParam(requestUrl, "actorSpaceId"),
+        );
+      }
 
       sendJson(
         response,
         200,
         await app.library.listEntries({
-          actorSpaceId: spaceId,
+          actorSpaceId: requestedScope?.type === "project"
+            ? optionalQueryParam(requestUrl, "actorSpaceId") ?? spaceId
+            : optionalQueryParam(requestUrl, "actorSpaceId"),
           actorUserId: actor.userId,
+          scope: requestedScope,
           spaceId,
         }),
         method,
@@ -347,7 +362,9 @@ async function handleApiRequest(
     if (pathname === "/api/import/paper" && method === "POST") {
       const actor = getActor(request);
       const body = await readJsonBody<{
+        projectId?: string;
         requestedByUserId?: string;
+        scope?: { type: "project"; id: string } | { type: "user"; id: string };
         sourceLocator: string;
         sourceType: "doi" | "pmid" | "arxiv";
         spaceId: string;
@@ -557,7 +574,7 @@ async function handleApiRequest(
       sendJson(
         response,
         200,
-        app.jobStream.listEvents({
+        await app.jobStream.listEvents({
           actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
           actorUserId: actor.userId,
           jobId,
@@ -578,8 +595,8 @@ async function handleApiRequest(
         jobId,
       };
 
-      const initialEvents = app.jobStream.toSse({ ...accessQuery, jobId });
-      const unsubscribe = app.jobStream.subscribe(
+      const initialEvents = await app.jobStream.toSse({ ...accessQuery, jobId });
+      const unsubscribe = await app.jobStream.subscribe(
         { ...accessQuery, jobId },
         (event) => {
           response.write(`event: job\ndata: ${JSON.stringify(event)}\n\n`);

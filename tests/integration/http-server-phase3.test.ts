@@ -48,9 +48,24 @@ describe("http server phase 3 library slice", () => {
             method: "POST",
           },
         ).then((response) => response.json() as Promise<{ id: string }>);
+        const project = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({
+            name: "Phase 3 Project",
+            spaceId: createdSpace.id,
+          }),
+          headers: {
+            "Content-Type": "application/json",
+            "x-jixia-actor": "user-alice",
+          },
+          method: "POST",
+        }).then(
+          (response) =>
+            response.json() as Promise<{ project: { id: string; spaceId: string } }>,
+        );
 
         const importedRecord = await fetch(`${server.url}/api/import/paper`, {
           body: JSON.stringify({
+            scope: { id: project.project.id, type: "project" },
             sourceLocator: "10.1000/jixia-demo",
             sourceType: "doi",
             spaceId: createdSpace.id,
@@ -73,7 +88,7 @@ describe("http server phase 3 library slice", () => {
         expect(importedRecord.entry.spaceId).toBe(createdSpace.id);
 
         const libraryEntries = await fetch(
-          `${server.url}/api/library?spaceId=${createdSpace.id}`,
+          `${server.url}/api/library?scopeType=project&scopeId=${project.project.id}&spaceId=${createdSpace.id}`,
           { headers: { "x-jixia-actor": "user-alice" } },
         ).then(
           (response) =>
