@@ -11,6 +11,9 @@ describe('repository guardrails', () => {
     expect(gitignore).toContain('*apikey*');
     expect(gitignore).toContain('*.pem');
     expect(gitignore).toContain('*.key');
+    expect(gitignore).toContain('.claude/');
+    expect(gitignore).toContain('.cursor/');
+    expect(gitignore).toContain('.trellis/');
     expect(readFileSync('.env.example', 'utf8')).toContain('YOUR_');
     expect(readFileSync('.editorconfig', 'utf8')).toContain('root = true');
     expect(readFileSync('.gitattributes', 'utf8')).toContain('* text=auto');
