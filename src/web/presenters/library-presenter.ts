@@ -33,6 +33,7 @@ export function useLibraryPresenter(projectId: string): LibraryViewModel {
         setError(null);
         const nextEntries = await apiClient.listLibraryEntries(
           demoActorContext.actorUserId,
+          { id: projectContext.project.project.id, type: "project" },
           projectContext.project.project.spaceId,
         );
 

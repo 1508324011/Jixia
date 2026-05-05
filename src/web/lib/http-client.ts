@@ -17,6 +17,7 @@ import type {
   CreateProjectRequest,
   ProjectListItem,
   ProjectMemberRecord,
+  ScopeRef,
 } from "@shared/contracts/projects";
 import type {
   CreateReadingNoteRequest,
@@ -274,10 +275,16 @@ export const apiClient = {
   listCredentials(userId: string): Promise<CredentialRecord[]> {
     return requestSessionJson("/api/credentials", { actorUserId: userId });
   },
-  listLibraryEntries(actorUserId: string, spaceId: string): Promise<LibraryEntryView[]> {
+  listLibraryEntries(
+    actorUserId: string,
+    scope: ScopeRef,
+    spaceId?: string,
+  ): Promise<LibraryEntryView[]> {
     return requestSessionJson("/api/library", {
       actorUserId,
       query: {
+        scopeId: scope.id,
+        scopeType: scope.type,
         spaceId,
       },
     });
