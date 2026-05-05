@@ -19,8 +19,8 @@ export function LibraryPage() {
         <h1 className="page-title">Library</h1>
         <p className="page-description">
           Review imported literature entries, metadata, and reading readiness
-          inside the selected project. This slice still reads the current
-          space-backed library API through the project governance space.
+          inside the selected project. This slice reads the scoped library API
+          through ProjectMember authority while Space stays governance-only.
         </p>
       </header>
 
@@ -82,7 +82,7 @@ export function LibraryPage() {
           <p className="quiet-copy">
             {entries.length === 0
               ? "Use DOI, PMID, or arXiv import paths when a space has no entries yet."
-              : "Search can now keep landing new imports into this space-aware library list."}
+              : "Search can now keep landing new imports into this project-scoped library list."}
           </p>
         </article>
       </section>

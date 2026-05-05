@@ -36,8 +36,8 @@ export function SearchPage() {
         <h1 className="page-title">Search</h1>
         <p className="page-description">
           Search is being upgraded to the ResearchClaw-style discovery surface
-          while still landing results into Jixia-owned spaces and library
-          entries.
+          while landing results into explicit personal or project-scoped
+          library entries owned by the server.
         </p>
       </header>
 
@@ -163,6 +163,8 @@ export function SearchPage() {
               </p>
               <p className="quiet-copy">
                 Entry visibility · {importedRecord.entry.visibility}
+                {' '}· Scope · {importedRecord.entry.scope.type}/
+                {importedRecord.entry.scope.id}
               </p>
               <Link
                 className="panel-link"
