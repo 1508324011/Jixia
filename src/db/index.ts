@@ -7,6 +7,25 @@ export {
 } from './client';
 
 export {
+  createLibraryRepository,
+  initializeLibraryPersistence,
+  type BootstrapLegacyLibraryInput,
+  type ImportScopedLibraryEntryParams,
+  type LegacyLibraryAssetInput,
+  type LegacyLibraryEntryInput,
+  type LibraryRepository,
+  type PersistedImportSourceType,
+  type PersistedLibraryEntryRecord,
+  type PersistedLibraryEntryView,
+  type PersistedLibraryEntryVisibility,
+  type PersistedLibraryScopeRef,
+  type PersistedLibraryScopeType,
+  type PersistedPaperAssetRecord,
+  type UpsertLibraryEntryParams,
+  type UpsertPaperAssetParams,
+} from './repositories/library.repository';
+
+export {
   createProjectRepository,
   initializeProjectPersistence,
   type AddProjectMemberParams,

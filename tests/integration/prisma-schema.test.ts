@@ -26,6 +26,12 @@ describe('prisma schema', () => {
 
     expect(schema).toMatch(/model Space[\s\S]*\n\s+kind\s+SpaceKind/);
     expect(schema).toMatch(/model Project[\s\S]*\n\s+spaceId\s+String/);
+    expect(schema).toMatch(/model LibraryEntry[\s\S]*\n\s+scopeType\s+String/);
+    expect(schema).toMatch(/model LibraryEntry[\s\S]*\n\s+scopeId\s+String/);
+    expect(schema).toMatch(
+      /model LibraryEntry[\s\S]*@@unique\(\[scopeType, scopeId, paperAssetId\]/,
+    );
+    expect(schema).toMatch(/model PaperAsset[\s\S]*\n\s+canonicalId\s+String\s+@unique/);
     expect(schema).toMatch(
       /model ProjectMember[\s\S]*@@unique\(\[projectId, userId\]\)/,
     );
@@ -58,10 +64,16 @@ describe('prisma schema', () => {
     expect(existsSync('src/db/repositories/space.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/library.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/job.repository.ts')).toBe(true);
+    expect(
+      existsSync(
+        'prisma/migrations/20260504000000_scoped_library_entries/migration.sql',
+      ),
+    ).toBe(true);
     expect(clientEntrypoint).toContain('PrismaClient');
     expect(clientEntrypoint).toContain('createPrismaClient');
     expect(dbIndex).toContain('createProjectRepository');
     expect(dbIndex).toContain('createSpaceRepository');
+    expect(dbIndex).toContain('createLibraryRepository');
     expect(packageJson.scripts?.['prisma:generate']).toBe('prisma generate');
     expect(packageJson.scripts?.prebuild).toBe('npm run prisma:generate');
     expect(packageJson.scripts?.pretest).toBe('npm run prisma:generate');
@@ -114,5 +126,89 @@ describe('prisma schema', () => {
     expect(spaceService).toContain('repository.listSpacesForActor');
     expect(spaceService).toContain('repository.listMemberships');
     expect(spaceService).toContain('repository.getMembership');
+  });
+
+  it('cuts targeted server flows over to repository-backed space authority', () => {
+    const appWiring = readFileSync('src/server/app.ts', 'utf8');
+    const importService = readFileSync('src/server/services/import.service.ts', 'utf8');
+    const libraryService = readFileSync('src/server/services/library.service.ts', 'utf8');
+    const readingService = readFileSync('src/server/services/reading.service.ts', 'utf8');
+    const writingService = readFileSync('src/server/services/writing.service.ts', 'utf8');
+    const jobsRoutes = readFileSync('src/server/routes/jobs.routes.ts', 'utf8');
+    const jobStreamRoutes = readFileSync('src/server/routes/job-stream.routes.ts', 'utf8');
+    const jobGovernance = readFileSync('src/server/jobs/job-governance.ts', 'utf8');
+
+    expect(appWiring).not.toContain('memberships: state.memberships');
+    expect(appWiring).not.toContain('spaces: state.spaces');
+
+    expect(importService).toContain('libraryRepository.importScopedEntry');
+    expect(importService).not.toContain('actorUserId ?? input.requestedByUserId');
+    expect(importService).not.toContain('store.memberships.some');
+    expect(importService).not.toContain('store.spaces.find');
+
+    expect(libraryService).toContain('projectRepository.getProjectMember');
+    expect(libraryService).not.toContain('store.memberships.some');
+    expect(libraryService).not.toContain('store.spaces.find');
+
+    expect(readingService).toContain('libraryService.assertCanAccessEntry');
+    expect(readingService).not.toContain('actorUserId ?? input.authorUserId');
+    expect(readingService).not.toContain('actorUserId ?? input.startedByUserId');
+    expect(readingService).not.toContain('store.memberships.some');
+    expect(readingService).not.toContain('store.spaces.find');
+
+    expect(writingService).toContain('spaceRepository.denyNonMember');
+    expect(writingService).not.toContain('store.memberships.some');
+    expect(writingService).not.toContain('store.spaces.some');
+
+    expect(jobsRoutes).toContain('spaceRepository.denyNonMember');
+    expect(jobsRoutes).not.toContain('actorUserId ?? input.requestedByUserId');
+    expect(jobsRoutes).not.toContain('store.memberships.some');
+    expect(jobsRoutes).not.toContain('store.spaces.find');
+
+    expect(jobStreamRoutes).toContain('await findAuthorizedJob');
+    expect(jobGovernance).toContain('spaceRepository.denyNonMember');
+    expect(jobGovernance).not.toContain('store.memberships.some');
+    expect(jobGovernance).not.toContain('store.spaces.find');
+  });
+
+  it('keeps library asset authority in Prisma scoped repositories', () => {
+    const appWiring = readFileSync('src/server/app.ts', 'utf8');
+    const importService = readFileSync('src/server/services/import.service.ts', 'utf8');
+    const libraryService = readFileSync('src/server/services/library.service.ts', 'utf8');
+    const readingService = readFileSync('src/server/services/reading.service.ts', 'utf8');
+    const writingService = readFileSync('src/server/services/writing.service.ts', 'utf8');
+    const versioningService = readFileSync('src/server/services/versioning.service.ts', 'utf8');
+    const libraryRepository = readFileSync(
+      'src/db/repositories/library.repository.ts',
+      'utf8',
+    );
+
+    expect(libraryRepository).toContain('scopeType');
+    expect(libraryRepository).toContain('LibraryEntry_scope_asset_unique');
+    expect(libraryRepository).toContain('PRAGMA foreign_keys = ON');
+    expect(libraryRepository).not.toContain('update: {}');
+
+    expect(appWiring).toContain('createBootstrappedLibraryRepository');
+    expect(appWiring).not.toContain('paperAssets: state.paperAssets');
+    expect(appWiring).not.toContain('libraryEntries: state.libraryEntries');
+
+    expect(importService).toContain('libraryRepository.importScopedEntry');
+    expect(importService).not.toContain('store.paperAssets');
+    expect(importService).not.toContain('store.libraryEntries');
+
+    expect(libraryService).toContain('libraryRepository.listLibraryEntriesForScope');
+    expect(libraryService).not.toContain('store.paperAssets');
+    expect(libraryService).not.toContain('store.libraryEntries');
+
+    expect(readingService).toContain('libraryService.assertCanAccessEntry');
+    expect(readingService).not.toContain('store.paperAssets');
+    expect(readingService).not.toContain('store.libraryEntries');
+
+    expect(writingService).not.toContain('paperAssets');
+    expect(versioningService).toMatch(
+      /store\.libraryService\s*\.assertCanAccessEntry/,
+    );
+    expect(versioningService).toContain('store.libraryService.assertCanAccessPaperAsset');
+    expect(versioningService).not.toContain('store.paperAssets');
   });
 });

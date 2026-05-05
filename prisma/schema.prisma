@@ -70,6 +70,7 @@ model User {
   auditLogs           AuditLog[]
   createdProjects     Project[]            @relation("ProjectCreatedBy")
   projectMemberships  ProjectMember[]
+  addedLibraryEntries LibraryEntry[]        @relation("LibraryEntryAddedBy")
 }
 
 model Space {
@@ -80,7 +81,6 @@ model Space {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
   memberships  Membership[]
-  libraryEntries LibraryEntry[]
   writingDocs  WritingDoc[]
   jobs         Job[]
   auditLogs    AuditLog[]
@@ -130,7 +130,11 @@ model PaperAsset {
   canonicalId     String         @unique
   title           String
   abstractText    String?
+  authors         String?
+  sourceType      String
+  sourceLocator   String
   storageKey      String?
+  checksum        String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   importedByUserId String
@@ -141,18 +145,21 @@ model PaperAsset {
 
 model LibraryEntry {
   id            String                 @id @default(cuid())
-  spaceId        String
+  scopeType      String
+  scopeId        String
   paperAssetId   String
-  visibility     LibraryEntryVisibility
-  addedAt        DateTime               @default(now())
+  addedByUserId  String
+  legacySpaceId  String?
+  legacyVisibility String?
+  createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
-  space          Space                  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   paperAsset     PaperAsset             @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+  addedBy        User                   @relation("LibraryEntryAddedBy", fields: [addedByUserId], references: [id], onDelete: Restrict)
   notes          Note[]
   conversations  Conversation[]
   readingStates  ReadingState[]
 
-  @@unique([spaceId, paperAssetId])
+  @@unique([scopeType, scopeId, paperAssetId], name: "LibraryEntry_scope_asset_unique")
 }
 
 model Note {
