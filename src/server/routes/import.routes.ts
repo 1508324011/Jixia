@@ -11,11 +11,11 @@ import type {
 export interface ImportRoutes {
   importPaper(
     input: ImportLibraryEntryRequest,
-    actorUserId?: string,
+    actorUserId: string,
   ): Promise<ImportedLibraryRecord>;
   uploadPdf(
     input: UploadPdfToLibraryRequest,
-    actorUserId?: string,
+    actorUserId: string,
   ): Promise<ImportedLibraryRecord>;
 }
 
@@ -23,13 +23,13 @@ export function createImportRoutes(service: ImportService): ImportRoutes {
   return {
     importPaper(
       input: ImportLibraryEntryRequest,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<ImportedLibraryRecord> {
       return service.importPaper(input, actorUserId);
     },
     uploadPdf(
       input: UploadPdfToLibraryRequest,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<ImportedLibraryRecord> {
       return service.uploadPdf(input, actorUserId);
     },

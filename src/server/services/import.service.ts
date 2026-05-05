@@ -1,11 +1,21 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   ImportLibraryEntryRequest,
-  LibraryEntryRecord,
+  LibraryEntryView,
   LibraryEntryVisibility,
+  PaperAssetRecord,
   UploadPdfToLibraryRequest,
 } from "@shared/contracts/library";
+import type { ScopeRef } from "@shared/contracts/projects";
 
-import type { SpaceMembership } from "@shared/contracts/spaces";
+import type {
+  LibraryRepository,
+  PersistedLibraryEntryRecord,
+  PersistedLibraryEntryView,
+  PersistedPaperAssetRecord,
+  ProjectRepository,
+} from "../../db";
 
 import type { ArxivConnector } from "../connectors/arxiv.connector";
 import type {
@@ -14,7 +24,8 @@ import type {
 } from "../connectors/pubmed.connector";
 import { createPaperPdfStorageKey } from "../storage/asset-key";
 import type { FileStore } from "../storage/file-store";
-import type { StoredSpace } from "./spaces.service";
+
+export type StoredLibraryEntry = LibraryEntryView["entry"];
 
 export interface StoredPaperAsset {
   abstractText?: string;
@@ -26,34 +37,152 @@ export interface StoredPaperAsset {
   title: string;
 }
 
-export interface StoredLibraryEntry extends LibraryEntryRecord {}
-
-export interface ImportedLibraryRecord {
-  asset: StoredPaperAsset;
-  entry: StoredLibraryEntry;
-}
+export interface ImportedLibraryRecord extends LibraryEntryView {}
 
 export interface ImportStore {
   arxivConnector: ArxivConnector;
   fileStore: FileStore;
-  libraryEntries: StoredLibraryEntry[];
-  memberships: SpaceMembership[];
-  nextId(prefix: string): string;
-  paperAssets: StoredPaperAsset[];
-  persist(): void;
+  libraryRepository: LibraryRepository;
+  projectRepository: ProjectRepository;
   pubmedConnector: PubmedConnector;
-  spaces: StoredSpace[];
 }
 
 export interface ImportService {
   importPaper(
     input: ImportLibraryEntryRequest,
-    actorUserId?: string,
+    actorUserId: string,
   ): Promise<ImportedLibraryRecord>;
   uploadPdf(
     input: UploadPdfToLibraryRequest,
-    actorUserId?: string,
+    actorUserId: string,
   ): Promise<ImportedLibraryRecord>;
+}
+
+function visibilityForScope(
+  scope: ScopeRef,
+  requestedVisibility: LibraryEntryVisibility,
+): LibraryEntryVisibility {
+  if (scope.type === "user") {
+    return "private";
+  }
+
+  if (requestedVisibility === "private") {
+    return "published_to_project";
+  }
+
+  return requestedVisibility === "published_to_project"
+    ? requestedVisibility
+    : "published_to_project";
+}
+
+function resolveRequestedScope(
+  input: {
+    projectId?: string;
+    scope?: ScopeRef;
+    visibility?: LibraryEntryVisibility;
+  },
+  actorUserId: string,
+): ScopeRef {
+  if (input.scope) {
+    if (
+      (input.scope.type !== "user" && input.scope.type !== "project") ||
+      typeof input.scope.id !== "string" ||
+      input.scope.id.trim() === ""
+    ) {
+      throw new Error("Library scope requires type user/project and a scope id.");
+    }
+
+    return input.scope;
+  }
+
+  if (input.projectId) {
+    if (input.projectId.trim() === "") {
+      throw new Error("Project library scope requires a project id.");
+    }
+
+    return { id: input.projectId, type: "project" };
+  }
+
+  return { id: actorUserId, type: "user" };
+}
+
+async function assertCanImportToScope(
+  projectRepository: ProjectRepository,
+  scope: ScopeRef,
+  actorUserId: string,
+  legacySpaceId: string,
+): Promise<string> {
+  if (scope.type === "user") {
+    if (scope.id !== actorUserId) {
+      throw new Error("Access denied for the requested personal library.");
+    }
+
+    return legacySpaceId;
+  }
+
+  const project = await projectRepository.findProject(scope.id);
+
+  if (!project) {
+    throw new Error(`Project ${scope.id} does not exist.`);
+  }
+
+  const membership = await projectRepository.getProjectMember(scope.id, actorUserId);
+
+  if (!membership) {
+    throw new Error("Access denied for the requested project library.");
+  }
+
+  if (legacySpaceId && project.spaceId !== legacySpaceId) {
+    throw new Error(
+      "Request space context does not match the requested resource space.",
+    );
+  }
+
+  return project.spaceId;
+}
+
+function createPrismaOwnedAssetId(): string {
+  return `asset-${randomUUID()}`;
+}
+
+function mapAsset(asset: PersistedPaperAssetRecord): PaperAssetRecord {
+  return {
+    abstractText: asset.abstractText,
+    canonicalId: asset.canonicalId,
+    createdAt: asset.createdAt,
+    id: asset.id,
+    storageKey: asset.storageKey,
+    title: asset.title,
+  };
+}
+
+function mapEntry(
+  entry: PersistedLibraryEntryRecord,
+): LibraryEntryView["entry"] {
+  const visibility = entry.legacyVisibility ??
+    (entry.scope.type === "user" ? "private" : "published_to_project");
+
+  return {
+    addedAt: entry.createdAt,
+    addedByUserId: entry.addedByUserId,
+    createdAt: entry.createdAt,
+    id: entry.id,
+    paperAssetId: entry.paperAssetId,
+    scope: entry.scope,
+    scopeId: entry.scope.id,
+    scopeType: entry.scope.type,
+    spaceId: entry.legacySpaceId ?? "",
+    visibility,
+  };
+}
+
+export function mapPersistedLibraryEntryView(
+  view: PersistedLibraryEntryView,
+): LibraryEntryView {
+  return {
+    asset: mapAsset(view.asset),
+    entry: mapEntry(view.entry),
+  };
 }
 
 async function resolveImportedMetadata(
@@ -67,165 +196,92 @@ async function resolveImportedMetadata(
   return store.pubmedConnector.lookup(input.sourceLocator, input.sourceType);
 }
 
-function createLibraryEntry(
-  store: ImportStore,
-  spaceId: string,
-  paperAssetId: string,
-  visibility: LibraryEntryVisibility,
-): StoredLibraryEntry {
-  const paperAsset = store.paperAssets.find(
-    (asset) => asset.id === paperAssetId,
-  );
-
-  if (!paperAsset) {
-    throw new Error(`Paper asset ${paperAssetId} does not exist.`);
-  }
-
-  const space = store.spaces.find((candidate) => candidate.id === spaceId);
-
-  if (!space) {
-    throw new Error(`Space ${spaceId} does not exist.`);
-  }
-
-  const existingEntry = store.libraryEntries.find(
-    (entry) => entry.spaceId === spaceId && entry.paperAssetId === paperAssetId,
-  );
-
-  if (existingEntry) {
-    return existingEntry;
-  }
-
-  const entry: StoredLibraryEntry = {
-    addedAt: new Date().toISOString(),
-    id: store.nextId("entry"),
-    paperAssetId,
-    spaceId,
-    visibility,
-  };
-
-  store.libraryEntries.push(entry);
-  store.persist();
-
-  return entry;
-}
-
-function assertCanWriteToSpace(
-  store: ImportStore,
-  requestedByUserId: string,
-  spaceId: string,
-): void {
-  const space = store.spaces.find((candidate) => candidate.id === spaceId);
-
-  if (!space) {
-    throw new Error(`Space ${spaceId} does not exist.`);
-  }
-
-  const actorHasMembership = store.memberships.some(
-    (membership) =>
-      membership.spaceId === spaceId && membership.userId === requestedByUserId,
-  );
-
-  if (!actorHasMembership) {
-    throw new Error("Access denied for the requested space resource.");
-  }
-}
-
 export function createImportService(store: ImportStore): ImportService {
   return {
     async uploadPdf(
       input: UploadPdfToLibraryRequest,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<ImportedLibraryRecord> {
-      const effectiveUserId = actorUserId ?? input.requestedByUserId;
-
-      if (!effectiveUserId) {
-        throw new Error("Library import requires an actor user id.");
-      }
-
-      if (actorUserId && input.requestedByUserId && input.requestedByUserId !== actorUserId) {
+      if (input.requestedByUserId && input.requestedByUserId !== actorUserId) {
         throw new Error(
           "Request body actor does not match the server-derived actor.",
         );
       }
 
-      assertCanWriteToSpace(store, effectiveUserId, input.spaceId);
+      const scope = resolveRequestedScope(input, actorUserId);
+      const legacySpaceId = await assertCanImportToScope(
+        store.projectRepository,
+        scope,
+        actorUserId,
+        input.spaceId,
+      );
 
-      const assetId = store.nextId("asset");
+      const assetId = createPrismaOwnedAssetId();
       const storageKey = await store.fileStore.writeText(
         createPaperPdfStorageKey(assetId),
         input.pdfContents,
       );
-      const asset: StoredPaperAsset = {
-        canonicalId: `upload:${assetId}`,
-        createdAt: new Date().toISOString(),
-        id: assetId,
-        importedByUserId: effectiveUserId,
-        storageKey,
-        title: `Uploaded paper ${assetId}`,
-      };
+      const visibility = visibilityForScope(scope, input.visibility);
 
-      store.paperAssets.push(asset);
-      store.persist();
-
-      return {
-        asset,
-        entry: createLibraryEntry(
-          store,
-          input.spaceId,
-          asset.id,
-          input.visibility,
-        ),
-      };
+      return mapPersistedLibraryEntryView(
+        await store.libraryRepository.importScopedEntry({
+          asset: {
+            canonicalId: `upload:${assetId}`,
+            id: assetId,
+            importedByUserId: actorUserId,
+            sourceLocator: assetId,
+            sourceType: "upload",
+            storageKey,
+            title: `Uploaded paper ${assetId}`,
+          },
+          entry: {
+            addedByUserId: actorUserId,
+            legacySpaceId,
+            legacyVisibility: visibility,
+            scope,
+          },
+        }),
+      );
     },
     async importPaper(
       input: ImportLibraryEntryRequest,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<ImportedLibraryRecord> {
-      const effectiveUserId = actorUserId ?? input.requestedByUserId;
-
-      if (!effectiveUserId) {
-        throw new Error("Library import requires an actor user id.");
-      }
-
-      if (actorUserId && input.requestedByUserId && input.requestedByUserId !== actorUserId) {
+      if (input.requestedByUserId && input.requestedByUserId !== actorUserId) {
         throw new Error(
           "Request body actor does not match the server-derived actor.",
         );
       }
 
-      assertCanWriteToSpace(store, effectiveUserId, input.spaceId);
+      const scope = resolveRequestedScope(input, actorUserId);
+      const legacySpaceId = await assertCanImportToScope(
+        store.projectRepository,
+        scope,
+        actorUserId,
+        input.spaceId,
+      );
 
       const metadata = await resolveImportedMetadata(store, input);
-      const existingAsset = store.paperAssets.find(
-        (asset) => asset.canonicalId === metadata.canonicalId,
-      );
-      const asset =
-        existingAsset ??
-        (() => {
-          const createdAsset: StoredPaperAsset = {
+      const visibility = visibilityForScope(scope, input.visibility);
+
+      return mapPersistedLibraryEntryView(
+        await store.libraryRepository.importScopedEntry({
+          asset: {
             abstractText: metadata.abstractText,
             canonicalId: metadata.canonicalId,
-            createdAt: new Date().toISOString(),
-            id: store.nextId("asset"),
-            importedByUserId: effectiveUserId,
+            importedByUserId: actorUserId,
+            sourceLocator: input.sourceLocator,
+            sourceType: input.sourceType,
             title: metadata.title,
-          };
-
-          store.paperAssets.push(createdAsset);
-          store.persist();
-
-          return createdAsset;
-        })();
-
-      return {
-        asset,
-        entry: createLibraryEntry(
-          store,
-          input.spaceId,
-          asset.id,
-          input.visibility,
-        ),
-      };
+          },
+          entry: {
+            addedByUserId: actorUserId,
+            legacySpaceId,
+            legacyVisibility: visibility,
+            scope,
+          },
+        }),
+      );
     },
   };
 }
