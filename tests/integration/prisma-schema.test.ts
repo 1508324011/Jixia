@@ -256,8 +256,10 @@ describe('prisma schema', () => {
 
     expect(notebookService).toContain('libraryService.assertCanAccessPaperAsset');
     expect(notebookService).not.toContain('store.paperAssets');
+    expect(notebookService).not.toContain('store.libraryEntries');
     expect(projectDocsService).toMatch(/assertCanAccessEntry/);
     expect(projectDocsService).toMatch(/listLibraryEntriesForAsset/);
     expect(projectDocsService).not.toContain('store.paperAssets');
+    expect(projectDocsService).not.toContain('store.libraryEntries');
   });
 });
