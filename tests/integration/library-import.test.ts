@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -393,9 +393,102 @@ describe('library import', () => {
     }
   });
 
+  it('bootstraps legacy paper/library json into Prisma once and then scrubs compatibility arrays', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-bootstrap-once-'));
+    const env = createLibraryEnv(storageRoot);
+    const markerPath = join(storageRoot, '.library-prisma-bootstrap-complete');
+    const statePath = join(storageRoot, 'server-state.json');
+    const now = new Date().toISOString();
+
+    try {
+      writeFileSync(
+        statePath,
+        JSON.stringify(
+          {
+            libraryEntries: [
+              {
+                addedAt: now,
+                id: 'entry-legacy-bootstrap',
+                paperAssetId: 'asset-legacy-bootstrap',
+                spaceId: 'space-legacy-bootstrap',
+                visibility: 'private',
+              },
+            ],
+            paperAssets: [
+              {
+                abstractText: 'Bootstrap this legacy paper exactly once.',
+                canonicalId: 'doi:10.1000/legacy-bootstrap-once',
+                createdAt: now,
+                id: 'asset-legacy-bootstrap',
+                importedByUserId: 'user-alice',
+                title: 'Legacy Bootstrap Paper',
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      );
+
+      const firstApp = createJixiaApp({ env });
+      const firstEntries = await firstApp.library.listEntries({
+        actorUserId: 'user-alice',
+        scope: { id: 'user-alice', type: 'user' },
+        spaceId: '',
+      });
+
+      expect(firstEntries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            asset: expect.objectContaining({
+              canonicalId: 'doi:10.1000/legacy-bootstrap-once',
+              title: 'Legacy Bootstrap Paper',
+            }),
+            entry: expect.objectContaining({
+              id: 'entry-legacy-bootstrap',
+              scope: { id: 'user-alice', type: 'user' },
+            }),
+          }),
+        ]),
+      );
+      expect(existsSync(markerPath)).toBe(true);
+
+      const scrubbedState = JSON.parse(readFileSync(statePath, 'utf8')) as {
+        libraryEntries?: Array<unknown>;
+        paperAssets?: Array<unknown>;
+      };
+
+      expect(scrubbedState.libraryEntries ?? []).toEqual([]);
+      expect(scrubbedState.paperAssets ?? []).toEqual([]);
+
+      const restartedApp = createJixiaApp({ env });
+      const restartedEntries = await restartedApp.library.listEntries({
+        actorUserId: 'user-alice',
+        scope: { id: 'user-alice', type: 'user' },
+        spaceId: '',
+      });
+
+      expect(restartedEntries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            asset: expect.objectContaining({
+              canonicalId: 'doi:10.1000/legacy-bootstrap-once',
+            }),
+            entry: expect.objectContaining({
+              id: 'entry-legacy-bootstrap',
+            }),
+          }),
+        ]),
+      );
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
+
   it('does not replay stale paper/library json after the one-time bootstrap marker exists', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-stale-paper-'));
     const env = createLibraryEnv(storageRoot);
+    const statePath = join(storageRoot, 'server-state.json');
 
     try {
       const firstApp = createJixiaApp({ env });
@@ -412,7 +505,7 @@ describe('library import', () => {
 
       const now = new Date().toISOString();
       writeFileSync(
-        join(storageRoot, 'server-state.json'),
+        statePath,
         JSON.stringify(
           {
             libraryEntries: [
@@ -441,6 +534,10 @@ describe('library import', () => {
       );
 
       const restartedApp = createJixiaApp({ env });
+      const persistedState = JSON.parse(readFileSync(statePath, 'utf8')) as {
+        libraryEntries?: Array<unknown>;
+        paperAssets?: Array<unknown>;
+      };
       const personalEntries = await restartedApp.library.listEntries({
         actorUserId: 'user-alice',
         scope: { id: 'user-alice', type: 'user' },
@@ -453,6 +550,8 @@ describe('library import', () => {
       expect(personalEntries.map((entry) => entry.asset.canonicalId)).not.toContain(
         'doi:10.1000/stale-paper-json',
       );
+      expect(persistedState.libraryEntries ?? []).toEqual([]);
+      expect(persistedState.paperAssets ?? []).toEqual([]);
     } finally {
       rmSync(storageRoot, { recursive: true, force: true });
     }

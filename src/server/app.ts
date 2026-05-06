@@ -339,6 +339,19 @@ function resolveLegacyLibraryBootstrapInput(
   };
 }
 
+function clearLegacyLibraryState(
+  state: Pick<JixiaAppState, 'legacyLibraryEntries' | 'legacyPaperAssets'>,
+): boolean {
+  if (!hasLegacyLibraryBootstrapInput(state)) {
+    return false;
+  }
+
+  state.legacyLibraryEntries = [];
+  state.legacyPaperAssets = [];
+
+  return true;
+}
+
 function createBootstrappedLibraryRepository(
   repository: LibraryRepository,
   legacyInput: BootstrapLegacyLibraryInput,
@@ -429,14 +442,26 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const projectRepository = createProjectRepository(prismaClient);
   const libraryBootstrapMarkerPath = resolveLibraryBootstrapMarkerPath(options.env);
+  const libraryBootstrapMarkerExists = existsSync(libraryBootstrapMarkerPath);
   const legacyLibraryBootstrapInput = resolveLegacyLibraryBootstrapInput(
     state,
-    existsSync(libraryBootstrapMarkerPath),
+    libraryBootstrapMarkerExists,
   );
+
+  if (libraryBootstrapMarkerExists && clearLegacyLibraryState(state)) {
+    persist();
+  }
+
   const libraryRepository = createBootstrappedLibraryRepository(
     createLibraryRepository(prismaClient),
     legacyLibraryBootstrapInput,
-    () => markLibraryBootstrapComplete(options.env),
+    () => {
+      markLibraryBootstrapComplete(options.env);
+
+      if (clearLegacyLibraryState(state)) {
+        persist();
+      }
+    },
   );
   const projectsService = createProjectsService({
     projectRepository,
