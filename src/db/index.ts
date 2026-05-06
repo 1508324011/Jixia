@@ -39,6 +39,29 @@ export {
 } from './repositories/project.repository';
 
 export {
+  createNotebookRepository,
+  initializeNotebookPersistence,
+  type CreateNotebookDocumentParams,
+  type CreateNotebookDocumentVersionParams,
+  type NotebookRepository,
+  type PersistedNotebookCitationRecord,
+  type PersistedNotebookDocumentRecord,
+  type PersistedNotebookDocumentSnapshot,
+} from './repositories/notebook.repository';
+
+export {
+  createProjectDocRepository,
+  initializeProjectDocPersistence,
+  type CreateProjectDocParams,
+  type CreateProjectDocVersionParams,
+  type PersistedProjectDocCitationRecord,
+  type PersistedProjectDocPublishState,
+  type PersistedProjectDocRecord,
+  type PersistedProjectDocSnapshot,
+  type ProjectDocRepository,
+} from './repositories/project-doc.repository';
+
+export {
   createSpaceRepository,
   initializeSpacePersistence,
   type AddSpaceMembershipParams,

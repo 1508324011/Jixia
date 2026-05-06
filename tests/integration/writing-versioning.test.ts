@@ -1,199 +1,309 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
-import { createPrismaClient, createSpaceRepository } from '../../src/db';
+import {
+  createPrismaClient,
+  createSpaceRepository,
+} from '../../src/db';
 import { createJixiaApp } from '../../src/server/app';
 
-describe('writing versioning', () => {
-  it('creates document snapshots with citation links', async () => {
-    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-writing-versioning-'));
+function createStorageRoot(prefix: string): string {
+  return mkdtempSync(join(tmpdir(), prefix));
+}
+
+function createWritingEnv(storageRoot: string) {
+  return {
+    JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-writing.db')}`,
+    JIXIA_STORAGE_ROOT: storageRoot,
+  };
+}
+
+describe('notebook and project document persistence', () => {
+  it('creates owner-only notebook snapshots and persists them across restarts', async () => {
+    const storageRoot = createStorageRoot('jixia-notebook-versioning-');
 
     try {
-      const app = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
-      const sharedSpace = await app.spaces.createSpace(
-        { kind: 'shared', name: 'Writing Space' },
+      const env = createWritingEnv(storageRoot);
+      const firstApp = createJixiaApp({ env });
+      const personalSpace = await firstApp.spaces.createSpace(
+        { kind: 'personal', name: 'Alice Notebook Space' },
         'user-alice',
       );
-      const project = await app.projects.createProject(
-        { name: 'Writing Project', spaceId: sharedSpace.id },
+      const imported = await firstApp.imports.importPaper(
+        {
+          requestedByUserId: 'user-alice',
+          scope: { id: 'user-alice', type: 'user' },
+          sourceLocator: '10.1000/notebook-demo',
+          sourceType: 'doi',
+          spaceId: personalSpace.id,
+          visibility: 'private',
+        },
         'user-alice',
       );
-      const imported = await app.imports.importPaper({
-        scope: { id: project.project.id, type: 'project' },
-        requestedByUserId: 'user-alice',
-        sourceLocator: '10.1000/writing-demo',
-        sourceType: 'doi',
-        spaceId: sharedSpace.id,
-        visibility: 'space_shared',
-      }, 'user-alice');
 
-      const doc = await app.writing.createDocument({
-        actorSpaceId: sharedSpace.id,
-        actorUserId: 'user-alice',
-        ownerUserId: 'user-alice',
-        spaceId: sharedSpace.id,
-        title: 'Shared Draft',
-      });
+      const notebook = await firstApp.notebooks.createDocument(
+        {
+          ownerId: 'user-alice',
+          title: 'Alice Private Notebook',
+        },
+        'user-alice',
+      );
+      const firstSnapshot = await firstApp.notebooks.saveDocument(
+        {
+          citations: [
+            {
+              evidenceSpan: 'intro paragraph',
+              paperAssetId: imported.asset.id,
+            },
+          ],
+          content: 'Notebook version one',
+          documentId: notebook.id,
+        },
+        'user-alice',
+      );
 
-      expect(doc.publishState).toBe('draft');
+      expect(firstSnapshot.versionNumber).toBe(1);
+      expect(firstSnapshot.citations[0]?.paperAssetId).toBe(imported.asset.id);
 
-      const firstSnapshot = await app.writing.saveDocument({
-        actorSpaceId: sharedSpace.id,
-        actorUserId: 'user-alice',
-        citations: [
+      await expect(
+        firstApp.notebooks.getDocument({ documentId: notebook.id }, 'user-bob'),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        firstApp.notebooks.saveDocument(
           {
-            evidenceSpan: 'section 1',
-            paperAssetId: imported.asset.id,
+            citations: [],
+            content: 'Bob intrusion attempt',
+            documentId: notebook.id,
           },
-        ],
-        content: 'Version one content',
-        docId: doc.id,
-      });
-      const secondSnapshot = await app.writing.saveDocument({
-        actorSpaceId: sharedSpace.id,
-        actorUserId: 'user-alice',
-        citations: [
-          {
-            evidenceSpan: 'section 2',
-            paperAssetId: imported.asset.id,
-          },
-        ],
-        content: 'Version two content',
-        docId: doc.id,
-      });
+          'user-bob',
+        ),
+      ).rejects.toThrow(/access denied/i);
 
-      expect(firstSnapshot.docVersionId).not.toBe(secondSnapshot.docVersionId);
-      expect(secondSnapshot.citations).toHaveLength(1);
-      expect(secondSnapshot.citations[0].paperAssetId).toBe(imported.asset.id);
+      const secondApp = createJixiaApp({ env });
+      const secondSnapshot = await secondApp.notebooks.saveDocument(
+        {
+          citations: [
+            {
+              evidenceSpan: 'results paragraph',
+              paperAssetId: imported.entry.id,
+            },
+          ],
+          content: 'Notebook version two',
+          documentId: notebook.id,
+        },
+        'user-alice',
+      );
 
-      const reviewed = await app.writing.transitionPublishState({
-        actorSpaceId: sharedSpace.id,
-        actorUserId: 'user-alice',
-        docId: doc.id,
-        publishState: 'review',
-      });
-
-      expect(reviewed.publishState).toBe('review');
-      expect(imported.asset.canonicalId).toBe('doi:10.1000/writing-demo');
+      expect(secondSnapshot.document.id).toBe(notebook.id);
+      expect(secondSnapshot.versionNumber).toBe(2);
+      expect(secondSnapshot.citations[0]?.paperAssetId).toBe(imported.asset.id);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
   });
 
-  it('uses persisted memberships for writing authorization even without legacy mirrors', async () => {
-    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-writing-prisma-space-'));
-    const databaseUrl = `file:${join(storageRoot, 'jixia-writing-space.db')}`;
-    const env = {
-      JIXIA_DATABASE_URL: databaseUrl,
-      JIXIA_STORAGE_ROOT: storageRoot,
-    };
-    const prisma = createPrismaClient({ url: databaseUrl });
-    const repository = createSpaceRepository(prisma);
+  it('enforces ProjectMember-gated project docs and persists versions/citations', async () => {
+    const storageRoot = createStorageRoot('jixia-project-doc-versioning-');
+    const env = createWritingEnv(storageRoot);
+    const prisma = createPrismaClient({ url: env.JIXIA_DATABASE_URL });
+    const spaceRepository = createSpaceRepository(prisma);
 
     try {
-      const persistedSpace = await repository.createSpace(
-        { id: 'space-writing', kind: 'shared', name: 'Persisted Writing Space' },
+      const firstApp = createJixiaApp({ env });
+      const sharedSpace = await firstApp.spaces.createSpace(
+        { kind: 'shared', name: 'Project Writing Space' },
         'user-alice',
       );
-      const app = createJixiaApp({ env });
-      const doc = await app.writing.createDocument({
-        actorSpaceId: persistedSpace.id,
-        actorUserId: 'user-alice',
-        ownerUserId: 'user-alice',
-        spaceId: persistedSpace.id,
-        title: 'Repository-backed Draft',
+      const project = await firstApp.projects.createProject(
+        { name: 'Project Writing Recovery', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      await firstApp.projects.addProjectMember(
+        project.project.id,
+        { role: 'viewer', userId: 'user-bob' },
+        'user-alice',
+      );
+      await spaceRepository.addMembership(sharedSpace.id, {
+        role: 'viewer',
+        userId: 'user-charlie',
       });
 
-      expect(doc.spaceId).toBe(persistedSpace.id);
+      const imported = await firstApp.imports.importPaper(
+        {
+          requestedByUserId: 'user-alice',
+          scope: { id: project.project.id, type: 'project' },
+          sourceLocator: '10.1000/project-doc-demo',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+      const secondSpace = await firstApp.spaces.createSpace(
+        { kind: 'shared', name: 'Other Writing Space' },
+        'user-alice',
+      );
+      const secondProject = await firstApp.projects.createProject(
+        { name: 'Other Project', spaceId: secondSpace.id },
+        'user-alice',
+      );
+      const outOfScopeImport = await firstApp.imports.importPaper(
+        {
+          requestedByUserId: 'user-alice',
+          scope: { id: secondProject.project.id, type: 'project' },
+          sourceLocator: '10.1000/out-of-scope-project-doc',
+          sourceType: 'doi',
+          spaceId: secondSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+
+      const projectDoc = await firstApp.projectDocs.createDocument(
+        {
+          createdByUserId: 'user-alice',
+          projectId: project.project.id,
+          title: 'Collaborative Draft',
+        },
+        'user-alice',
+      );
+
+      const bobReadable = await firstApp.projectDocs.getDocument(
+        { documentId: projectDoc.id },
+        'user-bob',
+      );
+      expect(bobReadable.projectId).toBe(project.project.id);
 
       await expect(
-        app.writing.createDocument({
-          actorSpaceId: persistedSpace.id,
-          actorUserId: 'user-charlie',
-          ownerUserId: 'user-charlie',
-          spaceId: persistedSpace.id,
-          title: 'Denied Draft',
-        }),
+        firstApp.projectDocs.getDocument({ documentId: projectDoc.id }, 'user-charlie'),
       ).rejects.toThrow(/access denied/i);
+      await expect(
+        firstApp.projectDocs.saveDocument(
+          {
+            citations: [],
+            content: 'Viewer write attempt',
+            documentId: projectDoc.id,
+          },
+          'user-bob',
+        ),
+      ).rejects.toThrow(/mutation/i);
+      await expect(
+        firstApp.projectDocs.saveDocument(
+          {
+            citations: [{ paperAssetId: outOfScopeImport.asset.id }],
+            content: 'Cross-space citation should fail',
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/paper asset/i);
+
+      const firstSnapshot = await firstApp.projectDocs.saveDocument(
+        {
+          citations: [
+            {
+              evidenceSpan: 'methods paragraph',
+              paperAssetId: imported.entry.id,
+            },
+          ],
+          content: 'Project doc version one',
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+      const reviewed = await firstApp.projectDocs.transitionPublishState(
+        {
+          documentId: projectDoc.id,
+          publishState: 'review',
+        },
+        'user-alice',
+      );
+
+      expect(firstSnapshot.versionNumber).toBe(1);
+      expect(firstSnapshot.citations[0]?.paperAssetId).toBe(imported.asset.id);
+      expect(reviewed.publishState).toBe('review');
+
+      const secondApp = createJixiaApp({ env });
+      const secondSnapshot = await secondApp.projectDocs.saveDocument(
+        {
+          citations: [{ paperAssetId: imported.asset.id }],
+          content: 'Project doc version two',
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+
+      expect(secondSnapshot.document.id).toBe(projectDoc.id);
+      expect(secondSnapshot.document.publishState).toBe('review');
+      expect(secondSnapshot.versionNumber).toBe(2);
     } finally {
       await prisma.$disconnect();
       rmSync(storageRoot, { force: true, recursive: true });
     }
   });
 
-  it('denies citations to paper assets outside the writing actor space context', async () => {
-    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-writing-citation-scope-'));
+  it('ignores legacy server-state writing arrays for new document authority', async () => {
+    const storageRoot = createStorageRoot('jixia-legacy-writing-ignore-');
+    const statePath = join(storageRoot, 'server-state.json');
 
     try {
-      const app = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
-      const firstSpace = await app.spaces.createSpace(
-        { kind: 'shared', name: 'First Writing Space' },
-        'user-alice',
+      writeFileSync(
+        statePath,
+        JSON.stringify(
+          {
+            citationLinks: [
+              {
+                docVersionId: 'legacy-version',
+                id: 'legacy-citation',
+                paperAssetId: 'legacy-asset',
+              },
+            ],
+            docVersions: [
+              {
+                content: 'legacy content',
+                createdAt: '2026-05-05T00:00:00.000Z',
+                id: 'legacy-version',
+                versionNumber: 1,
+                writingDocId: 'legacy-doc',
+              },
+            ],
+            nextSequence: 4,
+            writingDocs: [
+              {
+                createdAt: '2026-05-05T00:00:00.000Z',
+                id: 'legacy-doc',
+                ownerUserId: 'user-alice',
+                publishState: 'draft',
+                spaceId: 'space-legacy',
+                title: 'Legacy JSON draft',
+              },
+            ],
+          },
+          null,
+          2,
+        ),
       );
-      const secondSpace = await app.spaces.createSpace(
-        { kind: 'shared', name: 'Second Writing Space' },
-        'user-alice',
-      );
-      const firstProject = await app.projects.createProject(
-        { name: 'First Writing Project', spaceId: firstSpace.id },
-        'user-alice',
-      );
-      const secondProject = await app.projects.createProject(
-        { name: 'Second Writing Project', spaceId: secondSpace.id },
-        'user-alice',
-      );
-      const firstImport = await app.imports.importPaper(
-        {
-          scope: { id: firstProject.project.id, type: 'project' },
-          requestedByUserId: 'user-alice',
-          sourceLocator: '10.1000/first-writing-space',
-          sourceType: 'doi',
-          spaceId: firstSpace.id,
-          visibility: 'space_shared',
-        },
-        'user-alice',
-      );
-      const secondImport = await app.imports.importPaper(
-        {
-          scope: { id: secondProject.project.id, type: 'project' },
-          requestedByUserId: 'user-alice',
-          sourceLocator: '10.1000/second-writing-space',
-          sourceType: 'doi',
-          spaceId: secondSpace.id,
-          visibility: 'space_shared',
-        },
-        'user-alice',
-      );
-      const doc = await app.writing.createDocument({
-        actorSpaceId: firstSpace.id,
-        actorUserId: 'user-alice',
-        ownerUserId: 'user-alice',
-        spaceId: firstSpace.id,
-        title: 'Scoped Citation Draft',
-      });
 
+      const app = createJixiaApp({ env: createWritingEnv(storageRoot) });
+      const persistedState = readFileSync(statePath, 'utf8');
+
+      expect(persistedState).not.toContain('legacy-doc');
+      expect(persistedState).not.toContain('writingDocs');
+      expect(persistedState).not.toContain('docVersions');
+      expect(persistedState).not.toContain('citationLinks');
       await expect(
-        app.writing.saveDocument({
-          actorSpaceId: firstSpace.id,
-          actorUserId: 'user-alice',
-          citations: [{ paperAssetId: secondImport.asset.id }],
-          content: 'Cross-space citation should be denied.',
-          docId: doc.id,
-        }),
-      ).rejects.toThrow(/paper asset/i);
+        app.notebooks.getDocument({ documentId: 'legacy-doc' }, 'user-alice'),
+      ).rejects.toThrow(/does not exist/i);
 
-      const snapshot = await app.writing.saveDocument({
-        actorSpaceId: firstSpace.id,
-        actorUserId: 'user-alice',
-        citations: [{ paperAssetId: firstImport.asset.id }],
-        content: 'Same-space citation should be allowed.',
-        docId: doc.id,
-      });
+      const notebook = await app.notebooks.createDocument(
+        { title: 'Fresh Notebook' },
+        'user-alice',
+      );
 
-      expect(snapshot.citations[0].paperAssetId).toBe(firstImport.asset.id);
+      expect(notebook.id).not.toBe('legacy-doc');
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
