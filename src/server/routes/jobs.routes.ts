@@ -1,31 +1,35 @@
-import type { SpaceMembership } from '@shared/contracts/spaces';
+import type { SpaceRepository } from "../../db";
 
-import type { JobRecord } from '@shared/contracts/jobs';
+import type { JobRecord } from "@shared/contracts/jobs";
 
 import {
   assertSafeJobPayload,
   findAuthorizedJob,
   type JobAccessRequest,
-} from '../jobs/job-governance';
-import type { JobRunner, StoredJob } from '../jobs/job-runner';
-import type { JobBus } from '../jobs/job-bus';
-import type {
-  AuditLogRecord,
-  AuditService,
-} from '../services/audit.service';
-import type { StoredCredential } from '../services/credentials.service';
-import type { StoredSpace } from '../services/spaces.service';
+} from "../jobs/job-governance";
+import type { JobRunner, StoredJob } from "../jobs/job-runner";
+import type { JobBus } from "../jobs/job-bus";
+import type { AuditLogRecord, AuditService } from "../services/audit.service";
+import type { StoredCredential } from "../services/credentials.service";
 
 export interface CreateJobRequest {
   credentialRef: string;
   kind: string;
   payload: Record<string, unknown>;
-  requestedByUserId: string;
+  requestedByUserId?: string;
   spaceId: string;
 }
 
+export interface ListJobsRequest {
+  actorSpaceId?: string;
+  actorUserId: string;
+  spaceId?: string;
+}
+
 export interface JobsRoutes {
-  createJob(input: CreateJobRequest): Promise<JobRecord>;
+  createJob(input: CreateJobRequest, actorUserId: string): Promise<JobRecord>;
+  getJob(input: JobAccessRequest): Promise<JobRecord>;
+  listJobs(input: ListJobsRequest): Promise<JobRecord[]>;
   listAuditRecords(input: JobAccessRequest): Promise<AuditLogRecord[]>;
   runJob(input: JobAccessRequest): Promise<JobRecord>;
 }
@@ -36,16 +40,24 @@ export interface JobsRouteStore {
   jobBus: JobBus;
   jobRunner: JobRunner;
   jobs: StoredJob[];
-  memberships: SpaceMembership[];
   nextId(prefix: string): string;
   persist(): void;
-  spaces: StoredSpace[];
+  spaceRepository: SpaceRepository;
 }
 
 export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
   return {
-    async createJob(input: CreateJobRequest): Promise<JobRecord> {
-      const space = store.spaces.find((candidate) => candidate.id === input.spaceId);
+    async createJob(
+      input: CreateJobRequest,
+      actorUserId: string,
+    ): Promise<JobRecord> {
+      if (input.requestedByUserId && input.requestedByUserId !== actorUserId) {
+        throw new Error(
+          "Request body actor does not match the server-derived actor.",
+        );
+      }
+
+      const space = await store.spaceRepository.findSpace(input.spaceId);
 
       if (!space) {
         throw new Error(`Space ${input.spaceId} does not exist.`);
@@ -59,45 +71,37 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
         throw new Error(`Credential ${input.credentialRef} does not exist.`);
       }
 
-      if (credential.userId !== input.requestedByUserId) {
-        throw new Error('Credentials may only be used by their owner.');
+      if (credential.userId !== actorUserId) {
+        throw new Error("Credentials may only be used by their owner.");
       }
 
-      const actorHasMembership = store.memberships.some(
-        (membership) =>
-          membership.spaceId === input.spaceId &&
-          membership.userId === input.requestedByUserId,
-      );
-
-      if (!actorHasMembership) {
-        throw new Error('Access denied for the requested space resource.');
-      }
+      await store.spaceRepository.denyNonMember(input.spaceId, actorUserId);
 
       assertSafeJobPayload(input.payload);
 
       const job: StoredJob = {
         createdAt: new Date().toISOString(),
         credentialRef: input.credentialRef,
-        id: store.nextId('job'),
+        id: store.nextId("job"),
         kind: input.kind,
         payload: JSON.stringify(input.payload),
-        requestedByUserId: input.requestedByUserId,
+        requestedByUserId: actorUserId,
         spaceId: input.spaceId,
-        status: 'queued',
+        status: "queued",
       };
 
       store.jobs.push(job);
       store.persist();
       store.jobBus.publish({
-        id: store.nextId('job-event'),
+        id: store.nextId("job-event"),
         jobId: job.id,
         message: `${job.kind} queued for execution.`,
         recordedAt: new Date().toISOString(),
-        status: 'queued',
+        status: "queued",
       });
       store.auditService.createRecord({
-        action: 'job.created',
-        actorUserId: input.requestedByUserId,
+        action: "job.created",
+        actorUserId,
         detail: `Created ${job.kind} with credential ${credential.credentialRef}.`,
         jobId: job.id,
         spaceId: input.spaceId,
@@ -111,13 +115,68 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
         status: job.status,
       };
     },
+    async getJob(input: JobAccessRequest): Promise<JobRecord> {
+      const job = await findAuthorizedJob(store, input);
+
+      return {
+        createdAt: job.createdAt,
+        credentialRef: job.credentialRef,
+        id: job.id,
+        kind: job.kind,
+        status: job.status,
+      };
+    },
+    async listJobs(input: ListJobsRequest): Promise<JobRecord[]> {
+      const targetSpaceId = input.spaceId;
+      const allowedSpaceIds = new Set<string>();
+
+      if (input.actorSpaceId && input.actorSpaceId !== input.spaceId) {
+        throw new Error(
+          'Request space context does not match the requested resource space.',
+        );
+      }
+
+      if (targetSpaceId) {
+        await store.spaceRepository.denyNonMember(targetSpaceId, input.actorUserId);
+        allowedSpaceIds.add(targetSpaceId);
+      }
+
+      if (!targetSpaceId) {
+        const uniqueSpaceIds = [...new Set(store.jobs.map((job) => job.spaceId))];
+
+        await Promise.all(
+          uniqueSpaceIds.map(async (spaceId) => {
+            try {
+              await store.spaceRepository.denyNonMember(spaceId, input.actorUserId);
+              allowedSpaceIds.add(spaceId);
+            } catch {
+              // Ignore spaces where the actor has no persisted membership.
+            }
+          }),
+        );
+      }
+
+      return store.jobs
+        .filter(
+          (job) =>
+            job.requestedByUserId === input.actorUserId &&
+            allowedSpaceIds.has(job.spaceId),
+        )
+        .map((job) => ({
+          createdAt: job.createdAt,
+          credentialRef: job.credentialRef,
+          id: job.id,
+          kind: job.kind,
+          status: job.status,
+        }));
+    },
     async listAuditRecords(input: JobAccessRequest): Promise<AuditLogRecord[]> {
-      const job = findAuthorizedJob(store, input);
+      const job = await findAuthorizedJob(store, input);
 
       return store.auditService.listByJob(job.id);
     },
     async runJob(input: JobAccessRequest): Promise<JobRecord> {
-      const job = findAuthorizedJob(store, input);
+      const job = await findAuthorizedJob(store, input);
 
       return store.jobRunner.run(job.id);
     },

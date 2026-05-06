@@ -17,6 +17,9 @@ dist-server/
 *.sqlite
 *.db
 .jixia-storage/
+.claude/
+.cursor/
+.trellis/
 
 .DS_Store
 Thumbs.db

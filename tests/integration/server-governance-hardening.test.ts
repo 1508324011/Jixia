@@ -12,7 +12,7 @@ function createStorageRoot(): string {
 }
 
 describe('server governance hardening', () => {
-  it('blocks cross-space library, reading, and writing access', async () => {
+  it('blocks cross-scope library, reading, notebook, and project-doc access', async () => {
     const storageRoot = createStorageRoot();
 
     try {
@@ -21,24 +21,33 @@ describe('server governance hardening', () => {
         { kind: 'shared', name: 'Alice Shared' },
         'user-alice',
       );
+      const project = await app.projects.createProject(
+        { name: 'Alice Hardening Project', spaceId: aliceShared.id },
+        'user-alice',
+      );
       const bobPersonal = await app.spaces.createSpace(
         { kind: 'personal', name: 'Bob Personal' },
         'user-bob',
       );
       const imported = await app.imports.importPaper({
+        scope: { id: project.project.id, type: 'project' },
         requestedByUserId: 'user-alice',
         sourceLocator: '10.1000/hardening-demo',
         sourceType: 'doi',
         spaceId: aliceShared.id,
         visibility: 'private',
-      });
-      const doc = await app.writing.createDocument({
-        actorSpaceId: aliceShared.id,
-        actorUserId: 'user-alice',
-        ownerUserId: 'user-alice',
-        spaceId: aliceShared.id,
-        title: 'Shared Draft',
-      });
+      }, 'user-alice');
+      const notebook = await app.notebooks.createDocument(
+        { title: 'Alice Private Notebook' },
+        'user-alice',
+      );
+      const projectDoc = await app.projectDocs.createDocument(
+        {
+          projectId: project.project.id,
+          title: 'Alice Shared Project Draft',
+        },
+        'user-alice',
+      );
 
       await expect(
         app.library.getEntry({
@@ -55,21 +64,27 @@ describe('server governance hardening', () => {
         }),
       ).rejects.toThrow(/access denied/i);
       await expect(
-        app.writing.saveDocument({
-          actorSpaceId: bobPersonal.id,
-          actorUserId: 'user-bob',
-          citations: [],
-          content: 'Intrusion attempt',
-          docId: doc.id,
-        }),
+        app.notebooks.saveDocument(
+          {
+            citations: [],
+            content: 'Intrusion attempt',
+            documentId: notebook.id,
+          },
+          'user-bob',
+        ),
       ).rejects.toThrow(/access denied/i);
       await expect(
-        app.writing.transitionPublishState({
-          actorSpaceId: bobPersonal.id,
-          actorUserId: 'user-bob',
-          docId: doc.id,
-          publishState: 'review',
-        }),
+        app.projectDocs.saveDocument(
+          {
+            citations: [],
+            content: 'Cross-project write attempt',
+            documentId: projectDoc.id,
+          },
+          'user-bob',
+        ),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.projectDocs.getDocument({ documentId: projectDoc.id }, 'user-bob'),
       ).rejects.toThrow(/access denied/i);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
@@ -87,34 +102,51 @@ describe('server governance hardening', () => {
       );
       const credential = await app.credentials.createCredential({
         provider: 'openai',
-        rawSecret: 'sk-validator',
+        rawSecret: 'validator-credential-placeholder',
         userId: 'user-alice',
       });
-      const doc = await app.writing.createDocument({
-        actorSpaceId: sharedSpace.id,
-        actorUserId: 'user-alice',
-        ownerUserId: 'user-alice',
-        spaceId: sharedSpace.id,
-        title: 'Validated Draft',
-      });
+      const notebook = await app.notebooks.createDocument(
+        { title: 'Validated Notebook' },
+        'user-alice',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Validated Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      const projectDoc = await app.projectDocs.createDocument(
+        { projectId: project.project.id, title: 'Validated Project Draft' },
+        'user-alice',
+      );
 
       await expect(
         app.imports.importPaper({
+          scope: { id: 'project-missing', type: 'project' },
           requestedByUserId: 'user-alice',
           sourceLocator: '10.1000/missing-space',
           sourceType: 'doi',
           spaceId: 'space-missing',
           visibility: 'space_shared',
-        }),
-      ).rejects.toThrow(/space space-missing does not exist/i);
+        }, 'user-alice'),
+      ).rejects.toThrow(/project project-missing does not exist/i);
       await expect(
-        app.writing.saveDocument({
-          actorSpaceId: sharedSpace.id,
-          actorUserId: 'user-alice',
-          citations: [{ evidenceSpan: 'section 1', paperAssetId: 'asset-missing' }],
-          content: 'Version with missing citation asset',
-          docId: doc.id,
-        }),
+        app.notebooks.saveDocument(
+          {
+            citations: [{ evidenceSpan: 'section 1', paperAssetId: 'asset-missing' }],
+            content: 'Version with missing citation asset',
+            documentId: notebook.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/paper asset asset-missing does not exist/i);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [{ evidenceSpan: 'section 1', paperAssetId: 'asset-missing' }],
+            content: 'Project doc version with missing citation asset',
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
       ).rejects.toThrow(/paper asset asset-missing does not exist/i);
       await expect(
         app.jobs.createJob({
@@ -123,7 +155,7 @@ describe('server governance hardening', () => {
           payload: { prompt: 'Summarize.' },
           requestedByUserId: 'user-alice',
           spaceId: 'space-missing',
-        }),
+        }, 'user-alice'),
       ).rejects.toThrow(/space space-missing does not exist/i);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
@@ -141,7 +173,7 @@ describe('server governance hardening', () => {
       );
       const credential = await firstApp.credentials.createCredential({
         provider: 'openai',
-        rawSecret: 'sk-persisted-secret',
+        rawSecret: 'persisted-credential-placeholder',
         userId: 'user-alice',
       });
       const job = await firstApp.jobs.createJob({
@@ -150,7 +182,7 @@ describe('server governance hardening', () => {
         payload: { prompt: 'Persist me.' },
         requestedByUserId: 'user-alice',
         spaceId: sharedSpace.id,
-      });
+      }, 'user-alice');
 
       const secondApp = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
       const completed = await secondApp.jobs.runJob({
@@ -163,7 +195,7 @@ describe('server governance hardening', () => {
         actorUserId: 'user-alice',
         jobId: job.id,
       });
-      const stream = secondApp.jobStream.toSse({
+      const stream = await secondApp.jobStream.toSse({
         actorSpaceId: sharedSpace.id,
         actorUserId: 'user-alice',
         jobId: job.id,
@@ -180,9 +212,9 @@ describe('server governance hardening', () => {
       ]);
       expect(stream).toContain('"status":"queued"');
       expect(stream).toContain('"status":"succeeded"');
-      expect(persistedState).not.toContain('sk-persisted-secret');
+      expect(persistedState).not.toContain('persisted-credential-placeholder');
       expect(persistedState).not.toContain(
-        Buffer.from('sk-persisted-secret', 'utf8').toString('base64'),
+        Buffer.from('persisted-credential-placeholder', 'utf8').toString('base64'),
       );
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
@@ -204,7 +236,7 @@ describe('server governance hardening', () => {
       );
       const credential = await app.credentials.createCredential({
         provider: 'openai',
-        rawSecret: 'sk-job-guard',
+        rawSecret: 'job-guard-credential-placeholder',
         userId: 'user-alice',
       });
       const job = await app.jobs.createJob({
@@ -213,7 +245,7 @@ describe('server governance hardening', () => {
         payload: { prompt: 'Protect this job.' },
         requestedByUserId: 'user-alice',
         spaceId: aliceShared.id,
-      });
+      }, 'user-alice');
 
       await expect(
         app.jobs.runJob({
@@ -221,28 +253,28 @@ describe('server governance hardening', () => {
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).rejects.toThrow(/access denied/i);
+      ).rejects.toThrow(/space context/i);
       await expect(
         app.jobs.listAuditRecords({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).rejects.toThrow(/access denied/i);
-      expect(() =>
+      ).rejects.toThrow(/space context/i);
+      await expect(
         app.jobStream.listEvents({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).toThrow(/access denied/i);
-      expect(() =>
+      ).rejects.toThrow(/space context/i);
+      await expect(
         app.jobStream.toSse({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).toThrow(/access denied/i);
+      ).rejects.toThrow(/space context/i);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
@@ -259,7 +291,7 @@ describe('server governance hardening', () => {
       );
       const credential = await app.credentials.createCredential({
         provider: 'openai',
-        rawSecret: 'sk-payload-guard',
+        rawSecret: 'payload-guard-credential-placeholder',
         userId: 'user-alice',
       });
       const persistedStatePath = join(storageRoot, 'server-state.json');
@@ -269,18 +301,18 @@ describe('server governance hardening', () => {
           credentialRef: credential.credentialRef,
           kind: 'ai.summary',
           payload: {
-            apiKey: 'sk-should-not-persist',
+            apiKey: 'do-not-persist-this-placeholder',
             prompt: 'Refuse unsafe payloads.',
           },
           requestedByUserId: 'user-alice',
           spaceId: sharedSpace.id,
-        }),
+        }, 'user-alice'),
       ).rejects.toThrow(/payload must not contain raw secrets/i);
 
       if (existsSync(persistedStatePath)) {
         const persistedState = readFileSync(persistedStatePath, 'utf8');
 
-        expect(persistedState).not.toContain('sk-should-not-persist');
+        expect(persistedState).not.toContain('do-not-persist-this-placeholder');
       }
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });

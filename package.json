@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prisma:generate": "prisma generate",
+    "prebuild": "npm run prisma:generate",
+    "pretest": "npm run prisma:generate",
+    "pretypecheck": "npm run prisma:generate",
     "build": "npm run build:web && npm run build:server",
     "build:server": "vite build --config vite.server.config.ts",
     "build:web": "vite build",
@@ -14,12 +18,16 @@
     "lint": "npm run typecheck"
   },
   "dependencies": {
+    "@prisma/adapter-better-sqlite3": "^7.5.0",
+    "@prisma/client": "^7.5.0",
+    "better-sqlite3": "^12.9.0",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "^0.577.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.9.3"
   },
   "devDependencies": {
-    "@prisma/client": "^7.5.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -27,9 +35,12 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
+    "autoprefixer": "^10.4.27",
     "dotenv": "^17.2.3",
     "jsdom": "^27.0.0",
+    "postcss": "^8.5.9",
     "prisma": "^7.5.0",
+    "tailwindcss": "^3.4.19",
     "typescript": "^5.9.2",
     "vite": "^7.3.1",
     "vitest": "^3.2.4"

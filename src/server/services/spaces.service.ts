@@ -1,12 +1,16 @@
-import type { LibraryEntryVisibility } from '@shared/contracts/library';
+import type { LibraryEntryVisibility } from "@shared/contracts/library";
 import type {
   CreateSpaceRequest,
   MembershipQuery,
   SpaceMembership,
   SpaceSummary,
-} from '@shared/contracts/spaces';
+} from "@shared/contracts/spaces";
 
-import { assertCanReadResource } from '../policies/access-policy';
+import type {
+  PersistedSpaceMembershipRecord,
+  SpaceRepository,
+} from "../../db";
+import { assertCanReadResource } from "../policies/access-policy";
 
 export interface StoredSpace extends SpaceSummary {
   description?: string;
@@ -20,11 +24,9 @@ export interface SpaceAccessRequest {
   visibility: LibraryEntryVisibility;
 }
 
-export interface SpacesStore {
-  memberships: SpaceMembership[];
-  nextId(prefix: string): string;
-  persist(): void;
-  spaces: StoredSpace[];
+export interface SpacesLegacyMirror {
+  syncMembership(record: SpaceMembership): void;
+  syncSpace(record: StoredSpace): void;
 }
 
 export interface SpacesService {
@@ -33,43 +35,78 @@ export interface SpacesService {
     input: CreateSpaceRequest,
     actorUserId: string,
   ): Promise<SpaceSummary>;
-  listMemberships(query: MembershipQuery): Promise<SpaceMembership[]>;
+  listSpaces(query: SpaceListRequest): Promise<SpaceSummary[]>;
+  listMemberships(
+    query: MembershipQuery,
+    actorUserId: string,
+  ): Promise<SpaceMembership[]>;
 }
 
-function findSpace(store: SpacesStore, spaceId: string): StoredSpace {
-  const space = store.spaces.find((candidate) => candidate.id === spaceId);
+export interface SpaceListRequest {
+  actorUserId: string;
+}
 
-  if (!space) {
-    throw new Error(`Space ${spaceId} does not exist.`);
+function mapMembership(
+  membership: PersistedSpaceMembershipRecord,
+): SpaceMembership {
+  return {
+    joinedAt: membership.joinedAt,
+    role: membership.role,
+    spaceId: membership.spaceId,
+    userId: membership.userId,
+  };
+}
+
+async function requireOwnerUserId(
+  repository: SpaceRepository,
+  spaceId: string,
+): Promise<string> {
+  const memberships = await repository.listMemberships({ spaceId });
+  const ownerMembership = memberships.find((membership) => membership.role === "owner");
+
+  if (!ownerMembership) {
+    throw new Error(`Space ${spaceId} is missing its owner membership.`);
   }
 
-  return space;
+  return ownerMembership.userId;
+}
+
+export interface SpacesStore {
+  legacyMirror?: SpacesLegacyMirror;
+  nextId?(prefix: string): string;
+  repository: SpaceRepository;
 }
 
 export function createSpacesService(store: SpacesStore): SpacesService {
+  const { legacyMirror, nextId, repository } = store;
+
   return {
     async createSpace(
       input: CreateSpaceRequest,
       actorUserId: string,
     ): Promise<SpaceSummary> {
-      const createdAt = new Date().toISOString();
-      const space: StoredSpace = {
-        createdAt,
-        description: input.description,
-        id: store.nextId('space'),
-        kind: input.kind,
-        name: input.name,
-        ownerUserId: actorUserId,
-      };
+      const space = await repository.createSpace(
+        {
+          ...input,
+          id: nextId?.("space"),
+        },
+        actorUserId,
+      );
+      const ownerMembership = await repository.getMembership(space.id, actorUserId);
 
-      store.spaces.push(space);
-      store.memberships.push({
-        joinedAt: createdAt,
-        role: 'owner',
-        spaceId: space.id,
-        userId: actorUserId,
+      if (!ownerMembership) {
+        throw new Error("Created space is missing its owner membership.");
+      }
+
+      legacyMirror?.syncSpace({
+        createdAt: space.createdAt,
+        description: space.description,
+        id: space.id,
+        kind: space.kind,
+        name: space.name,
+        ownerUserId: actorUserId,
       });
-      store.persist();
+      legacyMirror?.syncMembership(mapMembership(ownerMembership));
 
       return {
         createdAt: space.createdAt,
@@ -78,24 +115,45 @@ export function createSpacesService(store: SpacesStore): SpacesService {
         name: space.name,
       };
     },
-    async listMemberships(query: MembershipQuery): Promise<SpaceMembership[]> {
-      return store.memberships.filter(
-        (membership) => membership.spaceId === query.spaceId,
-      );
+    async listMemberships(
+      query: MembershipQuery,
+      actorUserId: string,
+    ): Promise<SpaceMembership[]> {
+      await repository.denyNonMember(query.spaceId, actorUserId);
+
+      return (await repository.listMemberships(query)).map(mapMembership);
+    },
+    async listSpaces(query: SpaceListRequest): Promise<SpaceSummary[]> {
+      return (await repository.listSpacesForActor(query.actorUserId)).map((space) => ({
+        createdAt: space.createdAt,
+        id: space.id,
+        kind: space.kind,
+        name: space.name,
+      }));
     },
     async assertCanReadResource(request: SpaceAccessRequest): Promise<void> {
-      const resourceSpace = findSpace(store, request.resourceSpaceId);
-      const actorHasResourceMembership = store.memberships.some(
-        (membership) =>
-          membership.spaceId === request.resourceSpaceId &&
-          membership.userId === request.actorUserId,
+      const resourceSpace = await repository.findSpace(request.resourceSpaceId);
+
+      if (!resourceSpace) {
+        throw new Error(`Space ${request.resourceSpaceId} does not exist.`);
+      }
+
+      const actorHasResourceMembership = Boolean(
+        await repository.getMembership(
+          request.resourceSpaceId,
+          request.actorUserId,
+        ),
+      );
+      const resourceOwnerUserId = await requireOwnerUserId(
+        repository,
+        request.resourceSpaceId,
       );
 
       assertCanReadResource({
         actorHasResourceMembership,
         actorSpaceId: request.actorSpaceId,
         actorUserId: request.actorUserId,
-        resourceOwnerUserId: resourceSpace.ownerUserId,
+        resourceOwnerUserId,
         resourceSpaceId: request.resourceSpaceId,
         visibility: request.visibility,
       });

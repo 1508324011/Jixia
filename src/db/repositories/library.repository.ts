@@ -1,34 +1,489 @@
-export interface ImportPaperAssetCommand {
-  sourceType: 'doi' | 'pmid' | 'arxiv' | 'upload';
+import {
+  type LibraryEntry,
+  type PaperAsset,
+  type Prisma,
+} from '@prisma/client';
+
+import type { JixiaPrismaClient } from '../client';
+import { initializeProjectPersistence } from './project.repository';
+
+export type PersistedLibraryScopeType = 'user' | 'project';
+
+export type PersistedImportSourceType = 'doi' | 'pmid' | 'arxiv' | 'upload';
+
+export type PersistedLibraryEntryVisibility =
+  | 'private'
+  | 'space_shared'
+  | 'published_to_project';
+
+export interface PersistedLibraryScopeRef {
+  id: string;
+  type: PersistedLibraryScopeType;
+}
+
+export interface UpsertPaperAssetParams {
+  abstractText?: string;
+  authors?: string;
+  canonicalId: string;
+  checksum?: string;
+  id?: string;
+  importedByUserId: string;
   sourceLocator: string;
-  requestedByUserId: string;
+  sourceType: PersistedImportSourceType;
+  storageKey?: string;
+  title: string;
+}
+
+export interface UpsertLibraryEntryParams {
+  addedByUserId: string;
+  id?: string;
+  legacySpaceId?: string;
+  legacyVisibility?: PersistedLibraryEntryVisibility;
+  paperAssetId: string;
+  scope: PersistedLibraryScopeRef;
+}
+
+export interface ImportScopedLibraryEntryParams {
+  asset: UpsertPaperAssetParams;
+  entry: Omit<UpsertLibraryEntryParams, 'paperAssetId'>;
+}
+
+export interface LegacyLibraryAssetInput {
+  abstractText?: string;
+  canonicalId: string;
+  createdAt?: string;
+  id: string;
+  importedByUserId: string;
+  storageKey?: string;
+  title: string;
+}
+
+export interface LegacyLibraryEntryInput {
+  addedAt?: string;
+  id: string;
+  paperAssetId: string;
+  spaceId: string;
+  visibility: PersistedLibraryEntryVisibility;
+}
+
+export interface BootstrapLegacyLibraryInput {
+  assets: LegacyLibraryAssetInput[];
+  entries: LegacyLibraryEntryInput[];
+}
+
+export interface PersistedPaperAssetRecord {
+  abstractText?: string;
+  authors?: string;
+  canonicalId: string;
+  checksum?: string;
+  createdAt: string;
+  id: string;
+  importedByUserId: string;
+  sourceLocator: string;
+  sourceType: PersistedImportSourceType;
+  storageKey?: string;
+  title: string;
+  updatedAt: string;
+}
+
+export interface PersistedLibraryEntryRecord {
+  addedByUserId: string;
+  createdAt: string;
+  id: string;
+  legacySpaceId?: string;
+  legacyVisibility?: PersistedLibraryEntryVisibility;
+  paperAssetId: string;
+  scope: PersistedLibraryScopeRef;
+  updatedAt: string;
 }
 
 export interface PersistedLibraryEntryView {
-  entryId: string;
-  paperAssetId: string;
-  spaceId: string;
-  visibility: 'private' | 'space_shared' | 'published_to_project';
+  asset: PersistedPaperAssetRecord;
+  entry: PersistedLibraryEntryRecord;
 }
 
 export interface LibraryRepository {
-  importPaperAsset(
-    input: ImportPaperAssetCommand,
-  ): Promise<PersistedLibraryEntryView>;
+  bootstrapLegacyLibrary(input: BootstrapLegacyLibraryInput): Promise<void>;
+  findPaperAsset(assetId: string): Promise<PersistedPaperAssetRecord | null>;
   getLibraryEntry(entryId: string): Promise<PersistedLibraryEntryView | null>;
+  importScopedEntry(
+    input: ImportScopedLibraryEntryParams,
+  ): Promise<PersistedLibraryEntryView>;
+  listLibraryEntriesForAsset(
+    paperAssetId: string,
+  ): Promise<PersistedLibraryEntryView[]>;
+  listLibraryEntriesForScope(
+    scope: PersistedLibraryScopeRef,
+  ): Promise<PersistedLibraryEntryView[]>;
 }
 
-export function createLibraryRepository(): LibraryRepository {
+type TransactionClient = Prisma.TransactionClient;
+
+type LibraryClient = JixiaPrismaClient | TransactionClient;
+
+const LIBRARY_ENTRY_WITH_ASSET = {
+  paperAsset: true,
+} satisfies Prisma.LibraryEntryInclude;
+
+type LibraryEntryWithAsset = Prisma.LibraryEntryGetPayload<{
+  include: typeof LIBRARY_ENTRY_WITH_ASSET;
+}>;
+
+function toIsoString(value: Date): string {
+  return value.toISOString();
+}
+
+function mapPaperAsset(asset: PaperAsset): PersistedPaperAssetRecord {
   return {
-    async importPaperAsset(): Promise<PersistedLibraryEntryView> {
-      throw new Error(
-        'LibraryRepository.importPaperAsset is not implemented yet.',
-      );
+    abstractText: asset.abstractText ?? undefined,
+    authors: asset.authors ?? undefined,
+    canonicalId: asset.canonicalId,
+    checksum: asset.checksum ?? undefined,
+    createdAt: toIsoString(asset.createdAt),
+    id: asset.id,
+    importedByUserId: asset.importedByUserId,
+    sourceLocator: asset.sourceLocator,
+    sourceType: asset.sourceType as PersistedImportSourceType,
+    storageKey: asset.storageKey ?? undefined,
+    title: asset.title,
+    updatedAt: toIsoString(asset.updatedAt),
+  };
+}
+
+function mapLibraryEntry(
+  entry: LibraryEntry,
+): PersistedLibraryEntryRecord {
+  return {
+    addedByUserId: entry.addedByUserId,
+    createdAt: toIsoString(entry.createdAt),
+    id: entry.id,
+    legacySpaceId: entry.legacySpaceId ?? undefined,
+    legacyVisibility:
+      (entry.legacyVisibility as PersistedLibraryEntryVisibility | null) ??
+      undefined,
+    paperAssetId: entry.paperAssetId,
+    scope: {
+      id: entry.scopeId,
+      type: entry.scopeType as PersistedLibraryScopeType,
     },
-    async getLibraryEntry(): Promise<PersistedLibraryEntryView | null> {
-      throw new Error(
-        'LibraryRepository.getLibraryEntry is not implemented yet.',
+    updatedAt: toIsoString(entry.updatedAt),
+  };
+}
+
+function mapLibraryEntryView(
+  entry: LibraryEntryWithAsset,
+): PersistedLibraryEntryView {
+  return {
+    asset: mapPaperAsset(entry.paperAsset),
+    entry: mapLibraryEntry(entry),
+  };
+}
+
+async function ensureUser(
+  prisma: LibraryClient,
+  userId: string,
+): Promise<void> {
+  await prisma.user.upsert({
+    create: {
+      displayName: userId,
+      email: `${userId}@jixia.local`,
+      id: userId,
+    },
+    update: { updatedAt: new Date() },
+    where: { id: userId },
+  });
+}
+
+function deriveSourceFields(input: {
+  canonicalId: string;
+  sourceLocator?: string;
+  sourceType?: PersistedImportSourceType;
+}): { sourceLocator: string; sourceType: PersistedImportSourceType } {
+  if (input.sourceLocator && input.sourceType) {
+    return {
+      sourceLocator: input.sourceLocator,
+      sourceType: input.sourceType,
+    };
+  }
+
+  const separatorIndex = input.canonicalId.indexOf(':');
+  const sourceType = input.canonicalId.slice(0, separatorIndex);
+  const sourceLocator = input.canonicalId.slice(separatorIndex + 1);
+
+  if (
+    sourceType === 'doi' ||
+    sourceType === 'pmid' ||
+    sourceType === 'arxiv' ||
+    sourceType === 'upload'
+  ) {
+    return {
+      sourceLocator: sourceLocator || input.canonicalId,
+      sourceType,
+    };
+  }
+
+  return {
+    sourceLocator: input.canonicalId,
+    sourceType: 'doi',
+  };
+}
+
+async function upsertPaperAsset(
+  prisma: LibraryClient,
+  input: UpsertPaperAssetParams,
+): Promise<PaperAsset> {
+  await ensureUser(prisma, input.importedByUserId);
+
+  return prisma.paperAsset.upsert({
+    create: {
+      abstractText: input.abstractText,
+      authors: input.authors,
+      canonicalId: input.canonicalId,
+      checksum: input.checksum,
+      id: input.id,
+      importedByUserId: input.importedByUserId,
+      sourceLocator: input.sourceLocator,
+      sourceType: input.sourceType,
+      storageKey: input.storageKey,
+      title: input.title,
+    },
+    update: {
+      abstractText: input.abstractText,
+      authors: input.authors,
+      checksum: input.checksum,
+      sourceLocator: input.sourceLocator,
+      sourceType: input.sourceType,
+      storageKey: input.storageKey,
+      title: input.title,
+      updatedAt: new Date(),
+    },
+    where: { canonicalId: input.canonicalId },
+  });
+}
+
+async function upsertLibraryEntry(
+  prisma: LibraryClient,
+  input: UpsertLibraryEntryParams,
+): Promise<LibraryEntry> {
+  await ensureUser(prisma, input.addedByUserId);
+
+  return prisma.libraryEntry.upsert({
+    create: {
+      addedByUserId: input.addedByUserId,
+      id: input.id,
+      legacySpaceId: input.legacySpaceId,
+      legacyVisibility: input.legacyVisibility,
+      paperAssetId: input.paperAssetId,
+      scopeId: input.scope.id,
+      scopeType: input.scope.type,
+    },
+    update: {
+      legacySpaceId: input.legacySpaceId,
+      legacyVisibility: input.legacyVisibility,
+      updatedAt: new Date(),
+    },
+    where: {
+      LibraryEntry_scope_asset_unique: {
+        paperAssetId: input.paperAssetId,
+        scopeId: input.scope.id,
+        scopeType: input.scope.type,
+      },
+    },
+  });
+}
+
+export async function initializeLibraryPersistence(
+  prisma: JixiaPrismaClient,
+): Promise<void> {
+  await initializeProjectPersistence(prisma);
+  await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON');
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "PaperAsset" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "canonicalId" TEXT NOT NULL,
+      "title" TEXT NOT NULL,
+      "abstractText" TEXT,
+      "authors" TEXT,
+      "sourceType" TEXT NOT NULL,
+      "sourceLocator" TEXT NOT NULL,
+      "storageKey" TEXT,
+      "checksum" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "importedByUserId" TEXT NOT NULL,
+      CONSTRAINT "PaperAsset_importedByUserId_fkey" FOREIGN KEY ("importedByUserId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "PaperAsset_canonicalId_key" ON "PaperAsset"("canonicalId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "LibraryEntry" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "scopeType" TEXT NOT NULL,
+      "scopeId" TEXT NOT NULL,
+      "paperAssetId" TEXT NOT NULL,
+      "addedByUserId" TEXT NOT NULL,
+      "legacySpaceId" TEXT,
+      "legacyVisibility" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "LibraryEntry_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "LibraryEntry_addedByUserId_fkey" FOREIGN KEY ("addedByUserId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "LibraryEntry_scope_asset_unique" ON "LibraryEntry"("scopeType", "scopeId", "paperAssetId")
+  `);
+}
+
+export function createLibraryRepository(
+  prisma: JixiaPrismaClient,
+): LibraryRepository {
+  let initialized: Promise<void> | null = null;
+
+  async function ensureInitialized(): Promise<void> {
+    initialized ??= initializeLibraryPersistence(prisma);
+
+    await initialized;
+  }
+
+  return {
+    async bootstrapLegacyLibrary(
+      input: BootstrapLegacyLibraryInput,
+    ): Promise<void> {
+      await ensureInitialized();
+
+      if (input.assets.length === 0) {
+        return;
+      }
+
+      // Legacy JSON entries only carried spaceId + visibility, so they cannot
+      // identify a real Project. Backfill them conservatively as personal
+      // library adoptions for the asset importer while retaining legacySpaceId
+      // and legacyVisibility as non-authoritative compatibility metadata.
+
+      const assetsByLegacyId = new Map(
+        input.assets.map((asset) => [asset.id, asset]),
       );
+
+      await prisma.$transaction(async (transaction) => {
+        const importedAssetsByLegacyId = new Map<string, PaperAsset>();
+
+        for (const legacyAsset of input.assets) {
+          const source = deriveSourceFields({
+            canonicalId: legacyAsset.canonicalId,
+          });
+          const importedAsset = await upsertPaperAsset(transaction, {
+            abstractText: legacyAsset.abstractText,
+            canonicalId: legacyAsset.canonicalId,
+            id: legacyAsset.id,
+            importedByUserId: legacyAsset.importedByUserId,
+            sourceLocator: source.sourceLocator,
+            sourceType: source.sourceType,
+            storageKey: legacyAsset.storageKey,
+            title: legacyAsset.title,
+          });
+
+          importedAssetsByLegacyId.set(legacyAsset.id, importedAsset);
+        }
+
+        for (const legacyEntry of input.entries) {
+          const legacyAsset = assetsByLegacyId.get(legacyEntry.paperAssetId);
+          const importedAsset = importedAssetsByLegacyId.get(
+            legacyEntry.paperAssetId,
+          );
+
+          if (!legacyAsset || !importedAsset) {
+            continue;
+          }
+
+          await upsertLibraryEntry(transaction, {
+            addedByUserId: legacyAsset.importedByUserId,
+            id: legacyEntry.id,
+            legacySpaceId: legacyEntry.spaceId,
+            legacyVisibility: legacyEntry.visibility,
+            paperAssetId: importedAsset.id,
+            scope: {
+              id: legacyAsset.importedByUserId,
+              type: 'user',
+            },
+          });
+        }
+      });
+    },
+    async findPaperAsset(
+      assetId: string,
+    ): Promise<PersistedPaperAssetRecord | null> {
+      await ensureInitialized();
+
+      const asset = await prisma.paperAsset.findUnique({ where: { id: assetId } });
+
+      return asset ? mapPaperAsset(asset) : null;
+    },
+    async getLibraryEntry(
+      entryId: string,
+    ): Promise<PersistedLibraryEntryView | null> {
+      await ensureInitialized();
+
+      const entry = await prisma.libraryEntry.findUnique({
+        include: LIBRARY_ENTRY_WITH_ASSET,
+        where: { id: entryId },
+      });
+
+      return entry ? mapLibraryEntryView(entry) : null;
+    },
+    async importScopedEntry(
+      input: ImportScopedLibraryEntryParams,
+    ): Promise<PersistedLibraryEntryView> {
+      await ensureInitialized();
+
+      return prisma.$transaction(async (transaction) => {
+        const paperAsset = await upsertPaperAsset(transaction, input.asset);
+        const entry = await upsertLibraryEntry(transaction, {
+          ...input.entry,
+          paperAssetId: paperAsset.id,
+        });
+        const created = await transaction.libraryEntry.findUnique({
+          include: LIBRARY_ENTRY_WITH_ASSET,
+          where: { id: entry.id },
+        });
+
+        if (!created) {
+          throw new Error('Scoped library entry was not persisted.');
+        }
+
+        return mapLibraryEntryView(created);
+      });
+    },
+    async listLibraryEntriesForAsset(
+      paperAssetId: string,
+    ): Promise<PersistedLibraryEntryView[]> {
+      await ensureInitialized();
+
+      const entries = await prisma.libraryEntry.findMany({
+        include: LIBRARY_ENTRY_WITH_ASSET,
+        orderBy: { createdAt: 'desc' },
+        where: { paperAssetId },
+      });
+
+      return entries.map(mapLibraryEntryView);
+    },
+    async listLibraryEntriesForScope(
+      scope: PersistedLibraryScopeRef,
+    ): Promise<PersistedLibraryEntryView[]> {
+      await ensureInitialized();
+
+      const entries = await prisma.libraryEntry.findMany({
+        include: LIBRARY_ENTRY_WITH_ASSET,
+        orderBy: { createdAt: 'desc' },
+        where: {
+          scopeId: scope.id,
+          scopeType: scope.type,
+        },
+      });
+
+      return entries.map(mapLibraryEntryView);
     },
   };
 }

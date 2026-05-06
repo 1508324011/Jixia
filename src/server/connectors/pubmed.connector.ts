@@ -17,6 +17,7 @@ export interface PubmedConnector {
 }
 
 const PUBMED_EUTILS_BASE = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
+const PUBMED_REQUEST_TIMEOUT_MS = 500;
 
 const fallbackDiscoveryRecords: PubmedDiscoveryRecord[] = [
   {
@@ -126,18 +127,24 @@ function mapSummaryToDiscoveryRecord(
 
 async function fetchPubmedJson<T>(pathname: string, params: Record<string, string>): Promise<T> {
   const requestUrl = new URL(pathname, PUBMED_EUTILS_BASE);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PUBMED_REQUEST_TIMEOUT_MS);
 
   Object.entries(params).forEach(([key, value]) => {
     requestUrl.searchParams.set(key, value);
   });
 
-  const response = await fetch(requestUrl);
+  try {
+    const response = await fetch(requestUrl, { signal: controller.signal });
 
-  if (!response.ok) {
-    throw new Error(`PubMed request failed with status ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`PubMed request failed with status ${response.status}`);
+    }
+
+    return (await response.json()) as T;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return (await response.json()) as T;
 }
 
 async function fetchSummaryByPmids(pmids: string[], query: string): Promise<PubmedDiscoveryRecord[]> {

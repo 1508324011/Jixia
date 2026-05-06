@@ -1,36 +1,52 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 
-import type { NoteVisibility, ReadingDetailView } from '@shared/contracts/reading';
+import type { NoteVisibility, ReadingDetailView } from "@shared/contracts/reading";
 
-import { PaperWorkspaceTabs } from '../components/paper-workspace-tabs';
-import { createDemoApi } from '../lib/demo-api';
+import { PaperWorkspaceTabs } from "../components/paper-workspace-tabs";
+import { createDemoApi } from "../lib/demo-api";
+import { useReaderPresenter } from "../presenters/reader-presenter";
 
 const demoApi = createDemoApi();
-const DEFAULT_WRITER_TITLE = 'Tumor board literature synthesis';
+const DEFAULT_WRITER_TITLE = "Tumor board literature synthesis";
+const WORKBENCH_PROJECT_ID = "project-1";
 
 export function ReaderPage() {
-  const { spaceId, projectId = 'project-1', entryId = 'entry-1' } = useParams();
-  const hasLegacySpaceContext = typeof spaceId === 'string' && spaceId.length > 0;
+  const {
+    spaceId,
+    projectId = WORKBENCH_PROJECT_ID,
+    entryId = "entry-1",
+  } = useParams();
+  const hasLegacySpaceContext = typeof spaceId === "string" && spaceId.length > 0;
+  const useWorkbenchReader = projectId === WORKBENCH_PROJECT_ID;
+  const projectReader = useReaderPresenter(projectId, entryId);
   const [detail, setDetail] = useState<ReadingDetailView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [privateNoteBody, setPrivateNoteBody] = useState('');
-  const [projectCommentBody, setProjectCommentBody] = useState('');
-  const [insightSummary, setInsightSummary] = useState('');
+  const [isWorkbenchLoading, setIsWorkbenchLoading] = useState(useWorkbenchReader);
+  const [privateNoteBody, setPrivateNoteBody] = useState("");
+  const [projectCommentBody, setProjectCommentBody] = useState("");
+  const [insightSummary, setInsightSummary] = useState("");
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [writingDocumentId, setWritingDocumentId] = useState<string>('doc-1');
+  const [writingDocumentId, setWritingDocumentId] = useState<string>("doc-1");
   const [isSavingPrivateNote, setIsSavingPrivateNote] = useState(false);
   const [isSavingProjectComment, setIsSavingProjectComment] = useState(false);
   const [isSavingInsight, setIsSavingInsight] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
+  const [noteBody, setNoteBody] = useState(
+    "This paper matters for the shared review.",
+  );
 
   useEffect(() => {
+    if (!useWorkbenchReader || hasLegacySpaceContext) {
+      setIsWorkbenchLoading(false);
+      return;
+    }
+
     let isCancelled = false;
 
     async function loadDetail(): Promise<void> {
-      setIsLoading(true);
+      setIsWorkbenchLoading(true);
       setLoadError(null);
 
       try {
@@ -43,12 +59,12 @@ export function ReaderPage() {
         if (!isCancelled) {
           setDetail(null);
           setLoadError(
-            error instanceof Error ? error.message : 'Failed to load the paper workspace.',
+            error instanceof Error ? error.message : "Failed to load the paper workspace.",
           );
         }
       } finally {
         if (!isCancelled) {
-          setIsLoading(false);
+          setIsWorkbenchLoading(false);
         }
       }
     }
@@ -58,18 +74,18 @@ export function ReaderPage() {
     return () => {
       isCancelled = true;
     };
-  }, [entryId]);
+  }, [entryId, hasLegacySpaceContext, useWorkbenchReader]);
 
   const privateNotes = useMemo(
-    () => detail?.notes.filter((note) => note.visibility === 'private') ?? [],
+    () => detail?.notes.filter((note) => note.visibility === "private") ?? [],
     [detail],
   );
   const projectComments = useMemo(
-    () => detail?.notes.filter((note) => note.visibility === 'space_shared') ?? [],
+    () => detail?.notes.filter((note) => note.visibility === "space_shared") ?? [],
     [detail],
   );
   const latestInsight = detail?.insights.at(-1) ?? null;
-  const writingPath = detail
+  const workbenchWritingPath = detail
     ? `/spaces/${detail.entry.spaceId}/projects/${projectId}/writing/${writingDocumentId}`
     : null;
 
@@ -148,7 +164,7 @@ export function ReaderPage() {
       resetBody();
     } catch (error) {
       setMutationError(
-        error instanceof Error ? error.message : 'Failed to save the reading note.',
+        error instanceof Error ? error.message : "Failed to save the reading note.",
       );
     } finally {
       setSaving(false);
@@ -178,10 +194,10 @@ export function ReaderPage() {
             }
           : current,
       );
-      setInsightSummary('');
+      setInsightSummary("");
     } catch (error) {
       setMutationError(
-        error instanceof Error ? error.message : 'Failed to save the governed insight.',
+        error instanceof Error ? error.message : "Failed to save the governed insight.",
       );
     } finally {
       setIsSavingInsight(false);
@@ -210,14 +226,134 @@ export function ReaderPage() {
       });
 
       setWritingDocumentId(response.document.documentId);
-      setSuccessMessage('Promoted latest insight into Writer.');
+      setSuccessMessage("Promoted latest insight into Writer.");
     } catch (error) {
       setMutationError(
-        error instanceof Error ? error.message : 'Failed to promote the latest insight.',
+        error instanceof Error ? error.message : "Failed to promote the latest insight.",
       );
     } finally {
       setIsPromoting(false);
     }
+  }
+
+  if (!useWorkbenchReader) {
+    const {
+      asset,
+      entry,
+      error,
+      insights,
+      isLoading,
+      isMutating,
+      notes,
+      project,
+      refresh,
+      saveGeneratedInsight,
+      saveNote,
+    } = projectReader;
+    const resolvedSpaceId = project?.project.spaceId ?? "No governance space";
+    const projectLabel = project?.project.name ?? (projectId || "No project");
+    const contextProjectId = project?.project.id ?? projectId;
+
+    return (
+      <main className="page-shell">
+        <header className="page-header">
+          <p className="page-kicker">Reading desk · notes · evidence-linked insight</p>
+          <h1 className="page-title">Reader</h1>
+          <p className="page-description">
+            Read the paper asset while keeping notes, evidence spans, and generated insights in
+            view.
+          </p>
+        </header>
+
+        <section aria-label="context bar" className="context-bar">
+          <span>Space context · {resolvedSpaceId}</span>
+          <span>Project context · {projectLabel}</span>
+          <span>Entry · {entryId}</span>
+          <span className="status-badge">quoted evidence</span>
+          <span className="status-badge">governed AI</span>
+          <button className="panel-link" type="button" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </section>
+
+        {error ? (
+          <section className="panel-grid" aria-label="reader errors">
+            <article className="panel">
+              <h2 className="panel-title">Reader runtime error</h2>
+              <p className="quiet-copy">{error}</p>
+            </article>
+          </section>
+        ) : null}
+
+        <section className="panel-grid" aria-label="reading layout">
+          <article className="panel">
+            <h2 className="panel-title">Paper text</h2>
+            <p className="quiet-copy">
+              {asset?.title ?? "No paper asset loaded from the server for this project entry."}
+            </p>
+            <p className="quiet-copy">Canonical id · {asset?.canonicalId ?? "No asset"}</p>
+            <p className="quiet-copy">Visibility · {entry?.visibility ?? "No entry"}</p>
+            <p className="quiet-copy">
+              {asset?.abstractText ?? "Use project library imports before opening reader detail."}
+            </p>
+            {isLoading ? (
+              <p className="quiet-copy">Loading reader detail from the browser-facing runtime.</p>
+            ) : null}
+          </article>
+
+          <aside className="panel paper-workspace">
+            <h2 className="panel-title">Workbench</h2>
+            <p className="quiet-copy">
+              <span className="status-badge">quoted evidence</span> · governed AI · Writer promotion
+            </p>
+            <p className="quiet-copy">Governed action source · queued → running → succeeded</p>
+            <label className="quiet-copy" htmlFor="reader-note-input">
+              Shared note draft
+            </label>
+            <textarea
+              id="reader-note-input"
+              value={noteBody}
+              onChange={(event) => setNoteBody(event.target.value)}
+            />
+            <button
+              className="panel-link"
+              type="button"
+              disabled={isMutating || noteBody.trim().length === 0}
+              onClick={() => void saveNote(noteBody.trim(), "space_shared")}
+            >
+              {isMutating ? "Saving…" : "Save note"}
+            </button>
+            <button
+              className="panel-link"
+              type="button"
+              disabled={isMutating}
+              onClick={() => void saveGeneratedInsight()}
+            >
+              {isMutating ? "Generating…" : "Generate insight"}
+            </button>
+            <div className="shell-grid">
+              {notes.map((note) => (
+                <div key={note.id} className="hero-card">
+                  <h3 className="panel-title">Note · {note.visibility}</h3>
+                  <p className="quiet-copy">{note.body}</p>
+                </div>
+              ))}
+              {insights.map((insight) => (
+                <div key={insight.id} className="hero-card">
+                  <h3 className="panel-title">Insight</h3>
+                  <p className="quiet-copy">{insight.summary}</p>
+                  <p className="quiet-copy">Evidence spans · {insight.evidenceSpans.length}</p>
+                </div>
+              ))}
+            </div>
+          </aside>
+        </section>
+
+        <Link className="panel-link" to={`/projects/${contextProjectId}/writing/doc-1`}>
+          Open writing
+        </Link>
+      </main>
+    );
   }
 
   return (
@@ -241,7 +377,7 @@ export function ReaderPage() {
 
       <section className="reader-page" aria-label="reading layout">
         <article className="panel paper-surface">
-          {isLoading ? (
+          {isWorkbenchLoading ? (
             <>
               <h2 className="panel-title">Loading paper workspace…</h2>
               <p className="quiet-copy">Pulling the imported reading record from the server.</p>
@@ -255,7 +391,7 @@ export function ReaderPage() {
             <>
               <h2 className="panel-title">{detail.asset.title}</h2>
               <p className="quiet-copy">
-                {detail.asset.abstractText ?? 'No abstract was imported for this paper asset.'}
+                {detail.asset.abstractText ?? "No abstract was imported for this paper asset."}
               </p>
               <p className="quiet-copy">Canonical source · {detail.asset.canonicalId}</p>
             </>
@@ -291,15 +427,12 @@ export function ReaderPage() {
                 className="action-button"
                 disabled={isSavingPrivateNote || isSavingProjectComment || isSavingInsight || isPromoting}
                 onClick={() =>
-                  void handleSaveNote(
-                    privateNoteBody,
-                    'private',
-                    setIsSavingPrivateNote,
-                    () => setPrivateNoteBody(''),
+                  void handleSaveNote(privateNoteBody, "private", setIsSavingPrivateNote, () =>
+                    setPrivateNoteBody(""),
                   )
                 }
               >
-                {isSavingPrivateNote ? 'Saving private note…' : 'Save private note'}
+                {isSavingPrivateNote ? "Saving private note…" : "Save private note"}
               </button>
 
               <label className="quiet-copy" htmlFor="project-comment-body">
@@ -317,15 +450,12 @@ export function ReaderPage() {
                 className="action-button"
                 disabled={isSavingPrivateNote || isSavingProjectComment || isSavingInsight || isPromoting}
                 onClick={() =>
-                  void handleSaveNote(
-                    projectCommentBody,
-                    'space_shared',
-                    setIsSavingProjectComment,
-                    () => setProjectCommentBody(''),
+                  void handleSaveNote(projectCommentBody, "space_shared", setIsSavingProjectComment, () =>
+                    setProjectCommentBody(""),
                   )
                 }
               >
-                {isSavingProjectComment ? 'Saving project comment…' : 'Save project comment'}
+                {isSavingProjectComment ? "Saving project comment…" : "Save project comment"}
               </button>
 
               <label className="quiet-copy" htmlFor="insight-summary-body">
@@ -344,16 +474,22 @@ export function ReaderPage() {
                 disabled={isSavingPrivateNote || isSavingProjectComment || isSavingInsight || isPromoting}
                 onClick={() => void handleSaveInsight()}
               >
-                {isSavingInsight ? 'Saving insight…' : 'Save insight'}
+                {isSavingInsight ? "Saving insight…" : "Save insight"}
               </button>
 
               <button
                 type="button"
                 className="action-button action-button-secondary"
-                disabled={!latestInsight || isSavingPrivateNote || isSavingProjectComment || isSavingInsight || isPromoting}
+                disabled={
+                  !latestInsight ||
+                  isSavingPrivateNote ||
+                  isSavingProjectComment ||
+                  isSavingInsight ||
+                  isPromoting
+                }
                 onClick={() => void handlePromoteLatestInsight()}
               >
-                {isPromoting ? 'Promoting latest insight…' : 'Promote latest insight to Writer'}
+                {isPromoting ? "Promoting latest insight…" : "Promote latest insight to Writer"}
               </button>
 
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
@@ -402,8 +538,8 @@ export function ReaderPage() {
         </aside>
       </section>
 
-      {writingPath ? (
-        <Link className="panel-link" to={writingPath}>
+      {workbenchWritingPath ? (
+        <Link className="panel-link" to={workbenchWritingPath}>
           Open writing
         </Link>
       ) : null}

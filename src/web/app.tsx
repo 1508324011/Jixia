@@ -1,14 +1,15 @@
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter } from "react-router-dom";
 
-import { AppRouter } from './router';
-import './styles/app.css';
+import { AppShell } from "./components/app-shell";
+import { AppRouter } from "./router";
+import "./styles/app.css";
 
 export function App() {
   return (
     <BrowserRouter>
-      <div className="app-shell" data-testid="app-shell">
+      <AppShell>
         <AppRouter />
-      </div>
+      </AppShell>
     </BrowserRouter>
   );
 }

@@ -1,22 +1,33 @@
 :root {
-  --jixia-bg: #f5f3f0;
-  --jixia-surface: #fbf9f6;
-  --jixia-surface-strong: #f1ece4;
-  --jixia-border: #d7d0c7;
-  --jixia-ink: #2b3a67;
-  --jixia-warm: #b5774d;
-  --jixia-text: #263142;
-  --jixia-text-muted: #5b6674;
-  --jixia-shadow: 0 10px 30px rgba(43, 58, 103, 0.08);
-  --jixia-radius-lg: 20px;
-  --jixia-radius-md: 14px;
+  --jixia-app-bg: #fafaf9;
+  --jixia-bg: #ffffff;
+  --jixia-surface: #ffffff;
+  --jixia-surface-strong: #f7f7f5;
+  --jixia-surface-muted: #efefec;
+  --jixia-border: #e8e8e5;
+  --jixia-border-strong: #dddcd8;
+  --jixia-ink: #37352f;
+  --jixia-warm: #2eaadc;
+  --jixia-accent: #2eaadc;
+  --jixia-accent-soft: #e8f4f8;
+  --jixia-text: #37352f;
+  --jixia-text-muted: #6b6b6b;
+  --jixia-text-tertiary: #9b9a97;
+  --jixia-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  --jixia-shadow-hover: 0 12px 28px rgba(15, 23, 42, 0.08);
+  --jixia-radius-lg: 18px;
+  --jixia-radius-md: 12px;
+  --jixia-radius-sm: 8px;
   --jixia-space-1: 0.5rem;
   --jixia-space-2: 0.75rem;
   --jixia-space-3: 1rem;
   --jixia-space-4: 1.5rem;
   --jixia-space-5: 2rem;
   --jixia-space-6: 3rem;
-  --jixia-font-sans: 'Source Han Sans SC', 'Noto Sans SC', 'PingFang SC',
-    'Microsoft YaHei', sans-serif;
-  --jixia-font-serif: 'Source Han Serif SC', 'Noto Serif SC', 'Songti SC', serif;
+  --jixia-space-7: 4rem;
+  --jixia-font-sans:
+    Inter, "Source Han Sans SC", "Noto Sans SC", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  --jixia-font-serif:
+    "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif;
 }

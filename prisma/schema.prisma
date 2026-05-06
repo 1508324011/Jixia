@@ -17,6 +17,17 @@ enum SpaceRole {
   viewer
 }
 
+enum ProjectStatus {
+  active
+  archived
+}
+
+enum ProjectRole {
+  owner
+  editor
+  viewer
+}
+
 enum LibraryEntryVisibility {
   private
   space_shared
@@ -53,10 +64,14 @@ model User {
   notes               Note[]
   readingStates       ReadingState[]
   conversations       Conversation[]
-  writingDocs         WritingDoc[]
+  notebookDocuments   NotebookDocument[]
   providerCredentials ProviderCredential[]
   jobs                Job[]                @relation("JobRequestedBy")
   auditLogs           AuditLog[]
+  createdProjects     Project[]            @relation("ProjectCreatedBy")
+  createdProjectDocs  ProjectDoc[]         @relation("ProjectDocCreatedBy")
+  projectMemberships  ProjectMember[]
+  addedLibraryEntries LibraryEntry[]        @relation("LibraryEntryAddedBy")
 }
 
 model Space {
@@ -67,10 +82,36 @@ model Space {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
   memberships  Membership[]
-  libraryEntries LibraryEntry[]
-  writingDocs  WritingDoc[]
   jobs         Job[]
   auditLogs    AuditLog[]
+  projects     Project[]
+}
+
+model Project {
+  id              String          @id @default(cuid())
+  spaceId         String
+  name            String
+  description     String?
+  status          ProjectStatus   @default(active)
+  createdByUserId String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  space           Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdBy       User            @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  members         ProjectMember[]
+  projectDocs     ProjectDoc[]
+}
+
+model ProjectMember {
+  id        String      @id @default(cuid())
+  projectId String
+  userId    String
+  role      ProjectRole
+  joinedAt  DateTime    @default(now())
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
 }
 
 model Membership {
@@ -90,29 +131,37 @@ model PaperAsset {
   canonicalId     String         @unique
   title           String
   abstractText    String?
+  authors         String?
+  sourceType      String
+  sourceLocator   String
   storageKey      String?
+  checksum        String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   importedByUserId String
   importedBy      User           @relation("PaperAssetImportedBy", fields: [importedByUserId], references: [id], onDelete: Restrict)
   libraryEntries  LibraryEntry[]
-  citationLinks   CitationLink[]
+  notebookCitations NotebookDocumentCitation[]
+  projectDocCitations ProjectDocCitation[]
 }
 
 model LibraryEntry {
   id            String                 @id @default(cuid())
-  spaceId        String
+  scopeType      String
+  scopeId        String
   paperAssetId   String
-  visibility     LibraryEntryVisibility
-  addedAt        DateTime               @default(now())
+  addedByUserId  String
+  legacySpaceId  String?
+  legacyVisibility String?
+  createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
-  space          Space                  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   paperAsset     PaperAsset             @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+  addedBy        User                   @relation("LibraryEntryAddedBy", fields: [addedByUserId], references: [id], onDelete: Restrict)
   notes          Note[]
   conversations  Conversation[]
   readingStates  ReadingState[]
 
-  @@unique([spaceId, paperAssetId])
+  @@unique([scopeType, scopeId, paperAssetId], name: "LibraryEntry_scope_asset_unique")
 }
 
 model Note {
@@ -152,41 +201,75 @@ model Conversation {
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model WritingDoc {
-  id          String           @id @default(cuid())
-  spaceId      String
-  ownerId      String
-  title        String
-  publishState PublishState
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  space        Space            @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  owner        User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  versions     DocVersion[]
+model NotebookDocument {
+  id        String                    @id @default(cuid())
+  ownerId   String
+  title     String
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
+  owner     User                      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  versions  NotebookDocumentVersion[]
 }
 
-model DocVersion {
-  id            String      @id @default(cuid())
-  writingDocId   String
-  versionNumber  Int
-  snapshot       String
-  createdAt      DateTime    @default(now())
-  writingDoc     WritingDoc  @relation(fields: [writingDocId], references: [id], onDelete: Cascade)
-  citationLinks  CitationLink[]
+model NotebookDocumentVersion {
+  id                 String                     @id @default(cuid())
+  notebookDocumentId String
+  versionNumber      Int
+  snapshot           String
+  createdAt          DateTime                   @default(now())
+  notebookDocument   NotebookDocument           @relation(fields: [notebookDocumentId], references: [id], onDelete: Cascade)
+  citations          NotebookDocumentCitation[]
 
-  @@unique([writingDocId, versionNumber])
+  @@unique([notebookDocumentId, versionNumber])
 }
 
-model CitationLink {
-  id            String      @id @default(cuid())
-  docVersionId   String
-  paperAssetId   String
-  citationText   String
-  createdAt      DateTime    @default(now())
-  docVersion     DocVersion  @relation(fields: [docVersionId], references: [id], onDelete: Cascade)
-  paperAsset     PaperAsset  @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+model NotebookDocumentCitation {
+  id                        String                  @id @default(cuid())
+  notebookDocumentVersionId String
+  paperAssetId              String
+  evidenceSpan              String?
+  createdAt                 DateTime                @default(now())
+  notebookDocumentVersion   NotebookDocumentVersion @relation(fields: [notebookDocumentVersionId], references: [id], onDelete: Cascade)
+  paperAsset                PaperAsset              @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
 
-  @@unique([docVersionId, paperAssetId])
+  @@unique([notebookDocumentVersionId, paperAssetId])
+}
+
+model ProjectDoc {
+  id              String              @id @default(cuid())
+  projectId       String
+  createdByUserId String
+  title           String
+  publishState    PublishState        @default(draft)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  project         Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy       User                @relation("ProjectDocCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  versions        ProjectDocVersion[]
+}
+
+model ProjectDocVersion {
+  id            String               @id @default(cuid())
+  projectDocId  String
+  versionNumber Int
+  snapshot      String
+  createdAt     DateTime             @default(now())
+  projectDoc    ProjectDoc           @relation(fields: [projectDocId], references: [id], onDelete: Cascade)
+  citations     ProjectDocCitation[]
+
+  @@unique([projectDocId, versionNumber])
+}
+
+model ProjectDocCitation {
+  id                  String            @id @default(cuid())
+  projectDocVersionId String
+  paperAssetId        String
+  evidenceSpan        String?
+  createdAt           DateTime          @default(now())
+  projectDocVersion   ProjectDocVersion @relation(fields: [projectDocVersionId], references: [id], onDelete: Cascade)
+  paperAsset          PaperAsset        @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([projectDocVersionId, paperAssetId])
 }
 
 model ProviderCredential {

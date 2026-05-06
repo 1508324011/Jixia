@@ -1,201 +1,129 @@
+import type { EvidenceSpanRecord, GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type {
-  GeneratedInsightRecord,
-  EvidenceSpanRecord,
-} from '@shared/contracts/evidence';
-import type { LibraryEntryView } from '@shared/contracts/library';
-import type {
+  CreateReadingNoteRequest,
   ConversationRecord,
+  GetReadingDetailQuery,
   NoteRecord,
+  ReadingDetail,
+  SaveReadingInsightRequest,
   NoteVisibility,
-  ReadingDetailView,
-} from '@shared/contracts/reading';
-import type { SpaceMembership } from '@shared/contracts/spaces';
+} from "@shared/contracts/reading";
 
-import {
-  assertCanReadResource,
-  canReadResource,
-} from '../policies/access-policy';
-import type {
-  StoredLibraryEntry,
-  StoredPaperAsset,
-} from './import.service';
-import type { StoredSpace } from './spaces.service';
-import type { EvidenceLinkService } from './evidence-link.service';
+import type { PersistedLibraryEntryView } from "../../db";
 
-export interface CreateNoteRequest {
-  actorSpaceId: string;
-  authorUserId: string;
-  body: string;
-  libraryEntryId: string;
-  visibility: NoteVisibility;
+import { mapPersistedLibraryEntryView } from "./import.service";
+import type { LibraryService } from "./library.service";
+import type { EvidenceLinkService } from "./evidence-link.service";
+
+export interface CreateNoteRequest
+  extends Omit<CreateReadingNoteRequest, "actorSpaceId" | "authorUserId"> {
+  actorSpaceId?: string;
+  actorUserId: string;
+  authorUserId?: string;
 }
 
-export interface SaveGeneratedInsightRequest {
-  actorSpaceId: string;
-  evidenceSpans: Omit<EvidenceSpanRecord, 'paperAssetId'>[];
-  libraryEntryId: string;
-  startedByUserId: string;
-  summary: string;
-  title: string;
+export interface SaveGeneratedInsightRequest
+  extends Omit<SaveReadingInsightRequest, "actorSpaceId" | "startedByUserId"> {
+  actorSpaceId?: string;
+  actorUserId: string;
+  startedByUserId?: string;
 }
 
-export interface GetReadingDetailRequest {
-  actorSpaceId: string;
+export interface GetReadingDetailRequest extends GetReadingDetailQuery {
+  actorSpaceId?: string;
   actorUserId: string;
   libraryEntryId: string;
-}
-
-export interface GetWorkbenchReadingDetailRequest {
-  actorUserId: string;
-  libraryEntryId: string;
-}
-
-export interface CreateWorkbenchNoteRequest {
-  authorUserId: string;
-  body: string;
-  libraryEntryId: string;
-  visibility: NoteVisibility;
-}
-
-export interface SaveWorkbenchGeneratedInsightRequest {
-  evidenceSpans: Omit<EvidenceSpanRecord, 'paperAssetId'>[];
-  libraryEntryId: string;
-  startedByUserId: string;
-  summary: string;
-  title: string;
 }
 
 export interface ReadingStore {
   conversations: ConversationRecord[];
   evidenceLinkService: EvidenceLinkService;
   insights: GeneratedInsightRecord[];
-  libraryEntries: StoredLibraryEntry[];
-  memberships: SpaceMembership[];
+  libraryService: LibraryService;
   nextId(prefix: string): string;
   notes: NoteRecord[];
-  paperAssets: StoredPaperAsset[];
   persist(): void;
-  spaces: StoredSpace[];
 }
 
 export interface ReadingService {
   createNote(input: CreateNoteRequest): Promise<NoteRecord>;
-  createWorkbenchNote(input: CreateWorkbenchNoteRequest): Promise<NoteRecord>;
-  getDetail(input: GetReadingDetailRequest): Promise<ReadingDetailView | null>;
-  getWorkbenchDetail(
-    input: GetWorkbenchReadingDetailRequest,
-  ): Promise<ReadingDetailView | null>;
+  createWorkbenchNote(input: {
+    authorUserId: string;
+    body: string;
+    libraryEntryId: string;
+    visibility: NoteVisibility;
+  }): Promise<NoteRecord>;
+  getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
+  getWorkbenchDetail(input: {
+    actorUserId: string;
+    libraryEntryId: string;
+  }): Promise<ReadingDetail | null>;
   saveGeneratedInsight(
     input: SaveGeneratedInsightRequest,
   ): Promise<GeneratedInsightRecord>;
-  saveWorkbenchGeneratedInsight(
-    input: SaveWorkbenchGeneratedInsightRequest,
-  ): Promise<GeneratedInsightRecord>;
+  saveWorkbenchGeneratedInsight(input: {
+    evidenceSpans: Array<Omit<EvidenceSpanRecord, "paperAssetId">>;
+    libraryEntryId: string;
+    startedByUserId: string;
+    summary: string;
+    title: string;
+  }): Promise<GeneratedInsightRecord>;
 }
 
-function getLibraryContext(store: ReadingStore, libraryEntryId: string): {
-  asset: StoredPaperAsset;
-  entry: StoredLibraryEntry;
-  space: StoredSpace;
-} {
-  const entry = store.libraryEntries.find(
-    (candidate) => candidate.id === libraryEntryId,
-  );
-
-  if (!entry) {
-    throw new Error(`Library entry ${libraryEntryId} does not exist.`);
-  }
-
-  const asset = store.paperAssets.find(
-    (candidate) => candidate.id === entry.paperAssetId,
-  );
-
-  if (!asset) {
-    throw new Error(`Paper asset ${entry.paperAssetId} does not exist.`);
-  }
-
-  const space = store.spaces.find((candidate) => candidate.id === entry.spaceId);
-
-  if (!space) {
-    throw new Error(`Space ${entry.spaceId} does not exist.`);
-  }
-
-  return { asset, entry, space };
-}
-
-function assertEntryAccess(
+async function getAuthorizedLibraryContext(
   store: ReadingStore,
-  actorUserId: string,
-  actorSpaceId: string,
-  libraryEntryId: string,
-): void {
-  const { entry, space } = getLibraryContext(store, libraryEntryId);
-  const actorHasResourceMembership = store.memberships.some(
-    (membership) =>
-      membership.spaceId === entry.spaceId && membership.userId === actorUserId,
+  input: {
+    actorSpaceId?: string;
+    actorUserId: string;
+    libraryEntryId: string;
+  },
+): Promise<PersistedLibraryEntryView> {
+  return store.libraryService.assertCanAccessEntry(
+    input.libraryEntryId,
+    input.actorUserId,
+    input.actorSpaceId,
   );
+}
 
-  assertCanReadResource({
-    actorHasResourceMembership,
-    actorSpaceId,
-    actorUserId,
-    resourceOwnerUserId: space.ownerUserId,
-    resourceSpaceId: entry.spaceId,
-    visibility: entry.visibility,
-  });
+function canReadNote(
+  note: NoteRecord,
+  actorUserId: string,
+  entry: PersistedLibraryEntryView["entry"],
+): boolean {
+  if (note.visibility === "private") {
+    return note.authorUserId === actorUserId;
+  }
+
+  return entry.scope.type === "project" || note.authorUserId === actorUserId;
 }
 
 export function createReadingService(store: ReadingStore): ReadingService {
   return {
     async getDetail(
       input: GetReadingDetailRequest,
-    ): Promise<ReadingDetailView | null> {
-      const entry = store.libraryEntries.find(
-        (candidate) => candidate.id === input.libraryEntryId,
-      );
+    ): Promise<ReadingDetail | null> {
+      const view = await getAuthorizedLibraryContext(store, input).catch((error) => {
+        if (
+          error instanceof Error &&
+          new RegExp(`^Library entry ${input.libraryEntryId} does not exist\\.$`).test(
+            error.message,
+          )
+        ) {
+          return null;
+        }
 
-      if (!entry) {
-        return null;
-      }
-
-      const asset = store.paperAssets.find(
-        (candidate) => candidate.id === entry.paperAssetId,
-      );
-
-      if (!asset) {
-        return null;
-      }
-
-      const space = store.spaces.find((candidate) => candidate.id === entry.spaceId);
-
-      if (!space) {
-        throw new Error(`Space ${entry.spaceId} does not exist.`);
-      }
-
-      const actorHasResourceMembership = store.memberships.some(
-        (membership) =>
-          membership.spaceId === entry.spaceId &&
-          membership.userId === input.actorUserId,
-      );
-
-      assertCanReadResource({
-        actorHasResourceMembership,
-        actorSpaceId: input.actorSpaceId,
-        actorUserId: input.actorUserId,
-        resourceOwnerUserId: space.ownerUserId,
-        resourceSpaceId: entry.spaceId,
-        visibility: entry.visibility,
+        throw error;
       });
 
+      if (!view) {
+        return null;
+      }
+
+      const mappedView = mapPersistedLibraryEntryView(view);
+
       return {
-        asset: {
-          abstractText: asset.abstractText,
-          canonicalId: asset.canonicalId,
-          createdAt: asset.createdAt,
-          id: asset.id,
-          title: asset.title,
-        },
-        entry,
+        asset: mappedView.asset,
+        entry: mappedView.entry,
         insights: store.insights.filter(
           (insight) => insight.libraryEntryId === input.libraryEntryId,
         ),
@@ -204,42 +132,30 @@ export function createReadingService(store: ReadingStore): ReadingService {
             return false;
           }
 
-          return canReadResource({
-            actorHasResourceMembership,
-            actorSpaceId: input.actorSpaceId,
-            actorUserId: input.actorUserId,
-            resourceOwnerUserId: note.authorUserId,
-            resourceSpaceId: entry.spaceId,
-            visibility: note.visibility,
-          });
+          return canReadNote(note, input.actorUserId, view.entry);
         }),
       };
     },
-    async getWorkbenchDetail(
-      input: GetWorkbenchReadingDetailRequest,
-    ): Promise<ReadingDetailView | null> {
-      const entry = store.libraryEntries.find(
-        (candidate) => candidate.id === input.libraryEntryId,
-      );
-
-      if (!entry) {
-        return null;
-      }
-
-      return this.getDetail({
-        actorSpaceId: entry.spaceId,
-        actorUserId: input.actorUserId,
-        libraryEntryId: input.libraryEntryId,
-      });
+    async getWorkbenchDetail(input: {
+      actorUserId: string;
+      libraryEntryId: string;
+    }): Promise<ReadingDetail | null> {
+      return this.getDetail(input);
     },
     async createNote(input: CreateNoteRequest): Promise<NoteRecord> {
-      assertEntryAccess(store, input.authorUserId, input.actorSpaceId, input.libraryEntryId);
+      if (input.authorUserId && input.authorUserId !== input.actorUserId) {
+        throw new Error(
+          "Request body actor does not match the server-derived actor.",
+        );
+      }
+
+      await getAuthorizedLibraryContext(store, input);
 
       const note: NoteRecord = {
-        authorUserId: input.authorUserId,
+        authorUserId: input.actorUserId,
         body: input.body,
         createdAt: new Date().toISOString(),
-        id: store.nextId('note'),
+        id: store.nextId("note"),
         libraryEntryId: input.libraryEntryId,
         visibility: input.visibility,
       };
@@ -249,13 +165,14 @@ export function createReadingService(store: ReadingStore): ReadingService {
 
       return note;
     },
-    async createWorkbenchNote(
-      input: CreateWorkbenchNoteRequest,
-    ): Promise<NoteRecord> {
-      const { entry } = getLibraryContext(store, input.libraryEntryId);
-
+    async createWorkbenchNote(input: {
+      authorUserId: string;
+      body: string;
+      libraryEntryId: string;
+      visibility: NoteVisibility;
+    }): Promise<NoteRecord> {
       return this.createNote({
-        actorSpaceId: entry.spaceId,
+        actorUserId: input.authorUserId,
         authorUserId: input.authorUserId,
         body: input.body,
         libraryEntryId: input.libraryEntryId,
@@ -265,20 +182,19 @@ export function createReadingService(store: ReadingStore): ReadingService {
     async saveGeneratedInsight(
       input: SaveGeneratedInsightRequest,
     ): Promise<GeneratedInsightRecord> {
-      assertEntryAccess(
-        store,
-        input.startedByUserId,
-        input.actorSpaceId,
-        input.libraryEntryId,
-      );
+      if (input.startedByUserId && input.startedByUserId !== input.actorUserId) {
+        throw new Error(
+          "Request body actor does not match the server-derived actor.",
+        );
+      }
 
-      const { asset } = getLibraryContext(store, input.libraryEntryId);
+      const view = await getAuthorizedLibraryContext(store, input);
       const createdAt = new Date().toISOString();
       const conversation: ConversationRecord = {
         createdAt,
-        id: store.nextId('conversation'),
+        id: store.nextId("conversation"),
         libraryEntryId: input.libraryEntryId,
-        startedByUserId: input.startedByUserId,
+        startedByUserId: input.actorUserId,
         title: input.title,
       };
 
@@ -288,9 +204,9 @@ export function createReadingService(store: ReadingStore): ReadingService {
         conversationId: conversation.id,
         createdAt,
         evidenceSpans: input.evidenceSpans,
-        id: store.nextId('insight'),
+        id: store.nextId("insight"),
         libraryEntryId: input.libraryEntryId,
-        paperAssetId: asset.id,
+        paperAssetId: view.asset.id,
         summary: input.summary,
       });
 
@@ -299,13 +215,15 @@ export function createReadingService(store: ReadingStore): ReadingService {
 
       return insight;
     },
-    async saveWorkbenchGeneratedInsight(
-      input: SaveWorkbenchGeneratedInsightRequest,
-    ): Promise<GeneratedInsightRecord> {
-      const { entry } = getLibraryContext(store, input.libraryEntryId);
-
+    async saveWorkbenchGeneratedInsight(input: {
+      evidenceSpans: Array<Omit<EvidenceSpanRecord, "paperAssetId">>;
+      libraryEntryId: string;
+      startedByUserId: string;
+      summary: string;
+      title: string;
+    }): Promise<GeneratedInsightRecord> {
       return this.saveGeneratedInsight({
-        actorSpaceId: entry.spaceId,
+        actorUserId: input.startedByUserId,
         evidenceSpans: input.evidenceSpans,
         libraryEntryId: input.libraryEntryId,
         startedByUserId: input.startedByUserId,

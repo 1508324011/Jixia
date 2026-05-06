@@ -45,7 +45,10 @@ describe('deployment and operator scaffolding', () => {
     const compose = read('docker-compose.yml');
 
     expect(dockerfile).toContain('FROM node:22');
+    expect(dockerfile).toContain('COPY prisma ./prisma');
+    expect(dockerfile).toContain('COPY prisma.config.ts ./prisma.config.ts');
     expect(dockerfile).toContain('npm run build');
+    expect(dockerfile).toContain('COPY --from=build /app/node_modules ./node_modules');
     expect(compose).toContain('JIXIA_STORAGE_ROOT');
     expect(compose).toContain('JIXIA_DATABASE_URL');
     expect(compose).toContain('/var/lib/jixia/storage');
@@ -75,7 +78,7 @@ describe('deployment and operator scaffolding', () => {
     expect(readme).toContain('JIXIA_DATABASE_URL');
     expect(readme).toContain('/var/lib/jixia/storage');
     expect(readme).toContain('server-state.json');
-    expect(readme).toContain('reserved runtime boundary');
+    expect(readme).toContain('Prisma-backed project collaboration');
   });
 
   it('documents the chinese startup path and keeps build in CI', () => {
@@ -87,7 +90,7 @@ describe('deployment and operator scaffolding', () => {
     expect(readmeCn).toContain('JIXIA_STORAGE_ROOT');
     expect(readmeCn).toContain('JIXIA_DATABASE_URL');
     expect(readmeCn).toContain('server-state.json');
-    expect(readmeCn).toContain('保留的运行时边界');
+    expect(readmeCn).toContain('Prisma-backed Project 协作数据');
     expect(ciWorkflow).toContain('npm run build');
   });
 });

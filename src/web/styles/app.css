@@ -1,8 +1,12 @@
-@import './tokens.css';
+@import "./tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   color: var(--jixia-text);
-  background: var(--jixia-bg);
+  background: var(--jixia-app-bg);
   font-family: var(--jixia-font-sans);
   line-height: 1.6;
 }
@@ -13,33 +17,37 @@
 
 body {
   margin: 0;
-  background: var(--jixia-bg);
+  background: var(--jixia-app-bg);
   color: var(--jixia-text);
 }
 
 a {
   color: var(--jixia-ink);
+  text-decoration: none;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.18em;
 }
 
 .app-shell {
   min-height: 100vh;
-  padding: var(--jixia-space-6) var(--jixia-space-4);
   background:
-    radial-gradient(circle at top left, rgba(181, 119, 77, 0.08), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(245, 243, 240, 0.92));
+    radial-gradient(
+      circle at top left,
+      rgba(46, 170, 220, 0.08),
+      transparent 22%
+    ),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(250, 250, 249, 0.98));
 }
 
 .page-shell {
   display: grid;
   gap: var(--jixia-space-4);
-  max-width: 1120px;
+  max-width: 1040px;
   margin: 0 auto;
   padding: var(--jixia-space-5);
   border: 1px solid var(--jixia-border);
   border-radius: var(--jixia-radius-lg);
-  background: rgba(251, 249, 246, 0.9);
+  background: rgba(255, 255, 255, 0.96);
   box-shadow: var(--jixia-shadow);
 }
 
@@ -55,18 +63,20 @@ a {
 
 .page-kicker {
   margin: 0;
-  color: var(--jixia-warm);
-  font-size: 0.95rem;
-  letter-spacing: 0.04em;
+  color: var(--jixia-text-tertiary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 
 .page-title {
   margin: 0;
   color: var(--jixia-ink);
-  font-family: var(--jixia-font-serif);
-  font-size: clamp(2rem, 4vw, 2.8rem);
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: clamp(1.85rem, 3vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .page-description,
@@ -74,6 +84,7 @@ a {
   margin: 0;
   max-width: 70ch;
   color: var(--jixia-text-muted);
+  font-size: 0.95rem;
 }
 
 .context-bar {
@@ -86,18 +97,20 @@ a {
   border-radius: var(--jixia-radius-md);
   background: var(--jixia-surface-strong);
   color: var(--jixia-text-muted);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .status-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.65rem;
-  border: 1px solid rgba(43, 58, 103, 0.15);
+  padding: 0.24rem 0.68rem;
+  border: 1px solid rgba(46, 170, 220, 0.18);
   border-radius: 999px;
-  background: rgba(43, 58, 103, 0.08);
-  color: var(--jixia-ink);
-  font-size: 0.82rem;
+  background: rgba(46, 170, 220, 0.1);
+  color: var(--jixia-accent);
+  font-size: 0.74rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .workbench-shell {
@@ -305,16 +318,48 @@ a {
   border: 1px solid var(--jixia-border);
   border-radius: var(--jixia-radius-md);
   background: var(--jixia-surface);
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.panel:hover,
+.hero-card:hover {
+  border-color: rgba(46, 170, 220, 0.32);
+  background: var(--jixia-accent-soft);
+  box-shadow: var(--jixia-shadow-hover);
+  transform: translateY(-1px);
 }
 
 .panel-title {
   margin: 0;
   color: var(--jixia-ink);
-  font-size: 1.1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
 }
 
 .panel-link {
   font-weight: 600;
+  color: var(--jixia-accent);
+}
+
+.panel-link:hover {
+  color: color-mix(in srgb, var(--jixia-accent) 82%, black);
+}
+
+@media (max-width: 960px) {
+  .page-shell {
+    padding: var(--jixia-space-4);
+  }
+}
+
+@media (max-width: 720px) {
+  .page-shell {
+    gap: var(--jixia-space-3);
+    padding: var(--jixia-space-3);
+  }
 }
 
 @media (min-width: 960px) {

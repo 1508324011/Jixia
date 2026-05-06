@@ -1,7 +1,7 @@
-import type { GeneratedInsightRecord } from './evidence';
-import type { LibraryEntryView } from './library';
+import type { GeneratedInsightRecord, EvidenceSpanRecord } from "./evidence";
+import type { LibraryEntryRecord, PaperAssetRecord } from "./library";
 
-export type NoteVisibility = 'private' | 'space_shared';
+export type NoteVisibility = "private" | "space_shared";
 
 export interface NoteRecord {
   id: string;
@@ -28,10 +28,40 @@ export interface ReadingStateRecord {
 }
 
 export interface ReadingDetailView {
-  asset: LibraryEntryView['asset'];
-  entry: LibraryEntryView['entry'];
+  asset: PaperAssetRecord;
+  entry: LibraryEntryRecord;
   insights: GeneratedInsightRecord[];
   notes: NoteRecord[];
+}
+
+export type ReadingDetail = ReadingDetailView;
+
+export interface GetReadingDetailQuery {
+  /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
+  actorSpaceId?: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  actorUserId?: string;
+}
+
+export interface CreateReadingNoteRequest {
+  /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
+  actorSpaceId?: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  authorUserId?: string;
+  body: string;
+  libraryEntryId: string;
+  visibility: NoteVisibility;
+}
+
+export interface SaveReadingInsightRequest {
+  /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
+  actorSpaceId?: string;
+  evidenceSpans: Omit<EvidenceSpanRecord, "paperAssetId">[];
+  libraryEntryId: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  startedByUserId?: string;
+  summary: string;
+  title: string;
 }
 
 export interface ReadingNoteResponse {
@@ -42,4 +72,4 @@ export interface ReadingInsightResponse {
   insight: GeneratedInsightRecord;
 }
 
-export const readingContract = 'jixia-reading-contract';
+export const readingContract = "jixia-reading-contract";

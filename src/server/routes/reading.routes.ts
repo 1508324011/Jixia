@@ -1,30 +1,22 @@
-import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
-import type { NoteRecord } from '@shared/contracts/reading';
+import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
+import type { NoteRecord, ReadingDetail } from "@shared/contracts/reading";
 
 import type {
-  CreateWorkbenchNoteRequest,
   CreateNoteRequest,
   GetReadingDetailRequest,
-  GetWorkbenchReadingDetailRequest,
   ReadingService,
-  SaveWorkbenchGeneratedInsightRequest,
   SaveGeneratedInsightRequest,
-} from '../services/reading.service';
-import type { ReadingDetailView } from '@shared/contracts/reading';
+} from "../services/reading.service";
 
 export interface ReadingRoutes {
   createNote(input: CreateNoteRequest): Promise<NoteRecord>;
-  createWorkbenchNote(input: CreateWorkbenchNoteRequest): Promise<NoteRecord>;
-  getDetail(input: GetReadingDetailRequest): Promise<ReadingDetailView | null>;
-  getWorkbenchDetail(
-    input: GetWorkbenchReadingDetailRequest,
-  ): Promise<ReadingDetailView | null>;
+  createWorkbenchNote: ReadingService["createWorkbenchNote"];
+  getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
+  getWorkbenchDetail: ReadingService["getWorkbenchDetail"];
   saveGeneratedInsight(
     input: SaveGeneratedInsightRequest,
   ): Promise<GeneratedInsightRecord>;
-  saveWorkbenchGeneratedInsight(
-    input: SaveWorkbenchGeneratedInsightRequest,
-  ): Promise<GeneratedInsightRecord>;
+  saveWorkbenchGeneratedInsight: ReadingService["saveWorkbenchGeneratedInsight"];
 }
 
 export function createReadingRoutes(service: ReadingService): ReadingRoutes {
@@ -32,15 +24,13 @@ export function createReadingRoutes(service: ReadingService): ReadingRoutes {
     createNote(input: CreateNoteRequest): Promise<NoteRecord> {
       return service.createNote(input);
     },
-    createWorkbenchNote(input: CreateWorkbenchNoteRequest): Promise<NoteRecord> {
+    createWorkbenchNote(input) {
       return service.createWorkbenchNote(input);
     },
-    getDetail(input: GetReadingDetailRequest): Promise<ReadingDetailView | null> {
+    getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null> {
       return service.getDetail(input);
     },
-    getWorkbenchDetail(
-      input: GetWorkbenchReadingDetailRequest,
-    ): Promise<ReadingDetailView | null> {
+    getWorkbenchDetail(input) {
       return service.getWorkbenchDetail(input);
     },
     saveGeneratedInsight(
@@ -48,9 +38,7 @@ export function createReadingRoutes(service: ReadingService): ReadingRoutes {
     ): Promise<GeneratedInsightRecord> {
       return service.saveGeneratedInsight(input);
     },
-    saveWorkbenchGeneratedInsight(
-      input: SaveWorkbenchGeneratedInsightRequest,
-    ): Promise<GeneratedInsightRecord> {
+    saveWorkbenchGeneratedInsight(input) {
       return service.saveWorkbenchGeneratedInsight(input);
     },
   };

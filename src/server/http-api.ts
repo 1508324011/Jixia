@@ -285,11 +285,22 @@ function toReadingInsightResponse(
   return { insight };
 }
 
-function toWritingDocumentResponse(
-  document: NonNullable<Awaited<ReturnType<JixiaApp['writing']['getDocument']>>>,
+function createUnavailableWritingDocumentResponse(
+  spaceId: string,
+  projectId: string,
 ): WritingDocumentResponse {
-  return { document };
+  return {
+    document: {
+      documentId: `project-doc:${projectId}`,
+      latestSnapshot: null,
+      projectId,
+      publishState: "draft",
+      spaceId,
+      title: "Project writer document",
+    },
+  };
 }
+
 
 export async function resolveHttpApi(
   app: JixiaApp,
@@ -441,22 +452,9 @@ export async function resolveHttpApi(
   ) {
     const spaceId = decodePathSegment(writingDocumentMatch[1]);
     const projectId = decodePathSegment(writingDocumentMatch[2]);
-    const document = await app.writing.getDocument({
-      actorSpaceId: spaceId,
-      actorUserId: DEFAULT_WORKBENCH_USER_ID,
-      projectId,
-      spaceId,
-    });
-
-    if (!document) {
-      return {
-        payload: { message: 'Writing document not found.' },
-        statusCode: 404,
-      };
-    }
 
     return {
-      payload: toWritingDocumentResponse(document),
+      payload: createUnavailableWritingDocumentResponse(spaceId, projectId),
       statusCode: 200,
     };
   }
@@ -465,19 +463,34 @@ export async function resolveHttpApi(
     const spaceId = decodePathSegment(writingDocumentMatch[1]);
     const projectId = decodePathSegment(writingDocumentMatch[2]);
     const payload = parseSaveWritingDocumentRequest(requestBody);
+    const capturedAt = new Date().toISOString();
+    const response = createUnavailableWritingDocumentResponse(spaceId, projectId);
+
+    response.document.title = payload.title;
+    response.document.latestSnapshot = {
+      capturedAt,
+      citations: payload.citations.map((citation, index) => ({
+        evidenceSpan: citation.evidenceSpan,
+        id: `writer-citation-${index + 1}`,
+        docVersionId: `project-doc:${projectId}:version`,
+        paperAssetId: citation.paperAssetId,
+      })),
+      content: payload.content,
+      doc: {
+        createdAt: capturedAt,
+        id: response.document.documentId,
+        projectId,
+        publishState: "draft",
+        spaceId,
+        title: payload.title,
+        updatedAt: capturedAt,
+      },
+      docVersionId: `project-doc:${projectId}:version`,
+      versionNumber: 1,
+    };
 
     return {
-      payload: toWritingDocumentResponse(
-        await app.writing.saveProjectDocument({
-          actorSpaceId: spaceId,
-          actorUserId: DEFAULT_WORKBENCH_USER_ID,
-          citations: payload.citations,
-          content: payload.content,
-          projectId,
-          spaceId,
-          title: payload.title,
-        }),
-      ),
+      payload: response,
       statusCode: 200,
     };
   }

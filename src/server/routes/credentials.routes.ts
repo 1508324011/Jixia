@@ -1,14 +1,25 @@
 import type {
   CreateCredentialRequest,
   CredentialRecord,
+  ListCredentialsQuery,
+} from "@shared/contracts/credentials";
+import type { WorkbenchSettingsResponse } from "@shared/contracts/settings";
+
+import type {
   CredentialsService,
   SaveWorkbenchSettingsRequest,
-} from '../services/credentials.service';
-import type { WorkbenchSettingsResponse } from '@shared/contracts/settings';
+} from "../services/credentials.service";
 
 export interface CredentialsRoutes {
-  createCredential(input: CreateCredentialRequest): Promise<CredentialRecord>;
+  createCredential(
+    input: CreateCredentialRequest,
+    actorUserId?: string,
+  ): Promise<CredentialRecord>;
   getWorkbenchSettings(userId: string): WorkbenchSettingsResponse;
+  listCredentials(
+    query: ListCredentialsQuery,
+    actorUserId?: string,
+  ): Promise<CredentialRecord[]>;
   saveWorkbenchSettings(
     input: SaveWorkbenchSettingsRequest,
   ): Promise<WorkbenchSettingsResponse>;
@@ -18,11 +29,20 @@ export function createCredentialsRoutes(
   service: CredentialsService,
 ): CredentialsRoutes {
   return {
-    createCredential(input: CreateCredentialRequest): Promise<CredentialRecord> {
-      return service.createCredential(input);
+    createCredential(
+      input: CreateCredentialRequest,
+      actorUserId?: string,
+    ): Promise<CredentialRecord> {
+      return service.createCredential(input, actorUserId);
     },
     getWorkbenchSettings(userId: string): WorkbenchSettingsResponse {
       return service.getWorkbenchSettings(userId);
+    },
+    listCredentials(
+      query: ListCredentialsQuery,
+      actorUserId?: string,
+    ): Promise<CredentialRecord[]> {
+      return service.listCredentials(query, actorUserId);
     },
     saveWorkbenchSettings(
       input: SaveWorkbenchSettingsRequest,

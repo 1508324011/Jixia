@@ -1,37 +1,54 @@
-import type { TodayRecommendation } from '@shared/contracts/discovery';
+import type { TodayRecommendation } from "@shared/contracts/discovery";
+import type {
+  ImportLibraryEntryRequest,
+  UploadPdfToLibraryRequest,
+} from "@shared/contracts/library";
 
 import type {
   ImportedLibraryRecord,
-  ImportPaperRequest,
-  ImportToPersonalLibraryRequest,
   ImportService,
-  UploadPdfRequest,
-} from '../services/import.service';
+} from "../services/import.service";
 
 export interface ImportRoutes {
-  importToPersonalLibrary(
-    input: ImportToPersonalLibraryRequest,
+  importPaper(
+    input: ImportLibraryEntryRequest,
+    actorUserId: string,
   ): Promise<ImportedLibraryRecord>;
-  importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord>;
+  importToPersonalLibrary(input: {
+    requestedByUserId: string;
+    sourceLocator: string;
+    sourceType: "doi" | "pmid" | "arxiv";
+  }): Promise<ImportedLibraryRecord>;
   searchDiscovery(query: string): Promise<TodayRecommendation[]>;
-  uploadPdf(input: UploadPdfRequest): Promise<ImportedLibraryRecord>;
+  uploadPdf(
+    input: UploadPdfToLibraryRequest,
+    actorUserId: string,
+  ): Promise<ImportedLibraryRecord>;
 }
 
 export function createImportRoutes(service: ImportService): ImportRoutes {
   return {
-    importToPersonalLibrary(
-      input: ImportToPersonalLibraryRequest,
+    importPaper(
+      input: ImportLibraryEntryRequest,
+      actorUserId: string,
     ): Promise<ImportedLibraryRecord> {
-      return service.importToPersonalLibrary(input);
+      return service.importPaper(input, actorUserId);
     },
-    importPaper(input: ImportPaperRequest): Promise<ImportedLibraryRecord> {
-      return service.importPaper(input);
+    importToPersonalLibrary(input: {
+      requestedByUserId: string;
+      sourceLocator: string;
+      sourceType: "doi" | "pmid" | "arxiv";
+    }): Promise<ImportedLibraryRecord> {
+      return service.importToPersonalLibrary(input);
     },
     searchDiscovery(query: string): Promise<TodayRecommendation[]> {
       return service.searchDiscovery(query);
     },
-    uploadPdf(input: UploadPdfRequest): Promise<ImportedLibraryRecord> {
-      return service.uploadPdf(input);
+    uploadPdf(
+      input: UploadPdfToLibraryRequest,
+      actorUserId: string,
+    ): Promise<ImportedLibraryRecord> {
+      return service.uploadPdf(input, actorUserId);
     },
   };
 }
