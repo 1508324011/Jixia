@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ProjectListItem } from "@shared/contracts/projects";
 
@@ -30,13 +30,38 @@ export function useProjectContext(
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const isMountedRef = useRef(false);
+  const refreshGenerationRef = useRef(0);
+
+  const canCommitRefresh = useCallback((generation: number) => {
+    return isMountedRef.current && refreshGenerationRef.current === generation;
+  }, []);
 
   const refresh = useCallback(async () => {
+    const generation = refreshGenerationRef.current + 1;
+    refreshGenerationRef.current = generation;
+
+    if (!isMountedRef.current) {
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      setProjects(await apiClient.listProjects(demoActorContext.actorUserId));
+      const nextProjects = await apiClient.listProjects(
+        demoActorContext.actorUserId,
+      );
+
+      if (!canCommitRefresh(generation)) {
+        return;
+      }
+
+      setProjects(nextProjects);
     } catch (presenterError) {
+      if (!canCommitRefresh(generation)) {
+        return;
+      }
+
       setProjects([]);
       setError(
         presenterError instanceof Error
@@ -44,12 +69,20 @@ export function useProjectContext(
           : "Failed to load projects.",
       );
     } finally {
-      setIsLoading(false);
+      if (canCommitRefresh(generation)) {
+        setIsLoading(false);
+      }
     }
-  }, []);
+  }, [canCommitRefresh]);
 
   useEffect(() => {
+    isMountedRef.current = true;
     void refresh();
+
+    return () => {
+      isMountedRef.current = false;
+      refreshGenerationRef.current += 1;
+    };
   }, [refresh]);
 
   const project = useMemo(
