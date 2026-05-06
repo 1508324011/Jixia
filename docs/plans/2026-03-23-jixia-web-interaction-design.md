@@ -177,6 +177,13 @@ Writer 不是 paper 右侧笔记区的放大版，而是**正式产出区**。�
 - 项目总结
 - 课题材料
 
+项目页上的 `Writer 文档区` 应先通过 `GET /api/projects/:projectId/writing-document`
+发现当前项目最新可见的共享文稿，再决定是直接重开已有 Writer 草稿，还是显示
+“尚未创建 Writer 文稿”的空状态提示。
+进入 `/projects/:projectId/writing/:docId` 之后，页面应继续通过
+`GET /api/project-docs/:documentId` 读取当前最新快照；如果文稿已经存在但还没有保存过任何版本，
+服务端也应返回 `content = ''`、`citations = []`、`versionNumber = 0` 的真实空快照，而不是让前端补假数据。
+
 因此三者必须分工明确：
 
 | 位置 | 角色 |

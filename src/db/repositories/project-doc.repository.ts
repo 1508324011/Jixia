@@ -59,6 +59,12 @@ export interface PersistedProjectDocSnapshot {
 export interface ProjectDocRepository {
   createDocument(input: CreateProjectDocParams): Promise<PersistedProjectDocRecord>;
   findDocument(documentId: string): Promise<PersistedProjectDocRecord | null>;
+  findLatestDocumentForProject(
+    projectId: string,
+  ): Promise<PersistedProjectDocRecord | null>;
+  findLatestSnapshot(
+    documentId: string,
+  ): Promise<PersistedProjectDocSnapshot | null>;
   getDocumentForProject(
     documentId: string,
     projectId: string,
@@ -151,6 +157,17 @@ async function getNextVersionNumber(
   return (latestVersion?.versionNumber ?? 0) + 1;
 }
 
+async function getLatestVersion(
+  prisma: ProjectDocClient,
+  documentId: string,
+): Promise<ProjectDocVersionWithRelations | null> {
+  return prisma.projectDocVersion.findFirst({
+    include: PROJECT_DOC_VERSION_INCLUDE,
+    orderBy: { versionNumber: 'desc' },
+    where: { projectDocId: documentId },
+  });
+}
+
 export async function initializeProjectDocPersistence(
   prisma: JixiaPrismaClient,
 ): Promise<void> {
@@ -241,6 +258,27 @@ export function createProjectDocRepository(
       });
 
       return document ? mapDocument(document) : null;
+    },
+    async findLatestDocumentForProject(
+      projectId: string,
+    ): Promise<PersistedProjectDocRecord | null> {
+      await ensureInitialized();
+
+      const document = await prisma.projectDoc.findFirst({
+        orderBy: { updatedAt: 'desc' },
+        where: { projectId },
+      });
+
+      return document ? mapDocument(document) : null;
+    },
+    async findLatestSnapshot(
+      documentId: string,
+    ): Promise<PersistedProjectDocSnapshot | null> {
+      await ensureInitialized();
+
+      const version = await getLatestVersion(prisma, documentId);
+
+      return version ? mapSnapshot(version) : null;
     },
     async getDocumentForProject(
       documentId: string,

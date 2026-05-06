@@ -20,6 +20,11 @@ import type {
   ScopeRef,
 } from "@shared/contracts/projects";
 import type {
+  CreateProjectDocRequest,
+  ProjectDocRecord,
+  ProjectDocSnapshot,
+} from "@shared/contracts/project-docs";
+import type {
   CreateReadingNoteRequest,
   GetReadingDetailQuery,
   NoteRecord,
@@ -31,6 +36,7 @@ import type {
   SpaceMembership,
   SpaceSummary,
 } from "@shared/contracts/spaces";
+import type { PublishState } from "@shared/contracts/writing";
 
 export class ApiError extends Error {
   constructor(
@@ -49,6 +55,7 @@ export interface JobAccessContext {
 
 type CreateCredentialPayload = Omit<CreateCredentialRequest, "userId">;
 type CreateJobPayload = Omit<CreateJobRequest, "requestedByUserId">;
+type CreateProjectDocPayload = Omit<CreateProjectDocRequest, "createdByUserId">;
 type CreateReadingNotePayload = Omit<
   CreateReadingNoteRequest,
   "actorSpaceId" | "authorUserId"
@@ -59,6 +66,10 @@ type SaveReadingInsightPayload = Omit<
   SaveReadingInsightRequest,
   "actorSpaceId" | "startedByUserId"
 >;
+type SaveProjectDocVersionPayload = {
+  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
+  content: string;
+};
 
 interface RequestOptions extends RequestInit {
   query?: Record<string, string | undefined>;
@@ -264,6 +275,16 @@ export const apiClient = {
       method: "POST",
     });
   },
+  createProjectDoc(
+    input: CreateProjectDocPayload,
+    actorUserId: string,
+  ): Promise<ProjectDocRecord> {
+    return requestSessionJson("/api/project-docs", {
+      actorUserId,
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
   createReadingNote(
     actorUserId: string,
     input: CreateReadingNotePayload,
@@ -346,6 +367,22 @@ export const apiClient = {
       method: "POST",
     });
   },
+  getProjectDoc(
+    documentId: string,
+    actorUserId: string,
+  ): Promise<ProjectDocSnapshot> {
+    return requestSessionJson(`/api/project-docs/${documentId}`, {
+      actorUserId,
+    });
+  },
+  getLatestProjectDoc(
+    projectId: string,
+    actorUserId: string,
+  ): Promise<ProjectDocRecord | null> {
+    return requestSessionJson(`/api/projects/${projectId}/writing-document`, {
+      actorUserId,
+    });
+  },
   getReadingDetail(
     actorUserId: string,
     entryId: string,
@@ -371,5 +408,27 @@ export const apiClient = {
       method: "POST",
     });
   },
+  saveProjectDocVersion(
+    documentId: string,
+    input: SaveProjectDocVersionPayload,
+    actorUserId: string,
+  ): Promise<ProjectDocSnapshot> {
+    return requestSessionJson(`/api/project-docs/${documentId}/versions`, {
+      actorUserId,
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
   subscribeToJobEvents,
+  transitionProjectDocPublishState(
+    documentId: string,
+    publishState: PublishState,
+    actorUserId: string,
+  ): Promise<ProjectDocRecord> {
+    return requestSessionJson(`/api/project-docs/${documentId}/publish-state`, {
+      actorUserId,
+      body: JSON.stringify({ publishState }),
+      method: "POST",
+    });
+  },
 };

@@ -1,142 +1,110 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 
-import type { WritingDocumentView } from "@shared/contracts/writing";
-
-import { createDemoApi } from "../lib/demo-api";
-
-const demoApi = createDemoApi();
-
-function fallbackProjectLabel(projectId: string): string {
-  if (projectId === "project-recovery") {
-    return "Project-first Recovery";
-  }
-
-  if (projectId === "project-1") {
-    return "肿瘤标志物项目";
-  }
-
-  return projectId || "No project";
-}
-
-function fallbackSpaceId(spaceId: string | undefined, projectId: string): string {
-  if (spaceId) {
-    return spaceId;
-  }
-
-  if (projectId === "project-recovery") {
-    return "space-recovery";
-  }
-
-  return "personal-space-user-alice";
-}
+import { useProjectDocPresenter } from "../presenters/project-doc-presenter";
 
 export function WritingPage() {
-  const {
-    spaceId: routeSpaceId,
-    projectId = "project-1",
-    docId = "doc-1",
-  } = useParams();
-  const spaceId = fallbackSpaceId(routeSpaceId, projectId);
-  const projectLabel = fallbackProjectLabel(projectId);
-  const [document, setDocument] = useState<WritingDocumentView | null>(null);
-  const [draftContent, setDraftContent] = useState("");
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { projectId, docId } = useParams();
+  const presenter = useProjectDocPresenter(projectId, docId);
+  const [draftContent, setDraftContent] = useState(presenter.content);
+  const [draftVersionId, setDraftVersionId] = useState<string | null>(
+    presenter.snapshot?.versionId ?? null,
+  );
   const [mutationError, setMutationError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSavePendingLocally, setIsSavePendingLocally] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
+  const draftContentRef = useRef(draftContent);
+  const mutationLockRef = useRef<"save" | "reload" | null>(null);
+  const snapshotVersionId = presenter.snapshot?.versionId ?? null;
+  const isMutating = presenter.isSaving || isSavePendingLocally || isReloading || mutationLockRef.current !== null;
+  const isDraftHydrating = snapshotVersionId !== draftVersionId;
 
   useEffect(() => {
-    let isCancelled = false;
+    setDraftContent(presenter.content);
+    draftContentRef.current = presenter.content;
+    setDraftVersionId(snapshotVersionId);
+  }, [presenter.content, snapshotVersionId]);
 
-    async function loadDocument(): Promise<void> {
-      setIsLoading(true);
-      setLoadError(null);
+  if (!projectId || !docId) {
+    return (
+      <main className="page-shell">
+        <header className="page-header">
+          <p className="page-kicker">Manuscript studio · versioned drafting · citation traceability</p>
+          <h1 className="page-title">Writing</h1>
+          <p className="page-description">
+            Select a visible project document before opening the shared writing surface.
+          </p>
+        </header>
 
-      try {
-        const response = await demoApi.getWritingDocument(spaceId, projectId);
-
-        if (!isCancelled) {
-          setDocument(response.document);
-          setDraftContent(response.document.latestSnapshot?.content ?? "");
-        }
-      } catch (error) {
-        if (!isCancelled) {
-          setDocument(null);
-          setDraftContent("");
-          setLoadError(
-            error instanceof Error ? error.message : "Failed to load the writer draft.",
-          );
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void loadDocument();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [projectId, spaceId]);
+        <section className="panel-grid" aria-label="writing route errors">
+          <article className="panel">
+            <h2 className="panel-title">Project document route missing</h2>
+            <p className="quiet-copy">
+              The canonical writing route is `/projects/:projectId/writing/:docId` and cannot be fabricated in the browser.
+            </p>
+            <Link className="panel-link" to="/projects">
+              Back to projects
+            </Link>
+          </article>
+        </section>
+      </main>
+    );
+  }
 
   async function handleSave(): Promise<void> {
-    if (!document) {
+    if (!presenter.document || mutationLockRef.current) {
       return;
     }
 
-    setIsSaving(true);
+    mutationLockRef.current = "save";
+    setIsSavePendingLocally(true);
     setMutationError(null);
 
     try {
-      const response = await demoApi.saveWritingDocument({
-        citations:
-          document.latestSnapshot?.citations.map((citation) => ({
-            evidenceSpan: citation.evidenceSpan,
-            paperAssetId: citation.paperAssetId,
-          })) ?? [],
-        content: draftContent,
-        projectId,
-        spaceId,
-        title: document.title,
+      await presenter.save({
+        citations: presenter.citations.map((citation) => ({
+          evidenceSpan: citation.evidenceSpan,
+          paperAssetId: citation.paperAssetId,
+        })),
+        content: draftContentRef.current,
       });
-
-      setDocument(response.document);
-      setDraftContent(response.document.latestSnapshot?.content ?? "");
-      setLoadError(null);
     } catch (error) {
       setMutationError(
         error instanceof Error ? error.message : "Failed to save the writer draft.",
       );
     } finally {
-      setIsSaving(false);
+      mutationLockRef.current = null;
+      setIsSavePendingLocally(false);
     }
   }
 
   async function handleReload(): Promise<void> {
+    if (mutationLockRef.current) {
+      return;
+    }
+
+    mutationLockRef.current = "reload";
     setIsReloading(true);
     setMutationError(null);
 
     try {
-      const response = await demoApi.getWritingDocument(spaceId, projectId);
-      setDocument(response.document);
-      setDraftContent(response.document.latestSnapshot?.content ?? "");
-      setLoadError(null);
+      await presenter.refresh();
     } catch (error) {
       setMutationError(
         error instanceof Error ? error.message : "Failed to reload the writer draft.",
       );
     } finally {
+      mutationLockRef.current = null;
       setIsReloading(false);
     }
   }
 
-  const activeDocument = document;
+  const activeDocument = presenter.document;
   const publishStateLabel = activeDocument?.publishState ?? "draft";
-  const contextDocumentId = activeDocument?.documentId ?? docId;
+  const contextDocumentId = activeDocument?.id ?? docId;
+  const projectLabel = presenter.project?.project.name ?? projectId;
+  const spaceId = presenter.project?.project.spaceId ?? "No governance space";
+  const pageError = presenter.projectError ?? presenter.error;
 
   return (
     <main className="page-shell">
@@ -157,35 +125,35 @@ export function WritingPage() {
         <span>Project context · {projectLabel} · {contextDocumentId}</span>
         <span className="status-badge">{publishStateLabel}</span>
         <span className="status-badge">
-          {activeDocument?.latestSnapshot?.citations.length ?? 0} citations
+          {presenter.citations.length} citations
         </span>
         <span className="status-badge">governed citations</span>
       </section>
 
-      {loadError ? (
+      {pageError ? (
         <section className="panel-grid" aria-label="writing errors">
           <article className="panel">
             <h2 className="panel-title">Writing runtime error</h2>
-            <p className="quiet-copy">{loadError}</p>
+            <p className="quiet-copy">{pageError}</p>
           </article>
         </section>
       ) : null}
 
       <section className="panel-grid" aria-label="writing layout">
         <article className="panel">
-          {isLoading ? (
+          {presenter.isProjectLoading || presenter.isLoading || isDraftHydrating ? (
             <>
               <h2 className="panel-title">Loading writer draft…</h2>
-              <p className="quiet-copy">Pulling the latest saved project document.</p>
+              <p className="quiet-copy">Pulling the latest saved project document from the server-owned project-doc runtime.</p>
             </>
-          ) : activeDocument ? (
+          ) : activeDocument && !pageError ? (
             <div className="stack-sm">
               <h2 className="panel-title">{activeDocument.title}</h2>
               <p className="quiet-copy">
-                Project context · {projectId || "No project"} · {contextDocumentId}
+                Project context · {projectLabel} · {contextDocumentId}
               </p>
               <p className="quiet-copy">
-                Latest snapshot · {activeDocument.latestSnapshot?.capturedAt ?? "Not saved yet"}
+                Latest snapshot · {presenter.snapshot?.capturedAt ?? "Not saved yet"}
               </p>
               <label className="quiet-copy" htmlFor="draft-content">
                 Draft content
@@ -193,23 +161,27 @@ export function WritingPage() {
               <textarea
                 id="draft-content"
                 className="draft-editor"
+                disabled={isMutating}
                 rows={12}
                 value={draftContent}
-                onChange={(event) => setDraftContent(event.target.value)}
+                onChange={(event) => {
+                  draftContentRef.current = event.target.value;
+                  setDraftContent(event.target.value);
+                }}
               />
               <div className="button-row">
                 <button
                   type="button"
                   className="action-button"
-                  disabled={isSaving || isReloading}
+                  disabled={isMutating}
                   onClick={() => void handleSave()}
                 >
-                  {isSaving ? "Saving draft…" : "Save draft"}
+                  {presenter.isSaving || isSavePendingLocally ? "Saving draft…" : "Save draft"}
                 </button>
                 <button
                   type="button"
                   className="action-button action-button-secondary"
-                  disabled={isSaving || isReloading}
+                  disabled={isMutating}
                   onClick={() => void handleReload()}
                 >
                   {isReloading ? "Reloading…" : "Reload draft"}
@@ -221,7 +193,7 @@ export function WritingPage() {
             <>
               <h2 className="panel-title">Draft canvas</h2>
               <p className="quiet-copy">
-                Project context · {projectId || "No project"} · {docId}
+                Project context · {projectLabel} · {docId}
               </p>
               <p className="quiet-copy">Promote an insight from Reader to start this document.</p>
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}

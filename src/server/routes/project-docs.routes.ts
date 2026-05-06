@@ -16,10 +16,14 @@ export interface ProjectDocsRoutes {
     input: CreateProjectDocRequest,
     actorUserId: string,
   ): Promise<ProjectDocRecord>;
+  findLatestProjectDocument(
+    projectId: string,
+    actorUserId: string,
+  ): Promise<ProjectDocRecord | null>;
   getDocument(
     query: ProjectDocLookup,
     actorUserId: string,
-  ): Promise<ProjectDocRecord>;
+  ): Promise<ProjectDocSnapshot>;
   saveDocument(
     input: SaveProjectDocRequest,
     actorUserId: string,
@@ -36,6 +40,9 @@ export function createProjectDocsRoutes(
   return {
     createDocument(input, actorUserId) {
       return service.createDocument(input, actorUserId);
+    },
+    findLatestProjectDocument(projectId, actorUserId) {
+      return service.findLatestProjectDocument(projectId, actorUserId);
     },
     getDocument(query, actorUserId) {
       return service.getDocument(query, actorUserId);

@@ -33,10 +33,14 @@ export interface ProjectDocsService {
     input: CreateProjectDocRequest,
     actorUserId: string,
   ): Promise<ProjectDocRecord>;
+  findLatestProjectDocument(
+    projectId: string,
+    actorUserId: string,
+  ): Promise<ProjectDocRecord | null>;
   getDocument(
     query: ProjectDocLookup,
     actorUserId: string,
-  ): Promise<ProjectDocRecord>;
+  ): Promise<ProjectDocSnapshot>;
   saveDocument(
     input: SaveProjectDocRequest,
     actorUserId: string,
@@ -290,17 +294,49 @@ export function createProjectDocsService(
         }),
       );
     },
+    async findLatestProjectDocument(
+      projectId: string,
+      actorUserId: string,
+    ): Promise<ProjectDocRecord | null> {
+      const membership = await store.projectRepository.getProjectMember(
+        projectId,
+        actorUserId,
+      );
+
+      if (!membership) {
+        throw new Error('Access denied for the requested project document.');
+      }
+
+      const document = await store.projectDocRepository.findLatestDocumentForProject(projectId);
+
+      return document ? mapDocument(document) : null;
+    },
     async getDocument(
       query: ProjectDocLookup,
       actorUserId: string,
-    ): Promise<ProjectDocRecord> {
+    ): Promise<ProjectDocSnapshot> {
       const authorized = await getAuthorizedProjectDoc(
         store,
         query.documentId,
         actorUserId,
       );
 
-      return authorized.document;
+      const snapshot = await store.projectDocRepository.findLatestSnapshot(
+        query.documentId,
+      );
+
+      if (!snapshot) {
+        return {
+          capturedAt: authorized.document.updatedAt,
+          citations: [],
+          content: '',
+          document: authorized.document,
+          versionId: `project-doc:${authorized.document.id}:version-0`,
+          versionNumber: 0,
+        };
+      }
+
+      return mapSnapshot(snapshot);
     },
     async saveDocument(
       input: SaveProjectDocRequest,

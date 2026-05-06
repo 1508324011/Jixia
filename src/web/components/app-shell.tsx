@@ -25,9 +25,9 @@ interface WorkflowContext {
     | "library"
     | "reader"
     | "writing"
-    | "jobs"
-    | "settings";
-  docId: string;
+      | "jobs"
+      | "settings";
+  docId?: string;
   entryId: string;
   projectId?: string;
   spaceId?: string;
@@ -61,7 +61,6 @@ function deriveWorkflowContext(pathname: string): WorkflowContext {
   if (projectReaderMatch?.params.projectId && projectReaderMatch.params.entryId) {
     return {
       currentSection: "reader",
-      docId: "doc-1",
       entryId: projectReaderMatch.params.entryId,
       projectId: projectReaderMatch.params.projectId,
     };
@@ -87,7 +86,6 @@ function deriveWorkflowContext(pathname: string): WorkflowContext {
   if (projectLibraryMatch?.params.projectId) {
     return {
       currentSection: "library",
-      docId: "doc-1",
       entryId: "entry-1",
       projectId: projectLibraryMatch.params.projectId,
     };
@@ -96,7 +94,6 @@ function deriveWorkflowContext(pathname: string): WorkflowContext {
   if (pathname === "/search") {
     return {
       currentSection: "search",
-      docId: "doc-1",
       entryId: "entry-1",
     };
   }
@@ -104,7 +101,6 @@ function deriveWorkflowContext(pathname: string): WorkflowContext {
   if (pathname === "/jobs") {
     return {
       currentSection: "jobs",
-      docId: "doc-1",
       entryId: "entry-1",
     };
   }
@@ -112,7 +108,6 @@ function deriveWorkflowContext(pathname: string): WorkflowContext {
   if (pathname === "/settings") {
     return {
       currentSection: "settings",
-      docId: "doc-1",
       entryId: "entry-1",
     };
   }
@@ -120,14 +115,12 @@ function deriveWorkflowContext(pathname: string): WorkflowContext {
   if (pathname === "/spaces") {
     return {
       currentSection: "spaces",
-      docId: "doc-1",
       entryId: "entry-1",
     };
   }
 
   return {
     currentSection: "projects",
-    docId: "doc-1",
     entryId: "entry-1",
   };
 }
@@ -243,15 +236,17 @@ export function AppShell({ children }: { children: ReactNode }) {
           : "/projects",
         icon: BookOpen,
       },
-      {
-        key: "writing",
-        label: "Writing",
-        subtitle: "Versioned drafting",
-        to: resolvedProjectId
-          ? `/projects/${resolvedProjectId}/writing/${context.docId}`
-          : "/projects",
-        icon: FileText,
-      },
+        {
+          key: "writing",
+          label: "Writing",
+          subtitle: "Versioned drafting",
+          to: resolvedProjectId && context.docId
+            ? `/projects/${resolvedProjectId}/writing/${context.docId}`
+            : resolvedProjectId
+              ? `/projects/${resolvedProjectId}`
+              : "/projects",
+          icon: FileText,
+        },
       {
         key: "jobs",
         label: "Jobs",

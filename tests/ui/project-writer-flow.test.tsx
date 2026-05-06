@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -18,42 +18,116 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error?: unknown) => void;
+
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return { promise, reject, resolve };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe('project writer flow', () => {
-  it('project page reopens the promoted writer draft and saves updates', async () => {
+  it('project page shows Writer onboarding when no known project document id exists', async () => {
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'personal-space-user-alice',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([projectFixture]);
+        }
+
+        if (requestUrl.endsWith('/api/projects/project-1/writing-document')) {
+          return jsonResponse(null);
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-1');
+
+    expect(await screen.findByText('Writer 文档区')).toBeInTheDocument();
+    expect(screen.getByText('No Writer draft selected yet')).toBeInTheDocument();
+    expect(
+      screen.getByText('Promote a governed Reader insight to create a project document before reopening it here.'),
+    ).toBeInTheDocument();
+  });
+
+  it('writing page reopens the promoted writer draft and saves updates', async () => {
     const user = userEvent.setup();
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'personal-space-user-alice',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+    };
     const documentState = {
-      document: {
-        documentId: 'doc-1',
-        latestSnapshot: {
-          capturedAt: '2026-03-23T00:40:00.000Z',
-          citations: [
-            {
-              docVersionId: 'doc-version-1',
-              evidenceSpan: 'Tumor board evidence',
-              id: 'citation-1',
-              paperAssetId: 'asset-1',
-            },
-          ],
-          content: 'Promoted governed insight paragraph.',
-          doc: {
-            createdAt: '2026-03-23T00:35:00.000Z',
-            id: 'doc-1',
-            publishState: 'draft',
-            spaceId: 'personal-space-user-alice',
-            title: 'Tumor board literature synthesis',
-          },
-          docVersionId: 'doc-version-1',
+      capturedAt: '2026-03-23T00:40:00.000Z',
+      citations: [
+        {
+          createdAt: '2026-03-23T00:40:00.000Z',
+          evidenceSpan: 'Tumor board evidence',
+          id: 'citation-1',
+          paperAssetId: 'asset-1',
+          projectDocVersionId: 'project-doc-version-1',
         },
+      ],
+      content: 'Promoted governed insight paragraph.',
+      document: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'doc-project-1',
         projectId: 'project-1',
         publishState: 'draft',
-        spaceId: 'personal-space-user-alice',
         title: 'Tumor board literature synthesis',
+        updatedAt: '2026-03-23T00:35:00.000Z',
       },
+      versionId: 'project-doc-version-1',
+      versionNumber: 1,
     };
 
     vi.stubGlobal(
@@ -65,31 +139,31 @@ describe('project writer flow', () => {
             : input instanceof URL
               ? input.toString()
               : input.url;
+        const headers = new Headers(init?.headers);
 
-        if (
-          requestUrl.endsWith('/api/writing/personal-space-user-alice/projects/project-1/document') &&
-          (!init?.method || init.method === 'GET')
-        ) {
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([projectFixture]);
+        }
+
+        if (requestUrl.endsWith('/api/projects/project-1/writing-document')) {
+          return jsonResponse(documentState.document);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
+          expect(headers.get('x-jixia-actor')).toBe('user-alice');
           return jsonResponse(documentState);
         }
 
-        if (
-          requestUrl.endsWith('/api/writing/personal-space-user-alice/projects/project-1/document') &&
-          init?.method === 'POST'
-        ) {
-          const body = JSON.parse(String(init.body)) as { content: string; title: string };
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
+          expect(headers.get('x-jixia-actor')).toBe('user-alice');
+          const body = JSON.parse(String(init.body)) as { content: string };
+          documentState.content = body.content;
+          documentState.capturedAt = '2026-03-23T00:45:00.000Z';
+          documentState.versionId = 'project-doc-version-2';
+          documentState.versionNumber = 2;
           documentState.document = {
             ...documentState.document,
-            latestSnapshot: {
-              ...documentState.document.latestSnapshot,
-              capturedAt: '2026-03-23T00:45:00.000Z',
-              content: body.content,
-              doc: {
-                ...documentState.document.latestSnapshot.doc,
-                title: body.title,
-              },
-            },
-            title: body.title,
+            updatedAt: '2026-03-23T00:45:00.000Z',
           };
 
           return jsonResponse(documentState);
@@ -99,21 +173,130 @@ describe('project writer flow', () => {
       }),
     );
 
-    renderWorkbench('/projects/project-1');
+    renderWorkbench('/projects/project-1/writing/doc-project-1');
 
-    expect(screen.getByText('Writer 文档区')).toBeInTheDocument();
-    expect(screen.getByText('将成熟内容整理进入 Writer')).toBeInTheDocument();
-
-    expect(await screen.findByText('Promoted governed insight paragraph.')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('link', { name: '打开 Writer 文稿' }));
+    expect(
+      await screen.findByDisplayValue('Promoted governed insight paragraph.'),
+    ).toBeInTheDocument();
 
     const draftContent = await screen.findByRole('textbox', { name: 'Draft content' });
     await user.clear(draftContent);
     await user.type(draftContent, 'Reopened writer draft with persisted edits.');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
-    await user.click(screen.getByRole('button', { name: 'Reload draft' }));
+    expect(
+      await screen.findByText('Latest snapshot · 2026-03-23T00:45:00.000Z'),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'Draft content' })).toHaveValue(
+        'Reopened writer draft with persisted edits.',
+      );
+    });
 
+    const reloadButton = await screen.findByRole('button', { name: 'Reload draft' });
+    expect(reloadButton).toBeEnabled();
+    await user.click(reloadButton);
     expect(await screen.findByDisplayValue('Reopened writer draft with persisted edits.')).toBeInTheDocument();
+  });
+
+  it('writer page keeps reload locked while a save is still pending', async () => {
+    const user = userEvent.setup();
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'personal-space-user-alice',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+    };
+    const documentState = {
+      capturedAt: '2026-03-23T00:40:00.000Z',
+      citations: [],
+      content: 'Original promoted draft.',
+      document: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'doc-project-1',
+        projectId: 'project-1',
+        publishState: 'draft',
+        title: 'Tumor board literature synthesis',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+      versionId: 'project-doc-version-1',
+      versionNumber: 1,
+    };
+    const pendingSaveRequest = createDeferred<Response>();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+        const headers = new Headers(init?.headers);
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return Promise.resolve(jsonResponse([projectFixture]));
+        }
+
+        if (requestUrl.endsWith('/api/projects/project-1/writing-document')) {
+          return Promise.resolve(jsonResponse(documentState.document));
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
+          expect(headers.get('x-jixia-actor')).toBe('user-alice');
+          return Promise.resolve(jsonResponse(documentState));
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
+          expect(headers.get('x-jixia-actor')).toBe('user-alice');
+
+          return pendingSaveRequest.promise;
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-1/writing/doc-project-1');
+
+    const draftContent = await screen.findByRole('textbox', { name: 'Draft content' });
+    await user.clear(draftContent);
+    await user.type(draftContent, 'Queued writer edits that should survive the save.');
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    const savingButton = await screen.findByRole('button', { name: 'Saving draft…' });
+    expect(savingButton).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reload draft' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'Draft content' })).toBeDisabled();
+
+    documentState.content = 'Queued writer edits that should survive the save.';
+    documentState.capturedAt = '2026-03-23T00:45:00.000Z';
+    documentState.versionId = 'project-doc-version-2';
+    documentState.versionNumber = 2;
+    documentState.document = {
+      ...documentState.document,
+      updatedAt: '2026-03-23T00:45:00.000Z',
+    };
+    pendingSaveRequest.resolve(jsonResponse(documentState));
+
+    expect(
+      await screen.findByText('Latest snapshot · 2026-03-23T00:45:00.000Z'),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByDisplayValue('Queued writer edits that should survive the save.'),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Reload draft' })).toBeEnabled();
   });
 });

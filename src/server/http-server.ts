@@ -395,6 +395,22 @@ async function handleApiRequest(
       return true;
     }
 
+    const latestProjectDocumentMatch = pathname.match(
+      /^\/api\/projects\/([^/]+)\/writing-document$/,
+    );
+    if (latestProjectDocumentMatch && method === "GET") {
+      const actor = getActor(request);
+      const [, projectId] = latestProjectDocumentMatch;
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      sendJson(
+        response,
+        200,
+        await app.projectDocs.findLatestProjectDocument(projectId, actor.userId),
+        method,
+      );
+      return true;
+    }
+
     if (pathname === "/api/notebooks" && method === "POST") {
       const actor = getActor(request);
       const body = await readJsonBody<{

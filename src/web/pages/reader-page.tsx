@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type { NoteVisibility, ReadingDetailView } from "@shared/contracts/reading";
 
 import { PaperWorkspaceTabs } from "../components/paper-workspace-tabs";
 import { createDemoApi } from "../lib/demo-api";
+import { apiClient } from "../lib/http-client";
+import { demoActorContext } from "../presenters/runtime-context";
 import { useReaderPresenter } from "../presenters/reader-presenter";
 
 const demoApi = createDemoApi();
@@ -28,7 +31,7 @@ export function ReaderPage() {
   const [insightSummary, setInsightSummary] = useState("");
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [writingDocumentId, setWritingDocumentId] = useState<string>("doc-1");
+  const [promotedDocumentId, setPromotedDocumentId] = useState<string | null>(null);
   const [isSavingPrivateNote, setIsSavingPrivateNote] = useState(false);
   const [isSavingProjectComment, setIsSavingProjectComment] = useState(false);
   const [isSavingInsight, setIsSavingInsight] = useState(false);
@@ -36,6 +39,12 @@ export function ReaderPage() {
   const [noteBody, setNoteBody] = useState(
     "This paper matters for the shared review.",
   );
+
+  useEffect(() => {
+    setPromotedDocumentId(null);
+    setSuccessMessage(null);
+    setMutationError(null);
+  }, [entryId, projectId]);
 
   useEffect(() => {
     if (!useWorkbenchReader || hasLegacySpaceContext) {
@@ -85,9 +94,36 @@ export function ReaderPage() {
     [detail],
   );
   const latestInsight = detail?.insights.at(-1) ?? null;
-  const workbenchWritingPath = detail
-    ? `/spaces/${detail.entry.spaceId}/projects/${projectId}/writing/${writingDocumentId}`
+  const workbenchWritingPath = promotedDocumentId
+    ? `/projects/${projectId}/writing/${promotedDocumentId}`
     : null;
+
+  async function promoteInsightToWriter(
+    targetProjectId: string,
+    insight: GeneratedInsightRecord,
+  ): Promise<string> {
+    const createdDocument = await apiClient.createProjectDoc(
+      {
+        projectId: targetProjectId,
+        title: DEFAULT_WRITER_TITLE,
+      },
+      demoActorContext.actorUserId,
+    );
+
+    const savedSnapshot = await apiClient.saveProjectDocVersion(
+      createdDocument.id,
+      {
+        citations: insight.evidenceSpans.map((span) => ({
+          evidenceSpan: span.quote,
+          paperAssetId: span.paperAssetId,
+        })),
+        content: insight.summary,
+      },
+      demoActorContext.actorUserId,
+    );
+
+    return savedSnapshot.document.id;
+  }
 
   if (hasLegacySpaceContext) {
     return (
@@ -124,10 +160,6 @@ export function ReaderPage() {
             <PaperWorkspaceTabs />
           </aside>
         </section>
-
-        <Link className="panel-link" to={`/spaces/${spaceId}/projects/${projectId}/writing/doc-1`}>
-          Open writing
-        </Link>
       </main>
     );
   }
@@ -214,19 +246,9 @@ export function ReaderPage() {
     setSuccessMessage(null);
 
     try {
-      const response = await demoApi.saveWritingDocument({
-        citations: latestInsight.evidenceSpans.map((span) => ({
-          evidenceSpan: span.quote,
-          paperAssetId: span.paperAssetId,
-        })),
-        content: latestInsight.summary,
-        projectId,
-        spaceId: detail.entry.spaceId,
-        title: DEFAULT_WRITER_TITLE,
-      });
-
-      setWritingDocumentId(response.document.documentId);
-      setSuccessMessage("Promoted latest insight into Writer.");
+      const nextDocumentId = await promoteInsightToWriter(projectId, latestInsight);
+      setPromotedDocumentId(nextDocumentId);
+      setSuccessMessage(`Promoted latest insight into Writer as ${nextDocumentId}.`);
     } catch (error) {
       setMutationError(
         error instanceof Error ? error.message : "Failed to promote the latest insight.",
@@ -253,6 +275,10 @@ export function ReaderPage() {
     const resolvedSpaceId = project?.project.spaceId ?? "No governance space";
     const projectLabel = project?.project.name ?? (projectId || "No project");
     const contextProjectId = project?.project.id ?? projectId;
+    const latestProjectInsight = insights.at(-1) ?? null;
+    const projectWritingPath = promotedDocumentId
+      ? `/projects/${contextProjectId}/writing/${promotedDocumentId}`
+      : null;
 
     return (
       <main className="page-shell">
@@ -331,6 +357,44 @@ export function ReaderPage() {
             >
               {isMutating ? "Generating…" : "Generate insight"}
             </button>
+            <button
+              className="panel-link"
+              type="button"
+              disabled={!latestProjectInsight || isPromoting || isMutating}
+              onClick={async () => {
+                if (!latestProjectInsight) {
+                  return;
+                }
+
+                setIsPromoting(true);
+                setMutationError(null);
+                setSuccessMessage(null);
+
+                try {
+                  const nextDocumentId = await promoteInsightToWriter(
+                    contextProjectId,
+                    latestProjectInsight,
+                  );
+                  setPromotedDocumentId(nextDocumentId);
+                  setSuccessMessage(`Promoted latest insight into Writer as ${nextDocumentId}.`);
+                } catch (error) {
+                  setMutationError(
+                    error instanceof Error ? error.message : "Failed to promote the latest insight.",
+                  );
+                } finally {
+                  setIsPromoting(false);
+                }
+              }}
+            >
+              {isPromoting ? "Promoting…" : "Promote latest insight to Writer"}
+            </button>
+            {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
+            {successMessage ? <p className="quiet-copy">{successMessage}</p> : null}
+            {projectWritingPath ? (
+              <Link className="panel-link" to={projectWritingPath}>
+                Open writing
+              </Link>
+            ) : null}
             <div className="shell-grid">
               {notes.map((note) => (
                 <div key={note.id} className="hero-card">
@@ -348,10 +412,6 @@ export function ReaderPage() {
             </div>
           </aside>
         </section>
-
-        <Link className="panel-link" to={`/projects/${contextProjectId}/writing/doc-1`}>
-          Open writing
-        </Link>
       </main>
     );
   }

@@ -44,14 +44,49 @@ const importedEntryFixture = {
   },
 };
 
+const projectDocRecordFixture = {
+  createdAt: '2026-05-03T00:30:00.000Z',
+  createdByUserId: 'user-alice',
+  id: 'doc-project-recovery',
+  projectId: 'project-recovery',
+  publishState: 'draft',
+  title: 'Tumor board literature synthesis',
+  updatedAt: '2026-05-03T00:30:00.000Z',
+};
+
 function installFetchMock() {
+  const readingInsights: Array<{
+    conversationId: string;
+    createdAt: string;
+    evidenceSpans: Array<{ endOffset: number; paperAssetId: string; quote: string; startOffset: number }>;
+    id: string;
+    libraryEntryId: string;
+    summary: string;
+  }> = [];
+  let projectDocSnapshot: {
+    capturedAt: string;
+    citations: Array<{
+      createdAt: string;
+      evidenceSpan?: string;
+      id: string;
+      paperAssetId: string;
+      projectDocVersionId: string;
+    }>;
+    content: string;
+    document: typeof projectDocRecordFixture;
+    versionId: string;
+    versionNumber: number;
+  } | null = null;
+
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const requestUrl = new URL(String(input), window.location.origin);
     const headers = new Headers(init?.headers);
     const actor = headers.get('x-jixia-actor');
+    const bodyText = typeof init?.body === 'string' ? init.body : undefined;
+    const body = bodyText ? JSON.parse(bodyText) as Record<string, unknown> : null;
 
     if (requestUrl.pathname.startsWith('/api/')) {
-      const protectedRoute = requestUrl.pathname !== '/api/health' && !requestUrl.pathname.startsWith('/api/writing/');
+      const protectedRoute = requestUrl.pathname !== '/api/health';
 
       if (protectedRoute && !actor) {
         return Response.json(
@@ -70,6 +105,22 @@ function installFetchMock() {
           { status: 400 },
         );
       }
+
+      if (requestUrl.pathname.startsWith('/api/project-docs/')) {
+        if (body && ('actorUserId' in body || 'createdByUserId' in body)) {
+          return Response.json(
+            { error: 'Actor authority must travel by session header only.' },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
+    if (requestUrl.pathname.startsWith('/api/writing/')) {
+      return Response.json(
+        { error: 'Legacy writing route is not available in the project-doc workflow.' },
+        { status: 410 },
+      );
     }
 
     if (requestUrl.pathname === '/api/projects' && init?.method === 'POST') {
@@ -113,21 +164,65 @@ function installFetchMock() {
     if (requestUrl.pathname === '/api/reading/entry-recovery') {
       return Response.json({
         ...importedEntryFixture,
-        insights: [],
+        insights: readingInsights,
         notes: [],
       });
     }
 
-    if (requestUrl.pathname === '/api/writing/space-recovery/projects/project-recovery/document') {
-      return Response.json({
-        document: {
-          documentId: 'doc-1',
-          latestSnapshot: null,
-          projectId: 'project-recovery',
-          publishState: 'draft',
-          spaceId: 'space-recovery',
-          title: 'Project-first Recovery',
-        },
+    if (requestUrl.pathname === '/api/reading/insights' && init?.method === 'POST') {
+      const insight = {
+        conversationId: 'conversation-recovery',
+        createdAt: '2026-05-03T00:20:00.000Z',
+        evidenceSpans: [
+          {
+            endOffset: 18,
+            paperAssetId: importedEntryFixture.asset.id,
+            quote: 'shared review data',
+            startOffset: 0,
+          },
+        ],
+        id: `insight-${readingInsights.length + 1}`,
+        libraryEntryId: importedEntryFixture.entry.id,
+        summary: 'The imported paper supports the shared review workflow.',
+      };
+      readingInsights.push(insight);
+
+      return Response.json({ insight });
+    }
+
+    if (requestUrl.pathname === '/api/project-docs' && init?.method === 'POST') {
+      return Response.json(projectDocRecordFixture);
+    }
+
+    if (requestUrl.pathname === '/api/project-docs/doc-project-recovery/versions' && init?.method === 'POST') {
+      projectDocSnapshot = {
+        capturedAt: '2026-05-03T00:31:00.000Z',
+        citations: ((body?.citations as Array<{ evidenceSpan?: string; paperAssetId: string }> | undefined) ?? []).map(
+          (citation, index) => ({
+            createdAt: '2026-05-03T00:31:00.000Z',
+            evidenceSpan: citation.evidenceSpan,
+            id: `citation-${index + 1}`,
+            paperAssetId: citation.paperAssetId,
+            projectDocVersionId: 'project-doc-version-1',
+          }),
+        ),
+        content: String(body?.content ?? ''),
+        document: projectDocRecordFixture,
+        versionId: 'project-doc-version-1',
+        versionNumber: 1,
+      };
+
+      return Response.json(projectDocSnapshot);
+    }
+
+    if (requestUrl.pathname === '/api/project-docs/doc-project-recovery') {
+      return Response.json(projectDocSnapshot ?? {
+        capturedAt: '2026-05-03T00:31:00.000Z',
+        citations: [],
+        content: '',
+        document: projectDocRecordFixture,
+        versionId: 'project-doc-version-0',
+        versionNumber: 0,
       });
     }
 
@@ -196,6 +291,18 @@ describe('mvp workflow shell', () => {
     expect(screen.getByText('Project context · Project-first Recovery')).toBeInTheDocument();
     expect(screen.getByText('Entry · entry-recovery')).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: 'Generate insight' }));
+    await waitFor(() =>
+      expect(
+        screen.getByText('The imported paper supports the shared review workflow.'),
+      ).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
+    await waitFor(() =>
+      expect(
+        screen.getByText('Promoted latest insight into Writer as doc-project-recovery.'),
+      ).toBeInTheDocument(),
+    );
     await user.click(screen.getByRole('link', { name: 'Open writing' }));
 
     expect(screen.getByRole('heading', { name: 'Writing' })).toBeInTheDocument();
@@ -205,7 +312,7 @@ describe('mvp workflow shell', () => {
     ).toHaveTextContent('Space context · space-recovery');
     expect(
       screen.getByLabelText('context bar'),
-    ).toHaveTextContent('Project context · Project-first Recovery · doc-1');
+    ).toHaveTextContent('Project context · Project-first Recovery · doc-project-recovery');
   });
 
   it('shares scholarly shell primitives across pages', async () => {
@@ -255,6 +362,18 @@ describe('mvp workflow shell', () => {
       screen.getByText('Governed action source · queued → running → succeeded'),
     ).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: 'Generate insight' }));
+    await waitFor(() =>
+      expect(
+        screen.getByText('The imported paper supports the shared review workflow.'),
+      ).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
+    await waitFor(() =>
+      expect(
+        screen.getByText('Promoted latest insight into Writer as doc-project-recovery.'),
+      ).toBeInTheDocument(),
+    );
     await user.click(screen.getByRole('link', { name: 'Open writing' }));
 
     expect(screen.getByText('Publish state path')).toBeInTheDocument();
@@ -300,7 +419,7 @@ describe('mvp workflow shell', () => {
     window.history.replaceState(
       {},
       '',
-      '/projects/project-recovery/writing/doc-1',
+      '/projects/project-recovery/writing/doc-project-recovery',
     );
 
     render(<App />);

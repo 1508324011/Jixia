@@ -159,11 +159,53 @@ describe('http server notebook and project-doc api', () => {
             method: 'POST',
           },
         );
+        const ownerSave = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/versions`,
+          {
+            body: JSON.stringify({ citations: [], content: 'Owner saved draft' }),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-alice',
+            },
+            method: 'POST',
+          },
+        );
+        const ownerRead = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}`,
+          { headers: { 'x-jixia-actor': 'user-alice' } },
+        );
+        const latestProjectDocument = await fetch(
+          `${server.url}/api/projects/${project.project.id}/writing-document`,
+          { headers: { 'x-jixia-actor': 'user-alice' } },
+        );
+
+        const ownerSnapshot = await ownerRead.json() as {
+          content: string;
+          document: { id: string; projectId: string };
+          versionNumber: number;
+        };
+        const latestDocument = await latestProjectDocument.json() as {
+          id: string;
+          projectId: string;
+        } | null;
 
         expect(memberRead.status).toBe(200);
         expect(nonMemberRead.status).toBe(403);
         expect(spoofedCreate.status).toBe(400);
         expect(viewerSave.status).toBe(403);
+        expect(ownerSave.status).toBe(200);
+        expect(ownerRead.status).toBe(200);
+        expect(ownerSnapshot.content).toBe('Owner saved draft');
+        expect(ownerSnapshot.document).toMatchObject({
+          id: projectDoc.id,
+          projectId: project.project.id,
+        });
+        expect(ownerSnapshot.versionNumber).toBe(1);
+        expect(latestProjectDocument.status).toBe(200);
+        expect(latestDocument).toMatchObject({
+          id: projectDoc.id,
+          projectId: project.project.id,
+        });
       } finally {
         await server.close();
       }

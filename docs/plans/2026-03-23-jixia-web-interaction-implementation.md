@@ -385,6 +385,14 @@ Expected: FAIL because project-to-writer integration cues are missing.
 </section>
 ```
 
+Implementation note: `ProjectWriterList` should discover an existing shared draft through
+`GET /api/projects/:projectId/writing-document` before it links into
+`/projects/:projectId/writing/:docId`. `GET /api/project-docs/:documentId` should then return the
+latest saved snapshot for that document, or a server-authored empty snapshot with empty content,
+empty citations, and `versionNumber: 0` when the document exists but no saved version exists yet.
+The writing surface should also serialize Save vs Reload requests so an older refresh response
+cannot overwrite a newer saved snapshot during stress clicks.
+
 **Step 4: Run test to verify it passes**
 
 Run: `npm test -- tests/ui/project-writer-flow.test.tsx`

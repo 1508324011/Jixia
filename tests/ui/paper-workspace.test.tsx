@@ -26,6 +26,23 @@ afterEach(() => {
 describe('paper workspace', () => {
   it('paper page persists private notes, shared comments, and writer promotion actions', async () => {
     const user = userEvent.setup();
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:00:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:00:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'personal-space-user-alice',
+        status: 'active',
+        updatedAt: '2026-03-23T00:00:00.000Z',
+      },
+    };
     const readingDetail = {
       asset: {
         abstractText: 'Imported PMID metadata for 654321',
@@ -69,6 +86,11 @@ describe('paper workspace', () => {
             : input instanceof URL
               ? input.toString()
               : input.url;
+        const headers = new Headers(init?.headers);
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([projectFixture]);
+        }
 
         if (requestUrl.endsWith('/api/reading/entry-1') && (!init?.method || init.method === 'GET')) {
           return jsonResponse(readingDetail);
@@ -114,34 +136,40 @@ describe('paper workspace', () => {
           return jsonResponse({ insight }, 201);
         }
 
-        if (
-          requestUrl.endsWith('/api/writing/personal-space-user-alice/projects/project-1/document') &&
-          init?.method === 'POST'
-        ) {
+        if (requestUrl.endsWith('/api/project-docs') && init?.method === 'POST') {
+          expect(headers.get('x-jixia-actor')).toBe('user-alice');
+
+          return jsonResponse({
+            createdAt: '2026-03-23T00:30:00.000Z',
+            createdByUserId: 'user-alice',
+            id: 'doc-project-1',
+            projectId: 'project-1',
+            publishState: 'draft',
+            title: 'Tumor board literature synthesis',
+            updatedAt: '2026-03-23T00:30:00.000Z',
+          });
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
+          expect(headers.get('x-jixia-actor')).toBe('user-alice');
           const body = JSON.parse(String(init.body)) as { content: string };
           promotedDraft = body.content;
 
           return jsonResponse({
+            capturedAt: '2026-03-23T00:30:00.000Z',
+            citations: [],
+            content: promotedDraft,
             document: {
-              documentId: 'doc-1',
-              latestSnapshot: {
-                capturedAt: '2026-03-23T00:30:00.000Z',
-                citations: [],
-                content: promotedDraft,
-                doc: {
-                  createdAt: '2026-03-23T00:30:00.000Z',
-                  id: 'doc-1',
-                  publishState: 'draft',
-                  spaceId: 'personal-space-user-alice',
-                  title: 'Tumor board literature synthesis',
-                },
-                docVersionId: 'doc-version-1',
-              },
+              createdAt: '2026-03-23T00:30:00.000Z',
+              createdByUserId: 'user-alice',
+              id: 'doc-project-1',
               projectId: 'project-1',
               publishState: 'draft',
-              spaceId: 'personal-space-user-alice',
               title: 'Tumor board literature synthesis',
+              updatedAt: '2026-03-23T00:30:00.000Z',
             },
+            versionId: 'project-doc-version-1',
+            versionNumber: 1,
           });
         }
 
@@ -172,7 +200,11 @@ describe('paper workspace', () => {
 
     await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
 
-    expect(await screen.findByText('Promoted latest insight into Writer.')).toBeInTheDocument();
+    expect(await screen.findByText('Promoted latest insight into Writer as doc-project-1.')).toBeInTheDocument();
     expect(promotedDraft).toContain('Governed insight ready for Writer promotion.');
+    expect(screen.getByRole('link', { name: 'Open writing' })).toHaveAttribute(
+      'href',
+      '/projects/project-1/writing/doc-project-1',
+    );
   });
 });

@@ -15,6 +15,24 @@ afterEach(() => {
 
 describe('library and project context', () => {
   it('library and project workspace expose different context labels', async () => {
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-05-03T00:00:00.000Z',
+        projectId: 'project-recovery',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-05-03T00:00:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-recovery',
+        name: 'Project-first Recovery',
+        spaceId: 'space-recovery',
+        status: 'active',
+        updatedAt: '2026-05-03T00:00:00.000Z',
+      },
+    };
+
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string | URL) => {
@@ -22,6 +40,20 @@ describe('library and project context', () => {
 
         if (url.endsWith('/api/library/personal')) {
           return new Response(JSON.stringify({ entries: [] }), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        if (url.endsWith('/api/projects')) {
+          return new Response(JSON.stringify([projectFixture]), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        if (url.endsWith('/api/projects/project-recovery/writing-document')) {
+          return new Response(JSON.stringify(null), {
             headers: { 'Content-Type': 'application/json' },
             status: 200,
           });
@@ -37,8 +69,8 @@ describe('library and project context', () => {
 
     cleanup();
 
-    renderWorkbench('/projects/project-1');
-    expect(screen.getByText('Project / 肿瘤标志物项目')).toBeInTheDocument();
+    renderWorkbench('/projects/project-recovery');
+    expect(await screen.findByText('Project / Project-first Recovery')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '共享 Library' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Writer' })).toBeInTheDocument();
   });
