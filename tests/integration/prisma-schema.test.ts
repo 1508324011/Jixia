@@ -16,9 +16,12 @@ describe('prisma schema', () => {
     expect(schema).toContain('model Note');
     expect(schema).toContain('model ReadingState');
     expect(schema).toContain('model Conversation');
-    expect(schema).toContain('model WritingDoc');
-    expect(schema).toContain('model DocVersion');
-    expect(schema).toContain('model CitationLink');
+    expect(schema).toContain('model NotebookDocument');
+    expect(schema).toContain('model NotebookDocumentVersion');
+    expect(schema).toContain('model NotebookDocumentCitation');
+    expect(schema).toContain('model ProjectDoc');
+    expect(schema).toContain('model ProjectDocVersion');
+    expect(schema).toContain('model ProjectDocCitation');
     expect(schema).toContain('model ProviderCredential');
     expect(schema).toContain('model Job');
     expect(schema).toContain('model JobEvent');
@@ -42,11 +45,22 @@ describe('prisma schema', () => {
     expect(schema).toMatch(
       /model Conversation[\s\S]*\n\s+libraryEntryId\s+String/,
     );
+    expect(schema).toMatch(/model NotebookDocument[\s\S]*\n\s+ownerId\s+String/);
     expect(schema).toMatch(
-      /model CitationLink[\s\S]*\n\s+docVersionId\s+String/,
+      /model NotebookDocumentVersion[\s\S]*@@unique\(\[notebookDocumentId, versionNumber\]\)/,
     );
     expect(schema).toMatch(
-      /model CitationLink[\s\S]*\n\s+paperAssetId\s+String/,
+      /model NotebookDocumentCitation[\s\S]*\n\s+notebookDocumentVersionId\s+String/,
+    );
+    expect(schema).toMatch(/model ProjectDoc[\s\S]*\n\s+projectId\s+String/);
+    expect(schema).toMatch(
+      /model ProjectDoc[\s\S]*\n\s+publishState\s+PublishState/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocVersion[\s\S]*@@unique\(\[projectDocId, versionNumber\]\)/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+projectDocVersionId\s+String/,
     );
     expect(schema).toMatch(/model Job[\s\S]*\n\s+credentialRef\s+String/);
   });
@@ -63,10 +77,17 @@ describe('prisma schema', () => {
     expect(existsSync('src/db/repositories/project.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/space.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/library.repository.ts')).toBe(true);
+    expect(existsSync('src/db/repositories/notebook.repository.ts')).toBe(true);
+    expect(existsSync('src/db/repositories/project-doc.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/job.repository.ts')).toBe(true);
     expect(
       existsSync(
         'prisma/migrations/20260504000000_scoped_library_entries/migration.sql',
+      ),
+    ).toBe(true);
+    expect(
+      existsSync(
+        'prisma/migrations/20260505000000_notebook_project_docs/migration.sql',
       ),
     ).toBe(true);
     expect(clientEntrypoint).toContain('PrismaClient');
@@ -74,6 +95,8 @@ describe('prisma schema', () => {
     expect(dbIndex).toContain('createProjectRepository');
     expect(dbIndex).toContain('createSpaceRepository');
     expect(dbIndex).toContain('createLibraryRepository');
+    expect(dbIndex).toContain('createNotebookRepository');
+    expect(dbIndex).toContain('createProjectDocRepository');
     expect(packageJson.scripts?.['prisma:generate']).toBe('prisma generate');
     expect(packageJson.scripts?.prebuild).toBe('npm run prisma:generate');
     expect(packageJson.scripts?.pretest).toBe('npm run prisma:generate');
@@ -93,6 +116,14 @@ describe('prisma schema', () => {
       'src/db/repositories/library.repository.ts',
       'utf8',
     );
+    const notebookRepository = readFileSync(
+      'src/db/repositories/notebook.repository.ts',
+      'utf8',
+    );
+    const projectDocRepository = readFileSync(
+      'src/db/repositories/project-doc.repository.ts',
+      'utf8',
+    );
     const jobRepository = readFileSync(
       'src/db/repositories/job.repository.ts',
       'utf8',
@@ -101,6 +132,8 @@ describe('prisma schema', () => {
     expect(projectRepository).not.toContain('@shared/contracts/');
     expect(spaceRepository).not.toContain('@shared/contracts/');
     expect(libraryRepository).not.toContain('@shared/contracts/');
+    expect(notebookRepository).not.toContain('@shared/contracts/');
+    expect(projectDocRepository).not.toContain('@shared/contracts/');
     expect(jobRepository).not.toContain('@shared/contracts/');
   });
 
@@ -128,12 +161,13 @@ describe('prisma schema', () => {
     expect(spaceService).toContain('repository.getMembership');
   });
 
-  it('cuts targeted server flows over to repository-backed space authority', () => {
+  it('cuts targeted server flows over to repository-backed document authority', () => {
     const appWiring = readFileSync('src/server/app.ts', 'utf8');
     const importService = readFileSync('src/server/services/import.service.ts', 'utf8');
     const libraryService = readFileSync('src/server/services/library.service.ts', 'utf8');
     const readingService = readFileSync('src/server/services/reading.service.ts', 'utf8');
-    const writingService = readFileSync('src/server/services/writing.service.ts', 'utf8');
+    const notebookService = readFileSync('src/server/services/notebooks.service.ts', 'utf8');
+    const projectDocsService = readFileSync('src/server/services/project-docs.service.ts', 'utf8');
     const jobsRoutes = readFileSync('src/server/routes/jobs.routes.ts', 'utf8');
     const jobStreamRoutes = readFileSync('src/server/routes/job-stream.routes.ts', 'utf8');
     const jobGovernance = readFileSync('src/server/jobs/job-governance.ts', 'utf8');
@@ -156,9 +190,16 @@ describe('prisma schema', () => {
     expect(readingService).not.toContain('store.memberships.some');
     expect(readingService).not.toContain('store.spaces.find');
 
-    expect(writingService).toContain('spaceRepository.denyNonMember');
-    expect(writingService).not.toContain('store.memberships.some');
-    expect(writingService).not.toContain('store.spaces.some');
+    expect(notebookService).toContain('notebookRepository.getDocumentForOwner');
+    expect(notebookService).toContain('libraryService.assertCanAccessPaperAsset');
+    expect(notebookService).not.toContain('store.memberships.some');
+    expect(notebookService).not.toContain('store.spaces.some');
+
+    expect(projectDocsService).toContain('projectRepository.getProjectMember');
+    expect(projectDocsService).toContain('projectDocRepository.saveVersion');
+    expect(projectDocsService).toContain('libraryRepository.listLibraryEntriesForAsset');
+    expect(projectDocsService).not.toContain('SpaceMembership');
+    expect(projectDocsService).not.toContain('store.projectMembers.some');
 
     expect(jobsRoutes).toContain('spaceRepository.denyNonMember');
     expect(jobsRoutes).not.toContain('actorUserId ?? input.requestedByUserId');
@@ -176,8 +217,8 @@ describe('prisma schema', () => {
     const importService = readFileSync('src/server/services/import.service.ts', 'utf8');
     const libraryService = readFileSync('src/server/services/library.service.ts', 'utf8');
     const readingService = readFileSync('src/server/services/reading.service.ts', 'utf8');
-    const writingService = readFileSync('src/server/services/writing.service.ts', 'utf8');
-    const versioningService = readFileSync('src/server/services/versioning.service.ts', 'utf8');
+    const notebookService = readFileSync('src/server/services/notebooks.service.ts', 'utf8');
+    const projectDocsService = readFileSync('src/server/services/project-docs.service.ts', 'utf8');
     const libraryRepository = readFileSync(
       'src/db/repositories/library.repository.ts',
       'utf8',
@@ -190,12 +231,16 @@ describe('prisma schema', () => {
 
     expect(appWiring).toContain('createBootstrappedLibraryRepository');
     expect(appWiring).toContain('resolveLegacyLibraryBootstrapInput');
+    expect(appWiring).toContain('hadLegacyCollaborativeKeys');
+    expect(appWiring).toContain("hasOwnProperty(parsed, 'writingDocs')");
     expect(appWiring).toContain('parsed.paperAssets');
     expect(appWiring).toContain('parsed.libraryEntries');
     expect(appWiring).not.toContain('state.paperAssets');
     expect(appWiring).not.toContain('state.libraryEntries');
     expect(appWiring).not.toContain('paperAssets: state.paperAssets');
     expect(appWiring).not.toContain('libraryEntries: state.libraryEntries');
+    expect(appWiring).not.toContain('projectMembers: state.projectMembers');
+    expect(appWiring).not.toContain('projects: state.projects');
 
     expect(importService).toContain('libraryRepository.importScopedEntry');
     expect(importService).not.toContain('store.paperAssets');
@@ -209,11 +254,10 @@ describe('prisma schema', () => {
     expect(readingService).not.toContain('store.paperAssets');
     expect(readingService).not.toContain('store.libraryEntries');
 
-    expect(writingService).not.toContain('paperAssets');
-    expect(versioningService).toMatch(
-      /store\.libraryService\s*\.assertCanAccessEntry/,
-    );
-    expect(versioningService).toContain('store.libraryService.assertCanAccessPaperAsset');
-    expect(versioningService).not.toContain('store.paperAssets');
+    expect(notebookService).toContain('libraryService.assertCanAccessPaperAsset');
+    expect(notebookService).not.toContain('store.paperAssets');
+    expect(projectDocsService).toMatch(/assertCanAccessEntry/);
+    expect(projectDocsService).toMatch(/listLibraryEntriesForAsset/);
+    expect(projectDocsService).not.toContain('store.paperAssets');
   });
 });
