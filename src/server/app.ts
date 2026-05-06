@@ -1,9 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type {
-  CitationLinkRecord,
-} from '@shared/contracts/writing';
 import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
 import type { JobEventRecord } from '@shared/contracts/jobs';
 import type { ConversationRecord, NoteRecord } from '@shared/contracts/reading';
@@ -11,6 +8,8 @@ import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import {
   createPrismaClient,
+  createNotebookRepository,
+  createProjectDocRepository,
   createLibraryRepository,
   createProjectRepository,
   createSpaceRepository,
@@ -47,13 +46,17 @@ import {
   type LibraryRoutes,
 } from './routes/library.routes';
 import {
+  createNotebooksRoutes,
+  type NotebooksRoutes,
+} from './routes/notebooks.routes';
+import {
+  createProjectDocsRoutes,
+  type ProjectDocsRoutes,
+} from './routes/project-docs.routes';
+import {
   createReadingRoutes,
   type ReadingRoutes,
 } from './routes/reading.routes';
-import {
-  createWritingRoutes,
-  type WritingRoutes,
-} from './routes/writing.routes';
 import {
   createHealthRoutes,
   type HealthRoutes,
@@ -80,24 +83,16 @@ import { createEvidenceLinkService } from './services/evidence-link.service';
 import { createJobBus } from './jobs/job-bus';
 import { createJobRunner, type StoredJob } from './jobs/job-runner';
 import { createLibraryService } from './services/library.service';
+import { createNotebookService } from './services/notebooks.service';
+import { createProjectDocsService } from './services/project-docs.service';
 import { createReadingService } from './services/reading.service';
 import {
   createProjectsService,
-  type StoredProject,
-  type StoredProjectMember,
 } from './services/projects.service';
 import {
   createSpacesService,
   type StoredSpace,
 } from './services/spaces.service';
-import {
-  createVersioningService,
-  type StoredDocVersion,
-} from './services/versioning.service';
-import {
-  createWritingService,
-  type StoredWritingDoc,
-} from './services/writing.service';
 import { createFileStore } from './storage/file-store';
 import {
   resolveStorageRoot,
@@ -121,10 +116,8 @@ export interface JixiaAppEnv extends StorageRootEnv {
 
 export interface JixiaAppState {
   auditLogs: AuditLogRecord[];
-  citationLinks: CitationLinkRecord[];
   conversations: ConversationRecord[];
   credentials: StoredCredential[];
-  docVersions: StoredDocVersion[];
   insights: GeneratedInsightRecord[];
   jobEvents: JobEventRecord[];
   jobs: StoredJob[];
@@ -133,18 +126,25 @@ export interface JixiaAppState {
   memberships: SpaceMembership[];
   nextSequence: number;
   notes: NoteRecord[];
-  projectMembers: StoredProjectMember[];
-  projects: StoredProject[];
   spaces: StoredSpace[];
-  writingDocs: StoredWritingDoc[];
 }
 
 type SerializedJixiaAppState = Partial<
   Omit<JixiaAppState, 'legacyLibraryEntries' | 'legacyPaperAssets'>
 > & {
+  citationLinks?: unknown;
+  docVersions?: unknown;
   libraryEntries?: LegacyStoredLibraryEntry[];
   paperAssets?: LegacyStoredPaperAsset[];
+  projectMembers?: unknown;
+  projects?: unknown;
+  writingDocs?: unknown;
 };
+
+interface LoadedJixiaAppState {
+  hadLegacyCollaborativeKeys: boolean;
+  state: JixiaAppState;
+}
 
 interface LegacyStoredPaperAsset {
   abstractText?: string;
@@ -171,19 +171,18 @@ export interface JixiaApp {
   jobs: JobsRoutes;
   jobStream: JobStreamRoutes;
   library: LibraryRoutes;
+  notebooks: NotebooksRoutes;
+  projectDocs: ProjectDocsRoutes;
   projects: ProjectsRoutes;
   reading: ReadingRoutes;
   spaces: SpacesRoutes;
-  writing: WritingRoutes;
 }
 
 function createState(): JixiaAppState {
   return {
     auditLogs: [],
-    citationLinks: [],
     conversations: [],
     credentials: [],
-    docVersions: [],
     insights: [],
     jobEvents: [],
     jobs: [],
@@ -192,11 +191,15 @@ function createState(): JixiaAppState {
     memberships: [],
     nextSequence: 0,
     notes: [],
-    projectMembers: [],
-    projects: [],
     spaces: [],
-    writingDocs: [],
   };
+}
+
+function hasOwnProperty(
+  value: object,
+  key: PropertyKey,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function resolveAppStatePath(env: StorageRootEnv = process.env): string {
@@ -209,35 +212,42 @@ function resolveLibraryBootstrapMarkerPath(
   return join(resolveStorageRoot(env), LIBRARY_BOOTSTRAP_MARKER_FILE);
 }
 
-function loadState(env: StorageRootEnv = process.env): JixiaAppState {
+function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
   const initialState = createState();
   const statePath = resolveAppStatePath(env);
 
   if (!existsSync(statePath)) {
-    return initialState;
+    return {
+      hadLegacyCollaborativeKeys: false,
+      state: initialState,
+    };
   }
 
   const parsed = JSON.parse(readFileSync(statePath, 'utf8')) as SerializedJixiaAppState;
+  const hadLegacyCollaborativeKeys =
+    hasOwnProperty(parsed, 'projects') ||
+    hasOwnProperty(parsed, 'projectMembers') ||
+    hasOwnProperty(parsed, 'writingDocs') ||
+    hasOwnProperty(parsed, 'docVersions') ||
+    hasOwnProperty(parsed, 'citationLinks');
 
   return {
-    auditLogs: parsed.auditLogs ?? initialState.auditLogs,
-    citationLinks: parsed.citationLinks ?? initialState.citationLinks,
-    conversations: parsed.conversations ?? initialState.conversations,
-    credentials: parsed.credentials ?? initialState.credentials,
-    docVersions: parsed.docVersions ?? initialState.docVersions,
-    insights: parsed.insights ?? initialState.insights,
-    jobEvents: parsed.jobEvents ?? initialState.jobEvents,
-    jobs: parsed.jobs ?? initialState.jobs,
-    legacyLibraryEntries:
-      parsed.libraryEntries ?? initialState.legacyLibraryEntries,
-    legacyPaperAssets: parsed.paperAssets ?? initialState.legacyPaperAssets,
-    memberships: parsed.memberships ?? initialState.memberships,
-    nextSequence: parsed.nextSequence ?? initialState.nextSequence,
-    notes: parsed.notes ?? initialState.notes,
-    projectMembers: parsed.projectMembers ?? initialState.projectMembers,
-    projects: parsed.projects ?? initialState.projects,
-    spaces: parsed.spaces ?? initialState.spaces,
-    writingDocs: parsed.writingDocs ?? initialState.writingDocs,
+    hadLegacyCollaborativeKeys,
+    state: {
+      auditLogs: parsed.auditLogs ?? initialState.auditLogs,
+      conversations: parsed.conversations ?? initialState.conversations,
+      credentials: parsed.credentials ?? initialState.credentials,
+      insights: parsed.insights ?? initialState.insights,
+      jobEvents: parsed.jobEvents ?? initialState.jobEvents,
+      jobs: parsed.jobs ?? initialState.jobs,
+      legacyLibraryEntries:
+        parsed.libraryEntries ?? initialState.legacyLibraryEntries,
+      legacyPaperAssets: parsed.paperAssets ?? initialState.legacyPaperAssets,
+      memberships: parsed.memberships ?? initialState.memberships,
+      nextSequence: parsed.nextSequence ?? initialState.nextSequence,
+      notes: parsed.notes ?? initialState.notes,
+      spaces: parsed.spaces ?? initialState.spaces,
+    },
   };
 }
 
@@ -252,10 +262,8 @@ function persistState(
   mkdirSync(rootDirectory, { recursive: true });
   const serializedState: SerializedJixiaAppState = {
     auditLogs: state.auditLogs,
-    citationLinks: state.citationLinks,
     conversations: state.conversations,
     credentials: state.credentials,
-    docVersions: state.docVersions,
     insights: state.insights,
     jobEvents: state.jobEvents,
     jobs: state.jobs,
@@ -264,10 +272,7 @@ function persistState(
     nextSequence: state.nextSequence,
     notes: state.notes,
     paperAssets: state.legacyPaperAssets,
-    projectMembers: state.projectMembers,
-    projects: state.projects,
     spaces,
-    writingDocs: state.writingDocs,
   };
 
   writeFileSync(resolveAppStatePath(env), JSON.stringify(serializedState, null, 2));
@@ -377,10 +382,16 @@ function createBootstrappedLibraryRepository(
 }
 
 export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
-  const state = loadState(options.env);
+  const loadedState = loadState(options.env);
+  const state = loadedState.state;
   const persist = (): void => {
     persistState(state, options.env);
   };
+
+  if (loadedState.hadLegacyCollaborativeKeys) {
+    persist();
+  }
+
   const prismaClient = createPrismaClient({ url: resolveAppDatabaseUrl(options.env) });
   const spaceRepository = createSpaceRepository(prismaClient);
   const spacesService = createSpacesService({
@@ -436,6 +447,18 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     libraryRepository,
     projectRepository,
   });
+  const notebookRepository = createNotebookRepository(prismaClient);
+  const notebookService = createNotebookService({
+    libraryService,
+    notebookRepository,
+  });
+  const projectDocRepository = createProjectDocRepository(prismaClient);
+  const projectDocsService = createProjectDocsService({
+    libraryRepository,
+    libraryService,
+    projectDocRepository,
+    projectRepository,
+  });
   const readingService = createReadingService({
     conversations: state.conversations,
     evidenceLinkService: createEvidenceLinkService(),
@@ -446,25 +469,6 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     },
     notes: state.notes,
     persist,
-  });
-  const versioningService = createVersioningService({
-    citationLinks: state.citationLinks,
-    docVersions: state.docVersions,
-    libraryService,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
-    },
-    persist,
-  });
-  const writingService = createWritingService({
-    docVersions: state.docVersions,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
-    },
-    persist,
-    spaceRepository,
-    versioningService,
-    writingDocs: state.writingDocs,
   });
   const credentialsService = createCredentialsService({
     credentials: state.credentials,
@@ -516,9 +520,10 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       spaceRepository,
     }),
     library: createLibraryRoutes(libraryService),
+    notebooks: createNotebooksRoutes(notebookService),
+    projectDocs: createProjectDocsRoutes(projectDocsService),
     projects: createProjectsRoutes(projectsService),
     reading: createReadingRoutes(readingService),
     spaces: createSpacesRoutes(spacesService),
-    writing: createWritingRoutes(writingService),
   };
 }

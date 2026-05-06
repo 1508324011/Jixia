@@ -97,6 +97,36 @@ async function importPaper(
   return { ...imported, projectId: project.project.id };
 }
 
+async function createNotebook(serverUrl: string, actorUserId: string) {
+  const response = await fetch(`${serverUrl}/api/notebooks`, {
+    body: JSON.stringify({ title: `${actorUserId} notebook` }),
+    headers: {
+      'Content-Type': 'application/json',
+      'x-jixia-actor': actorUserId,
+    },
+    method: 'POST',
+  });
+
+  return (await response.json()) as { id: string };
+}
+
+async function createProjectDoc(
+  serverUrl: string,
+  actorUserId: string,
+  projectId: string,
+) {
+  const response = await fetch(`${serverUrl}/api/project-docs`, {
+    body: JSON.stringify({ projectId, title: `${actorUserId} project doc` }),
+    headers: {
+      'Content-Type': 'application/json',
+      'x-jixia-actor': actorUserId,
+    },
+    method: 'POST',
+  });
+
+  return (await response.json()) as { id: string };
+}
+
 async function createJob(
   serverUrl: string,
   actorUserId: string,
@@ -164,6 +194,13 @@ describe("http server actor boundary cleanup", () => {
           libraryList,
           libraryEntry,
           importPaperResponse,
+          notebooks,
+          notebookRead,
+          notebookSave,
+          projectDocCreate,
+          projectDocRead,
+          projectDocSave,
+          projectDocPublish,
           reading,
           note,
           insight,
@@ -190,6 +227,33 @@ describe("http server actor boundary cleanup", () => {
               }),
               headers: { "Content-Type": "application/json" },
               method: "POST",
+            }),
+            fetch(`${server.url}/api/notebooks`, {
+              body: JSON.stringify({ title: 'Unauthorized notebook' }),
+              headers: { "Content-Type": "application/json" },
+              method: 'POST',
+            }),
+            fetch(`${server.url}/api/notebooks/notebook-1`),
+            fetch(`${server.url}/api/notebooks/notebook-1/versions`, {
+              body: JSON.stringify({ citations: [], content: 'Unauthorized notebook save' }),
+              headers: { "Content-Type": "application/json" },
+              method: 'POST',
+            }),
+            fetch(`${server.url}/api/project-docs`, {
+              body: JSON.stringify({ projectId: 'project-1', title: 'Unauthorized project doc' }),
+              headers: { "Content-Type": "application/json" },
+              method: 'POST',
+            }),
+            fetch(`${server.url}/api/project-docs/project-doc-1`),
+            fetch(`${server.url}/api/project-docs/project-doc-1/versions`, {
+              body: JSON.stringify({ citations: [], content: 'Unauthorized project doc save' }),
+              headers: { "Content-Type": "application/json" },
+              method: 'POST',
+            }),
+            fetch(`${server.url}/api/project-docs/project-doc-1/publish-state`, {
+              body: JSON.stringify({ publishState: 'review' }),
+              headers: { "Content-Type": "application/json" },
+              method: 'POST',
             }),
             fetch(`${server.url}/api/reading/entry-1`),
             fetch(`${server.url}/api/reading/notes`, {
@@ -238,6 +302,13 @@ describe("http server actor boundary cleanup", () => {
           libraryList,
           libraryEntry,
           importPaperResponse,
+          notebooks,
+          notebookRead,
+          notebookSave,
+          projectDocCreate,
+          projectDocRead,
+          projectDocSave,
+          projectDocPublish,
           reading,
           note,
           insight,
@@ -321,6 +392,52 @@ describe("http server actor boundary cleanup", () => {
               "x-jixia-actor": "user-alice",
             },
             method: "POST",
+          }),
+          fetch(`${server.url}/api/notebooks`, {
+            body: JSON.stringify({ ownerId: 'user-bob', title: 'Spoofed notebook' }),
+            headers: {
+              "Content-Type": "application/json",
+              "x-jixia-actor": 'user-alice',
+            },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/notebooks/${(await createNotebook(server.url, 'user-alice')).id}?actorUserId=user-bob`, {
+            headers: { "x-jixia-actor": 'user-alice' },
+          }),
+          fetch(`${server.url}/api/notebooks/${(await createNotebook(server.url, 'user-alice')).id}/versions`, {
+            body: JSON.stringify({ actorUserId: 'user-bob', citations: [], content: 'Spoofed notebook save' }),
+            headers: {
+              "Content-Type": "application/json",
+              "x-jixia-actor": 'user-alice',
+            },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/project-docs`, {
+            body: JSON.stringify({ createdByUserId: 'user-bob', projectId: importedRecord.projectId, title: 'Spoofed project doc' }),
+            headers: {
+              "Content-Type": "application/json",
+              "x-jixia-actor": 'user-alice',
+            },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/project-docs/${(await createProjectDoc(server.url, 'user-alice', importedRecord.projectId)).id}?actorUserId=user-bob`, {
+            headers: { "x-jixia-actor": 'user-alice' },
+          }),
+          fetch(`${server.url}/api/project-docs/${(await createProjectDoc(server.url, 'user-alice', importedRecord.projectId)).id}/versions`, {
+            body: JSON.stringify({ actorUserId: 'user-bob', citations: [], content: 'Spoofed project-doc save' }),
+            headers: {
+              "Content-Type": "application/json",
+              "x-jixia-actor": 'user-alice',
+            },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/project-docs/${(await createProjectDoc(server.url, 'user-alice', importedRecord.projectId)).id}/publish-state`, {
+            body: JSON.stringify({ actorUserId: 'user-bob', publishState: 'review' }),
+            headers: {
+              "Content-Type": "application/json",
+              "x-jixia-actor": 'user-alice',
+            },
+            method: 'POST',
           }),
           fetch(`${server.url}/api/reading/${importedRecord.entry.id}?actorUserId=user-bob`, {
             headers: { "x-jixia-actor": "user-alice" },

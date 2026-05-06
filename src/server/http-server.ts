@@ -340,6 +340,181 @@ async function handleApiRequest(
       return true;
     }
 
+    if (pathname === "/api/notebooks" && method === "POST") {
+      const actor = getActor(request);
+      const body = await readJsonBody<{
+        actorUserId?: string;
+        ownerId?: string;
+        title: string;
+      }>(request);
+      assertNoActorImpersonation(actor, body.actorUserId);
+      assertNoActorImpersonation(actor, body.ownerId);
+
+      sendJson(
+        response,
+        200,
+        await app.notebooks.createDocument(
+          {
+            ownerId: body.ownerId,
+            title: body.title,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    const notebookMatch = pathname.match(/^\/api\/notebooks\/([^/]+)$/);
+    if (notebookMatch && method === "GET") {
+      const actor = getActor(request);
+      const [, documentId] = notebookMatch;
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+
+      sendJson(
+        response,
+        200,
+        await app.notebooks.getDocument({ documentId }, actor.userId),
+        method,
+      );
+      return true;
+    }
+
+    const notebookVersionsMatch = pathname.match(
+      /^\/api\/notebooks\/([^/]+)\/versions$/,
+    );
+    if (notebookVersionsMatch && method === "POST") {
+      const actor = getActor(request);
+      const [, documentId] = notebookVersionsMatch;
+      const body = await readJsonBody<{
+        actorUserId?: string;
+        citations: Array<{
+          evidenceSpan?: string;
+          paperAssetId: string;
+        }>;
+        content: string;
+      }>(request);
+      assertNoActorImpersonation(actor, body.actorUserId);
+
+      sendJson(
+        response,
+        200,
+        await app.notebooks.saveDocument(
+          {
+            citations: body.citations,
+            content: body.content,
+            documentId,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    if (pathname === "/api/project-docs" && method === "POST") {
+      const actor = getActor(request);
+      const body = await readJsonBody<{
+        actorUserId?: string;
+        createdByUserId?: string;
+        projectId: string;
+        publishState?: "draft" | "review" | "published";
+        title: string;
+      }>(request);
+      assertNoActorImpersonation(actor, body.actorUserId);
+      assertNoActorImpersonation(actor, body.createdByUserId);
+
+      sendJson(
+        response,
+        200,
+        await app.projectDocs.createDocument(
+          {
+            createdByUserId: body.createdByUserId,
+            projectId: body.projectId,
+            publishState: body.publishState,
+            title: body.title,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    const projectDocMatch = pathname.match(/^\/api\/project-docs\/([^/]+)$/);
+    if (projectDocMatch && method === "GET") {
+      const actor = getActor(request);
+      const [, documentId] = projectDocMatch;
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+
+      sendJson(
+        response,
+        200,
+        await app.projectDocs.getDocument({ documentId }, actor.userId),
+        method,
+      );
+      return true;
+    }
+
+    const projectDocVersionsMatch = pathname.match(
+      /^\/api\/project-docs\/([^/]+)\/versions$/,
+    );
+    if (projectDocVersionsMatch && method === "POST") {
+      const actor = getActor(request);
+      const [, documentId] = projectDocVersionsMatch;
+      const body = await readJsonBody<{
+        actorUserId?: string;
+        citations: Array<{
+          evidenceSpan?: string;
+          paperAssetId: string;
+        }>;
+        content: string;
+      }>(request);
+      assertNoActorImpersonation(actor, body.actorUserId);
+
+      sendJson(
+        response,
+        200,
+        await app.projectDocs.saveDocument(
+          {
+            citations: body.citations,
+            content: body.content,
+            documentId,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    const projectDocPublishStateMatch = pathname.match(
+      /^\/api\/project-docs\/([^/]+)\/publish-state$/,
+    );
+    if (projectDocPublishStateMatch && method === "POST") {
+      const actor = getActor(request);
+      const [, documentId] = projectDocPublishStateMatch;
+      const body = await readJsonBody<{
+        actorUserId?: string;
+        publishState: "draft" | "review" | "published";
+      }>(request);
+      assertNoActorImpersonation(actor, body.actorUserId);
+
+      sendJson(
+        response,
+        200,
+        await app.projectDocs.transitionPublishState(
+          {
+            documentId,
+            publishState: body.publishState,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
     const libraryEntryMatch = pathname.match(/^\/api\/library\/([^/]+)$/);
     if (libraryEntryMatch && method === "GET") {
       const actor = getActor(request);

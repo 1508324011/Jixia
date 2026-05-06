@@ -12,7 +12,7 @@ function createStorageRoot(): string {
 }
 
 describe('server governance hardening', () => {
-  it('blocks cross-space library, reading, and writing access', async () => {
+  it('blocks cross-scope library, reading, notebook, and project-doc access', async () => {
     const storageRoot = createStorageRoot();
 
     try {
@@ -37,13 +37,17 @@ describe('server governance hardening', () => {
         spaceId: aliceShared.id,
         visibility: 'private',
       }, 'user-alice');
-      const doc = await app.writing.createDocument({
-        actorSpaceId: aliceShared.id,
-        actorUserId: 'user-alice',
-        ownerUserId: 'user-alice',
-        spaceId: aliceShared.id,
-        title: 'Shared Draft',
-      });
+      const notebook = await app.notebooks.createDocument(
+        { title: 'Alice Private Notebook' },
+        'user-alice',
+      );
+      const projectDoc = await app.projectDocs.createDocument(
+        {
+          projectId: project.project.id,
+          title: 'Alice Shared Project Draft',
+        },
+        'user-alice',
+      );
 
       await expect(
         app.library.getEntry({
@@ -60,21 +64,27 @@ describe('server governance hardening', () => {
         }),
       ).rejects.toThrow(/access denied/i);
       await expect(
-        app.writing.saveDocument({
-          actorSpaceId: bobPersonal.id,
-          actorUserId: 'user-bob',
-          citations: [],
-          content: 'Intrusion attempt',
-          docId: doc.id,
-        }),
+        app.notebooks.saveDocument(
+          {
+            citations: [],
+            content: 'Intrusion attempt',
+            documentId: notebook.id,
+          },
+          'user-bob',
+        ),
       ).rejects.toThrow(/access denied/i);
       await expect(
-        app.writing.transitionPublishState({
-          actorSpaceId: bobPersonal.id,
-          actorUserId: 'user-bob',
-          docId: doc.id,
-          publishState: 'review',
-        }),
+        app.projectDocs.saveDocument(
+          {
+            citations: [],
+            content: 'Cross-project write attempt',
+            documentId: projectDoc.id,
+          },
+          'user-bob',
+        ),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.projectDocs.getDocument({ documentId: projectDoc.id }, 'user-bob'),
       ).rejects.toThrow(/access denied/i);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
@@ -95,13 +105,18 @@ describe('server governance hardening', () => {
         rawSecret: 'validator-credential-placeholder',
         userId: 'user-alice',
       });
-      const doc = await app.writing.createDocument({
-        actorSpaceId: sharedSpace.id,
-        actorUserId: 'user-alice',
-        ownerUserId: 'user-alice',
-        spaceId: sharedSpace.id,
-        title: 'Validated Draft',
-      });
+      const notebook = await app.notebooks.createDocument(
+        { title: 'Validated Notebook' },
+        'user-alice',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Validated Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      const projectDoc = await app.projectDocs.createDocument(
+        { projectId: project.project.id, title: 'Validated Project Draft' },
+        'user-alice',
+      );
 
       await expect(
         app.imports.importPaper({
@@ -114,13 +129,24 @@ describe('server governance hardening', () => {
         }, 'user-alice'),
       ).rejects.toThrow(/project project-missing does not exist/i);
       await expect(
-        app.writing.saveDocument({
-          actorSpaceId: sharedSpace.id,
-          actorUserId: 'user-alice',
-          citations: [{ evidenceSpan: 'section 1', paperAssetId: 'asset-missing' }],
-          content: 'Version with missing citation asset',
-          docId: doc.id,
-        }),
+        app.notebooks.saveDocument(
+          {
+            citations: [{ evidenceSpan: 'section 1', paperAssetId: 'asset-missing' }],
+            content: 'Version with missing citation asset',
+            documentId: notebook.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/paper asset asset-missing does not exist/i);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [{ evidenceSpan: 'section 1', paperAssetId: 'asset-missing' }],
+            content: 'Project doc version with missing citation asset',
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
       ).rejects.toThrow(/paper asset asset-missing does not exist/i);
       await expect(
         app.jobs.createJob({
