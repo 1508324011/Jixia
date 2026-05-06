@@ -43,6 +43,7 @@ export interface LibraryService {
   ): Promise<PersistedLibraryEntryView>;
   getEntry(input: GetLibraryEntryRequest): Promise<LibraryEntryView | null>;
   listEntries(input: ListLibraryEntriesRequest): Promise<LibraryEntryView[]>;
+  listPersonalEntries(actorUserId: string): Promise<LibraryEntryView[]>;
 }
 
 function resolveQueryScope(
@@ -224,6 +225,13 @@ export function createLibraryService(store: LibraryStore): LibraryService {
 
       return (await store.libraryRepository.listLibraryEntriesForScope(scope))
         .map(mapPersistedLibraryEntryView);
+    },
+    async listPersonalEntries(actorUserId: string): Promise<LibraryEntryView[]> {
+      return this.listEntries({
+        actorUserId,
+        scope: { id: actorUserId, type: "user" },
+        spaceId: "",
+      });
     },
     async getEntry(
       input: GetLibraryEntryRequest,

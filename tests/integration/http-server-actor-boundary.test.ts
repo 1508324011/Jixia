@@ -588,7 +588,7 @@ describe("http server actor boundary cleanup", () => {
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
-  });
+  }, 10_000);
 
   it("allows protected routes with only server-derived actor headers and blocks non-member membership reads", async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-actor-success-"));

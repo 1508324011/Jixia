@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { TodayRecommendation } from "@shared/contracts/discovery";
 import type {
   ImportLibraryEntryRequest,
   LibraryEntryView,
@@ -52,6 +53,12 @@ export interface ImportService {
     input: ImportLibraryEntryRequest,
     actorUserId: string,
   ): Promise<ImportedLibraryRecord>;
+  importToPersonalLibrary(input: {
+    requestedByUserId: string;
+    sourceLocator: string;
+    sourceType: "doi" | "pmid" | "arxiv";
+  }): Promise<ImportedLibraryRecord>;
+  searchDiscovery(query: string): Promise<TodayRecommendation[]>;
   uploadPdf(
     input: UploadPdfToLibraryRequest,
     actorUserId: string,
@@ -185,6 +192,27 @@ export function mapPersistedLibraryEntryView(
   };
 }
 
+
+function toDiscoveryRecommendation(
+  metadata: ImportedPaperMetadata,
+): TodayRecommendation {
+  return {
+    abstractText: metadata.abstractText,
+    canonicalId: metadata.canonicalId,
+    id: metadata.canonicalId,
+    imported: false,
+    reason: metadata.abstractText ?? "Matched by external discovery search.",
+    sourceLabel: metadata.canonicalId,
+    sourceLocator: metadata.canonicalId.replace(/^(doi|pmid|arxiv):/i, ""),
+    sourceType: metadata.canonicalId.startsWith("arxiv:")
+      ? "arxiv"
+      : metadata.canonicalId.startsWith("pmid:")
+        ? "pmid"
+        : "doi",
+    title: metadata.title,
+  };
+}
+
 async function resolveImportedMetadata(
   store: ImportStore,
   input: ImportLibraryEntryRequest,
@@ -242,6 +270,31 @@ export function createImportService(store: ImportStore): ImportService {
           },
         }),
       );
+    },
+    async importToPersonalLibrary(input: {
+      requestedByUserId: string;
+      sourceLocator: string;
+      sourceType: "doi" | "pmid" | "arxiv";
+    }): Promise<ImportedLibraryRecord> {
+      return this.importPaper(
+        {
+          requestedByUserId: input.requestedByUserId,
+          scope: { id: input.requestedByUserId, type: "user" },
+          sourceLocator: input.sourceLocator,
+          sourceType: input.sourceType,
+          spaceId: "",
+          visibility: "private",
+        },
+        input.requestedByUserId,
+      );
+    },
+    async searchDiscovery(query: string): Promise<TodayRecommendation[]> {
+      if (!query.trim()) {
+        return [];
+      }
+
+      return (await store.pubmedConnector.search(query))
+        .map(toDiscoveryRecommendation);
     },
     async importPaper(
       input: ImportLibraryEntryRequest,

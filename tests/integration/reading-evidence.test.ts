@@ -153,7 +153,78 @@ describe('reading evidence', () => {
         }),
       ).rejects.toThrow(/access denied/i);
     } finally {
-      await prisma.$disconnect();
+      await prisma.$disconnect().catch(() => undefined);
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('reopens private notes, shared comments, and governed insights for the workbench reader', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-reading-reopen-'));
+    const env = {
+      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-reading-reopen.db')}`,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+
+    try {
+      const app = createJixiaApp({ env });
+      const imported = await app.imports.importToPersonalLibrary({
+        requestedByUserId: 'user-alice',
+        sourceLocator: '654321',
+        sourceType: 'pmid',
+      });
+
+      await app.reading.createWorkbenchNote({
+        authorUserId: 'user-alice',
+        body: 'Private note for later synthesis.',
+        libraryEntryId: imported.entry.id,
+        visibility: 'private',
+      });
+      await app.reading.createWorkbenchNote({
+        authorUserId: 'user-alice',
+        body: 'Project-visible comment for the tumor board.',
+        libraryEntryId: imported.entry.id,
+        visibility: 'space_shared',
+      });
+      await app.reading.saveWorkbenchGeneratedInsight({
+        evidenceSpans: [
+          {
+            endOffset: 24,
+            quote: 'Tumor board evidence',
+            startOffset: 0,
+          },
+        ],
+        libraryEntryId: imported.entry.id,
+        startedByUserId: 'user-alice',
+        summary: 'Governed insight ready for Writer promotion.',
+        title: 'Tumor board governed insight',
+      });
+
+      const reopenedApp = createJixiaApp({ env });
+      const reopenedDetail = await reopenedApp.reading.getWorkbenchDetail({
+        actorUserId: 'user-alice',
+        libraryEntryId: imported.entry.id,
+      });
+
+      expect(reopenedDetail?.notes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            body: 'Private note for later synthesis.',
+            visibility: 'private',
+          }),
+          expect.objectContaining({
+            body: 'Project-visible comment for the tumor board.',
+            visibility: 'space_shared',
+          }),
+        ]),
+      );
+      expect(reopenedDetail?.insights).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            summary: 'Governed insight ready for Writer promotion.',
+          }),
+        ]),
+      );
+    } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
   });

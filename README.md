@@ -1,21 +1,25 @@
 # Jixia
 
-Jixia is a server-first research collaboration platform for laboratory teams.
-It is designed to run on a lab-hosted server, keep authoritative data on the server side,
-and organize research work around project collaboration, literature assets, reading workflows,
-versioned writing, and governed AI jobs. The current recovery direction is:
-**Space is governance. Project is collaboration.**
+Jixia is a server-first research collaboration platform for laboratory teams. It is designed to run on a lab-hosted server, keep authoritative data on the server side, and organize research work around project collaboration, literature assets, reading workflows, versioned writing, and governed AI jobs. The current recovery direction remains: **Space is governance. Project is collaboration.**
 
 ## Current Phase
 
-The repository now includes two aligned layers:
+The `main` branch now carries an integrated workbench beta rather than a placeholder shell. Current branch focus:
 
 1. a server-first backend scaffold for spaces, library, reading, writing, and governed AI jobs
 2. a project-first browser shell that loads real server-owned projects before entering library, reader, and writing lanes
+3. an integrated workbench-first beta for `Login -> Home -> Today/Search/Library/Projects/Settings`
+4. a current-host beta path that can persist settings, personal imports, paper notes/comments, and Writer drafts across restart
 
-Bootstrap guardrails remain in place, but the project has moved beyond repository-only setup.
-The active product baseline is `docs/plans/design.md`; older Space-first plans are historical
-server-first scaffolding notes unless reconciled with the project-first recovery plan.
+Bootstrap guardrails remain in place, but the repository has moved beyond bootstrap-only setup. The active product baseline is `docs/plans/design.md`; older Space-first plans are historical server-first scaffolding notes unless reconciled with the project-first recovery plan.
+
+## Current-Host Beta Path
+
+The fastest truthful entry for the integrated product flow on `main` is:
+
+- `docs/runbooks/native-demo-showcase.md`
+
+That runbook documents the **current-host beta path** for `main`: start the app natively, enter the workbench, set up Settings, search PubMed, import into Personal Library, open Reader, persist notes/comments/insights, promote into Writer, reopen the Writer draft, restart the process, and confirm the persisted state still exists. The packaged reset/showcase workflow is a **demo-only convenience** that still belongs to the downstream `demo-native-showcase` branch.
 
 ## Planning Documents
 
@@ -29,52 +33,57 @@ Detailed design and implementation plans live under `docs/plans/`:
 - `2026-03-20-jixia-platform-implementation.md`
 - `2026-03-21-jixia-task-10-ui-direction-notes.md`
 - `2026-03-22-jixia-task-11-deployment-implementation.md`
+- `2026-03-23-jixia-web-interaction-design.md`
+- `2026-03-23-jixia-web-interaction-implementation.md`
 
-## Project-first Recovery Status
+## Integrated Workbench Beta Surface
 
-The current branch now carries the first project-first recovery slice on top of the earlier browser-runtime shell work.
-The web layer now includes:
+The shipped product surface includes:
 
 - `src/web/app.tsx` and `src/web/router.tsx`
-- a new `src/web/components/app-shell.tsx` that brings in a ResearchClaw-inspired sidebar, top bar, and shared page chrome
-- page shells for projects, spaces, search, library, reader, writing, jobs, and settings
-- upgraded donor-style design tokens, Tailwind/PostCSS support, and shared shell styling
-- shared `Project`, `ProjectMember`, and `ScopeRef` contracts plus server APIs for project creation, listing, lookup, and membership management
-- project routes backed by Prisma/SQLite `Project` and `ProjectMember` authority instead of hardcoded `shared-space`, `tumor-board`, or legacy JSON project arrays
-- browser-facing `/api/*` routes for spaces, credentials, and jobs, plus a live SSE job stream endpoint
-- browser-facing library/import routes plus presenter-backed `spaces`, `search`, and `library` pages
-- browser-facing reading routes plus a presenter-backed `reader` page with detail, note, and insight actions
-- a typed web client and presenter layer now backing `spaces`, `search`, `library`, `reader`, `jobs`, and `settings`
-- governance-visible UI cues for visibility, shared context, publish state, and governed AI/job language
-- UI workflow tests covering the main navigation path and direct deep links
+- `src/web/pages/login-page.tsx` and `src/web/pages/home-page.tsx` for `登录` and `个人工作台首页`
+- top-level workbench surfaces for `今日推荐`, `搜索`, `Library`, `Projects`, and `设置`
+- explicit `Personal` vs `Project / 项目名` context indicators
+- paper workspace panels for `AI 对话`, `私人笔记`, `共享评论`, and `关键信息`
+- project-level `Writer 文档区` cues plus a reopenable Writer draft preview
+- server-backed project routes using Prisma/SQLite `Project` and `ProjectMember` authority instead of legacy JSON project arrays
+- browser-facing `/api/*` routes for spaces, credentials, jobs, library/import, reading, notebooks, project docs, and the workbench compatibility endpoints
+- preserved `/spaces/...` routes so deep-link regression tests still guard compatibility
+
+Personal-facing routes are workbench shorthand over server-side ownership and scope rules. `space` remains authoritative inside routing, contracts, permissions, and audit logic.
+
+## Truthful Runtime Notes
+
+- `/login` is still a shell-level entry page; the current browser flow on `main` enters the product through `/home`.
+- `GET /api/discovery/today` and `GET /api/discovery/search?query=...` serve the discovery slice.
+- `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings without exposing raw API keys in responses or stored settings records.
+- `GET /api/library/personal` and `POST /api/library/personal/import` keep personal import ownership on the server.
+- `GET /api/reading/:entryId`, `POST /api/reading/:entryId/notes`, and `POST /api/reading/:entryId/insights` back the paper workspace.
+- `GET /api/writing/:spaceId/projects/:projectId/document` and `POST /api/writing/:spaceId/projects/:projectId/document` provide a workbench compatibility surface; Project Docs remain the authoritative project writing runtime.
 
 ## Verification Snapshot
 
-Latest branch verification evidence:
+Current branch verification is maintained with:
 
+- `npm test`
 - `npm run typecheck`
-- `npm test` → 22 files / 65 tests passing
 - `npm run build`
 
-This means the current shell is now backed by real browser-facing runtime slices for Prisma-backed project membership,
-jobs/settings, library/search, and reader flows, even though the broader Notebook, Project Docs, AI job scoping,
-and non-project Prisma-backed runtime migrations remain future recovery phases.
+Targeted verification also covers workbench routing/navigation, personal vs project context switching, discovery/search to Personal Library import, paper workspace persistence, Writer promotion/reopen, current-host beta runbook truthfulness, and server-first Prisma-backed project membership.
 
 ## Near-Term Direction
 
-The next delivery focus has two tracks:
+The next delivery focus has three tracks:
 
-1. exercise Task 11 on a Docker-capable operator machine and extend the runtime past the current shell-and-health deployment boundary
-2. continue from the Task 10 shell toward deeper server-backed web interactions beyond the current spaces/search/library/reader/jobs/settings slices
+1. continue the Task 11 operator/deployment path so the runtime stays reproducible on lab-hosted infrastructure
+2. keep replacing remaining shell-like affordances with authoritative server-backed behavior while preserving the server-first model
+3. keep the downstream `demo-native-showcase` branch limited to demo/operator packaging rather than product-truth divergence
 
-The Task 10 handoff note in `docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md`
-records what shipped, what was verified, and what still belongs to the next phase.
+The handoff note in `docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md` records what shipped, what still feels shell-like, and what belongs to the next phase.
 
 ## Task 11 Operator Runbook
 
-Task 11 turns the verified Task 10 shell into a reproducibly runnable lab-server package.
-The current runtime starts a Node 22 HTTP server, serves the built Task 10 web shell,
-and now exposes `GET /health` together with the same-origin browser API routes used by the current spaces/search/library/reader/jobs/settings slices.
+Task 11 turns the verified web interaction shell into a reproducibly runnable lab-server package. The current runtime starts a Node 22 HTTP server, serves the built browser app from `dist/`, exposes `/health`, and persists server-managed state under the configured storage root while Prisma/SQLite backs project collaboration. This is the Prisma-backed project collaboration path for lab-server operation.
 
 ### Prerequisites
 
@@ -86,19 +95,13 @@ and now exposes `GET /health` together with the same-origin browser API routes u
 
 Copy `.env.example` to `.env` and fill in operator-specific values.
 
-- `JIXIA_STORAGE_ROOT` controls where Jixia persists server-managed storage assets.
-  On a lab server, keep this on durable storage such as `/var/lib/jixia/storage`.
-- The current runtime still persists legacy non-project server state to
-  `JIXIA_STORAGE_ROOT/server-state.json`.
-- `JIXIA_DATABASE_URL` controls the SQLite database used for Prisma-backed
-  `Project` and `ProjectMember` authority. Keep it on durable storage such as
-  `file:/var/lib/jixia/data/jixia.db` so project collaboration survives restarts.
-- `JIXIA_HOST` controls the bind host. Use `127.0.0.1` for local-only runs and `0.0.0.0`
-  when the process is containerized or needs to listen on the lab network.
+- `JIXIA_STORAGE_ROOT` controls where Jixia persists server-managed storage assets. On a lab server, keep this on durable storage such as `/var/lib/jixia/storage`.
+- The current runtime persists legacy non-project state and workbench settings to `JIXIA_STORAGE_ROOT/server-state.json`.
+- `JIXIA_DATABASE_URL` controls the SQLite database used for Prisma-backed `Space`, `Project`, `ProjectMember`, library, notebook, and Project Doc authority. Keep it on durable storage such as `file:/var/lib/jixia/data/jixia.db`.
+- `JIXIA_HOST` controls the bind host. Use `127.0.0.1` for local-only runs and `0.0.0.0` when the process is containerized or needs to listen on the lab network.
 - `JIXIA_PORT` controls the HTTP port. Task 11 uses `3000` as the default runtime port.
 
-Persist both `/var/lib/jixia/storage` and `/var/lib/jixia/data` on the lab server:
-`server-state.json` still backs legacy domains, while SQLite now backs project collaboration.
+Persist both `/var/lib/jixia/storage` and `/var/lib/jixia/data` on the lab server.
 
 ### Local Node startup path
 
@@ -109,7 +112,7 @@ npm run build
 npm run start:server
 ```
 
-After startup, the server serves the built Task 10 shell from `dist/` and the health endpoint at `/health`.
+After startup, the server serves the built workbench shell from `dist/`, responds on `/health`, and exposes the current beta browser/API surface under `/api/`.
 
 ### Docker Compose startup path
 
@@ -118,7 +121,4 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The included `docker-compose.yml` maps the runtime port, pins `JIXIA_STORAGE_ROOT` to the mounted
-`/var/lib/jixia/storage` path, points `JIXIA_DATABASE_URL` at the mounted `/var/lib/jixia/data`
-path for Prisma-backed project collaboration, and persists the legacy state file at
-`/var/lib/jixia/storage/server-state.json`.
+The included `docker-compose.yml` maps the runtime port, pins `JIXIA_STORAGE_ROOT` to the mounted `/var/lib/jixia/storage` path, points `JIXIA_DATABASE_URL` at the mounted `/var/lib/jixia/data` path for Prisma-backed collaboration, and persists `server-state.json` at `/var/lib/jixia/storage/server-state.json`.

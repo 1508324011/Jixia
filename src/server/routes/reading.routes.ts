@@ -10,10 +10,13 @@ import type {
 
 export interface ReadingRoutes {
   createNote(input: CreateNoteRequest): Promise<NoteRecord>;
+  createWorkbenchNote: ReadingService["createWorkbenchNote"];
   getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
+  getWorkbenchDetail: ReadingService["getWorkbenchDetail"];
   saveGeneratedInsight(
     input: SaveGeneratedInsightRequest,
   ): Promise<GeneratedInsightRecord>;
+  saveWorkbenchGeneratedInsight: ReadingService["saveWorkbenchGeneratedInsight"];
 }
 
 export function createReadingRoutes(service: ReadingService): ReadingRoutes {
@@ -21,13 +24,22 @@ export function createReadingRoutes(service: ReadingService): ReadingRoutes {
     createNote(input: CreateNoteRequest): Promise<NoteRecord> {
       return service.createNote(input);
     },
+    createWorkbenchNote(input) {
+      return service.createWorkbenchNote(input);
+    },
     getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null> {
       return service.getDetail(input);
+    },
+    getWorkbenchDetail(input) {
+      return service.getWorkbenchDetail(input);
     },
     saveGeneratedInsight(
       input: SaveGeneratedInsightRequest,
     ): Promise<GeneratedInsightRecord> {
       return service.saveGeneratedInsight(input);
+    },
+    saveWorkbenchGeneratedInsight(input) {
+      return service.saveWorkbenchGeneratedInsight(input);
     },
   };
 }

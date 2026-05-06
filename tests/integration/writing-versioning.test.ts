@@ -308,4 +308,95 @@ describe('notebook and project document persistence', () => {
       rmSync(storageRoot, { force: true, recursive: true });
     }
   });
+
+  it('promotes persisted workbench artifacts into a project doc draft that reopens after restart', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-writing-reopen-'));
+    const env = createWritingEnv(storageRoot);
+
+    try {
+      const app = createJixiaApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Workbench Writer Space' },
+        'user-alice',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Tumor Board Writer Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      const imported = await app.imports.importPaper(
+        {
+          requestedByUserId: 'user-alice',
+          scope: { id: project.project.id, type: 'project' },
+          sourceLocator: '10.1000/workbench-writer',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'space_shared',
+        },
+        'user-alice',
+      );
+      const document = await app.projectDocs.createDocument(
+        {
+          createdByUserId: 'user-alice',
+          projectId: project.project.id,
+          title: 'Tumor board literature synthesis',
+        },
+        'user-alice',
+      );
+
+      const savedDocument = await app.projectDocs.saveDocument(
+        {
+          citations: [
+            {
+              evidenceSpan: 'Tumor board evidence',
+              paperAssetId: imported.asset.id,
+            },
+          ],
+          content: 'Promoted governed insight paragraph.',
+          documentId: document.id,
+        },
+        'user-alice',
+      );
+
+      expect(savedDocument.content).toBe('Promoted governed insight paragraph.');
+      expect(savedDocument.citations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            paperAssetId: imported.asset.id,
+          }),
+        ]),
+      );
+
+      const reopenedApp = createJixiaApp({ env });
+      const reopenedDocument = await reopenedApp.projectDocs.getDocument(
+        { documentId: document.id },
+        'user-alice',
+      );
+
+      expect(reopenedDocument).toMatchObject({
+        id: document.id,
+        projectId: project.project.id,
+        title: 'Tumor board literature synthesis',
+      });
+
+      const reopenedSnapshot = await reopenedApp.projectDocs.saveDocument(
+        {
+          citations: [
+            {
+              evidenceSpan: 'Tumor board evidence',
+              paperAssetId: imported.asset.id,
+            },
+          ],
+          content: 'Reopened writer draft with persisted edits.',
+          documentId: document.id,
+        },
+        'user-alice',
+      );
+
+      expect(reopenedSnapshot.versionNumber).toBe(2);
+      expect(reopenedSnapshot.content).toBe('Reopened writer draft with persisted edits.');
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
 });

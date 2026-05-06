@@ -72,16 +72,21 @@ function buildUrl(
   input: string,
   query?: Record<string, string | undefined>,
 ): string {
-  if (!query || Object.keys(query).length === 0) {
-    return input;
-  }
+  const baseUrl = typeof window !== "undefined"
+    ? window.location.origin
+    : "http://localhost";
+  const isAbsolute = /^[a-z][a-z\d+.-]*:/i.test(input);
+  const url = new URL(input, baseUrl);
 
-  const url = new URL(input, window.location.origin);
-  Object.entries(query).forEach(([key, value]) => {
+  Object.entries(query ?? {}).forEach(([key, value]) => {
     if (value) {
       url.searchParams.set(key, value);
     }
   });
+
+  if (isAbsolute) {
+    return url.toString();
+  }
 
   return `${url.pathname}${url.search}`;
 }
@@ -99,11 +104,17 @@ export async function requestJson<T>(
   input: string,
   init: RequestOptions = {},
 ): Promise<T> {
-  const response = await fetch(buildUrl(input, init.query), {
-    ...init,
+  const requestUrl = buildUrl(input, init.query);
+  const fetchUrl = requestUrl.startsWith("/") && typeof window !== "undefined"
+    ? new URL(requestUrl, window.location.origin).toString()
+    : requestUrl;
+  const { query: _query, headers, ...requestOptions } = init;
+
+  const response = await fetch(fetchUrl, {
+    ...requestOptions,
     headers: {
       ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...(init.headers ?? {}),
+      ...(headers ?? {}),
     },
   });
 
@@ -117,6 +128,7 @@ export async function requestJson<T>(
 
   return (await response.json()) as T;
 }
+
 
 function requestSessionJson<T>(
   input: string,

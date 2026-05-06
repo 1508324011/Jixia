@@ -9,6 +9,7 @@ import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createJixiaApp } from "./app";
+import { resolveHttpApi } from "./http-api";
 import {
   assertNoActorImpersonation,
   assertNoSpaceContextMismatch,
@@ -145,6 +146,60 @@ async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
   }
 
   return JSON.parse(rawBody) as T;
+}
+
+function isWorkbenchHttpApiPath(pathname: string): boolean {
+  return (
+    pathname === "/api/discovery/today" ||
+    pathname === "/api/discovery/search" ||
+    pathname === "/api/library/personal" ||
+    pathname === "/api/library/personal/import" ||
+    pathname === "/api/settings/me" ||
+    /^\/api\/writing\/[^/]+\/projects\/[^/]+\/document$/.test(pathname)
+  );
+}
+
+async function handleWorkbenchHttpApiRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  requestUrl: URL,
+  app: ReturnType<typeof createJixiaApp>,
+  method: string,
+): Promise<boolean> {
+  if (!isWorkbenchHttpApiPath(requestUrl.pathname)) {
+    return false;
+  }
+
+  try {
+    const requestBody = method === "GET" || method === "HEAD"
+      ? undefined
+      : await readJsonBody<unknown>(request);
+    const fallbackResponse = await resolveHttpApi(
+      app,
+      requestUrl,
+      method,
+      requestBody,
+    );
+
+    if (fallbackResponse) {
+      sendJson(
+        response,
+        fallbackResponse.statusCode,
+        fallbackResponse.payload,
+        method,
+      );
+      return true;
+    }
+
+    sendJsonError(response, 404, "API route not found.", method);
+  } catch (error) {
+    const message = error instanceof Error
+      ? error.message
+      : "Unknown server error.";
+    sendJsonError(response, statusCodeForError(error), message, method);
+  }
+
+  return true;
 }
 
 function optionalQueryParam(requestUrl: URL, key: string): string | undefined {
@@ -913,13 +968,54 @@ export function createHttpServer(
     );
 
     if (requestUrl.pathname.startsWith("/api/")) {
-      void handleApiRequest(request, response, requestUrl, app).then(
-        (handled) => {
-          if (!handled) {
-            sendJsonError(response, 404, "API route not found.", method);
+      void (async () => {
+        if (
+          await handleWorkbenchHttpApiRequest(
+            request,
+            response,
+            requestUrl,
+            app,
+            method,
+          )
+        ) {
+          return;
+        }
+
+        const handled = await handleApiRequest(request, response, requestUrl, app);
+
+        if (handled) {
+          return;
+        }
+
+        try {
+          const requestBody = method === "GET" || method === "HEAD"
+            ? undefined
+            : await readJsonBody<unknown>(request);
+          const fallbackResponse = await resolveHttpApi(
+            app,
+            requestUrl,
+            method,
+            requestBody,
+          );
+
+          if (fallbackResponse) {
+            sendJson(
+              response,
+              fallbackResponse.statusCode,
+              fallbackResponse.payload,
+              method,
+            );
+            return;
           }
-        },
-      );
+
+          sendJsonError(response, 404, "API route not found.", method);
+        } catch (error) {
+          const message = error instanceof Error
+            ? error.message
+            : "Unknown server error.";
+          sendJsonError(response, statusCodeForError(error), message, method);
+        }
+      })();
       return;
     }
 

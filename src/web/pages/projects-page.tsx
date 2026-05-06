@@ -25,6 +25,12 @@ export function ProjectsPage() {
         </p>
       </header>
 
+      <section className="panel" aria-label="项目工作台 overview">
+        <p className="page-kicker">Shared work</p>
+        <h2 className="panel-title">项目工作台</h2>
+        <p className="quiet-copy">查看共享项目的概览、最近活动和待继续的 Writer 流程。</p>
+      </section>
+
       <section className="context-bar" aria-label="projects actions">
         <span>Visible projects · {projects.length}</span>
         <span>Governance spaces · {spaces.length}</span>
@@ -91,6 +97,18 @@ export function ProjectsPage() {
           </article>
         ) : null}
       </section>
+
+      <div className="panel-grid top-level-surface-grid">
+        <section className="panel">
+          <h2 className="panel-title">最近活跃项目</h2>
+          <p className="quiet-copy">优先返回最近读过 paper 或刚更新 Writer 的项目。</p>
+        </section>
+
+        <section className="panel">
+          <h2 className="panel-title">共享动态</h2>
+          <p className="quiet-copy">集中查看队友评论、项目图书馆新增条目与写作推进情况。</p>
+        </section>
+      </div>
     </main>
   );
 }

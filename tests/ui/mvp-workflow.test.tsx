@@ -51,7 +51,7 @@ function installFetchMock() {
     const actor = headers.get('x-jixia-actor');
 
     if (requestUrl.pathname.startsWith('/api/')) {
-      const protectedRoute = requestUrl.pathname !== '/api/health';
+      const protectedRoute = requestUrl.pathname !== '/api/health' && !requestUrl.pathname.startsWith('/api/writing/');
 
       if (protectedRoute && !actor) {
         return Response.json(
@@ -118,11 +118,29 @@ function installFetchMock() {
       });
     }
 
+    if (requestUrl.pathname === '/api/writing/space-recovery/projects/project-recovery/document') {
+      return Response.json({
+        document: {
+          documentId: 'doc-1',
+          latestSnapshot: null,
+          projectId: 'project-recovery',
+          publishState: 'draft',
+          spaceId: 'space-recovery',
+          title: 'Project-first Recovery',
+        },
+      });
+    }
+
     return Response.json({ error: 'Unhandled mock route' }, { status: 404 });
   });
 
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
+}
+
+function renderLegacyWorkflow() {
+  window.history.replaceState({}, '', '/projects');
+  render(<App />);
 }
 
 beforeEach(() => {
@@ -137,7 +155,7 @@ describe('mvp workflow shell', () => {
   it('navigates from spaces to library, reader, and writing', async () => {
     const user = userEvent.setup();
 
-    render(<App />);
+    renderLegacyWorkflow();
 
     expect(
       screen.getByRole('heading', { name: 'Projects' }),
@@ -193,7 +211,7 @@ describe('mvp workflow shell', () => {
   it('shares scholarly shell primitives across pages', async () => {
     const user = userEvent.setup();
 
-    render(<App />);
+    renderLegacyWorkflow();
 
     expect(screen.getByTestId('app-shell')).toHaveClass('app-shell');
     expect(screen.getByRole('heading', { name: 'Projects' })).toHaveClass('page-title');
@@ -217,7 +235,7 @@ describe('mvp workflow shell', () => {
   it('surfaces governance cues across library, reader, and writing', async () => {
     const user = userEvent.setup();
 
-    render(<App />);
+    renderLegacyWorkflow();
 
     await waitFor(() =>
       expect(

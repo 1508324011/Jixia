@@ -87,4 +87,18 @@ export interface ListLibraryEntriesQuery {
   spaceId: string;
 }
 
+export interface LibraryListItem {
+  addedAt: string;
+  canonicalId: string;
+  entryId: string;
+  paperAssetId: string;
+  spaceId: string;
+  title: string;
+  visibility: LibraryEntryVisibility;
+}
+
+export interface LibraryListResponse {
+  entries: LibraryListItem[];
+}
+
 export const libraryContract = "jixia-library-contract";

@@ -1,4 +1,4 @@
-import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
+import type { EvidenceSpanRecord, GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type {
   CreateReadingNoteRequest,
   ConversationRecord,
@@ -6,6 +6,7 @@ import type {
   NoteRecord,
   ReadingDetail,
   SaveReadingInsightRequest,
+  NoteVisibility,
 } from "@shared/contracts/reading";
 
 import type { PersistedLibraryEntryView } from "../../db";
@@ -46,10 +47,27 @@ export interface ReadingStore {
 
 export interface ReadingService {
   createNote(input: CreateNoteRequest): Promise<NoteRecord>;
+  createWorkbenchNote(input: {
+    authorUserId: string;
+    body: string;
+    libraryEntryId: string;
+    visibility: NoteVisibility;
+  }): Promise<NoteRecord>;
   getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
+  getWorkbenchDetail(input: {
+    actorUserId: string;
+    libraryEntryId: string;
+  }): Promise<ReadingDetail | null>;
   saveGeneratedInsight(
     input: SaveGeneratedInsightRequest,
   ): Promise<GeneratedInsightRecord>;
+  saveWorkbenchGeneratedInsight(input: {
+    evidenceSpans: Array<Omit<EvidenceSpanRecord, "paperAssetId">>;
+    libraryEntryId: string;
+    startedByUserId: string;
+    summary: string;
+    title: string;
+  }): Promise<GeneratedInsightRecord>;
 }
 
 async function getAuthorizedLibraryContext(
@@ -118,6 +136,12 @@ export function createReadingService(store: ReadingStore): ReadingService {
         }),
       };
     },
+    async getWorkbenchDetail(input: {
+      actorUserId: string;
+      libraryEntryId: string;
+    }): Promise<ReadingDetail | null> {
+      return this.getDetail(input);
+    },
     async createNote(input: CreateNoteRequest): Promise<NoteRecord> {
       if (input.authorUserId && input.authorUserId !== input.actorUserId) {
         throw new Error(
@@ -140,6 +164,20 @@ export function createReadingService(store: ReadingStore): ReadingService {
       store.persist();
 
       return note;
+    },
+    async createWorkbenchNote(input: {
+      authorUserId: string;
+      body: string;
+      libraryEntryId: string;
+      visibility: NoteVisibility;
+    }): Promise<NoteRecord> {
+      return this.createNote({
+        actorUserId: input.authorUserId,
+        authorUserId: input.authorUserId,
+        body: input.body,
+        libraryEntryId: input.libraryEntryId,
+        visibility: input.visibility,
+      });
     },
     async saveGeneratedInsight(
       input: SaveGeneratedInsightRequest,
@@ -176,6 +214,22 @@ export function createReadingService(store: ReadingStore): ReadingService {
       store.persist();
 
       return insight;
+    },
+    async saveWorkbenchGeneratedInsight(input: {
+      evidenceSpans: Array<Omit<EvidenceSpanRecord, "paperAssetId">>;
+      libraryEntryId: string;
+      startedByUserId: string;
+      summary: string;
+      title: string;
+    }): Promise<GeneratedInsightRecord> {
+      return this.saveGeneratedInsight({
+        actorUserId: input.startedByUserId,
+        evidenceSpans: input.evidenceSpans,
+        libraryEntryId: input.libraryEntryId,
+        startedByUserId: input.startedByUserId,
+        summary: input.summary,
+        title: input.title,
+      });
     },
   };
 }

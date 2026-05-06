@@ -27,12 +27,14 @@ export interface ReadingStateRecord {
   lastReadAt: string;
 }
 
-export interface ReadingDetail {
+export interface ReadingDetailView {
   asset: PaperAssetRecord;
   entry: LibraryEntryRecord;
   insights: GeneratedInsightRecord[];
   notes: NoteRecord[];
 }
+
+export type ReadingDetail = ReadingDetailView;
 
 export interface GetReadingDetailQuery {
   /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
@@ -60,6 +62,14 @@ export interface SaveReadingInsightRequest {
   startedByUserId?: string;
   summary: string;
   title: string;
+}
+
+export interface ReadingNoteResponse {
+  note: NoteRecord;
+}
+
+export interface ReadingInsightResponse {
+  insight: GeneratedInsightRecord;
 }
 
 export const readingContract = "jixia-reading-contract";
