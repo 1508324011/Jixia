@@ -2,7 +2,9 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import * as jobs from '../../src/shared/contracts/jobs';
 import * as library from '../../src/shared/contracts/library';
+import * as notebook from '../../src/shared/contracts/notebook';
 import * as projects from '../../src/shared/contracts/projects';
+import * as projectDocs from '../../src/shared/contracts/project-docs';
 import * as reading from '../../src/shared/contracts/reading';
 import * as spaces from '../../src/shared/contracts/spaces';
 import * as writing from '../../src/shared/contracts/writing';
@@ -35,11 +37,18 @@ import type {
   ReadingStateRecord,
 } from '../../src/shared/contracts/reading';
 import type {
-  CitationLinkRecord,
   PublishState,
-  WritingDocRecord,
-  WritingDocSnapshot,
 } from '../../src/shared/contracts/writing';
+import type {
+  NotebookCitationRecord,
+  NotebookDocumentRecord,
+  NotebookDocumentSnapshot,
+} from '../../src/shared/contracts/notebook';
+import type {
+  ProjectDocCitationRecord,
+  ProjectDocRecord,
+  ProjectDocSnapshot,
+} from '../../src/shared/contracts/project-docs';
 import type {
   JobEventRecord,
   JobRecord,
@@ -198,33 +207,67 @@ describe('core contracts', () => {
     expect(readingState.progressPercent).toBe(40);
   });
 
-  it('exports writing payloads for snapshots and citations', () => {
+  it('exports explicit notebook and project-doc writing payloads', () => {
     expect(writing).toBeTruthy();
+    expect(notebook).toBeTruthy();
+    expect(projectDocs).toBeTruthy();
 
-    const doc: WritingDocRecord = {
-      id: 'doc_001',
-      spaceId: 'space_001',
-      title: 'Server-first writing draft',
-      publishState: 'draft',
+    const notebookDoc: NotebookDocumentRecord = {
       createdAt: '2026-03-21T00:00:00.000Z',
+      id: 'notebook_001',
+      ownerId: 'user_001',
+      title: 'Private notebook draft',
+      updatedAt: '2026-03-21T00:00:00.000Z',
     };
-    const citation: CitationLinkRecord = {
-      id: 'citation_001',
-      docVersionId: 'version_001',
-      paperAssetId: 'asset_001',
+    const notebookCitation: NotebookCitationRecord = {
+      createdAt: '2026-03-21T00:00:00.000Z',
       evidenceSpan: 'p. 4',
+      id: 'notebook_citation_001',
+      notebookDocumentVersionId: 'notebook_version_001',
+      paperAssetId: 'asset_001',
     };
-    const snapshot: WritingDocSnapshot = {
-      doc,
-      docVersionId: 'version_001',
-      content: '# Draft',
-      citations: [citation],
+    const notebookSnapshot: NotebookDocumentSnapshot = {
       capturedAt: '2026-03-21T00:00:00.000Z',
+      citations: [notebookCitation],
+      content: '# Notebook Draft',
+      document: notebookDoc,
+      versionId: 'notebook_version_001',
+      versionNumber: 1,
     };
 
-    expect(snapshot.doc.publishState).toBe('draft');
-    expect(snapshot.citations).toHaveLength(1);
-    expect(snapshot.citations[0]?.evidenceSpan).toBe('p. 4');
+    const projectDoc: ProjectDocRecord = {
+      createdAt: '2026-03-21T00:00:00.000Z',
+      createdByUserId: 'user_001',
+      id: 'project_doc_001',
+      projectId: 'project_001',
+      publishState: 'draft',
+      title: 'Shared project draft',
+      updatedAt: '2026-03-21T00:00:00.000Z',
+    };
+    const projectDocCitation: ProjectDocCitationRecord = {
+      createdAt: '2026-03-21T00:00:00.000Z',
+      evidenceSpan: 'fig. 2',
+      id: 'project_doc_citation_001',
+      paperAssetId: 'asset_001',
+      projectDocVersionId: 'project_doc_version_001',
+    };
+    const projectDocSnapshot: ProjectDocSnapshot = {
+      capturedAt: '2026-03-21T00:00:00.000Z',
+      citations: [projectDocCitation],
+      content: '# Shared Draft',
+      document: projectDoc,
+      versionId: 'project_doc_version_001',
+      versionNumber: 2,
+    };
+
+    expect(notebookSnapshot.document.ownerId).toBe('user_001');
+    expect(notebookSnapshot.citations[0]?.evidenceSpan).toBe('p. 4');
+    expect(projectDocSnapshot.document.publishState).toBe('draft');
+    expect(projectDocSnapshot.citations[0]?.projectDocVersionId).toBe(
+      'project_doc_version_001',
+    );
+    expect(notebook.notebookContract).toBe('jixia-notebook-contract');
+    expect(projectDocs.projectDocsContract).toBe('jixia-project-docs-contract');
 
     expectTypeOf<PublishState>().toEqualTypeOf<
       'draft' | 'review' | 'published'
