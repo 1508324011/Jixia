@@ -154,8 +154,15 @@ function isWorkbenchHttpApiPath(pathname: string): boolean {
     pathname === "/api/discovery/search" ||
     pathname === "/api/library/personal" ||
     pathname === "/api/library/personal/import" ||
-    pathname === "/api/settings/me" ||
     /^\/api\/writing\/[^/]+\/projects\/[^/]+\/document$/.test(pathname)
+  );
+}
+
+function isActorAwareWorkbenchHttpApiPath(pathname: string): boolean {
+  return (
+    pathname === "/api/settings/me" ||
+    /^\/api\/reading\/[^/]+\/notes$/.test(pathname) ||
+    /^\/api\/reading\/[^/]+\/insights$/.test(pathname)
   );
 }
 
@@ -166,11 +173,19 @@ async function handleWorkbenchHttpApiRequest(
   app: ReturnType<typeof createJixiaApp>,
   method: string,
 ): Promise<boolean> {
-  if (!isWorkbenchHttpApiPath(requestUrl.pathname)) {
+  const isUnauthenticatedCompatibilityPath = isWorkbenchHttpApiPath(
+    requestUrl.pathname,
+  );
+  const isActorAwareCompatibilityPath = isActorAwareWorkbenchHttpApiPath(
+    requestUrl.pathname,
+  );
+
+  if (!isUnauthenticatedCompatibilityPath && !isActorAwareCompatibilityPath) {
     return false;
   }
 
   try {
+    const actor = isActorAwareCompatibilityPath ? getActor(request) : undefined;
     const requestBody = method === "GET" || method === "HEAD"
       ? undefined
       : await readJsonBody<unknown>(request);
@@ -179,6 +194,7 @@ async function handleWorkbenchHttpApiRequest(
       requestUrl,
       method,
       requestBody,
+      actor,
     );
 
     if (fallbackResponse) {
@@ -613,7 +629,7 @@ async function handleApiRequest(
     }
 
     const readingDetailMatch = pathname.match(/^\/api\/reading\/([^/]+)$/);
-    if (readingDetailMatch && method === "GET") {
+    if (readingDetailMatch && (method === "GET" || method === "HEAD")) {
       const actor = getActor(request);
       const [, entryId] = readingDetailMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));

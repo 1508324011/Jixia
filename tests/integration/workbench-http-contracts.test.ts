@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -5,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import { createHttpServer } from '../../src/server/http-server';
+
+const ALICE_ACTOR_HEADERS = { 'x-jixia-actor': 'user-alice' };
 
 async function listenOnEphemeralPort(server: ReturnType<typeof createHttpServer>['server']) {
   await new Promise<void>((resolve, reject) => {
@@ -97,7 +100,9 @@ describe('workbench http contracts', () => {
       const importedPersonalRecord = await importPersonalLibraryResponse.json();
       expect(importedPersonalRecord.asset.canonicalId).toBe(search.items[0].canonicalId);
 
-      const settingsResponse = await fetch(`${baseUrl}/api/settings/me`);
+      const settingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        headers: ALICE_ACTOR_HEADERS,
+      });
       expect(settingsResponse.status).toBe(200);
 
       const settings = await settingsResponse.json();
@@ -114,6 +119,7 @@ describe('workbench http contracts', () => {
         }),
         headers: {
           'Content-Type': 'application/json',
+          ...ALICE_ACTOR_HEADERS,
         },
         method: 'POST',
       });
@@ -126,7 +132,9 @@ describe('workbench http contracts', () => {
       });
       expect(savedSettings.apiKey).toBeUndefined();
 
-      const persistedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`);
+      const persistedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        headers: ALICE_ACTOR_HEADERS,
+      });
       expect(persistedSettingsResponse.status).toBe(200);
 
       const persistedSettings = await persistedSettingsResponse.json();
@@ -139,17 +147,25 @@ describe('workbench http contracts', () => {
       const persistedState = JSON.parse(
         readFileSync(join(storageRoot, 'server-state.json'), 'utf8'),
       ) as {
-        credentials?: Array<{ encryptedSecret?: string }>;
-        workbenchSettings?: Array<{ credentialRef?: string; defaultImportTarget?: string }>;
+        credentials?: Array<{ encryptedSecret?: string; userId?: string }>;
+        workbenchSettings?: Array<{
+          credentialRef?: string;
+          defaultImportTarget?: string;
+          userId?: string;
+        }>;
       };
       const persistedStateText = readFileSync(join(storageRoot, 'server-state.json'), 'utf8');
 
       expect(persistedState.credentials).toHaveLength(1);
       expect(persistedState.credentials?.[0]?.encryptedSecret).toBeDefined();
+      expect(persistedState.credentials?.[0]).toMatchObject({
+        userId: 'user-alice',
+      });
       expect(persistedState.workbenchSettings).toMatchObject([
         {
           credentialRef: expect.any(String),
           defaultImportTarget: 'project-workspace',
+          userId: 'user-alice',
         },
       ]);
       expect(persistedStateText).not.toContain('sk-test-secret');
@@ -167,7 +183,7 @@ describe('workbench http contracts', () => {
       );
 
       const { createDemoApi } = await import('../../src/web/lib/demo-api');
-      const demoApi = createDemoApi(baseUrl);
+      const demoApi = createDemoApi(baseUrl, 'user-alice');
       const todayFromClient = await demoApi.getTodayRecommendations();
       const searchFromClient = await demoApi.searchDiscovery('tumor board');
       const settingsFromClient = await demoApi.getWorkbenchSettings();
@@ -180,6 +196,105 @@ describe('workbench http contracts', () => {
         expect.objectContaining({
           canonicalId: search.items[0].canonicalId,
         }),
+      );
+    } finally {
+      await closeServer(httpServer.server);
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('requires actor-derived ownership for workbench settings', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-settings-actor-'));
+    const httpServer = createHttpServer({
+      env: {
+        JIXIA_HOST: '127.0.0.1',
+        JIXIA_STORAGE_ROOT: storageRoot,
+      },
+    });
+
+    try {
+      const baseUrl = await listenOnEphemeralPort(httpServer.server);
+
+      const [missingRead, missingWrite] = await Promise.all([
+        fetch(`${baseUrl}/api/settings/me`),
+        fetch(`${baseUrl}/api/settings/me`, {
+          body: JSON.stringify({
+            apiKey: 'sk-missing-actor',
+            defaultImportTarget: 'project-workspace',
+          }),
+          headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+        }),
+      ]);
+
+      expect(missingRead.status).toBe(401);
+      expect(missingWrite.status).toBe(401);
+
+      const savedAliceSettings = await fetch(`${baseUrl}/api/settings/me`, {
+        body: JSON.stringify({
+          apiKey: 'sk-alice-settings-secret',
+          defaultImportTarget: 'project-workspace',
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
+        },
+        method: 'POST',
+      });
+      expect(savedAliceSettings.status).toBe(200);
+      await expect(savedAliceSettings.json()).resolves.toMatchObject({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'project-workspace',
+      });
+
+      const bobSettings = await fetch(`${baseUrl}/api/settings/me`, {
+        headers: { 'x-jixia-actor': 'user-bob' },
+      });
+      expect(bobSettings.status).toBe(200);
+      await expect(bobSettings.json()).resolves.toEqual({
+        apiKeyConfigured: false,
+        defaultImportTarget: 'personal-library',
+      });
+
+      const [querySpoof, bodySpoof, bearerSettings] = await Promise.all([
+        fetch(`${baseUrl}/api/settings/me?userId=user-bob`, {
+          headers: { 'x-jixia-actor': 'user-alice' },
+        }),
+        fetch(`${baseUrl}/api/settings/me`, {
+          body: JSON.stringify({
+            defaultImportTarget: 'personal-library',
+            userId: 'user-bob',
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-jixia-actor': 'user-alice',
+          },
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/settings/me`, {
+          headers: { Authorization: 'Bearer user-alice' },
+        }),
+      ]);
+
+      expect(querySpoof.status).toBe(400);
+      expect(bodySpoof.status).toBe(400);
+      expect(bearerSettings.status).toBe(200);
+      await expect(bearerSettings.json()).resolves.toMatchObject({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'project-workspace',
+      });
+
+      const persistedStateText = readFileSync(join(storageRoot, 'server-state.json'), 'utf8');
+      const persistedState = JSON.parse(persistedStateText) as {
+        credentials?: Array<{ userId?: string }>;
+        workbenchSettings?: Array<{ userId?: string }>;
+      };
+
+      expect(persistedState.credentials).toMatchObject([{ userId: 'user-alice' }]);
+      expect(persistedState.workbenchSettings).toMatchObject([{ userId: 'user-alice' }]);
+      expect(persistedStateText).not.toContain('sk-alice-settings-secret');
+      expect(persistedStateText).not.toContain(
+        Buffer.from('sk-alice-settings-secret', 'utf8').toString('base64'),
       );
     } finally {
       await closeServer(httpServer.server);

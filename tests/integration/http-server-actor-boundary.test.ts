@@ -330,6 +330,42 @@ describe("http server actor boundary cleanup", () => {
     }
   });
 
+  it("requires a server-derived actor for HEAD reading detail requests", async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-actor-reading-head-"));
+
+    try {
+      const server = await startTestServer(storageRoot);
+
+      try {
+        const createdSpace = await createSharedSpace(server.url, "user-alice");
+        const importedRecord = await importPaper(
+          server.url,
+          "user-alice",
+          createdSpace.id,
+        );
+
+        const unauthorizedHead = await fetch(
+          `${server.url}/api/reading/${importedRecord.entry.id}`,
+          { method: "HEAD" },
+        );
+        const authorizedHead = await fetch(
+          `${server.url}/api/reading/${importedRecord.entry.id}`,
+          {
+            headers: { "x-jixia-actor": "user-alice" },
+            method: "HEAD",
+          },
+        );
+
+        expect(unauthorizedHead.status).toBe(401);
+        expect(authorizedHead.status).toBe(200);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it("rejects spoofed legacy actor fields and actor query authority across protected routes", async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-actor-400-"));
 

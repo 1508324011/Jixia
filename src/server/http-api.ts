@@ -14,7 +14,6 @@ import type {
 import type {
   DefaultImportTarget,
   UpdateWorkbenchSettingsRequest,
-  WorkbenchSettingsResponse,
 } from '@shared/contracts/settings';
 import type { WritingDocumentResponse } from '@shared/contracts/writing';
 
@@ -25,6 +24,12 @@ export interface HttpApiResponse {
   statusCode: number;
 }
 
+export interface HttpApiActorContext {
+  userId: string;
+}
+
+// Compatibility actor used only for non-credential demo/discovery workbench routes.
+// Credential and settings ownership must come from the server-derived actor.
 const DEFAULT_WORKBENCH_USER_ID = 'user-alice';
 const TODAY_DISCOVERY_QUERY = 'tumor board biomarkers';
 
@@ -50,6 +55,11 @@ interface SaveWritingDocumentRequestBody {
   title?: string;
 }
 
+interface ParsedWorkbenchSettingsUpdate extends UpdateWorkbenchSettingsRequest {
+  actorUserId?: string;
+  userId?: string;
+}
+
 function isDefaultImportTarget(value: unknown): value is DefaultImportTarget {
   return value === 'personal-library' || value === 'project-workspace';
 }
@@ -70,15 +80,23 @@ function decodePathSegment(segment: string): string {
 
 function parseWorkbenchSettingsUpdate(
   requestBody: unknown,
-): UpdateWorkbenchSettingsRequest {
+): ParsedWorkbenchSettingsUpdate {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Settings payload must be a JSON object.');
   }
 
-  const { apiKey, defaultImportTarget } = requestBody as Record<string, unknown>;
+  const { actorUserId, apiKey, defaultImportTarget, userId } = requestBody as Record<string, unknown>;
 
   if (typeof apiKey !== 'undefined' && typeof apiKey !== 'string') {
     throw new Error('apiKey must be a string when provided.');
+  }
+
+  if (typeof actorUserId !== 'undefined' && typeof actorUserId !== 'string') {
+    throw new Error('actorUserId must be a string when provided.');
+  }
+
+  if (typeof userId !== 'undefined' && typeof userId !== 'string') {
+    throw new Error('userId must be a string when provided.');
   }
 
   if (!isDefaultImportTarget(defaultImportTarget)) {
@@ -86,9 +104,28 @@ function parseWorkbenchSettingsUpdate(
   }
 
   return {
+    actorUserId,
     apiKey,
     defaultImportTarget,
+    userId,
   };
+}
+
+function assertNoActorMismatch(
+  actor: HttpApiActorContext,
+  claimedUserId: string | null | undefined,
+): void {
+  if (claimedUserId && claimedUserId !== actor.userId) {
+    throw new Error('Request body actor does not match the server-derived actor.');
+  }
+}
+
+function assertNoSettingsQueryActorMismatch(
+  actor: HttpApiActorContext,
+  requestUrl: URL,
+): void {
+  assertNoActorMismatch(actor, requestUrl.searchParams.get('actorUserId'));
+  assertNoActorMismatch(actor, requestUrl.searchParams.get('userId'));
 }
 
 function parseImportToPersonalLibraryRequest(
@@ -307,6 +344,7 @@ export async function resolveHttpApi(
   requestUrl: URL,
   method: string,
   requestBody?: unknown,
+  actor?: HttpApiActorContext,
 ): Promise<HttpApiResponse | null> {
   const pathname = requestUrl.pathname;
 
@@ -340,9 +378,11 @@ export async function resolveHttpApi(
   }
 
   if ((method === 'GET' || method === 'HEAD') && pathname === '/api/library/personal') {
+    const actorUserId = actor?.userId ?? DEFAULT_WORKBENCH_USER_ID;
+
     return {
       payload: toLibraryListResponse(
-        await app.library.listPersonalEntries(DEFAULT_WORKBENCH_USER_ID),
+        await app.library.listPersonalEntries(actorUserId),
       ),
       statusCode: 200,
     };
@@ -350,10 +390,11 @@ export async function resolveHttpApi(
 
   if (method === 'POST' && pathname === '/api/library/personal/import') {
     const payload = parseImportToPersonalLibraryRequest(requestBody);
+    const actorUserId = actor?.userId ?? DEFAULT_WORKBENCH_USER_ID;
 
     return {
       payload: await app.imports.importToPersonalLibrary({
-        requestedByUserId: DEFAULT_WORKBENCH_USER_ID,
+        requestedByUserId: actorUserId,
         sourceLocator: payload.sourceLocator,
         sourceType: payload.sourceType,
       }),
@@ -362,21 +403,39 @@ export async function resolveHttpApi(
   }
 
   if ((method === 'GET' || method === 'HEAD') && pathname === '/api/settings/me') {
+    if (!actor) {
+      throw new Error(
+        'Project API requires a server-derived actor session. Send x-jixia-actor for the lab-hosted MVP.',
+      );
+    }
+
+    assertNoSettingsQueryActorMismatch(actor, requestUrl);
+
     return {
-      payload: app.credentials.getWorkbenchSettings(DEFAULT_WORKBENCH_USER_ID),
+      payload: app.credentials.getWorkbenchSettings(actor.userId),
       statusCode: 200,
     };
   }
 
   if (method === 'POST' && pathname === '/api/settings/me') {
+    if (!actor) {
+      throw new Error(
+        'Project API requires a server-derived actor session. Send x-jixia-actor for the lab-hosted MVP.',
+      );
+    }
+
+    assertNoSettingsQueryActorMismatch(actor, requestUrl);
+
     const payload = parseWorkbenchSettingsUpdate(requestBody);
+    assertNoActorMismatch(actor, payload.actorUserId);
+    assertNoActorMismatch(actor, payload.userId);
 
     return {
       payload: await app.credentials.saveWorkbenchSettings({
         apiKey: payload.apiKey,
         defaultImportTarget: payload.defaultImportTarget,
-        userId: DEFAULT_WORKBENCH_USER_ID,
-      }),
+        userId: payload.userId,
+      }, actor.userId),
       statusCode: 200,
     };
   }
@@ -387,8 +446,9 @@ export async function resolveHttpApi(
     readingDetailMatch &&
     (method === 'GET' || method === 'HEAD')
   ) {
+    const actorUserId = actor?.userId ?? DEFAULT_WORKBENCH_USER_ID;
     const detail = await app.reading.getWorkbenchDetail({
-      actorUserId: DEFAULT_WORKBENCH_USER_ID,
+      actorUserId,
       libraryEntryId: decodePathSegment(readingDetailMatch[1]),
     });
 
@@ -409,11 +469,12 @@ export async function resolveHttpApi(
 
   if (readingNoteMatch && method === 'POST') {
     const payload = parseCreateReadingNoteRequest(requestBody);
+    const actorUserId = actor?.userId ?? DEFAULT_WORKBENCH_USER_ID;
 
     return {
       payload: toReadingNoteResponse(
         await app.reading.createWorkbenchNote({
-          authorUserId: DEFAULT_WORKBENCH_USER_ID,
+          authorUserId: actorUserId,
           body: payload.body,
           libraryEntryId: decodePathSegment(readingNoteMatch[1]),
           visibility: payload.visibility,
@@ -427,13 +488,14 @@ export async function resolveHttpApi(
 
   if (readingInsightMatch && method === 'POST') {
     const payload = parseSaveReadingInsightRequest(requestBody);
+    const actorUserId = actor?.userId ?? DEFAULT_WORKBENCH_USER_ID;
 
     return {
       payload: toReadingInsightResponse(
         await app.reading.saveWorkbenchGeneratedInsight({
           evidenceSpans: payload.evidenceSpans,
           libraryEntryId: decodePathSegment(readingInsightMatch[1]),
-          startedByUserId: DEFAULT_WORKBENCH_USER_ID,
+          startedByUserId: actorUserId,
           summary: payload.summary,
           title: payload.title,
         }),

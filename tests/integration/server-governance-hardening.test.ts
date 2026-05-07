@@ -103,8 +103,7 @@ describe('server governance hardening', () => {
       const credential = await app.credentials.createCredential({
         provider: 'openai',
         rawSecret: 'validator-credential-placeholder',
-        userId: 'user-alice',
-      });
+      }, 'user-alice');
       const notebook = await app.notebooks.createDocument(
         { title: 'Validated Notebook' },
         'user-alice',
@@ -174,8 +173,7 @@ describe('server governance hardening', () => {
       const credential = await firstApp.credentials.createCredential({
         provider: 'openai',
         rawSecret: 'persisted-credential-placeholder',
-        userId: 'user-alice',
-      });
+      }, 'user-alice');
       const job = await firstApp.jobs.createJob({
         credentialRef: credential.credentialRef,
         kind: 'ai.summary',
@@ -237,8 +235,7 @@ describe('server governance hardening', () => {
       const credential = await app.credentials.createCredential({
         provider: 'openai',
         rawSecret: 'job-guard-credential-placeholder',
-        userId: 'user-alice',
-      });
+      }, 'user-alice');
       const job = await app.jobs.createJob({
         credentialRef: credential.credentialRef,
         kind: 'ai.summary',
@@ -292,8 +289,7 @@ describe('server governance hardening', () => {
       const credential = await app.credentials.createCredential({
         provider: 'openai',
         rawSecret: 'payload-guard-credential-placeholder',
-        userId: 'user-alice',
-      });
+      }, 'user-alice');
       const persistedStatePath = join(storageRoot, 'server-state.json');
 
       await expect(

@@ -26,7 +26,8 @@ export interface WorkbenchSettingsRecord {
 export interface SaveWorkbenchSettingsRequest {
   apiKey?: string;
   defaultImportTarget: DefaultImportTarget;
-  userId: string;
+  /** @deprecated Settings ownership is derived from the service actor parameter. */
+  userId?: string;
 }
 
 export interface CredentialsStore {
@@ -40,16 +41,17 @@ export interface CredentialsStore {
 export interface CredentialsService {
   createCredential(
     input: CreateCredentialRequest,
-    actorUserId?: string,
+    actorUserId: string,
   ): Promise<CredentialRecord>;
   getStoredCredential(credentialRef: string): StoredCredential | null;
-  getWorkbenchSettings(userId: string): WorkbenchSettingsResponse;
+  getWorkbenchSettings(actorUserId: string): WorkbenchSettingsResponse;
   listCredentials(
     query: ListCredentialsQuery,
-    actorUserId?: string,
+    actorUserId: string,
   ): Promise<CredentialRecord[]>;
   saveWorkbenchSettings(
     input: SaveWorkbenchSettingsRequest,
+    actorUserId: string,
   ): Promise<WorkbenchSettingsResponse>;
 }
 
@@ -95,21 +97,33 @@ function toWorkbenchSettingsResponse(
   };
 }
 
+function normalizeRequiredActorUserId(
+  actorUserId: string | undefined,
+  message: string,
+): string {
+  const normalizedActorUserId = actorUserId?.trim() ?? "";
+
+  if (!normalizedActorUserId) {
+    throw new Error(message);
+  }
+
+  return normalizedActorUserId;
+}
+
 export function createCredentialsService(
   store: CredentialsStore,
 ): CredentialsService {
   return {
     async createCredential(
       input: CreateCredentialRequest,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<CredentialRecord> {
-      const effectiveUserId = actorUserId ?? input.userId;
+      const normalizedActorUserId = normalizeRequiredActorUserId(
+        actorUserId,
+        "Credentials require an actor user id.",
+      );
 
-      if (!effectiveUserId) {
-        throw new Error("Credentials require an actor user id.");
-      }
-
-      if (actorUserId && input.userId && input.userId !== actorUserId) {
+      if (input.userId && input.userId !== normalizedActorUserId) {
         throw new Error(
           "Request body actor does not match the server-derived actor.",
         );
@@ -118,7 +132,7 @@ export function createCredentialsService(
       const credential = createStoredCredential(store, {
         provider: input.provider,
         rawSecret: input.rawSecret,
-        userId: effectiveUserId,
+        userId: normalizedActorUserId,
       });
 
       store.credentials.push(credential);
@@ -133,43 +147,57 @@ export function createCredentialsService(
         ) ?? null
       );
     },
-    getWorkbenchSettings(userId: string): WorkbenchSettingsResponse {
-      return toWorkbenchSettingsResponse(findWorkbenchSettings(store, userId));
+    getWorkbenchSettings(actorUserId: string): WorkbenchSettingsResponse {
+      const normalizedActorUserId = normalizeRequiredActorUserId(
+        actorUserId,
+        "Workbench settings require a user id.",
+      );
+
+      return toWorkbenchSettingsResponse(
+        findWorkbenchSettings(store, normalizedActorUserId),
+      );
     },
     async listCredentials(
       query: ListCredentialsQuery,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<CredentialRecord[]> {
-      const effectiveUserId = actorUserId ?? query.userId;
+      const normalizedActorUserId = normalizeRequiredActorUserId(
+        actorUserId,
+        "Credentials require an actor user id.",
+      );
 
-      if (!effectiveUserId) {
-        throw new Error("Credentials require an actor user id.");
-      }
-
-      if (actorUserId && query.userId && query.userId !== actorUserId) {
+      if (query.userId && query.userId !== normalizedActorUserId) {
         throw new Error(
           "Request actor does not match the server-derived actor.",
         );
       }
 
       return store.credentials
-        .filter((credential) => credential.userId === effectiveUserId)
+        .filter((credential) => credential.userId === normalizedActorUserId)
         .map(toCredentialRecord);
     },
     async saveWorkbenchSettings(
       input: SaveWorkbenchSettingsRequest,
+      actorUserId: string,
     ): Promise<WorkbenchSettingsResponse> {
-      if (!input.userId) {
-        throw new Error("Workbench settings require a user id.");
+      const normalizedActorUserId = normalizeRequiredActorUserId(
+        actorUserId,
+        "Workbench settings require a user id.",
+      );
+
+      if (input.userId && input.userId !== normalizedActorUserId) {
+        throw new Error(
+          "Request body actor does not match the server-derived actor.",
+        );
       }
 
-      let credentialRef = findWorkbenchSettings(store, input.userId)?.credentialRef ?? null;
+      let credentialRef = findWorkbenchSettings(store, normalizedActorUserId)?.credentialRef ?? null;
 
       if (typeof input.apiKey === "string" && input.apiKey.trim()) {
         const credential = createStoredCredential(store, {
           provider: WORKBENCH_API_KEY_PROVIDER,
           rawSecret: input.apiKey,
-          userId: input.userId,
+          userId: normalizedActorUserId,
         });
 
         store.credentials.push(credential);
@@ -177,13 +205,13 @@ export function createCredentialsService(
       }
 
       const existingIndex = store.workbenchSettings.findIndex(
-        (settings) => settings.userId === input.userId,
+        (settings) => settings.userId === normalizedActorUserId,
       );
       const record: WorkbenchSettingsRecord = {
         credentialRef,
         defaultImportTarget: input.defaultImportTarget,
         updatedAt: new Date().toISOString(),
-        userId: input.userId,
+        userId: normalizedActorUserId,
       };
 
       if (existingIndex === -1) {

@@ -262,4 +262,38 @@ describe('prisma schema', () => {
     expect(projectDocsService).not.toContain('store.paperAssets');
     expect(projectDocsService).not.toContain('store.libraryEntries');
   });
+
+  it('keeps credential and settings ownership actor-derived', () => {
+    const credentialService = readFileSync(
+      'src/server/services/credentials.service.ts',
+      'utf8',
+    );
+    const credentialRoutes = readFileSync(
+      'src/server/routes/credentials.routes.ts',
+      'utf8',
+    );
+    const httpServer = readFileSync('src/server/http-server.ts', 'utf8');
+    const httpApi = readFileSync('src/server/http-api.ts', 'utf8');
+
+    expect(credentialService).not.toContain('actorUserId ?? input.userId');
+    expect(credentialService).not.toContain('actorUserId ?? query.userId');
+    expect(credentialService).not.toContain('findWorkbenchSettings(store, input.userId)');
+    expect(credentialService).not.toContain('settings.userId === input.userId');
+    expect(credentialService).toContain(`saveWorkbenchSettings(
+      input: SaveWorkbenchSettingsRequest,
+      actorUserId: string,`);
+    expect(credentialRoutes).toContain(`saveWorkbenchSettings(
+      input: SaveWorkbenchSettingsRequest,
+      actorUserId: string,`);
+    expect(httpServer).toContain('isActorAwareWorkbenchHttpApiPath');
+    expect(httpServer).not.toMatch(
+      /function isWorkbenchHttpApiPath[\s\S]*pathname === "\/api\/settings\/me"[\s\S]*function isActorAwareWorkbenchHttpApiPath/,
+    );
+    expect(httpApi).not.toContain('getWorkbenchSettings(DEFAULT_WORKBENCH_USER_ID)');
+    expect(httpApi).not.toMatch(
+      /saveWorkbenchSettings\([\s\S]*userId: DEFAULT_WORKBENCH_USER_ID/,
+    );
+    expect(httpApi).toContain('app.credentials.getWorkbenchSettings(actor.userId)');
+    expect(httpApi).toContain('}, actor.userId)');
+  });
 });
