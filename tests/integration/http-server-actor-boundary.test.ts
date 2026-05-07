@@ -191,6 +191,8 @@ describe("http server actor boundary cleanup", () => {
           spaces,
           memberships,
           credentials,
+          settings,
+          saveSettings,
           libraryList,
           libraryEntry,
           importPaperResponse,
@@ -216,6 +218,14 @@ describe("http server actor boundary cleanup", () => {
             fetch(`${server.url}/api/spaces`),
             fetch(`${server.url}/api/spaces/space-1/memberships`),
             fetch(`${server.url}/api/credentials`),
+            fetch(`${server.url}/api/settings/me`),
+            fetch(`${server.url}/api/settings/me`, {
+              body: JSON.stringify({
+                defaultImportTarget: "personal-library",
+              }),
+              headers: { "Content-Type": "application/json" },
+              method: "POST",
+            }),
             fetch(`${server.url}/api/library?spaceId=space-1`),
             fetch(`${server.url}/api/library/entry-1`),
             fetch(`${server.url}/api/import/paper`, {
@@ -299,6 +309,8 @@ describe("http server actor boundary cleanup", () => {
           spaces,
           memberships,
           credentials,
+          settings,
+          saveSettings,
           libraryList,
           libraryEntry,
           importPaperResponse,
@@ -514,6 +526,34 @@ describe("http server actor boundary cleanup", () => {
             },
             method: "POST",
           }),
+          fetch(`${server.url}/api/settings/me?userId=user-bob`, {
+            headers: { "x-jixia-actor": "user-alice" },
+          }),
+          fetch(`${server.url}/api/settings/me?actorUserId=user-bob`, {
+            headers: { "x-jixia-actor": "user-alice" },
+          }),
+          fetch(`${server.url}/api/settings/me`, {
+            body: JSON.stringify({
+              defaultImportTarget: "personal-library",
+              userId: "user-bob",
+            }),
+            headers: {
+              "Content-Type": "application/json",
+              "x-jixia-actor": "user-alice",
+            },
+            method: "POST",
+          }),
+          fetch(`${server.url}/api/settings/me`, {
+            body: JSON.stringify({
+              actorUserId: "user-bob",
+              defaultImportTarget: "personal-library",
+            }),
+            headers: {
+              "Content-Type": "application/json",
+              "x-jixia-actor": "user-alice",
+            },
+            method: "POST",
+          }),
           fetch(`${server.url}/api/jobs?actorUserId=user-bob`, {
             headers: { "x-jixia-actor": "user-alice" },
           }),
@@ -615,6 +655,8 @@ describe("http server actor boundary cleanup", () => {
           spaces,
           memberships,
           credentials,
+          settings,
+          saveSettings,
           library,
           reading,
           note,
@@ -633,6 +675,19 @@ describe("http server actor boundary cleanup", () => {
           }),
           fetch(`${server.url}/api/credentials`, {
             headers: { "x-jixia-actor": "user-alice" },
+          }),
+          fetch(`${server.url}/api/settings/me`, {
+            headers: { "x-jixia-actor": "user-alice" },
+          }),
+          fetch(`${server.url}/api/settings/me`, {
+            body: JSON.stringify({
+              defaultImportTarget: "project-workspace",
+            }),
+            headers: {
+              "Content-Type": "application/json",
+              "x-jixia-actor": "user-alice",
+            },
+            method: "POST",
           }),
           fetch(`${server.url}/api/library?scopeType=project&scopeId=${importedRecord.projectId}&spaceId=${createdSpace.id}`, {
             headers: { "x-jixia-actor": "user-alice" },
@@ -694,6 +749,8 @@ describe("http server actor boundary cleanup", () => {
         expect(spaces.status).toBe(200);
         expect(memberships.status).toBe(200);
         expect(credentials.status).toBe(200);
+        expect(settings.status).toBe(200);
+        expect(saveSettings.status).toBe(200);
         expect(library.status).toBe(200);
         expect(reading.status).toBe(200);
         expect(note.status).toBe(200);

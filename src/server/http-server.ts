@@ -171,6 +171,9 @@ async function handleWorkbenchHttpApiRequest(
   }
 
   try {
+    const actor = requestUrl.pathname === "/api/settings/me"
+      ? getActor(request)
+      : undefined;
     const requestBody = method === "GET" || method === "HEAD"
       ? undefined
       : await readJsonBody<unknown>(request);
@@ -179,6 +182,7 @@ async function handleWorkbenchHttpApiRequest(
       requestUrl,
       method,
       requestBody,
+      actor,
     );
 
     if (fallbackResponse) {
@@ -996,6 +1000,7 @@ export function createHttpServer(
             requestUrl,
             method,
             requestBody,
+            undefined,
           );
 
           if (fallbackResponse) {

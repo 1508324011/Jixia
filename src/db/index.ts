@@ -7,6 +7,25 @@ export {
 } from './client';
 
 export {
+  createJobRepository,
+  initializeJobPersistence,
+  type AppendJobEventParams,
+  type CreateAuditRecordParams,
+  type CreateJobParams,
+  type CreateProviderCredentialReferenceParams,
+  type CreateQueuedJobWithAuditParams,
+  type JobLookup,
+  type JobRepository,
+  type ListJobsForActorQuery,
+  type PersistedAuditLogRecord,
+  type PersistedJobEventRecord,
+  type PersistedJobRecord,
+  type PersistedJobStatus,
+  type PersistedProviderCredentialReferenceRecord,
+  type PersistedQueuedJobWithAudit,
+} from './repositories/job.repository';
+
+export {
   createLibraryRepository,
   initializeLibraryPersistence,
   type BootstrapLegacyLibraryInput,

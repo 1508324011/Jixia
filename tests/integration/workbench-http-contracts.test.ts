@@ -97,7 +97,18 @@ describe('workbench http contracts', () => {
       const importedPersonalRecord = await importPersonalLibraryResponse.json();
       expect(importedPersonalRecord.asset.canonicalId).toBe(search.items[0].canonicalId);
 
-      const settingsResponse = await fetch(`${baseUrl}/api/settings/me`);
+      const unauthenticatedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`);
+      expect(unauthenticatedSettingsResponse.status).toBe(401);
+
+      const spoofedSettingsResponse = await fetch(
+        `${baseUrl}/api/settings/me?userId=user-bob`,
+        { headers: { 'x-jixia-actor': 'user-alice' } },
+      );
+      expect(spoofedSettingsResponse.status).toBe(400);
+
+      const settingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        headers: { 'x-jixia-actor': 'user-alice' },
+      });
       expect(settingsResponse.status).toBe(200);
 
       const settings = await settingsResponse.json();
@@ -114,6 +125,7 @@ describe('workbench http contracts', () => {
         }),
         headers: {
           'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
         },
         method: 'POST',
       });
@@ -126,7 +138,22 @@ describe('workbench http contracts', () => {
       });
       expect(savedSettings.apiKey).toBeUndefined();
 
-      const persistedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`);
+      const spoofedSettingsSaveResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        body: JSON.stringify({
+          defaultImportTarget: 'personal-library',
+          userId: 'user-bob',
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
+        },
+        method: 'POST',
+      });
+      expect(spoofedSettingsSaveResponse.status).toBe(400);
+
+      const persistedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        headers: { 'x-jixia-actor': 'user-alice' },
+      });
       expect(persistedSettingsResponse.status).toBe(200);
 
       const persistedSettings = await persistedSettingsResponse.json();
@@ -167,7 +194,7 @@ describe('workbench http contracts', () => {
       );
 
       const { createDemoApi } = await import('../../src/web/lib/demo-api');
-      const demoApi = createDemoApi(baseUrl);
+      const demoApi = createDemoApi(baseUrl, 'user-alice');
       const todayFromClient = await demoApi.getTodayRecommendations();
       const searchFromClient = await demoApi.searchDiscovery('tumor board');
       const settingsFromClient = await demoApi.getWorkbenchSettings();

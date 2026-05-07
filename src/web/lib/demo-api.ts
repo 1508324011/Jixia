@@ -18,7 +18,7 @@ function resolveApiUrl(baseUrl: string, pathname: string): string {
   return baseUrl ? new URL(pathname, baseUrl).toString() : pathname;
 }
 
-export function createDemoApi(baseUrl = '') {
+export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
   function buildSearchUrl(pathname: string, query: string): string {
     const requestUrl = new URL(resolveApiUrl(baseUrl, pathname), 'http://localhost');
     requestUrl.searchParams.set('query', query);
@@ -130,6 +130,9 @@ export function createDemoApi(baseUrl = '') {
     getWorkbenchSettings(): Promise<WorkbenchSettingsResponse> {
       return requestJson<WorkbenchSettingsResponse>(
         resolvePath('/api/settings/me'),
+        {
+          headers: { 'x-jixia-actor': actorUserId },
+        },
       );
     },
     saveWorkbenchSettings(
@@ -139,6 +142,7 @@ export function createDemoApi(baseUrl = '') {
         resolvePath('/api/settings/me'),
         {
           body: JSON.stringify(input),
+          headers: { 'x-jixia-actor': actorUserId },
           method: 'POST',
         },
       );

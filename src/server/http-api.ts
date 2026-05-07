@@ -14,11 +14,12 @@ import type {
 import type {
   DefaultImportTarget,
   UpdateWorkbenchSettingsRequest,
-  WorkbenchSettingsResponse,
 } from '@shared/contracts/settings';
 import type { WritingDocumentResponse } from '@shared/contracts/writing';
 
 import type { JixiaApp } from './app';
+import type { ActorContext } from './auth/actor';
+import { assertNoActorImpersonation } from './auth/actor';
 
 export interface HttpApiResponse {
   payload: unknown;
@@ -50,6 +51,13 @@ interface SaveWritingDocumentRequestBody {
   title?: string;
 }
 
+interface WorkbenchSettingsRequestBody extends Record<string, unknown> {
+  actorUserId?: string;
+  apiKey?: string;
+  defaultImportTarget?: unknown;
+  userId?: string;
+}
+
 function isDefaultImportTarget(value: unknown): value is DefaultImportTarget {
   return value === 'personal-library' || value === 'project-workspace';
 }
@@ -75,7 +83,7 @@ function parseWorkbenchSettingsUpdate(
     throw new Error('Settings payload must be a JSON object.');
   }
 
-  const { apiKey, defaultImportTarget } = requestBody as Record<string, unknown>;
+  const { apiKey, defaultImportTarget } = requestBody as WorkbenchSettingsRequestBody;
 
   if (typeof apiKey !== 'undefined' && typeof apiKey !== 'string') {
     throw new Error('apiKey must be a string when provided.');
@@ -307,6 +315,7 @@ export async function resolveHttpApi(
   requestUrl: URL,
   method: string,
   requestBody?: unknown,
+  actor?: ActorContext,
 ): Promise<HttpApiResponse | null> {
   const pathname = requestUrl.pathname;
 
@@ -362,21 +371,47 @@ export async function resolveHttpApi(
   }
 
   if ((method === 'GET' || method === 'HEAD') && pathname === '/api/settings/me') {
+    if (!actor) {
+      throw new Error(
+        'Workbench settings API requires a server-derived actor session.',
+      );
+    }
+
+    assertNoActorImpersonation(
+      actor,
+      requestUrl.searchParams.get('userId') ?? undefined,
+    );
+    assertNoActorImpersonation(
+      actor,
+      requestUrl.searchParams.get('actorUserId') ?? undefined,
+    );
+
     return {
-      payload: app.credentials.getWorkbenchSettings(DEFAULT_WORKBENCH_USER_ID),
+      payload: app.credentials.getWorkbenchSettings(actor.userId),
       statusCode: 200,
     };
   }
 
   if (method === 'POST' && pathname === '/api/settings/me') {
+    if (!actor) {
+      throw new Error(
+        'Workbench settings API requires a server-derived actor session.',
+      );
+    }
+
     const payload = parseWorkbenchSettingsUpdate(requestBody);
+    const actorCompatibilityFields = requestBody as WorkbenchSettingsRequestBody;
+
+    assertNoActorImpersonation(actor, actorCompatibilityFields.userId);
+    assertNoActorImpersonation(actor, actorCompatibilityFields.actorUserId);
 
     return {
       payload: await app.credentials.saveWorkbenchSettings({
+        actorUserId: actorCompatibilityFields.actorUserId,
         apiKey: payload.apiKey,
         defaultImportTarget: payload.defaultImportTarget,
-        userId: DEFAULT_WORKBENCH_USER_ID,
-      }),
+        userId: actorCompatibilityFields.userId,
+      }, actor.userId),
       statusCode: 200,
     };
   }
