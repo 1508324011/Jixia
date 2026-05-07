@@ -140,6 +140,49 @@ describe('projects api', () => {
     }
   });
 
+  it('denies project creation when only stale legacy space membership exists', async () => {
+    const storageRoot = createStorageRoot();
+
+    try {
+      const env = createProjectTestEnv(storageRoot);
+      const app = createJixiaApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Stale Legacy Memberships' },
+        'user-alice',
+      );
+      const statePath = join(storageRoot, 'server-state.json');
+      const serverState = JSON.parse(readFileSync(statePath, 'utf8')) as {
+        memberships: Array<{
+          joinedAt: string;
+          role: 'owner' | 'editor' | 'viewer';
+          spaceId: string;
+          userId: string;
+        }>;
+      };
+      serverState.memberships.push({
+        joinedAt: new Date().toISOString(),
+        role: 'viewer',
+        spaceId: sharedSpace.id,
+        userId: 'user-charlie',
+      });
+      writeFileSync(statePath, JSON.stringify(serverState, null, 2));
+
+      const restartedAppWithLegacyMembership = createJixiaApp({ env });
+
+      await expect(
+        restartedAppWithLegacyMembership.projects.createProject(
+          {
+            name: 'Legacy Membership Should Not Authorize',
+            spaceId: sharedSpace.id,
+          },
+          'user-charlie',
+        ),
+      ).rejects.toThrow(/access denied/i);
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('returns existing memberships on duplicate member add and denies non-owner management', async () => {
     const storageRoot = createStorageRoot();
 

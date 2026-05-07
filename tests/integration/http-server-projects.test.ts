@@ -216,6 +216,66 @@ describe('http server project api', () => {
     }
   });
 
+  it('rejects body actor impersonation on project member management', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-projects-'));
+
+    try {
+      const server = await startTestServer(storageRoot);
+
+      try {
+        const createdSpace = await fetch(
+          `${server.url}/api/spaces`,
+          {
+            body: JSON.stringify({ kind: 'shared', name: 'HTTP Member Mismatch' }),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-alice',
+            },
+            method: 'POST',
+          },
+        ).then((response) => response.json() as Promise<{ id: string }>);
+
+        const createdProject = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({
+            name: 'HTTP Member Boundary Project',
+            spaceId: createdSpace.id,
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-jixia-actor': 'user-alice',
+          },
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+
+        const response = await fetch(
+          `${server.url}/api/projects/${createdProject.project.id}/members`,
+          {
+            body: JSON.stringify({
+              actorUserId: 'user-alice',
+              role: 'viewer',
+              userId: 'user-charlie',
+            }),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-bob',
+            },
+            method: 'POST',
+          },
+        );
+        const payload = (await response.json()) as { error: string };
+
+        expect(response.status).toBe(400);
+        expect(payload.error).toMatch(/actor does not match/i);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('rejects missing project actors before trusting request payload identity', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-projects-'));
 

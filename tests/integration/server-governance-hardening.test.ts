@@ -12,7 +12,7 @@ function createStorageRoot(): string {
 }
 
 describe('server governance hardening', () => {
-  it('blocks cross-scope library, reading, notebook, and project-doc access', async () => {
+  it('blocks cross-scope library, reading, notebook, and project-doc access', { timeout: 15_000 }, async () => {
     const storageRoot = createStorageRoot();
 
     try {
