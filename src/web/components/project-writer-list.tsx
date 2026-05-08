@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import type { WritingDocumentView } from '@shared/contracts/writing';
 
 import { createDemoApi } from '../lib/demo-api';
+import { ApiError } from '../lib/http-client';
 
 interface ProjectWriterListProps {
   projectId: string;
@@ -32,9 +33,11 @@ export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps
         }
       } catch (error) {
         if (!isCancelled) {
-          if (error instanceof Error && error.message.includes('404')) {
+          if (error instanceof ApiError && error.status === 404) {
             setDocument(null);
+            setLoadError(null);
           } else {
+            setDocument(null);
             setLoadError(
               error instanceof Error ? error.message : 'Failed to load the Writer preview.',
             );
@@ -75,7 +78,7 @@ export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps
           </p>
           <Link
             className="panel-link"
-            to={`/spaces/${spaceId}/projects/${projectId}/writing/${document.documentId}`}
+            to={`/projects/${projectId}/writing/${document.documentId}`}
           >
             打开 Writer 文稿
           </Link>

@@ -330,23 +330,6 @@ function toReadingInsightResponse(
   return { insight };
 }
 
-function createUnavailableWritingDocumentResponse(
-  spaceId: string,
-  projectId: string,
-): WritingDocumentResponse {
-  return {
-    document: {
-      documentId: `project-doc:${projectId}`,
-      latestSnapshot: null,
-      projectId,
-      publishState: "draft",
-      spaceId,
-      title: "Project writer document",
-    },
-  };
-}
-
-
 export async function resolveHttpApi(
   app: JixiaApp,
   requestUrl: URL,
@@ -563,47 +546,63 @@ export async function resolveHttpApi(
     writingDocumentMatch &&
     (method === 'GET' || method === 'HEAD')
   ) {
+    if (!actor) {
+      throw new Error(
+        'Workbench writing API requires a server-derived actor session.',
+      );
+    }
+
     const spaceId = decodePathSegment(writingDocumentMatch[1]);
     const projectId = decodePathSegment(writingDocumentMatch[2]);
+    const document = await app.projectDocs.getWorkbenchDocument(projectId, actor.userId);
+
+    if (!document) {
+      return {
+        payload: { error: `No Writer document exists for project ${projectId}.` },
+        statusCode: 404,
+      };
+    }
+
+    if (document.spaceId !== spaceId) {
+      throw new Error(
+        `Project ${projectId} belongs to governance space ${document.spaceId}, not ${spaceId}.`,
+      );
+    }
 
     return {
-      payload: createUnavailableWritingDocumentResponse(spaceId, projectId),
+      payload: { document } satisfies WritingDocumentResponse,
       statusCode: 200,
     };
   }
 
   if (writingDocumentMatch && method === 'POST') {
+    if (!actor) {
+      throw new Error(
+        'Workbench writing API requires a server-derived actor session.',
+      );
+    }
+
     const spaceId = decodePathSegment(writingDocumentMatch[1]);
     const projectId = decodePathSegment(writingDocumentMatch[2]);
     const payload = parseSaveWritingDocumentRequest(requestBody);
-    const capturedAt = new Date().toISOString();
-    const response = createUnavailableWritingDocumentResponse(spaceId, projectId);
-
-    response.document.title = payload.title;
-    response.document.latestSnapshot = {
-      capturedAt,
-      citations: payload.citations.map((citation, index) => ({
-        evidenceSpan: citation.evidenceSpan,
-        id: `writer-citation-${index + 1}`,
-        docVersionId: `project-doc:${projectId}:version`,
-        paperAssetId: citation.paperAssetId,
-      })),
-      content: payload.content,
-      doc: {
-        createdAt: capturedAt,
-        id: response.document.documentId,
+    const document = await app.projectDocs.saveWorkbenchDocument(
+      {
+        citations: payload.citations,
+        content: payload.content,
         projectId,
-        publishState: "draft",
-        spaceId,
         title: payload.title,
-        updatedAt: capturedAt,
       },
-      docVersionId: `project-doc:${projectId}:version`,
-      versionNumber: 1,
-    };
+      actor.userId,
+    );
+
+    if (document.spaceId !== spaceId) {
+      throw new Error(
+        `Project ${projectId} belongs to governance space ${document.spaceId}, not ${spaceId}.`,
+      );
+    }
 
     return {
-      payload: response,
+      payload: { document } satisfies WritingDocumentResponse,
       statusCode: 200,
     };
   }

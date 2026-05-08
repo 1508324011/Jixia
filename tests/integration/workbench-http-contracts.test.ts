@@ -25,6 +25,9 @@ async function listenOnEphemeralPort(server: ReturnType<typeof createHttpServer>
 }
 
 async function closeServer(server: ReturnType<typeof createHttpServer>['server']) {
+  server.closeIdleConnections?.();
+  server.closeAllConnections?.();
+
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error) {
@@ -212,30 +215,79 @@ describe('workbench http contracts', () => {
       const writingReadWithoutActor = await fetch(
         `${baseUrl}/api/writing/space-alpha/projects/project-alpha/document`,
       );
-      const writingDocumentFromClient = await demoApi.getWritingDocument(
-        'space-alpha',
-        'project-alpha',
+      const sharedSpace = await fetch(`${baseUrl}/api/spaces`, {
+        body: JSON.stringify({ kind: 'shared', name: 'Writer Space' }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
+        },
+        method: 'POST',
+      }).then((response) => response.json() as Promise<{ id: string }>);
+      const project = await fetch(`${baseUrl}/api/projects`, {
+        body: JSON.stringify({ name: 'Writer Project', spaceId: sharedSpace.id }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
+        },
+        method: 'POST',
+      }).then((response) => response.json() as Promise<{ project: { id: string } }>);
+      const importedProjectRecord = await fetch(`${baseUrl}/api/import/paper`, {
+        body: JSON.stringify({
+          scope: { id: project.project.id, type: 'project' },
+          sourceLocator: search.items[0].sourceLocator,
+          sourceType: search.items[0].sourceType,
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
+        },
+        method: 'POST',
+      }).then(
+        (response) => response.json() as Promise<{ asset: { id: string } }>,
       );
+      const writingDocumentFromClient = await demoApi.getWritingDocument(
+        sharedSpace.id,
+        project.project.id,
+      ).catch((error) => error);
       const writingSaveFromClient = await demoApi.saveWritingDocument({
+        citations: [{ paperAssetId: importedProjectRecord.asset.id }],
         content: 'Writer draft content',
-        projectId: 'project-alpha',
-        spaceId: 'space-alpha',
+        projectId: project.project.id,
+        spaceId: sharedSpace.id,
         title: 'Writer draft title',
       });
+      const reloadedWritingDocument = await demoApi.getWritingDocument(
+        sharedSpace.id,
+        project.project.id,
+      );
+      const compatibilityWritingDocument = await fetch(
+        `${baseUrl}/api/writing/${sharedSpace.id}/projects/${project.project.id}/document`,
+        {
+          headers: { 'x-jixia-actor': 'user-alice' },
+        },
+      ).then((response) => response.json());
       const bobSearchFromClient = await createDemoApi(baseUrl, 'user-bob').searchDiscovery(
         'tumor board',
       );
 
       expect(todayFromClient.items).toBeDefined();
       expect(searchFromClient.items.length).toBeGreaterThan(0);
-      expect(searchFromClient.items[0]).toMatchObject({
-        canonicalId: search.items[0].canonicalId,
-        imported: true,
-      });
-      expect(bobSearchFromClient.items[0]).toMatchObject({
-        canonicalId: search.items[0].canonicalId,
-        imported: false,
-      });
+      expect(
+        searchFromClient.items.some(
+          (item) =>
+            item.canonicalId === search.items[0].canonicalId &&
+            item.imported === true,
+        ),
+      ).toBe(true);
+      expect(
+        bobSearchFromClient.items.some(
+          (item) =>
+            item.canonicalId === search.items[0].canonicalId &&
+            item.imported === false,
+        ),
+      ).toBe(true);
       expect(settingsFromClient.apiKeyConfigured).toBeDefined();
       expect(personalLibraryFromClient.entries).toContainEqual(
         expect.objectContaining({
@@ -243,18 +295,29 @@ describe('workbench http contracts', () => {
         }),
       );
       expect(writingReadWithoutActor.status).toBe(401);
-      expect(writingDocumentFromClient.document).toMatchObject({
-        documentId: 'project-doc:project-alpha',
-        projectId: 'project-alpha',
-        spaceId: 'space-alpha',
+      expect(writingDocumentFromClient).toBeInstanceOf(Error);
+      expect((writingDocumentFromClient as Error).message).toContain('No Writer document exists');
+      expect(writingSaveFromClient.document).toMatchObject({
+        projectId: project.project.id,
+        spaceId: sharedSpace.id,
       });
       expect(writingSaveFromClient.document.latestSnapshot).toMatchObject({
         content: 'Writer draft content',
         doc: expect.objectContaining({
-          projectId: 'project-alpha',
-          spaceId: 'space-alpha',
+          projectId: project.project.id,
+          spaceId: sharedSpace.id,
           title: 'Writer draft title',
         }),
+      });
+      expect(reloadedWritingDocument.document).toMatchObject({
+        documentId: writingSaveFromClient.document.documentId,
+        projectId: project.project.id,
+        spaceId: sharedSpace.id,
+      });
+      expect(compatibilityWritingDocument.document).toMatchObject({
+        documentId: writingSaveFromClient.document.documentId,
+        projectId: project.project.id,
+        spaceId: sharedSpace.id,
       });
     } finally {
       await closeServer(httpServer.server);

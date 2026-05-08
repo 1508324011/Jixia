@@ -113,12 +113,28 @@ function installFetchMock() {
     if (requestUrl.pathname === '/api/reading/entry-recovery') {
       return Response.json({
         ...importedEntryFixture,
-        insights: [],
+        insights: [
+          {
+            conversationId: 'conversation-recovery',
+            createdAt: '2026-05-03T00:10:00.000Z',
+            evidenceSpans: [
+              {
+                endOffset: 20,
+                paperAssetId: 'asset-recovery',
+                quote: 'project recovery evidence',
+                startOffset: 0,
+              },
+            ],
+            id: 'insight-recovery',
+            libraryEntryId: 'entry-recovery',
+            summary: 'Project recovery insight ready for Writer.',
+          },
+        ],
         notes: [],
       });
     }
 
-    if (requestUrl.pathname === '/api/writing/space-recovery/projects/project-recovery/document') {
+    if (requestUrl.pathname === '/api/projects/project-recovery/writing/document') {
       return Response.json({
         document: {
           documentId: 'doc-1',
@@ -196,6 +212,8 @@ describe('mvp workflow shell', () => {
     expect(screen.getByText('Project context · Project-first Recovery')).toBeInTheDocument();
     expect(screen.getByText('Entry · entry-recovery')).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
+    expect(await screen.findByText('Promoted latest insight into Writer.')).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Open writing' }));
 
     expect(screen.getByRole('heading', { name: 'Writing' })).toBeInTheDocument();
@@ -255,6 +273,8 @@ describe('mvp workflow shell', () => {
       screen.getByText('Governed action source · queued → running → succeeded'),
     ).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
+    expect(await screen.findByText('Promoted latest insight into Writer.')).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Open writing' }));
 
     expect(screen.getByText('Publish state path')).toBeInTheDocument();

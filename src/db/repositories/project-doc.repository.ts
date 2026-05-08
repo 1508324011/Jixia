@@ -59,6 +59,12 @@ export interface PersistedProjectDocSnapshot {
 export interface ProjectDocRepository {
   createDocument(input: CreateProjectDocParams): Promise<PersistedProjectDocRecord>;
   findDocument(documentId: string): Promise<PersistedProjectDocRecord | null>;
+  findLatestDocumentForProject(
+    projectId: string,
+  ): Promise<PersistedProjectDocRecord | null>;
+  getLatestSnapshot(
+    documentId: string,
+  ): Promise<PersistedProjectDocSnapshot | null>;
   getDocumentForProject(
     documentId: string,
     projectId: string,
@@ -241,6 +247,31 @@ export function createProjectDocRepository(
       });
 
       return document ? mapDocument(document) : null;
+    },
+    async findLatestDocumentForProject(
+      projectId: string,
+    ): Promise<PersistedProjectDocRecord | null> {
+      await ensureInitialized();
+
+      const document = await prisma.projectDoc.findFirst({
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        where: { projectId },
+      });
+
+      return document ? mapDocument(document) : null;
+    },
+    async getLatestSnapshot(
+      documentId: string,
+    ): Promise<PersistedProjectDocSnapshot | null> {
+      await ensureInitialized();
+
+      const snapshot = await prisma.projectDocVersion.findFirst({
+        include: PROJECT_DOC_VERSION_INCLUDE,
+        orderBy: { versionNumber: 'desc' },
+        where: { projectDocId: documentId },
+      });
+
+      return snapshot ? mapSnapshot(snapshot) : null;
     },
     async getDocumentForProject(
       documentId: string,
