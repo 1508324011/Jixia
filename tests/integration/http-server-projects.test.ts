@@ -1,56 +1,36 @@
 import { mkdtempSync, rmSync } from 'node:fs';
-import { once } from 'node:events';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
-import { createHttpServer } from '../../src/server/http-server';
-
-async function startTestServer(storageRoot: string) {
-  const httpServer = createHttpServer({
-    env: {
-      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-projects.db')}`,
-      JIXIA_STORAGE_ROOT: storageRoot,
-    },
-  });
-
-  httpServer.server.listen(0, '127.0.0.1');
-  await once(httpServer.server, 'listening');
-  const address = httpServer.server.address();
-
-  if (!address || typeof address === 'string') {
-    throw new Error('Failed to bind test server.');
-  }
-
-  return {
-    close: async () => {
-      httpServer.server.close();
-      await once(httpServer.server, 'close');
-    },
-    url: `http://127.0.0.1:${address.port}`,
-  };
-}
+import {
+  loginAs,
+  startTestServer,
+  withSessionCookie,
+} from './http-session-test-helpers';
 
 describe('http server project api', () => {
-  it('creates and lists projects from the server-derived actor session', async () => {
+  it('creates and lists projects from the server-derived session cookie', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-projects-'));
 
     try {
-      const server = await startTestServer(storageRoot);
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-projects.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
 
       try {
-        const createdSpace = await fetch(
-          `${server.url}/api/spaces`,
-          {
-            body: JSON.stringify({ kind: 'shared', name: 'HTTP Projects' }),
-            headers: {
-              'Content-Type': 'application/json',
-              'x-jixia-actor': 'user-alice',
-            },
-            method: 'POST',
-          },
-        ).then((response) => response.json() as Promise<{ id: string }>);
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'HTTP Projects' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
 
         const createdProject = await fetch(`${server.url}/api/projects`, {
           body: JSON.stringify({
@@ -58,10 +38,9 @@ describe('http server project api', () => {
             name: 'HTTP Project-first Recovery',
             spaceId: createdSpace.id,
           }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
-            'x-jixia-actor': 'user-alice',
-          },
+          }),
           method: 'POST',
         }).then(
           (response) =>
@@ -78,7 +57,7 @@ describe('http server project api', () => {
         });
 
         const aliceProjects = await fetch(`${server.url}/api/projects`, {
-          headers: { 'x-jixia-actor': 'user-alice' },
+          headers: withSessionCookie(aliceCookie),
         }).then(
           (response) =>
             response.json() as Promise<Array<{ project: { id: string } }>>,
@@ -88,7 +67,7 @@ describe('http server project api', () => {
         );
 
         const bobProjects = await fetch(`${server.url}/api/projects`, {
-          headers: { 'x-jixia-actor': 'user-bob' },
+          headers: withSessionCookie(bobCookie),
         }).then(
           (response) =>
             response.json() as Promise<Array<{ project: { id: string } }>>,
@@ -97,11 +76,9 @@ describe('http server project api', () => {
 
         const bobProjectResponse = await fetch(
           `${server.url}/api/projects/${createdProject.project.id}`,
-          { headers: { 'x-jixia-actor': 'user-bob' } },
+          { headers: withSessionCookie(bobCookie) },
         );
-        const bobProjectPayload = (await bobProjectResponse.json()) as {
-          error: string;
-        };
+        const bobProjectPayload = (await bobProjectResponse.json()) as { error: string };
         expect(bobProjectResponse.status).toBe(403);
         expect(bobProjectPayload.error).toMatch(/access denied/i);
       } finally {
@@ -116,20 +93,22 @@ describe('http server project api', () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-projects-'));
 
     try {
-      const server = await startTestServer(storageRoot);
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-projects.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
 
       try {
-        const createdSpace = await fetch(
-          `${server.url}/api/spaces`,
-          {
-            body: JSON.stringify({ kind: 'shared', name: 'HTTP Impersonation' }),
-            headers: {
-              'Content-Type': 'application/json',
-              'x-jixia-actor': 'user-alice',
-            },
-            method: 'POST',
-          },
-        ).then((response) => response.json() as Promise<{ id: string }>);
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'HTTP Impersonation' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
 
         const response = await fetch(`${server.url}/api/projects`, {
           body: JSON.stringify({
@@ -137,10 +116,9 @@ describe('http server project api', () => {
             name: 'Spoofed Project',
             spaceId: createdSpace.id,
           }),
-          headers: {
+          headers: withSessionCookie(bobCookie, {
             'Content-Type': 'application/json',
-            'x-jixia-actor': 'user-bob',
-          },
+          }),
           method: 'POST',
         });
         const payload = (await response.json()) as { error: string };
@@ -159,30 +137,31 @@ describe('http server project api', () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-projects-'));
 
     try {
-      const server = await startTestServer(storageRoot);
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-projects.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
 
       try {
-        const createdSpace = await fetch(
-          `${server.url}/api/spaces`,
-          {
-            body: JSON.stringify({ kind: 'shared', name: 'HTTP Query Mismatch' }),
-            headers: {
-              'Content-Type': 'application/json',
-              'x-jixia-actor': 'user-alice',
-            },
-            method: 'POST',
-          },
-        ).then((response) => response.json() as Promise<{ id: string }>);
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'HTTP Query Mismatch' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
 
         const createdProject = await fetch(`${server.url}/api/projects`, {
           body: JSON.stringify({
             name: 'Query Mismatch Project',
             spaceId: createdSpace.id,
           }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
-            'x-jixia-actor': 'user-alice',
-          },
+          }),
           method: 'POST',
         }).then(
           (response) => response.json() as Promise<{ project: { id: string } }>,
@@ -190,15 +169,15 @@ describe('http server project api', () => {
 
         const [listResponse, readResponse, membersResponse] = await Promise.all([
           fetch(`${server.url}/api/projects?actorUserId=user-alice`, {
-            headers: { 'x-jixia-actor': 'user-bob' },
+            headers: withSessionCookie(bobCookie),
           }),
           fetch(
             `${server.url}/api/projects/${createdProject.project.id}?actorUserId=user-alice`,
-            { headers: { 'x-jixia-actor': 'user-bob' } },
+            { headers: withSessionCookie(bobCookie) },
           ),
           fetch(
             `${server.url}/api/projects/${createdProject.project.id}/members?actorUserId=user-alice`,
-            { headers: { 'x-jixia-actor': 'user-bob' } },
+            { headers: withSessionCookie(bobCookie) },
           ),
         ]);
 
@@ -220,7 +199,10 @@ describe('http server project api', () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-projects-'));
 
     try {
-      const server = await startTestServer(storageRoot);
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-projects.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
 
       try {
         const response = await fetch(`${server.url}/api/projects`, {
@@ -229,9 +211,7 @@ describe('http server project api', () => {
             name: 'Missing Actor Project',
             spaceId: 'space-unknown',
           }),
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           method: 'POST',
         });
         const payload = (await response.json()) as { error: string };

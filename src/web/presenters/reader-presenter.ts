@@ -11,7 +11,6 @@ import type {
 
 import { apiClient } from "../lib/http-client";
 import { useProjectContext } from "./project-context";
-import { demoActorContext } from "./runtime-context";
 
 export interface ReaderViewModel {
   asset: LibraryEntryView["asset"] | null;
@@ -47,10 +46,7 @@ export function useReaderPresenter(
     try {
       setIsLoading(true);
       setError(null);
-      const nextDetail = await apiClient.getReadingDetail(
-        demoActorContext.actorUserId,
-        entryId,
-      );
+      const nextDetail = await apiClient.getReadingDetail(entryId);
 
       if (
         nextDetail &&
@@ -93,7 +89,7 @@ export function useReaderPresenter(
       try {
         setIsMutating(true);
         setError(null);
-        await apiClient.createReadingNote(demoActorContext.actorUserId, {
+        await apiClient.createReadingNote({
           body,
           libraryEntryId: entryId,
           visibility,
@@ -122,7 +118,7 @@ export function useReaderPresenter(
       try {
         setIsMutating(true);
         setError(null);
-        await apiClient.saveReadingInsight(demoActorContext.actorUserId, {
+        await apiClient.saveReadingInsight({
           evidenceSpans: [
             {
               endOffset: 18,

@@ -98,6 +98,17 @@ export {
 } from './repositories/reading.repository';
 
 export {
+  createSessionRepository,
+  initializeSessionPersistence,
+  type CreateUserSessionParams,
+  type PersistedSessionUserRecord,
+  type PersistedUserSessionRecord,
+  type PersistedUserSessionWithUserRecord,
+  type SeedUserParams,
+  type SessionRepository,
+} from './repositories/session.repository';
+
+export {
   createSpaceRepository,
   initializeSpacePersistence,
   type AddSpaceMembershipParams,

@@ -47,16 +47,18 @@ const importedEntryFixture = {
 function installFetchMock() {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const requestUrl = new URL(String(input), window.location.origin);
-    const headers = new Headers(init?.headers);
-    const actor = headers.get('x-jixia-actor');
 
     if (requestUrl.pathname.startsWith('/api/')) {
-      const protectedRoute = requestUrl.pathname !== '/api/health' && !requestUrl.pathname.startsWith('/api/writing/');
-
-      if (protectedRoute && !actor) {
+      if (requestUrl.pathname === '/api/session/me') {
         return Response.json(
-          { error: 'Missing server-derived actor session.' },
-          { status: 401 },
+          {
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          },
+          { status: 200 },
         );
       }
 
@@ -77,7 +79,7 @@ function installFetchMock() {
     }
 
     if (requestUrl.pathname === '/api/projects') {
-      return Response.json(actor === 'user-alice' ? [projectFixture] : []);
+      return Response.json([projectFixture]);
     }
 
     if (requestUrl.pathname === '/api/projects/project-recovery/members') {
@@ -174,7 +176,7 @@ describe('mvp workflow shell', () => {
     renderLegacyWorkflow();
 
     expect(
-      screen.getByRole('heading', { name: 'Projects' }),
+      await screen.findByRole('heading', { name: 'Projects' }),
     ).toBeInTheDocument();
     expect(
       screen.getByText('Space is governance · Project is collaboration'),
@@ -231,8 +233,8 @@ describe('mvp workflow shell', () => {
 
     renderLegacyWorkflow();
 
-    expect(screen.getByTestId('app-shell')).toHaveClass('app-shell');
-    expect(screen.getByRole('heading', { name: 'Projects' })).toHaveClass('page-title');
+    expect(await screen.findByTestId('app-shell')).toHaveClass('app-shell');
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toHaveClass('page-title');
 
     await waitFor(() =>
       expect(
@@ -290,7 +292,7 @@ describe('mvp workflow shell', () => {
 
     render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'Reader' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
     expect(screen.getByText('Entry · entry-recovery')).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText('context bar')).toHaveTextContent(
@@ -308,7 +310,7 @@ describe('mvp workflow shell', () => {
 
     render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'Library' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText('context bar')).toHaveTextContent(
         'Context · space-recovery / project-recovery',
@@ -325,7 +327,7 @@ describe('mvp workflow shell', () => {
 
     render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'Writing' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Writing' })).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText('context bar')).toHaveTextContent(
         'Space context · space-recovery',

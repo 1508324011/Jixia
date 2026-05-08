@@ -45,7 +45,6 @@ export class ApiError extends Error {
 
 export interface JobAccessContext {
   actorSpaceId: string;
-  actorUserId: string;
 }
 
 type CreateCredentialPayload = Omit<CreateCredentialRequest, "userId">;
@@ -63,10 +62,6 @@ type SaveReadingInsightPayload = Omit<
 
 interface RequestOptions extends RequestInit {
   query?: Record<string, string | undefined>;
-}
-
-interface ActorSessionRequestOptions extends RequestOptions {
-  actorUserId: string;
 }
 
 function buildUrl(
@@ -113,6 +108,7 @@ export async function requestJson<T>(
 
   const response = await fetch(fetchUrl, {
     ...requestOptions,
+    credentials: requestOptions.credentials ?? "same-origin",
     headers: {
       ...(init.body ? { "Content-Type": "application/json" } : {}),
       ...(headers ?? {}),
@@ -130,28 +126,12 @@ export async function requestJson<T>(
   return (await response.json()) as T;
 }
 
-
-function requestSessionJson<T>(
-  input: string,
-  init: ActorSessionRequestOptions,
-): Promise<T> {
-  const { actorUserId, headers, ...requestOptions } = init;
-
-  return requestJson<T>(input, {
-    ...requestOptions,
-    headers: {
-      "x-jixia-actor": actorUserId,
-      ...(headers ?? {}),
-    },
-  });
-}
-
 interface JobEventSubscription {
   close(): void;
 }
 
 function subscribeToJobEvents(
-  input: JobStatusQuery & { actorUserId: string },
+  input: JobStatusQuery,
   onEvent: (event: JobEventRecord) => void,
   onError?: (error: unknown) => void,
 ): JobEventSubscription {
@@ -164,9 +144,7 @@ function subscribeToJobEvents(
   void (async () => {
     try {
       const response = await fetch(buildUrl(`/api/jobs/${input.jobId}/stream`), {
-        headers: {
-          "x-jixia-actor": input.actorUserId,
-        },
+        credentials: "same-origin",
         signal: controller.signal,
       });
 
@@ -230,71 +208,58 @@ export const apiClient = {
   addProjectMember(
     projectId: string,
     input: AddProjectMemberRequest,
-    actorUserId: string,
   ): Promise<ProjectMemberRecord> {
-    return requestSessionJson(`/api/projects/${projectId}/members`, {
-      actorUserId,
+    return requestJson(`/api/projects/${projectId}/members`, {
       body: JSON.stringify(input),
       method: "POST",
     });
   },
   createCredential(
-    actorUserId: string,
     input: CreateCredentialPayload,
   ): Promise<CredentialRecord> {
-    return requestSessionJson("/api/credentials", {
-      actorUserId,
+    return requestJson("/api/credentials", {
       body: JSON.stringify(input),
       method: "POST",
     });
   },
-  createJob(actorUserId: string, input: CreateJobPayload): Promise<JobRecord> {
-    return requestSessionJson("/api/jobs", {
-      actorUserId,
+  createJob(input: CreateJobPayload): Promise<JobRecord> {
+    return requestJson("/api/jobs", {
       body: JSON.stringify(input),
       method: "POST",
     });
   },
   createProject(
     input: CreateProjectRequest,
-    actorUserId: string,
   ): Promise<ProjectListItem> {
-    return requestSessionJson("/api/projects", {
-      actorUserId,
+    return requestJson("/api/projects", {
       body: JSON.stringify(input),
       method: "POST",
     });
   },
   createReadingNote(
-    actorUserId: string,
     input: CreateReadingNotePayload,
   ): Promise<NoteRecord> {
-    return requestSessionJson("/api/reading/notes", {
-      actorUserId,
+    return requestJson("/api/reading/notes", {
       body: JSON.stringify(input),
       method: "POST",
     });
   },
   createSpace(
-    actorUserId: string,
     input: CreateSpaceRequest,
   ): Promise<SpaceSummary> {
-    return requestSessionJson("/api/spaces", {
-      actorUserId,
+    return requestJson("/api/spaces", {
       body: JSON.stringify(input),
       method: "POST",
     });
   },
-  listCredentials(userId: string): Promise<CredentialRecord[]> {
-    return requestSessionJson("/api/credentials", { actorUserId: userId });
+  listCredentials(): Promise<CredentialRecord[]> {
+    return requestJson("/api/credentials");
   },
   listLibraryEntries(
-    actorUserId: string,
     scope: ScopeRef,
     spaceId?: string,
   ): Promise<LibraryEntryView[]> {
-    return requestSessionJson("/api/library", {
-      actorUserId,
+    return requestJson("/api/library", {
       query: {
         scopeId: scope.id,
         scopeType: scope.type,
@@ -302,14 +267,11 @@ export const apiClient = {
       },
     });
   },
-  listJobEvents(actorUserId: string, jobId: string): Promise<JobEventRecord[]> {
-    return requestSessionJson(`/api/jobs/${jobId}/events`, {
-      actorUserId,
-    });
+  listJobEvents(jobId: string): Promise<JobEventRecord[]> {
+    return requestJson(`/api/jobs/${jobId}/events`);
   },
-  listJobs(actorUserId: string, spaceId?: string): Promise<JobRecord[]> {
-    return requestSessionJson("/api/jobs", {
-      actorUserId,
+  listJobs(spaceId?: string): Promise<JobRecord[]> {
+    return requestJson("/api/jobs", {
       query: {
         spaceId,
       },
@@ -317,61 +279,45 @@ export const apiClient = {
   },
   listProjectMembers(
     projectId: string,
-    actorUserId: string,
   ): Promise<ProjectMemberRecord[]> {
-    return requestSessionJson(`/api/projects/${projectId}/members`, {
-      actorUserId,
-    });
+    return requestJson(`/api/projects/${projectId}/members`);
   },
-  listProjects(actorUserId: string): Promise<ProjectListItem[]> {
-    return requestSessionJson("/api/projects", { actorUserId });
+  listProjects(): Promise<ProjectListItem[]> {
+    return requestJson("/api/projects");
   },
   listMemberships(
     spaceId: string,
-    actorUserId: string,
   ): Promise<SpaceMembership[]> {
-    return requestSessionJson(`/api/spaces/${spaceId}/memberships`, {
-      actorUserId,
-    });
+    return requestJson(`/api/spaces/${spaceId}/memberships`);
   },
-  listSpaces(actorUserId: string): Promise<SpaceSummary[]> {
-    return requestSessionJson("/api/spaces", { actorUserId });
+  listSpaces(): Promise<SpaceSummary[]> {
+    return requestJson("/api/spaces");
   },
   importPaper(
-    actorUserId: string,
     input: ImportPaperPayload,
   ): Promise<LibraryEntryView> {
-    return requestSessionJson("/api/import/paper", {
-      actorUserId,
+    return requestJson("/api/import/paper", {
       body: JSON.stringify(input),
       method: "POST",
     });
   },
   getReadingDetail(
-    actorUserId: string,
     entryId: string,
     _input?: ReadingDetailRequest,
   ): Promise<ReadingDetail | null> {
-    return requestSessionJson(`/api/reading/${entryId}`, {
-      actorUserId,
-    });
+    return requestJson(`/api/reading/${entryId}`);
   },
-  runJob(actorUserId: string, jobId: string): Promise<JobRecord> {
-    return requestSessionJson(`/api/jobs/${jobId}/run`, {
-      actorUserId,
+  runJob(jobId: string): Promise<JobRecord> {
+    return requestJson(`/api/jobs/${jobId}/run`, {
       method: "POST",
     });
   },
   getProjectWritingDocument(
-    actorUserId: string,
     projectId: string,
   ): Promise<WritingDocumentResponse> {
-    return requestSessionJson(`/api/projects/${projectId}/writing/document`, {
-      actorUserId,
-    });
+    return requestJson(`/api/projects/${projectId}/writing/document`);
   },
   saveProjectWritingDocument(
-    actorUserId: string,
     input: {
       citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
       content: string;
@@ -379,8 +325,7 @@ export const apiClient = {
       title: string;
     },
   ): Promise<WritingDocumentResponse> {
-    return requestSessionJson(`/api/projects/${input.projectId}/writing/document`, {
-      actorUserId,
+    return requestJson(`/api/projects/${input.projectId}/writing/document`, {
       body: JSON.stringify({
         citations: input.citations,
         content: input.content,
@@ -390,11 +335,9 @@ export const apiClient = {
     });
   },
   saveReadingInsight(
-    actorUserId: string,
     input: SaveReadingInsightPayload,
   ): Promise<import("@shared/contracts/evidence").GeneratedInsightRecord> {
-    return requestSessionJson("/api/reading/insights", {
-      actorUserId,
+    return requestJson("/api/reading/insights", {
       body: JSON.stringify(input),
       method: "POST",
     });

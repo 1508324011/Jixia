@@ -1,71 +1,47 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { once } from "node:events";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { describe, expect, it } from "vitest";
 
-import { createHttpServer } from "../../src/server/http-server";
-
-async function startTestServer(storageRoot: string) {
-  const httpServer = createHttpServer({
-    env: { JIXIA_STORAGE_ROOT: storageRoot },
-  });
-
-  httpServer.server.listen(0, "127.0.0.1");
-  await once(httpServer.server, "listening");
-  const address = httpServer.server.address();
-
-  if (!address || typeof address === "string") {
-    throw new Error("Failed to bind test server.");
-  }
-
-  return {
-    close: async () => {
-      httpServer.server.close();
-      await once(httpServer.server, "close");
-    },
-    url: `http://127.0.0.1:${address.port}`,
-  };
-}
+import {
+  loginAs,
+  startTestServer,
+  withSessionCookie,
+} from "./http-session-test-helpers";
 
 describe("http server phase 2 api", () => {
-  it("serves browser-facing jobs, spaces, and credentials APIs", async () => {
+  it("serves browser-facing jobs, spaces, and credentials APIs through session cookies", async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-phase2-"));
 
     try {
-      const server = await startTestServer(storageRoot);
+      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
 
       try {
-        const createdSpace = await fetch(
-          `${server.url}/api/spaces`,
-          {
-            body: JSON.stringify({ kind: "shared", name: "Phase 2 Shared" }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          },
-        ).then((response) => response.json() as Promise<{ id: string }>);
+        const aliceCookie = await loginAs(server.url, "user-alice");
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: "shared", name: "Phase 2 Shared" }),
+          headers: withSessionCookie(aliceCookie, {
+            "Content-Type": "application/json",
+          }),
+          method: "POST",
+        }).then((response) => response.json() as Promise<{ id: string }>);
         expect(createdSpace.id).toMatch(/^space/);
 
         const listedSpaces = await fetch(`${server.url}/api/spaces`, {
-          headers: { "x-jixia-actor": "user-alice" },
+          headers: withSessionCookie(aliceCookie),
         }).then((response) => response.json() as Promise<Array<{ id: string }>>);
-        expect(listedSpaces.map((space) => space.id)).toContain(
-          createdSpace.id,
-        );
+        expect(listedSpaces.map((space) => space.id)).toContain(createdSpace.id);
 
         const credential = await fetch(`${server.url}/api/credentials`, {
           body: JSON.stringify({
             provider: "openai",
             rawSecret: "http-phase2-credential-placeholder",
           }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             "Content-Type": "application/json",
-            "x-jixia-actor": "user-alice",
-          },
+          }),
           method: "POST",
         }).then(
           (response) => response.json() as Promise<{ credentialRef: string }>,
@@ -79,33 +55,28 @@ describe("http server phase 2 api", () => {
             payload: { prompt: "Phase 2 over HTTP." },
             spaceId: createdSpace.id,
           }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             "Content-Type": "application/json",
-            "x-jixia-actor": "user-alice",
-          },
+          }),
           method: "POST",
         }).then(
-          (response) =>
-            response.json() as Promise<{ id: string; status: string }>,
+          (response) => response.json() as Promise<{ id: string; status: string }>,
         );
         expect(createdJob.status).toBe("queued");
 
         const jobs = await fetch(`${server.url}/api/jobs?spaceId=${createdSpace.id}`, {
-          headers: { "x-jixia-actor": "user-alice" },
+          headers: withSessionCookie(aliceCookie),
         }).then((response) => response.json() as Promise<Array<{ id: string }>>);
         expect(jobs.map((job) => job.id)).toContain(createdJob.id);
 
-        const completedJob = await fetch(
-          `${server.url}/api/jobs/${createdJob.id}/run`,
-          {
-            headers: { "x-jixia-actor": "user-alice" },
-            method: "POST",
-          },
-        ).then((response) => response.json() as Promise<{ status: string }>);
+        const completedJob = await fetch(`${server.url}/api/jobs/${createdJob.id}/run`, {
+          headers: withSessionCookie(aliceCookie),
+          method: "POST",
+        }).then((response) => response.json() as Promise<{ status: string }>);
         expect(completedJob.status).toBe("succeeded");
 
         const events = await fetch(`${server.url}/api/jobs/${createdJob.id}/events`, {
-          headers: { "x-jixia-actor": "user-alice" },
+          headers: withSessionCookie(aliceCookie),
         }).then(
           (response) => response.json() as Promise<Array<{ status: string }>>,
         );

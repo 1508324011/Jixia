@@ -59,6 +59,7 @@ model User {
   displayName         String
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
+  sessions            UserSession[]
   memberships         Membership[]
   importedAssets      PaperAsset[]         @relation("PaperAssetImportedBy")
   notes               Note[]
@@ -73,6 +74,22 @@ model User {
   createdProjectDocs  ProjectDoc[]         @relation("ProjectDocCreatedBy")
   projectMemberships  ProjectMember[]
   addedLibraryEntries LibraryEntry[]        @relation("LibraryEntryAddedBy")
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastSeenAt DateTime?
+  userAgent  String?
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
 }
 
 model Space {

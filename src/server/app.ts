@@ -13,6 +13,7 @@ import {
   createLibraryRepository,
   createProjectRepository,
   createReadingRepository,
+  createSessionRepository,
   initializeReadingPersistence,
   createSpaceRepository,
   type BootstrapLegacyLibraryInput,
@@ -32,6 +33,10 @@ import {
   createCredentialsRoutes,
   type CredentialsRoutes,
 } from './routes/credentials.routes';
+import {
+  createSessionRoutes,
+  type SessionRoutes,
+} from './routes/session.routes';
 import {
   createImportRoutes,
   type ImportRoutes,
@@ -77,6 +82,7 @@ import {
   type StoredCredential,
   type WorkbenchSettingsRecord,
 } from './services/credentials.service';
+import { createSessionService } from './services/session.service';
 import { createSecretBox } from './security/secret-box';
 import { createAuditService } from './services/audit.service';
 import { createImportService } from './services/import.service';
@@ -119,6 +125,7 @@ export interface CreateJixiaAppOptions {
 
 export interface JixiaAppEnv extends StorageRootEnv {
   JIXIA_DATABASE_URL?: string;
+  NODE_ENV?: string;
 }
 
 export interface JixiaAppState {
@@ -176,6 +183,7 @@ interface LegacyStoredLibraryEntry {
 }
 
 export interface JixiaApp {
+  close(): Promise<void>;
   credentials: CredentialsRoutes;
   health: HealthRoutes;
   imports: ImportRoutes;
@@ -186,6 +194,7 @@ export interface JixiaApp {
   projectDocs: ProjectDocsRoutes;
   projects: ProjectsRoutes;
   reading: ReadingRoutes;
+  session: SessionRoutes;
   spaces: SpacesRoutes;
 }
 
@@ -634,6 +643,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     repository: spaceRepository,
   });
   const projectRepository = createProjectRepository(prismaClient);
+  const sessionRepository = createSessionRepository(prismaClient);
   const jobRepository = createCredentialReferenceBootstrappedJobRepository(
     createJobRepository(prismaClient),
     state.credentials,
@@ -754,6 +764,9 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     secretBox: createSecretBox(options.env),
     workbenchSettings: state.workbenchSettings,
   });
+  const sessionService = createSessionService({
+    repository: sessionRepository,
+  });
   const auditService = createAuditService({
     jobRepository,
     nextId: persistedNextId,
@@ -773,8 +786,13 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     nextId: persistedNextId,
     spaceRepository,
   });
+  let closePromise: Promise<void> | null = null;
 
   return {
+    close(): Promise<void> {
+      closePromise ??= prismaClient.$disconnect().catch(() => undefined);
+      return closePromise;
+    },
     credentials: createCredentialsRoutes(credentialsService),
     health: createHealthRoutes(),
     imports: createImportRoutes(importService),
@@ -789,6 +807,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     projectDocs: createProjectDocsRoutes(projectDocsService),
     projects: createProjectsRoutes(projectsService),
     reading: createReadingRoutes(readingService),
+    session: createSessionRoutes(sessionService),
     spaces: createSpacesRoutes(spacesService),
   };
 }

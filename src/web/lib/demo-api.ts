@@ -14,11 +14,15 @@ import type { NoteVisibility } from '@shared/contracts/reading';
 
 import { requestJson } from './http-client';
 
+interface DemoApiOptions {
+  cookie?: string;
+}
+
 function resolveApiUrl(baseUrl: string, pathname: string): string {
   return baseUrl ? new URL(pathname, baseUrl).toString() : pathname;
 }
 
-export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
+export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
   function buildSearchUrl(pathname: string, query: string): string {
     const requestUrl = new URL(resolveApiUrl(baseUrl, pathname), 'http://localhost');
     requestUrl.searchParams.set('query', query);
@@ -32,34 +36,27 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
     return resolveApiUrl(baseUrl, pathname);
   }
 
-  function actorHeaders(): Record<string, string> {
-    return { 'x-jixia-actor': actorUserId };
+  function requestHeaders(): Record<string, string> | undefined {
+    return options.cookie ? { Cookie: options.cookie } : undefined;
   }
 
   return {
     getTodayRecommendations(): Promise<DiscoveryTodayResponse> {
       return requestJson<DiscoveryTodayResponse>(
         resolveApiUrl(baseUrl, '/api/discovery/today'),
-        {
-          headers: actorHeaders(),
-        },
+        { headers: requestHeaders() },
       );
     },
     searchDiscovery(query: string): Promise<DiscoverySearchResponse> {
       return requestJson<DiscoverySearchResponse>(
         buildSearchUrl('/api/discovery/search', query),
-        {
-          headers: actorHeaders(),
-        },
+        { headers: requestHeaders() },
       );
     },
     getPersonalLibraryEntries(): Promise<LibraryListResponse> {
-      return requestJson<LibraryListResponse>(
-        resolvePath('/api/library/personal'),
-        {
-          headers: actorHeaders(),
-        },
-      );
+      return requestJson<LibraryListResponse>(resolvePath('/api/library/personal'), {
+        headers: requestHeaders(),
+      });
     },
     importToPersonalLibrary(input: {
       sourceLocator: string;
@@ -67,13 +64,13 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
     }): Promise<unknown> {
       return requestJson(resolvePath('/api/library/personal/import'), {
         body: JSON.stringify(input),
-        headers: actorHeaders(),
+        headers: requestHeaders(),
         method: 'POST',
       });
     },
     getReadingDetail(entryId: string): Promise<ReadingDetailView> {
       return requestJson<ReadingDetailView>(resolvePath(`/api/reading/${entryId}`), {
-        headers: actorHeaders(),
+        headers: requestHeaders(),
       });
     },
     createReadingNote(input: {
@@ -88,7 +85,7 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
             body: input.body,
             visibility: input.visibility,
           }),
-          headers: actorHeaders(),
+          headers: requestHeaders(),
           method: 'POST',
         },
       );
@@ -113,7 +110,7 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
             summary: input.summary,
             title: input.title ?? 'Tumor board governed insight',
           }),
-          headers: actorHeaders(),
+          headers: requestHeaders(),
           method: 'POST',
         },
       );
@@ -126,9 +123,7 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
 
       return requestJson<WritingDocumentResponse>(
         resolvePath(`/api/projects/${projectId}/writing/document`),
-        {
-          headers: actorHeaders(),
-        },
+        { headers: requestHeaders() },
       );
     },
     saveWritingDocument(input: {
@@ -148,18 +143,15 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
             content: input.content,
             title: input.title,
           }),
-          headers: actorHeaders(),
+          headers: requestHeaders(),
           method: 'POST',
         },
       );
     },
     getWorkbenchSettings(): Promise<WorkbenchSettingsResponse> {
-      return requestJson<WorkbenchSettingsResponse>(
-        resolvePath('/api/settings/me'),
-        {
-          headers: { 'x-jixia-actor': actorUserId },
-        },
-      );
+      return requestJson<WorkbenchSettingsResponse>(resolvePath('/api/settings/me'), {
+        headers: requestHeaders(),
+      });
     },
     saveWorkbenchSettings(
       input: UpdateWorkbenchSettingsRequest,
@@ -168,7 +160,7 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
         resolvePath('/api/settings/me'),
         {
           body: JSON.stringify(input),
-          headers: { 'x-jixia-actor': actorUserId },
+          headers: requestHeaders(),
           method: 'POST',
         },
       );

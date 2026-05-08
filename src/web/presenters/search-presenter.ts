@@ -9,7 +9,8 @@ import type { ProjectListItem } from "@shared/contracts/projects";
 import type { SpaceSummary } from "@shared/contracts/spaces";
 
 import { apiClient } from "../lib/http-client";
-import { demoActorContext } from "./runtime-context";
+import { useSessionAuth } from "../lib/session-auth";
+import { runtimeContext } from "./runtime-context";
 
 export interface SearchViewModel {
   error: string | null;
@@ -29,6 +30,7 @@ export interface SearchViewModel {
 }
 
 export function useSearchPresenter(): SearchViewModel {
+  const { user } = useSessionAuth();
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [selectedSpaceId, setSelectedSpaceId] = useState("");
@@ -60,8 +62,8 @@ export function useSearchPresenter(): SearchViewModel {
     void (async () => {
       try {
         const [nextSpaces, nextProjects] = await Promise.all([
-          apiClient.listSpaces(demoActorContext.actorUserId),
-          apiClient.listProjects(demoActorContext.actorUserId),
+          apiClient.listSpaces(),
+          apiClient.listProjects(),
         ]);
         if (nextSpaces.length > 0) {
           setSpaces(nextSpaces);
@@ -106,22 +108,20 @@ export function useSearchPresenter(): SearchViewModel {
 
         let nextSpaceId = selectedProject?.project.spaceId ?? selectedSpaceId;
         if (!nextSpaceId) {
-          const createdSpace = await apiClient.createSpace(
-            demoActorContext.actorUserId,
-            {
-              kind: "shared",
-              name: demoActorContext.defaultSharedSpaceName,
-            },
-          );
+          const createdSpace = await apiClient.createSpace({
+            kind: "shared",
+            name: runtimeContext.defaultSharedSpaceName,
+          });
           nextSpaceId = createdSpace.id;
           setSpaces((currentSpaces) => [createdSpace, ...currentSpaces]);
           setSelectedSpaceId(createdSpace.id);
         }
 
-        const nextRecord = await apiClient.importPaper(demoActorContext.actorUserId, {
+        const personalScopeId = user?.id ?? "";
+        const nextRecord = await apiClient.importPaper({
           ...(selectedProjectId
             ? { scope: { id: selectedProjectId, type: "project" as const } }
-            : { scope: { id: demoActorContext.actorUserId, type: "user" as const } }),
+            : { scope: { id: personalScopeId, type: "user" as const } }),
           sourceLocator: input.sourceLocator,
           sourceType: input.sourceType,
           spaceId: nextSpaceId,
@@ -139,7 +139,7 @@ export function useSearchPresenter(): SearchViewModel {
         setIsImporting(false);
       }
     },
-    [selectedProject, selectedProjectId, selectedSpaceId],
+    [selectedProject, selectedProjectId, selectedSpaceId, user?.id],
   );
 
   return useMemo(

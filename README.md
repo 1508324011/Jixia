@@ -54,7 +54,8 @@ Personal-facing routes are workbench shorthand over server-side ownership and sc
 
 ## Truthful Runtime Notes
 
-- `/login` is still a shell-level entry page; the current browser flow on `main` enters the product through `/home`.
+- `/login` is the real session entry page; the root route still redirects to `/home`, and unauthenticated browsers are redirected back to `/login?redirect=...` by the protected route boundary.
+- `POST /api/session/login`, `GET /api/session/me`, and `POST /api/session/logout` manage the server-owned `jixia_session` cookie used by browser auth.
 - `GET /api/discovery/today` and `GET /api/discovery/search?query=...` serve the discovery slice.
 - `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings without exposing raw API keys in responses or stored settings records.
 - `GET /api/library/personal` and `POST /api/library/personal/import` keep personal import ownership on the server.

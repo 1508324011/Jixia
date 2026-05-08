@@ -30,8 +30,9 @@ npm run start:server
 ```
 
 After startup, open `http://127.0.0.1:3000`.
-The root route redirects into the workbench. `/login` still exists, but the current beta path
-starts from the live workbench entry rather than a real authenticated session.
+The root route redirects to `/home`, and unauthenticated browsers are sent to
+`/login?redirect=/home`. The current beta path now starts with a real
+session-backed login.
 
 ## Truthful beta acceptance flow
 
@@ -39,33 +40,34 @@ The required flow is:
 
 workbench entry -> settings ready -> PubMed search -> personal import -> Reader persistence -> Writer promotion -> Writer reopen -> restart -> reopen persisted state
 
-1. Open `http://127.0.0.1:3000` and confirm the browser lands in **个人工作台**.
-   Optionally open `/login` once to confirm the shell `登录` page still exists, then return to `/home`.
-2. Open **设置**.
-3. Confirm the page initially reports **API key not configured**.
-4. Enter a temporary browser-side value in **API Key**, keep the default import target on **Personal Library**, then click **保存设置**.
-5. Confirm the page reports **Settings saved**.
-6. Open **搜索**.
-7. In **检索主题**, enter `tumor board biomarkers`, then click **检索 PubMed**.
-8. Wait for the PubMed-backed result card and click **导入到个人 Library**.
-9. Open **Library** and confirm the imported paper is present on the Personal shelf.
-10. Click **Open reader** on that imported paper.
-11. In **Reader**, enter a short private note into **Private note**, then click **Save private note**.
-12. Enter a short project-visible comment into **Project comment**, then click **Save project comment**.
-13. Enter a short governed summary into **Insight summary**, then click **Save insight**.
-14. Confirm the saved private note, project comment, and governed insight remain visible in the paper workspace.
-15. Click **Promote latest insight to Writer**.
-16. Open **Projects** and confirm the top-level list now loads real server-visible projects.
-17. Open a concrete project from the list, then confirm the promoted draft preview appears in **Writer 文档区**.
-18. Click **打开 Writer 文稿**.
-19. In **Writing**, update **Draft content**, click **Save draft**, then click **Reload draft**.
-20. Confirm the Writer view reopens with the saved draft content still present.
-21. Stop the server process and restart the app process with the same `.env` and `npm run start:server` command.
-22. Reopen `http://127.0.0.1:3000`, return to **Library**, **Reader**, and the same `/projects/:projectId` route, and confirm:
-    - the imported personal-library paper still exists
-    - the saved private note still exists
-    - the saved project comment still exists
-    - the promoted Writer draft still reopens with its saved content
+1. Open `http://127.0.0.1:3000` and confirm the browser is redirected to **登录**.
+2. Keep the default lab user or choose another lab user, then click **进入工作台**.
+3. Confirm the browser lands in **个人工作台**.
+4. Open **设置**.
+5. Confirm the page initially reports **API key not configured**.
+6. Enter a temporary browser-side value in **API Key**, keep the default import target on **Personal Library**, then click **保存设置**.
+7. Confirm the page reports **Settings saved**.
+8. Open **搜索**.
+9. In **检索主题**, enter `tumor board biomarkers`, then click **检索 PubMed**.
+10. Wait for the PubMed-backed result card and click **导入到个人 Library**.
+11. Open **Library** and confirm the imported paper is present on the Personal shelf.
+12. Click **Open reader** on that imported paper.
+13. In **Reader**, enter a short private note into **Private note**, then click **Save private note**.
+14. Enter a short project-visible comment into **Project comment**, then click **Save project comment**.
+15. Enter a short governed summary into **Insight summary**, then click **Save insight**.
+16. Confirm the saved private note, project comment, and governed insight remain visible in the paper workspace.
+17. Click **Promote latest insight to Writer**.
+18. Open **Projects** and confirm the top-level list now loads real server-visible projects.
+19. Open a concrete project from the list, then confirm the promoted draft preview appears in **Writer 文档区**.
+20. Click **打开 Writer 文稿**.
+21. In **Writing**, update **Draft content**, click **Save draft**, then click **Reload draft**.
+22. Confirm the Writer view reopens with the saved draft content still present.
+23. Stop the server process and restart the app process with the same `.env` and `npm run start:server` command.
+24. Reopen `http://127.0.0.1:3000`, return to **Library**, **Reader**, and the same `/projects/:projectId` route, and confirm:
+     - the imported personal-library paper still exists
+     - the saved private note still exists
+     - the saved project comment still exists
+     - the promoted Writer draft still reopens with its saved content
 
 ## What this beta currently proves
 
@@ -90,7 +92,7 @@ If you need those conveniences, switch to `demo-native-showcase`. If you need th
 
 Current-host pass completed on 2026-03-23 with `JIXIA_STORAGE_ROOT=/home/zhurui/.local/share/jixia-beta/storage` and the built app served from `npm run start:server`.
 
-- The root route still redirects straight to `/home`, while `/login` is reachable but remains a shell-only page. The product flow is real after entry, but authentication itself is not.
+- The root route still redirects straight to `/home`, but unauthenticated browsers are now redirected into `/login?redirect=/home` and establish a real `jixia_session` cookie before entering the workbench.
 - Live PubMed search returned a real result set for `tumor board biomarkers`; the first rendered identifier in this pass was `PubMed · pmid:38181798`, so the current-host experience is no longer tied to the deterministic fallback titles used in tests.
 - The top-level **Projects** page now loads real server-visible projects and links into canonical `/projects/:projectId` routes.
 - Reopened Writer routes now stay on canonical `/projects/:projectId/writing/:docId` paths for the main workbench flow, while legacy `/spaces/...` routes remain compatibility-only deep links.
