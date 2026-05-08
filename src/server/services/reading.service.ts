@@ -1,7 +1,6 @@
 import type { EvidenceSpanRecord, GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type {
   CreateReadingNoteRequest,
-  ConversationRecord,
   GetReadingDetailQuery,
   NoteRecord,
   ReadingDetail,
@@ -9,11 +8,13 @@ import type {
   NoteVisibility,
 } from "@shared/contracts/reading";
 
-import type { PersistedLibraryEntryView } from "../../db";
+import type {
+  PersistedLibraryEntryView,
+  ReadingRepository,
+} from "../../db";
 
 import { mapPersistedLibraryEntryView } from "./import.service";
 import type { LibraryService } from "./library.service";
-import type { EvidenceLinkService } from "./evidence-link.service";
 
 export interface CreateNoteRequest
   extends Omit<CreateReadingNoteRequest, "actorSpaceId" | "authorUserId"> {
@@ -36,13 +37,8 @@ export interface GetReadingDetailRequest extends GetReadingDetailQuery {
 }
 
 export interface ReadingStore {
-  conversations: ConversationRecord[];
-  evidenceLinkService: EvidenceLinkService;
-  insights: GeneratedInsightRecord[];
   libraryService: LibraryService;
-  nextId(prefix: string): string;
-  notes: NoteRecord[];
-  persist(): void;
+  readingRepository: ReadingRepository;
 }
 
 export interface ReadingService {
@@ -88,13 +84,12 @@ async function getAuthorizedLibraryContext(
 function canReadNote(
   note: NoteRecord,
   actorUserId: string,
-  entry: PersistedLibraryEntryView["entry"],
 ): boolean {
   if (note.visibility === "private") {
     return note.authorUserId === actorUserId;
   }
 
-  return entry.scope.type === "project" || note.authorUserId === actorUserId;
+  return true;
 }
 
 export function createReadingService(store: ReadingStore): ReadingService {
@@ -119,21 +114,26 @@ export function createReadingService(store: ReadingStore): ReadingService {
         return null;
       }
 
+      await store.readingRepository.touchReadingState({
+        libraryEntryId: input.libraryEntryId,
+        userId: input.actorUserId,
+      });
+
       const mappedView = mapPersistedLibraryEntryView(view);
+      const notes = await store.readingRepository.listNotesForEntry({
+        actorUserId: input.actorUserId,
+        includeSharedNotes: view.entry.scope.type === "project",
+        libraryEntryId: input.libraryEntryId,
+      });
+      const insights = await store.readingRepository.listGeneratedInsightsForEntry(
+        input.libraryEntryId,
+      );
 
       return {
         asset: mappedView.asset,
         entry: mappedView.entry,
-        insights: store.insights.filter(
-          (insight) => insight.libraryEntryId === input.libraryEntryId,
-        ),
-        notes: store.notes.filter((note) => {
-          if (note.libraryEntryId !== input.libraryEntryId) {
-            return false;
-          }
-
-          return canReadNote(note, input.actorUserId, view.entry);
-        }),
+        insights,
+        notes: notes.filter((note) => canReadNote(note, input.actorUserId)),
       };
     },
     async getWorkbenchDetail(input: {
@@ -151,19 +151,12 @@ export function createReadingService(store: ReadingStore): ReadingService {
 
       await getAuthorizedLibraryContext(store, input);
 
-      const note: NoteRecord = {
+      return store.readingRepository.createNote({
         authorUserId: input.actorUserId,
         body: input.body,
-        createdAt: new Date().toISOString(),
-        id: store.nextId("note"),
         libraryEntryId: input.libraryEntryId,
         visibility: input.visibility,
-      };
-
-      store.notes.push(note);
-      store.persist();
-
-      return note;
+      });
     },
     async createWorkbenchNote(input: {
       authorUserId: string;
@@ -189,31 +182,25 @@ export function createReadingService(store: ReadingStore): ReadingService {
       }
 
       const view = await getAuthorizedLibraryContext(store, input);
-      const createdAt = new Date().toISOString();
-      const conversation: ConversationRecord = {
-        createdAt,
-        id: store.nextId("conversation"),
+      const conversation = await store.readingRepository.createConversation({
         libraryEntryId: input.libraryEntryId,
         startedByUserId: input.actorUserId,
         title: input.title,
-      };
-
-      store.conversations.push(conversation);
-
-      const insight = store.evidenceLinkService.createGeneratedInsight({
-        conversationId: conversation.id,
-        createdAt,
-        evidenceSpans: input.evidenceSpans,
-        id: store.nextId("insight"),
-        libraryEntryId: input.libraryEntryId,
-        paperAssetId: view.asset.id,
-        summary: input.summary,
       });
 
-      store.insights.push(insight);
-      store.persist();
-
-      return insight;
+      return store.readingRepository.saveGeneratedInsight({
+        conversationId: conversation.id,
+        createdByUserId: input.actorUserId,
+        evidenceSpans: input.evidenceSpans.map((span, index) => ({
+          endOffset: span.endOffset,
+          orderIndex: index,
+          paperAssetId: view.asset.id,
+          quote: span.quote,
+          startOffset: span.startOffset,
+        })),
+        libraryEntryId: input.libraryEntryId,
+        summary: input.summary,
+      });
     },
     async saveWorkbenchGeneratedInsight(input: {
       evidenceSpans: Array<Omit<EvidenceSpanRecord, "paperAssetId">>;

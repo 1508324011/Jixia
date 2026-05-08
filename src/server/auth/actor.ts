@@ -30,7 +30,7 @@ function parseBearerActor(authorization: string | null): string | null {
   return token.length > 0 ? token : null;
 }
 
-export function getActor(source: ActorSource): ActorContext {
+function resolveActorUserId(source: ActorSource): string | null {
   const devHeaderActor = normalizeHeaderValue(source.headers[DEV_ACTOR_HEADER]);
   const normalizedDevHeaderActor = devHeaderActor?.trim() || null;
   const bearerActor = parseBearerActor(
@@ -47,15 +47,25 @@ export function getActor(source: ActorSource): ActorContext {
     );
   }
 
-  const userId = normalizedDevHeaderActor ?? bearerActor;
+  return normalizedDevHeaderActor ?? bearerActor;
+}
 
-  if (!userId) {
+export function getOptionalActor(source: ActorSource): ActorContext | undefined {
+  const userId = resolveActorUserId(source);
+
+  return userId ? { userId } : undefined;
+}
+
+export function getActor(source: ActorSource): ActorContext {
+  const actor = getOptionalActor(source);
+
+  if (!actor) {
     throw new Error(
       "Project API requires a server-derived actor session. Send x-jixia-actor for the lab-hosted MVP.",
     );
   }
 
-  return { userId };
+  return actor;
 }
 
 export function assertNoActorImpersonation(

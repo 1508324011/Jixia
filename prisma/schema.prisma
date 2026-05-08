@@ -64,6 +64,7 @@ model User {
   notes               Note[]
   readingStates       ReadingState[]
   conversations       Conversation[]
+  generatedInsights   GeneratedInsight[]
   notebookDocuments   NotebookDocument[]
   providerCredentials ProviderCredential[]
   jobs                Job[]                @relation("JobRequestedBy")
@@ -141,6 +142,7 @@ model PaperAsset {
   importedByUserId String
   importedBy      User           @relation("PaperAssetImportedBy", fields: [importedByUserId], references: [id], onDelete: Restrict)
   libraryEntries  LibraryEntry[]
+  generatedInsightEvidenceSpans GeneratedInsightEvidenceSpan[]
   notebookCitations NotebookDocumentCitation[]
   projectDocCitations ProjectDocCitation[]
 }
@@ -159,6 +161,7 @@ model LibraryEntry {
   addedBy        User                   @relation("LibraryEntryAddedBy", fields: [addedByUserId], references: [id], onDelete: Restrict)
   notes          Note[]
   conversations  Conversation[]
+  generatedInsights GeneratedInsight[]
   readingStates  ReadingState[]
 
   @@unique([scopeType, scopeId, paperAssetId], name: "LibraryEntry_scope_asset_unique")
@@ -199,6 +202,40 @@ model Conversation {
   updatedAt      DateTime     @updatedAt
   libraryEntry   LibraryEntry @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generatedInsights GeneratedInsight[]
+}
+
+model GeneratedInsight {
+  id              String                         @id @default(cuid())
+  libraryEntryId  String
+  conversationId  String
+  createdByUserId String
+  summary         String
+  createdAt       DateTime                       @default(now())
+  updatedAt       DateTime                       @updatedAt
+  libraryEntry    LibraryEntry                   @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
+  conversation    Conversation                   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdBy       User                           @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  evidenceSpans   GeneratedInsightEvidenceSpan[]
+
+  @@index([libraryEntryId])
+  @@index([conversationId])
+}
+
+model GeneratedInsightEvidenceSpan {
+  id                 String           @id @default(cuid())
+  generatedInsightId String
+  paperAssetId       String
+  quote              String
+  startOffset        Int
+  endOffset          Int
+  orderIndex         Int
+  createdAt          DateTime         @default(now())
+  generatedInsight   GeneratedInsight @relation(fields: [generatedInsightId], references: [id], onDelete: Cascade)
+  paperAsset         PaperAsset       @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([generatedInsightId, orderIndex])
+  @@index([paperAssetId])
 }
 
 model NotebookDocument {

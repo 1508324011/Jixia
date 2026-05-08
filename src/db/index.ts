@@ -81,6 +81,23 @@ export {
 } from './repositories/project-doc.repository';
 
 export {
+  createReadingRepository,
+  initializeReadingPersistence,
+  type CreatePersistedConversationParams,
+  type CreatePersistedNoteParams,
+  type ListEntryNotesQuery,
+  type PersistedConversationRecord,
+  type PersistedEvidenceSpanRecord,
+  type PersistedGeneratedInsightRecord,
+  type PersistedNoteRecord,
+  type PersistedNoteVisibility,
+  type PersistedReadingStateRecord,
+  type ReadingRepository,
+  type SavePersistedGeneratedInsightParams,
+  type TouchReadingStateParams,
+} from './repositories/reading.repository';
+
+export {
   createSpaceRepository,
   initializeSpacePersistence,
   type AddSpaceMembershipParams,

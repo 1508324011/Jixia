@@ -14,6 +14,7 @@ import {
   assertNoActorImpersonation,
   assertNoSpaceContextMismatch,
   getActor,
+  getOptionalActor,
 } from "./auth/actor";
 import {
   readRuntimeConfig,
@@ -155,6 +156,8 @@ function isWorkbenchHttpApiPath(pathname: string): boolean {
     pathname === "/api/library/personal" ||
     pathname === "/api/library/personal/import" ||
     pathname === "/api/settings/me" ||
+    /^\/api\/reading\/[^/]+\/notes$/.test(pathname) ||
+    /^\/api\/reading\/[^/]+\/insights$/.test(pathname) ||
     /^\/api\/writing\/[^/]+\/projects\/[^/]+\/document$/.test(pathname)
   );
 }
@@ -171,9 +174,10 @@ async function handleWorkbenchHttpApiRequest(
   }
 
   try {
-    const actor = requestUrl.pathname === "/api/settings/me"
-      ? getActor(request)
-      : undefined;
+    const actor = requestUrl.pathname === "/api/discovery/today" ||
+        requestUrl.pathname === "/api/discovery/search"
+      ? getOptionalActor(request)
+      : getActor(request);
     const requestBody = method === "GET" || method === "HEAD"
       ? undefined
       : await readJsonBody<unknown>(request);

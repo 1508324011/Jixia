@@ -199,6 +199,8 @@ describe('prisma schema', () => {
     expect(libraryService).not.toContain('store.spaces.find');
 
     expect(readingService).toContain('libraryService.assertCanAccessEntry');
+    expect(readingService).toContain('readingRepository.listNotesForEntry');
+    expect(readingService).toContain('readingRepository.saveGeneratedInsight');
     expect(readingService).not.toContain('actorUserId ?? input.authorUserId');
     expect(readingService).not.toContain('actorUserId ?? input.startedByUserId');
     expect(readingService).not.toContain('store.memberships.some');
@@ -329,6 +331,14 @@ describe('prisma schema', () => {
     expect(libraryService).not.toContain('store.libraryEntries');
 
     expect(readingService).toContain('libraryService.assertCanAccessEntry');
+    expect(appWiring).toContain('createReadingRepository(prismaClient)');
+    expect(appWiring).toContain('initializeReadingPersistence(prismaClient)');
+    expect(appWiring).toContain('legacyConversations');
+    expect(appWiring).toContain('legacyInsights');
+    expect(appWiring).toContain('legacyNotes');
+    expect(appWiring).not.toContain('conversations: state.conversations');
+    expect(appWiring).not.toContain('insights: state.insights');
+    expect(appWiring).not.toContain('notes: state.notes');
     expect(readingService).not.toContain('store.paperAssets');
     expect(readingService).not.toContain('store.libraryEntries');
 

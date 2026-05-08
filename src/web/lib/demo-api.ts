@@ -32,20 +32,33 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
     return resolveApiUrl(baseUrl, pathname);
   }
 
+  function actorHeaders(): Record<string, string> {
+    return { 'x-jixia-actor': actorUserId };
+  }
+
   return {
     getTodayRecommendations(): Promise<DiscoveryTodayResponse> {
       return requestJson<DiscoveryTodayResponse>(
         resolveApiUrl(baseUrl, '/api/discovery/today'),
+        {
+          headers: actorHeaders(),
+        },
       );
     },
     searchDiscovery(query: string): Promise<DiscoverySearchResponse> {
       return requestJson<DiscoverySearchResponse>(
         buildSearchUrl('/api/discovery/search', query),
+        {
+          headers: actorHeaders(),
+        },
       );
     },
     getPersonalLibraryEntries(): Promise<LibraryListResponse> {
       return requestJson<LibraryListResponse>(
         resolvePath('/api/library/personal'),
+        {
+          headers: actorHeaders(),
+        },
       );
     },
     importToPersonalLibrary(input: {
@@ -54,11 +67,14 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
     }): Promise<unknown> {
       return requestJson(resolvePath('/api/library/personal/import'), {
         body: JSON.stringify(input),
+        headers: actorHeaders(),
         method: 'POST',
       });
     },
     getReadingDetail(entryId: string): Promise<ReadingDetailView> {
-      return requestJson<ReadingDetailView>(resolvePath(`/api/reading/${entryId}`));
+      return requestJson<ReadingDetailView>(resolvePath(`/api/reading/${entryId}`), {
+        headers: actorHeaders(),
+      });
     },
     createReadingNote(input: {
       body: string;
@@ -72,6 +88,7 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
             body: input.body,
             visibility: input.visibility,
           }),
+          headers: actorHeaders(),
           method: 'POST',
         },
       );
@@ -96,6 +113,7 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
             summary: input.summary,
             title: input.title ?? 'Tumor board governed insight',
           }),
+          headers: actorHeaders(),
           method: 'POST',
         },
       );
@@ -106,6 +124,9 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
     ): Promise<WritingDocumentResponse> {
       return requestJson<WritingDocumentResponse>(
         resolvePath(`/api/writing/${spaceId}/projects/${projectId}/document`),
+        {
+          headers: actorHeaders(),
+        },
       );
     },
     saveWritingDocument(input: {
@@ -123,6 +144,7 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
             content: input.content,
             title: input.title,
           }),
+          headers: actorHeaders(),
           method: 'POST',
         },
       );

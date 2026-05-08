@@ -12,6 +12,8 @@ import {
   createProjectDocRepository,
   createLibraryRepository,
   createProjectRepository,
+  createReadingRepository,
+  initializeReadingPersistence,
   createSpaceRepository,
   type BootstrapLegacyLibraryInput,
   type JobRepository,
@@ -78,7 +80,6 @@ import {
 import { createSecretBox } from './security/secret-box';
 import { createAuditService } from './services/audit.service';
 import { createImportService } from './services/import.service';
-import { createEvidenceLinkService } from './services/evidence-link.service';
 import { createJobBus } from './jobs/job-bus';
 import { createJobRunner } from './jobs/job-runner';
 import { createLibraryService } from './services/library.service';
@@ -101,6 +102,13 @@ import {
 const APP_STATE_FILE = 'server-state.json';
 const LIBRARY_BOOTSTRAP_MARKER_FILE = '.library-prisma-bootstrap-complete';
 
+interface LegacyReadingStateRecord {
+  lastReadAt: string;
+  libraryEntryId: string;
+  progressPercent: number;
+  userId: string;
+}
+
 export interface CreateJixiaAppOptions {
   connectors?: {
     arxiv?: ArxivConnector;
@@ -114,14 +122,15 @@ export interface JixiaAppEnv extends StorageRootEnv {
 }
 
 export interface JixiaAppState {
-  conversations: ConversationRecord[];
   credentials: StoredCredential[];
-  insights: GeneratedInsightRecord[];
+  legacyConversations: ConversationRecord[];
+  legacyInsights: GeneratedInsightRecord[];
   legacyLibraryEntries: LegacyStoredLibraryEntry[];
+  legacyNotes: NoteRecord[];
+  legacyReadingStates: LegacyReadingStateRecord[];
   legacyPaperAssets: LegacyStoredPaperAsset[];
   memberships: SpaceMembership[];
   nextSequence: number;
-  notes: NoteRecord[];
   spaces: StoredSpace[];
   workbenchSettings: WorkbenchSettingsRecord[];
 }
@@ -132,6 +141,10 @@ type SerializedJixiaAppState = Partial<
   citationLinks?: unknown;
   docVersions?: unknown;
   libraryEntries?: LegacyStoredLibraryEntry[];
+  conversations?: ConversationRecord[];
+  insights?: GeneratedInsightRecord[];
+  notes?: NoteRecord[];
+  readingStates?: LegacyReadingStateRecord[];
   paperAssets?: LegacyStoredPaperAsset[];
   projectMembers?: unknown;
   projects?: unknown;
@@ -140,6 +153,7 @@ type SerializedJixiaAppState = Partial<
 
 interface LoadedJixiaAppState {
   hadLegacyCollaborativeKeys: boolean;
+  hadLegacyReadingKeys: boolean;
   state: JixiaAppState;
 }
 
@@ -177,14 +191,15 @@ export interface JixiaApp {
 
 function createState(): JixiaAppState {
   return {
-    conversations: [],
     credentials: [],
-    insights: [],
+    legacyConversations: [],
+    legacyInsights: [],
     legacyLibraryEntries: [],
+    legacyNotes: [],
+    legacyReadingStates: [],
     legacyPaperAssets: [],
     memberships: [],
     nextSequence: 0,
-    notes: [],
     spaces: [],
     workbenchSettings: [],
   };
@@ -214,6 +229,7 @@ function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
   if (!existsSync(statePath)) {
     return {
       hadLegacyCollaborativeKeys: false,
+      hadLegacyReadingKeys: false,
       state: initialState,
     };
   }
@@ -225,19 +241,28 @@ function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
     hasOwnProperty(parsed, 'writingDocs') ||
     hasOwnProperty(parsed, 'docVersions') ||
     hasOwnProperty(parsed, 'citationLinks');
+  const hadLegacyReadingKeys =
+    hasOwnProperty(parsed, 'conversations') ||
+    hasOwnProperty(parsed, 'insights') ||
+    hasOwnProperty(parsed, 'notes') ||
+    hasOwnProperty(parsed, 'readingStates');
 
   return {
     hadLegacyCollaborativeKeys,
+    hadLegacyReadingKeys,
     state: {
-      conversations: parsed.conversations ?? initialState.conversations,
       credentials: parsed.credentials ?? initialState.credentials,
-      insights: parsed.insights ?? initialState.insights,
+      legacyConversations:
+        parsed.conversations ?? initialState.legacyConversations,
+      legacyInsights: parsed.insights ?? initialState.legacyInsights,
       legacyLibraryEntries:
         parsed.libraryEntries ?? initialState.legacyLibraryEntries,
+      legacyNotes: parsed.notes ?? initialState.legacyNotes,
+      legacyReadingStates:
+        parsed.readingStates ?? initialState.legacyReadingStates,
       legacyPaperAssets: parsed.paperAssets ?? initialState.legacyPaperAssets,
       memberships: parsed.memberships ?? initialState.memberships,
       nextSequence: parsed.nextSequence ?? initialState.nextSequence,
-      notes: parsed.notes ?? initialState.notes,
       spaces: parsed.spaces ?? initialState.spaces,
       workbenchSettings:
         parsed.workbenchSettings ?? initialState.workbenchSettings,
@@ -255,14 +280,15 @@ function persistState(
 
   mkdirSync(rootDirectory, { recursive: true });
   const serializedState: SerializedJixiaAppState = {
-    conversations: state.conversations,
     credentials: state.credentials,
-    insights: state.insights,
+    conversations: state.legacyConversations,
+    insights: state.legacyInsights,
     libraryEntries: state.legacyLibraryEntries,
     memberships,
     nextSequence: state.nextSequence,
-    notes: state.notes,
+    notes: state.legacyNotes,
     paperAssets: state.legacyPaperAssets,
+    readingStates: state.legacyReadingStates,
     spaces,
     workbenchSettings: state.workbenchSettings,
   };
@@ -334,6 +360,100 @@ function clearLegacyLibraryState(
 
   state.legacyLibraryEntries = [];
   state.legacyPaperAssets = [];
+
+  return true;
+}
+
+function hasLegacyReadingBootstrapInput(
+  state: Pick<
+    JixiaAppState,
+    'legacyConversations' | 'legacyInsights' | 'legacyNotes' | 'legacyReadingStates'
+  >,
+): boolean {
+  return (
+    state.legacyConversations.length > 0 ||
+    state.legacyInsights.length > 0 ||
+    state.legacyNotes.length > 0 ||
+    state.legacyReadingStates.length > 0
+  );
+}
+
+function clearLegacyReadingState(
+  state: Pick<
+    JixiaAppState,
+    'legacyConversations' | 'legacyInsights' | 'legacyNotes' | 'legacyReadingStates'
+  >,
+): boolean {
+  if (!hasLegacyReadingBootstrapInput(state)) {
+    return false;
+  }
+
+  state.legacyConversations = [];
+  state.legacyInsights = [];
+  state.legacyNotes = [];
+  state.legacyReadingStates = [];
+
+  return true;
+}
+
+async function bootstrapLegacyReadingState(
+  readingRepository: ReturnType<typeof createReadingRepository>,
+  state: Pick<
+    JixiaAppState,
+    'legacyConversations' | 'legacyInsights' | 'legacyNotes' | 'legacyReadingStates'
+  >,
+): Promise<boolean> {
+  if (!hasLegacyReadingBootstrapInput(state)) {
+    return false;
+  }
+
+  for (const conversation of state.legacyConversations) {
+    await readingRepository.createConversation({
+      createdAt: conversation.createdAt,
+      id: conversation.id,
+      libraryEntryId: conversation.libraryEntryId,
+      startedByUserId: conversation.startedByUserId,
+      title: conversation.title,
+    });
+  }
+
+  for (const note of state.legacyNotes) {
+    await readingRepository.createNote({
+      authorUserId: note.authorUserId,
+      body: note.body,
+      createdAt: note.createdAt,
+      id: note.id,
+      libraryEntryId: note.libraryEntryId,
+      visibility: note.visibility,
+    });
+  }
+
+  for (const insight of state.legacyInsights) {
+    await readingRepository.saveGeneratedInsight({
+      conversationId: insight.conversationId,
+      createdAt: insight.createdAt,
+      createdByUserId:
+        state.legacyConversations.find(
+          (conversation) => conversation.id === insight.conversationId,
+        )?.startedByUserId ?? 'user-alice',
+      evidenceSpans: insight.evidenceSpans.map((span, index) => ({
+        ...span,
+        orderIndex: index,
+      })),
+      id: insight.id,
+      libraryEntryId: insight.libraryEntryId,
+      summary: insight.summary,
+    });
+  }
+
+  for (const readingState of state.legacyReadingStates) {
+    await readingRepository.touchReadingState({
+      lastReadAt: readingState.lastReadAt,
+      libraryEntryId: readingState.libraryEntryId,
+      progressPercent: readingState.progressPercent,
+      userId: readingState.userId,
+    });
+  }
 
   return true;
 }
@@ -480,6 +600,10 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     persist();
   }
 
+  if (loadedState.hadLegacyReadingKeys) {
+    persist();
+  }
+
   const prismaClient = createPrismaClient({ url: resolveAppDatabaseUrl(options.env) });
   const spaceRepository = createSpaceRepository(prismaClient);
   const spacesService = createSpacesService({
@@ -551,6 +675,23 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     libraryRepository,
     projectRepository,
   });
+  const readingRepository = createReadingRepository(prismaClient);
+  let readingBootstrap: Promise<void> | null = null;
+
+  async function ensureReadingBootstrap(): Promise<void> {
+    readingBootstrap ??= (async () => {
+      await libraryRepository.bootstrapLegacyLibrary({ assets: [], entries: [] });
+      await initializeReadingPersistence(prismaClient);
+
+      const bootstrapped = await bootstrapLegacyReadingState(readingRepository, state);
+
+      if (bootstrapped && clearLegacyReadingState(state)) {
+        persist();
+      }
+    })();
+
+    await readingBootstrap;
+  }
   const notebookRepository = createNotebookRepository(prismaClient);
   const notebookService = createNotebookService({
     libraryService,
@@ -564,15 +705,44 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     projectRepository,
   });
   const readingService = createReadingService({
-    conversations: state.conversations,
-    evidenceLinkService: createEvidenceLinkService(),
-    insights: state.insights,
     libraryService,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
+    readingRepository: {
+      async createConversation(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.createConversation(input);
+      },
+      async createNote(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.createNote(input);
+      },
+      async getReadingState(libraryEntryId, userId) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.getReadingState(libraryEntryId, userId);
+      },
+      async listGeneratedInsightsForEntry(libraryEntryId) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.listGeneratedInsightsForEntry(libraryEntryId);
+      },
+      async listNotesForEntry(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.listNotesForEntry(input);
+      },
+      async saveGeneratedInsight(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.saveGeneratedInsight(input);
+      },
+      async touchReadingState(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.touchReadingState(input);
+      },
     },
-    notes: state.notes,
-    persist,
   });
   const credentialsService = createCredentialsService({
     credentials: state.credentials,

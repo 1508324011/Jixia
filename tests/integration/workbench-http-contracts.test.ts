@@ -76,7 +76,14 @@ describe('workbench http contracts', () => {
         title: expect.any(String),
       });
 
-      const emptyPersonalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`);
+      const unauthenticatedPersonalLibraryResponse = await fetch(
+        `${baseUrl}/api/library/personal`,
+      );
+      expect(unauthenticatedPersonalLibraryResponse.status).toBe(401);
+
+      const emptyPersonalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`, {
+        headers: { 'x-jixia-actor': 'user-alice' },
+      });
       expect(emptyPersonalLibraryResponse.status).toBe(200);
 
       const emptyPersonalLibrary = await emptyPersonalLibraryResponse.json();
@@ -89,6 +96,7 @@ describe('workbench http contracts', () => {
         }),
         headers: {
           'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
         },
         method: 'POST',
       });
@@ -181,7 +189,9 @@ describe('workbench http contracts', () => {
       ]);
       expect(persistedStateText).not.toContain('sk-test-secret');
 
-      const personalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`);
+      const personalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`, {
+        headers: { 'x-jixia-actor': 'user-alice' },
+      });
       expect(personalLibraryResponse.status).toBe(200);
 
       const personalLibrary = await personalLibraryResponse.json();
@@ -199,15 +209,53 @@ describe('workbench http contracts', () => {
       const searchFromClient = await demoApi.searchDiscovery('tumor board');
       const settingsFromClient = await demoApi.getWorkbenchSettings();
       const personalLibraryFromClient = await demoApi.getPersonalLibraryEntries();
+      const writingReadWithoutActor = await fetch(
+        `${baseUrl}/api/writing/space-alpha/projects/project-alpha/document`,
+      );
+      const writingDocumentFromClient = await demoApi.getWritingDocument(
+        'space-alpha',
+        'project-alpha',
+      );
+      const writingSaveFromClient = await demoApi.saveWritingDocument({
+        content: 'Writer draft content',
+        projectId: 'project-alpha',
+        spaceId: 'space-alpha',
+        title: 'Writer draft title',
+      });
+      const bobSearchFromClient = await createDemoApi(baseUrl, 'user-bob').searchDiscovery(
+        'tumor board',
+      );
 
       expect(todayFromClient.items).toBeDefined();
       expect(searchFromClient.items.length).toBeGreaterThan(0);
+      expect(searchFromClient.items[0]).toMatchObject({
+        canonicalId: search.items[0].canonicalId,
+        imported: true,
+      });
+      expect(bobSearchFromClient.items[0]).toMatchObject({
+        canonicalId: search.items[0].canonicalId,
+        imported: false,
+      });
       expect(settingsFromClient.apiKeyConfigured).toBeDefined();
       expect(personalLibraryFromClient.entries).toContainEqual(
         expect.objectContaining({
           canonicalId: search.items[0].canonicalId,
         }),
       );
+      expect(writingReadWithoutActor.status).toBe(401);
+      expect(writingDocumentFromClient.document).toMatchObject({
+        documentId: 'project-doc:project-alpha',
+        projectId: 'project-alpha',
+        spaceId: 'space-alpha',
+      });
+      expect(writingSaveFromClient.document.latestSnapshot).toMatchObject({
+        content: 'Writer draft content',
+        doc: expect.objectContaining({
+          projectId: 'project-alpha',
+          spaceId: 'space-alpha',
+          title: 'Writer draft title',
+        }),
+      });
     } finally {
       await closeServer(httpServer.server);
       rmSync(storageRoot, { force: true, recursive: true });

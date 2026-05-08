@@ -1,18 +1,49 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
 import { createPrismaClient, createSpaceRepository } from '../../src/db';
+import type { PubmedConnector } from '../../src/server/connectors/pubmed.connector';
 import { createJixiaApp } from '../../src/server/app';
+
+function createStubPubmedConnector(): PubmedConnector {
+  return {
+    async lookup(locator, sourceType) {
+      return {
+        abstractText: `External ${sourceType.toUpperCase()} abstract for ${locator}`,
+        canonicalId: `${sourceType}:${locator}`,
+        title: `Imported ${sourceType.toUpperCase()} paper ${locator}`,
+      };
+    },
+    async search(query) {
+      return [
+        {
+          abstractText: `PubMed search result for ${query}`,
+          canonicalId: 'pmid:654321',
+          reason: 'PubMed query matched tumor-board biomarker curation work.',
+          sourceLabel: 'PubMed',
+          sourceLocator: '654321',
+          sourceType: 'pmid',
+          title: 'Tumor board biomarkers for rapid review',
+        },
+      ];
+    },
+  };
+}
 
 describe('reading evidence', () => {
   it('stores evidence links with generated insights', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-reading-evidence-'));
 
     try {
-      const app = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
+      const app = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env: { JIXIA_STORAGE_ROOT: storageRoot },
+      });
       const aliceShared = await app.spaces.createSpace(
         { kind: 'shared', name: 'Alice Shared' },
         'user-alice',
@@ -110,7 +141,12 @@ describe('reading evidence', () => {
         { id: 'space-reading', kind: 'shared', name: 'Persisted Reading Space' },
         'user-alice',
       );
-      const app = createJixiaApp({ env });
+      const app = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env,
+      });
       const project = await app.projects.createProject(
         { name: 'Persisted Reading Project', spaceId: persistedSpace.id },
         'user-alice',
@@ -166,7 +202,12 @@ describe('reading evidence', () => {
     };
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env,
+      });
       const imported = await app.imports.importToPersonalLibrary({
         requestedByUserId: 'user-alice',
         sourceLocator: '654321',
@@ -224,6 +265,109 @@ describe('reading evidence', () => {
           }),
         ]),
       );
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('bootstraps legacy reading json into Prisma once and then scrubs compatibility arrays', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-reading-bootstrap-once-'));
+    const env = {
+      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-reading-bootstrap.db')}`,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    const statePath = join(storageRoot, 'server-state.json');
+    const now = new Date().toISOString();
+
+    try {
+      const seededApp = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env,
+      });
+      const imported = await seededApp.imports.importToPersonalLibrary({
+        requestedByUserId: 'user-alice',
+        sourceLocator: '777001',
+        sourceType: 'pmid',
+      });
+
+      writeFileSync(
+        statePath,
+        JSON.stringify(
+          {
+            conversations: [
+              {
+                createdAt: now,
+                id: 'conversation-legacy-bootstrap',
+                libraryEntryId: imported.entry.id,
+                startedByUserId: 'user-alice',
+                title: 'Legacy governed insight conversation',
+              },
+            ],
+            insights: [
+              {
+                conversationId: 'conversation-legacy-bootstrap',
+                createdAt: now,
+                evidenceSpans: [
+                  {
+                    endOffset: 21,
+                    paperAssetId: imported.asset.id,
+                    quote: 'legacy governed evidence',
+                    startOffset: 0,
+                  },
+                ],
+                id: 'insight-legacy-bootstrap',
+                libraryEntryId: imported.entry.id,
+                summary: 'Legacy governed insight restored from JSON.',
+              },
+            ],
+            notes: [
+              {
+                authorUserId: 'user-alice',
+                body: 'Legacy private reader note.',
+                createdAt: now,
+                id: 'note-legacy-bootstrap',
+                libraryEntryId: imported.entry.id,
+                visibility: 'private',
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      );
+
+      const restartedApp = createJixiaApp({ env });
+      const reopenedDetail = await restartedApp.reading.getWorkbenchDetail({
+        actorUserId: 'user-alice',
+        libraryEntryId: imported.entry.id,
+      });
+
+      expect(reopenedDetail?.notes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            body: 'Legacy private reader note.',
+          }),
+        ]),
+      );
+      expect(reopenedDetail?.insights).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            summary: 'Legacy governed insight restored from JSON.',
+          }),
+        ]),
+      );
+
+      const scrubbedState = JSON.parse(readFileSync(statePath, 'utf8')) as {
+        conversations?: Array<unknown>;
+        insights?: Array<unknown>;
+        notes?: Array<unknown>;
+      };
+
+      expect(scrubbedState.conversations ?? []).toEqual([]);
+      expect(scrubbedState.insights ?? []).toEqual([]);
+      expect(scrubbedState.notes ?? []).toEqual([]);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
