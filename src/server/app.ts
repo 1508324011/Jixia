@@ -644,6 +644,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const projectRepository = createProjectRepository(prismaClient);
   const sessionRepository = createSessionRepository(prismaClient);
+  const fileStore = createFileStore(options.env);
   const jobRepository = createCredentialReferenceBootstrappedJobRepository(
     createJobRepository(prismaClient),
     state.credentials,
@@ -676,12 +677,13 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const importService = createImportService({
     arxivConnector: options.connectors?.arxiv ?? createArxivConnector(),
-    fileStore: createFileStore(options.env),
+    fileStore,
     libraryRepository,
     projectRepository,
     pubmedConnector: options.connectors?.pubmed ?? createPubmedConnector(),
   });
   const libraryService = createLibraryService({
+    fileStore,
     libraryRepository,
     projectRepository,
   });

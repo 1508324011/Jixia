@@ -92,6 +92,27 @@ function sendBody(
   response.end(body);
 }
 
+function sendBodyWithHeaders(
+  response: ServerResponse,
+  statusCode: number,
+  contentType: string,
+  body: Buffer | string,
+  method: string,
+  headers: Record<string, string>,
+): void {
+  response.writeHead(statusCode, {
+    "Content-Type": contentType,
+    ...headers,
+  });
+
+  if (method === "HEAD") {
+    response.end();
+    return;
+  }
+
+  response.end(body);
+}
+
 function sendJson(
   response: ServerResponse,
   statusCode: number,
@@ -114,17 +135,14 @@ function sendJsonWithHeaders(
   method: string,
   headers: Record<string, string>,
 ): void {
-  response.writeHead(statusCode, {
-    "Content-Type": "application/json; charset=utf-8",
-    ...headers,
-  });
-
-  if (method === "HEAD") {
-    response.end();
-    return;
-  }
-
-  response.end(JSON.stringify(payload));
+  sendBodyWithHeaders(
+    response,
+    statusCode,
+    "application/json; charset=utf-8",
+    JSON.stringify(payload),
+    method,
+    headers,
+  );
 }
 
 function sendText(
@@ -148,6 +166,10 @@ function sendJsonError(
 function statusCodeForError(error: unknown): number {
   if (!(error instanceof Error)) {
     return 500;
+  }
+
+  if (/file is not available/i.test(error.message)) {
+    return 404;
   }
 
   if (/server-derived actor session/i.test(error.message)) {
@@ -751,6 +773,32 @@ async function handleApiRequest(
     }
 
     const libraryEntryMatch = pathname.match(/^\/api\/library\/([^/]+)$/);
+    const libraryEntryFileMatch = pathname.match(/^\/api\/library\/([^/]+)\/file$/);
+    if (libraryEntryFileMatch && (method === "GET" || method === "HEAD")) {
+      const actor = await getActor(request, actorOptions);
+      const [, entryId] = libraryEntryFileMatch;
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+
+      const file = await app.library.getEntryFile({
+        actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
+        actorUserId: actor.userId,
+        entryId,
+      });
+
+      sendBodyWithHeaders(
+        response,
+        200,
+        file.contentType,
+        file.body,
+        method,
+        {
+          "Content-Disposition": file.contentDisposition,
+          "Content-Length": String(file.contentLength),
+        },
+      );
+      return true;
+    }
+
     if (libraryEntryMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, entryId] = libraryEntryMatch;

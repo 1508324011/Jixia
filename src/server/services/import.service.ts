@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { TodayRecommendation } from "@shared/contracts/discovery";
 import type {
@@ -152,13 +152,16 @@ function createPrismaOwnedAssetId(): string {
   return `asset-${randomUUID()}`;
 }
 
+function calculateChecksum(contents: Buffer): string {
+  return createHash("sha256").update(contents).digest("hex");
+}
+
 function mapAsset(asset: PersistedPaperAssetRecord): PaperAssetRecord {
   return {
     abstractText: asset.abstractText,
     canonicalId: asset.canonicalId,
     createdAt: asset.createdAt,
     id: asset.id,
-    storageKey: asset.storageKey,
     title: asset.title,
   };
 }
@@ -245,9 +248,10 @@ export function createImportService(store: ImportStore): ImportService {
       );
 
       const assetId = createPrismaOwnedAssetId();
-      const storageKey = await store.fileStore.writeText(
+      const pdfBytes = Buffer.from(input.pdfContents, "utf8");
+      const storageKey = await store.fileStore.writeBuffer(
         createPaperPdfStorageKey(assetId),
-        input.pdfContents,
+        pdfBytes,
       );
       const visibility = visibilityForScope(scope, input.visibility);
 
@@ -255,6 +259,7 @@ export function createImportService(store: ImportStore): ImportService {
         await store.libraryRepository.importScopedEntry({
           asset: {
             canonicalId: `upload:${assetId}`,
+            checksum: calculateChecksum(pdfBytes),
             id: assetId,
             importedByUserId: actorUserId,
             sourceLocator: assetId,

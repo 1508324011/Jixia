@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
+import { createJixiaApp } from '../../src/server/app';
 import {
   loginAs,
   startTestServer,
@@ -144,6 +145,7 @@ describe('http server actor boundary cleanup', () => {
           fetch(`${server.url}/api/credentials`),
           fetch(`${server.url}/api/settings/me`),
           fetch(`${server.url}/api/library/personal`),
+          fetch(`${server.url}/api/library/entry-1/file`),
           fetch(`${server.url}/api/projects`),
           fetch(`${server.url}/api/notebooks/notebook-1`),
           fetch(`${server.url}/api/project-docs/project-doc-1`),
@@ -162,6 +164,149 @@ describe('http server actor boundary cleanup', () => {
       rmSync(storageRoot, { force: true, recursive: true });
     }
   });
+
+  it('serves paper files only through authorized library entry access and never by raw storage key', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-paper-file-'));
+    const env = {
+      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-paper-file.db')}`,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+
+    const personalPdf = '%PDF-1.4 personal authorized file';
+    const projectPdf = '%PDF-1.4 project authorized file';
+
+    try {
+      const app = createJixiaApp({ env });
+      let personalUpload: Awaited<ReturnType<typeof app.imports.uploadPdf>>;
+      let projectUpload: Awaited<ReturnType<typeof app.imports.uploadPdf>>;
+
+      try {
+        const sharedSpace = await app.spaces.createSpace(
+          { kind: 'shared', name: 'Paper file shared space' },
+          'user-alice',
+        );
+        const project = await app.projects.createProject(
+          { name: 'Paper file project', spaceId: sharedSpace.id },
+          'user-alice',
+        );
+        await app.projects.addProjectMember(
+          project.project.id,
+          { role: 'viewer', userId: 'user-bob' },
+          'user-alice',
+        );
+
+        personalUpload = await app.imports.uploadPdf(
+          {
+            pdfContents: personalPdf,
+            requestedByUserId: 'user-alice',
+            scope: { id: 'user-alice', type: 'user' },
+            spaceId: sharedSpace.id,
+            visibility: 'private',
+          },
+          'user-alice',
+        );
+        projectUpload = await app.imports.uploadPdf(
+          {
+            pdfContents: projectPdf,
+            requestedByUserId: 'user-alice',
+            scope: { id: project.project.id, type: 'project' },
+            spaceId: sharedSpace.id,
+            visibility: 'published_to_project',
+          },
+          'user-alice',
+        );
+
+        expect(personalUpload.asset).not.toHaveProperty('storageKey');
+        expect(projectUpload.asset).not.toHaveProperty('storageKey');
+      } finally {
+        await app.close();
+      }
+
+      const server = await startTestServer(env);
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+        const charlieCookie = await loginAs(server.url, 'user-charlie');
+
+        const personalFileResponse = await fetch(
+          `${server.url}/api/library/${personalUpload.entry.id}/file`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        expect(personalFileResponse.status).toBe(200);
+        expect(personalFileResponse.headers.get('content-type')).toBe('application/pdf');
+        expect(personalFileResponse.headers.get('content-length')).toBe(
+          String(Buffer.byteLength(personalPdf)),
+        );
+        expect(personalFileResponse.headers.get('content-disposition')).toMatch(
+          /^attachment; filename=".+"$/,
+        );
+        expect(
+          Buffer.from(await personalFileResponse.arrayBuffer()).equals(
+            Buffer.from(personalPdf, 'utf8'),
+          ),
+        ).toBe(true);
+
+        const personalFileDenied = await fetch(
+          `${server.url}/api/library/${personalUpload.entry.id}/file`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        expect(personalFileDenied.status).toBe(403);
+
+        const projectFileResponse = await fetch(
+          `${server.url}/api/library/${projectUpload.entry.id}/file`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        expect(projectFileResponse.status).toBe(200);
+        expect(projectFileResponse.headers.get('content-type')).toBe('application/pdf');
+        expect(projectFileResponse.headers.get('content-length')).toBe(
+          String(Buffer.byteLength(projectPdf)),
+        );
+        expect(
+          Buffer.from(await projectFileResponse.arrayBuffer()).equals(
+            Buffer.from(projectPdf, 'utf8'),
+          ),
+        ).toBe(true);
+
+        const projectFileDenied = await fetch(
+          `${server.url}/api/library/${projectUpload.entry.id}/file`,
+          { headers: withSessionCookie(charlieCookie) },
+        );
+        expect(projectFileDenied.status).toBe(403);
+
+        const rawPathAttempt = await fetch(
+          `${server.url}/api/library/${encodeURIComponent(`papers/${personalUpload.asset.id}/paper.pdf`)}/file`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        expect(rawPathAttempt.status).toBe(400);
+        await expect(rawPathAttempt.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/does not exist/i),
+        });
+
+        const personalFilePath = join(
+          storageRoot,
+          'papers',
+          personalUpload.asset.id,
+          'paper.pdf',
+        );
+        unlinkSync(personalFilePath);
+
+        const missingFileResponse = await fetch(
+          `${server.url}/api/library/${personalUpload.entry.id}/file`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        expect(missingFileResponse.status).toBe(404);
+        const missingFileBody = await missingFileResponse.json() as { error: string };
+        expect(missingFileBody.error).toMatch(/file is not available/i);
+        expect(missingFileBody.error).not.toContain('papers/');
+        expect(missingFileBody.error).not.toContain(storageRoot);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 30_000);
 
   it('derives protected access from session cookies and rejects spoofed legacy actor fields', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-actor-400-'));

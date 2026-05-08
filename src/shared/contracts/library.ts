@@ -48,7 +48,6 @@ export interface PaperAssetRecord {
   canonicalId: string;
   title: string;
   abstractText?: string;
-  storageKey?: string;
   createdAt: string;
 }
 

@@ -299,6 +299,8 @@ describe('prisma schema', () => {
     const readingService = readFileSync('src/server/services/reading.service.ts', 'utf8');
     const notebookService = readFileSync('src/server/services/notebooks.service.ts', 'utf8');
     const projectDocsService = readFileSync('src/server/services/project-docs.service.ts', 'utf8');
+    const libraryContract = readFileSync('src/shared/contracts/library.ts', 'utf8');
+    const httpServer = readFileSync('src/server/http-server.ts', 'utf8');
     const libraryRepository = readFileSync(
       'src/db/repositories/library.repository.ts',
       'utf8',
@@ -325,8 +327,10 @@ describe('prisma schema', () => {
     expect(importService).toContain('libraryRepository.importScopedEntry');
     expect(importService).not.toContain('store.paperAssets');
     expect(importService).not.toContain('store.libraryEntries');
+    expect(importService).not.toContain('storageKey: asset.storageKey');
 
     expect(libraryService).toContain('libraryRepository.listLibraryEntriesForScope');
+    expect(libraryService).toContain('fileStore.readBuffer');
     expect(libraryService).not.toContain('store.paperAssets');
     expect(libraryService).not.toContain('store.libraryEntries');
 
@@ -349,5 +353,8 @@ describe('prisma schema', () => {
     expect(projectDocsService).toMatch(/listLibraryEntriesForAsset/);
     expect(projectDocsService).not.toContain('store.paperAssets');
     expect(projectDocsService).not.toContain('store.libraryEntries');
+    expect(libraryContract).not.toContain('storageKey?: string');
+    expect(httpServer).toContain('const libraryEntryFileMatch = pathname.match');
+    expect(httpServer).toContain('^\\/api\\/library\\/([^/]+)\\/file$');
   });
 });
