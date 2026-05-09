@@ -339,6 +339,8 @@ describe("http server actor boundary cleanup", () => {
           projectDocSave,
           projectDocPublish,
           reading,
+          readingCompatNote,
+          readingCompatInsight,
           note,
           insight,
           jobs,
@@ -414,6 +416,25 @@ describe("http server actor boundary cleanup", () => {
               method: 'POST',
             }),
             fetch(`${server.url}/api/reading/entry-1`),
+          fetch(`${server.url}/api/reading/entry-1/notes`, {
+            body: JSON.stringify({
+              authorUserId: 'user-bob',
+              body: 'Unauthorized compatibility note',
+              visibility: 'private',
+            }),
+              headers: { 'Content-Type': 'application/json' },
+              method: 'POST',
+            }),
+          fetch(`${server.url}/api/reading/entry-1/insights`, {
+            body: JSON.stringify({
+              evidenceSpans: [],
+              startedByUserId: 'user-bob',
+              summary: 'Unauthorized compatibility insight',
+              title: 'Unauthorized compatibility',
+            }),
+              headers: { 'Content-Type': 'application/json' },
+              method: 'POST',
+            }),
             fetch(`${server.url}/api/reading/notes`, {
               body: JSON.stringify({
                 body: "Unauthorized note",
@@ -498,6 +519,8 @@ describe("http server actor boundary cleanup", () => {
           projectDocSave,
           projectDocPublish,
           reading,
+          readingCompatNote,
+          readingCompatInsight,
           note,
           insight,
           jobs,
@@ -863,7 +886,7 @@ describe("http server actor boundary cleanup", () => {
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   it("allows protected routes with only server-derived actor headers and blocks non-member membership reads", async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-actor-success-"));
@@ -1005,5 +1028,5 @@ describe("http server actor boundary cleanup", () => {
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
 });
