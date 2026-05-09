@@ -18,9 +18,11 @@ import type {
 import type { WritingDocumentResponse } from '@shared/contracts/writing';
 import type { ProjectListItem } from '@shared/contracts/projects';
 
+import {
+  assertNoActorImpersonation,
+  type ActorContext,
+} from './auth/actor';
 import type { JixiaApp } from './app';
-import type { ActorContext } from './auth/actor';
-import { assertNoActorImpersonation } from './auth/actor';
 
 export interface HttpApiResponse {
   payload: unknown;
@@ -43,16 +45,30 @@ interface ImportToPersonalLibraryRequestBody {
   sourceType?: 'doi' | 'pmid' | 'arxiv';
 }
 
+interface CreateReadingNoteRequestBody {
+  actorSpaceId?: string;
+  authorUserId?: string;
+  body?: string;
+  visibility?: NoteVisibility;
+}
+
+interface SaveReadingInsightRequestBody {
+  actorSpaceId?: string;
+  evidenceSpans?: Array<Omit<EvidenceSpanRecord, 'paperAssetId'>>;
+  startedByUserId?: string;
+  summary?: string;
+  title?: string;
+}
+
 interface SaveWritingDocumentRequestBody {
+  actorUserId?: string;
   citations?: Array<{ evidenceSpan?: string; paperAssetId: string }>;
   content?: string;
   title?: string;
 }
 
-interface WorkbenchSettingsRequestBody extends Record<string, unknown> {
+interface WorkbenchSettingsUpdatePayload extends UpdateWorkbenchSettingsRequest {
   actorUserId?: string;
-  apiKey?: string;
-  defaultImportTarget?: unknown;
   userId?: string;
 }
 
@@ -76,33 +92,44 @@ function decodePathSegment(segment: string): string {
 
 function parseWorkbenchSettingsUpdate(
   requestBody: unknown,
-): UpdateWorkbenchSettingsRequest {
+): WorkbenchSettingsUpdatePayload {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Settings payload must be a JSON object.');
   }
 
-  const { apiKey, defaultImportTarget } = requestBody as WorkbenchSettingsRequestBody;
+  const { actorUserId, apiKey, defaultImportTarget, userId } = requestBody as Record<
+    string,
+    unknown
+  >;
 
   if (typeof apiKey !== 'undefined' && typeof apiKey !== 'string') {
     throw new Error('apiKey must be a string when provided.');
+  }
+
+  if (typeof actorUserId !== 'undefined' && typeof actorUserId !== 'string') {
+    throw new Error('actorUserId must be a string when provided.');
   }
 
   if (!isDefaultImportTarget(defaultImportTarget)) {
     throw new Error('defaultImportTarget must be provided.');
   }
 
+  if (typeof userId !== 'undefined' && typeof userId !== 'string') {
+    throw new Error('userId must be a string when provided.');
+  }
+
   return {
+    actorUserId,
     apiKey,
     defaultImportTarget,
+    userId,
   };
 }
 
 function parseImportToPersonalLibraryRequest(
   requestBody: unknown,
-): {
+): Required<Pick<ImportToPersonalLibraryRequestBody, 'sourceLocator' | 'sourceType'>> & {
   requestedByUserId?: string;
-  sourceLocator: string;
-  sourceType: 'doi' | 'pmid' | 'arxiv';
 } {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Import payload must be a JSON object.');
@@ -137,16 +164,22 @@ function parseImportToPersonalLibraryRequest(
 
 function parseCreateReadingNoteRequest(
   requestBody: unknown,
-): {
+): Required<Pick<CreateReadingNoteRequestBody, 'body' | 'visibility'>> & {
+  actorSpaceId?: string;
   authorUserId?: string;
-  body: string;
-  visibility: NoteVisibility;
 } {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Reading note payload must be a JSON object.');
   }
 
-  const { authorUserId, body, visibility } = requestBody as Record<string, unknown>;
+  const { actorSpaceId, authorUserId, body, visibility } = requestBody as Record<
+    string,
+    unknown
+  >;
+
+  if (typeof actorSpaceId !== 'undefined' && typeof actorSpaceId !== 'string') {
+    throw new Error('actorSpaceId must be a string when provided.');
+  }
 
   if (typeof authorUserId !== 'undefined' && typeof authorUserId !== 'string') {
     throw new Error('authorUserId must be a string when provided.');
@@ -161,6 +194,7 @@ function parseCreateReadingNoteRequest(
   }
 
   return {
+    actorSpaceId,
     authorUserId,
     body: body.trim(),
     visibility,
@@ -203,20 +237,21 @@ function parseEvidenceSpans(
 
 function parseSaveReadingInsightRequest(
   requestBody: unknown,
-): {
+): Required<Pick<SaveReadingInsightRequestBody, 'summary' | 'title'>> & {
+  actorSpaceId?: string;
   evidenceSpans: Array<Omit<EvidenceSpanRecord, 'paperAssetId'>>;
   startedByUserId?: string;
-  summary: string;
-  title: string;
 } {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Reading insight payload must be a JSON object.');
   }
 
-  const { evidenceSpans, startedByUserId, summary, title } = requestBody as Record<
-    string,
-    unknown
-  >;
+  const { actorSpaceId, evidenceSpans, startedByUserId, summary, title } =
+    requestBody as Record<string, unknown>;
+
+  if (typeof actorSpaceId !== 'undefined' && typeof actorSpaceId !== 'string') {
+    throw new Error('actorSpaceId must be a string when provided.');
+  }
 
   if (
     typeof startedByUserId !== 'undefined' &&
@@ -234,6 +269,7 @@ function parseSaveReadingInsightRequest(
   }
 
   return {
+    actorSpaceId,
     evidenceSpans: parseEvidenceSpans(evidenceSpans),
     startedByUserId,
     summary: summary.trim(),
@@ -243,12 +279,21 @@ function parseSaveReadingInsightRequest(
 
 function parseSaveWritingDocumentRequest(
   requestBody: unknown,
-): Required<SaveWritingDocumentRequestBody> {
+): Required<Pick<SaveWritingDocumentRequestBody, 'citations' | 'content' | 'title'>> & {
+  actorUserId?: string;
+} {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Writing payload must be a JSON object.');
   }
 
-  const { citations, content, title } = requestBody as Record<string, unknown>;
+  const { actorUserId, citations, content, title } = requestBody as Record<
+    string,
+    unknown
+  >;
+
+  if (typeof actorUserId !== 'undefined' && typeof actorUserId !== 'string') {
+    throw new Error('actorUserId must be a string when provided.');
+  }
 
   if (typeof content !== 'string') {
     throw new Error('content is required.');
@@ -263,6 +308,7 @@ function parseSaveWritingDocumentRequest(
   }
 
   return {
+    actorUserId,
     citations: citations.map((citation, index) => {
       if (!citation || typeof citation !== 'object' || Array.isArray(citation)) {
         throw new Error(`citations[${index}] must be an object.`);
@@ -288,6 +334,16 @@ function parseSaveWritingDocumentRequest(
   };
 }
 
+function requireActor(actor?: ActorContext): ActorContext {
+  if (!actor) {
+    throw new Error(
+      'Workbench compatibility route requires a server-derived actor session.',
+    );
+  }
+
+  return actor;
+}
+
 function toLibraryListResponse(
   entries: Awaited<ReturnType<JixiaApp['library']['listPersonalEntries']>>,
 ): LibraryListResponse {
@@ -310,10 +366,7 @@ async function markImportedDiscoveryItems(
   actorUserId?: string,
 ): Promise<TodayRecommendation[]> {
   if (!actorUserId) {
-    return items.map((item) => ({
-      ...item,
-      imported: false,
-    }));
+    return items;
   }
 
   const personalEntries = await app.library.listPersonalEntries(actorUserId);
@@ -339,6 +392,7 @@ function toReadingInsightResponse(
   return { insight };
 }
 
+
 export async function resolveHttpApi(
   app: JixiaApp,
   requestUrl: URL,
@@ -347,8 +401,14 @@ export async function resolveHttpApi(
   actor?: ActorContext,
 ): Promise<HttpApiResponse | null> {
   const pathname = requestUrl.pathname;
+  const queryActorUserId = requestUrl.searchParams.get('actorUserId') ?? undefined;
+  const queryUserId = requestUrl.searchParams.get('userId') ?? undefined;
 
   if ((method === 'GET' || method === 'HEAD') && pathname === '/api/discovery/today') {
+    if (actor) {
+      assertNoActorImpersonation(actor, queryActorUserId);
+    }
+
     const payload: DiscoveryTodayResponse = {
       items: await markImportedDiscoveryItems(
         app,
@@ -364,6 +424,10 @@ export async function resolveHttpApi(
   }
 
   if ((method === 'GET' || method === 'HEAD') && pathname === '/api/discovery/search') {
+    if (actor) {
+      assertNoActorImpersonation(actor, queryActorUserId);
+    }
+
     const query = requestUrl.searchParams.get('query')?.trim() ?? '';
     const payload: DiscoverySearchResponse = {
       items: query
@@ -383,83 +447,58 @@ export async function resolveHttpApi(
   }
 
   if ((method === 'GET' || method === 'HEAD') && pathname === '/api/library/personal') {
-    if (!actor) {
-      throw new Error(
-        'Workbench personal library API requires a server-derived actor session.',
-      );
-    }
+    const requiredActor = requireActor(actor);
+    assertNoActorImpersonation(requiredActor, queryActorUserId);
 
     return {
       payload: toLibraryListResponse(
-        await app.library.listPersonalEntries(actor.userId),
+        await app.library.listPersonalEntries(requiredActor.userId),
       ),
       statusCode: 200,
     };
   }
 
   if (method === 'POST' && pathname === '/api/library/personal/import') {
-    if (!actor) {
-      throw new Error(
-        'Workbench personal library API requires a server-derived actor session.',
-      );
-    }
-
+    const requiredActor = requireActor(actor);
     const payload = parseImportToPersonalLibraryRequest(requestBody);
-
-    assertNoActorImpersonation(actor, payload.requestedByUserId);
+    assertNoActorImpersonation(requiredActor, payload.requestedByUserId);
 
     return {
-      payload: await app.imports.importToPersonalLibrary({
-        requestedByUserId: actor.userId,
-        sourceLocator: payload.sourceLocator,
-        sourceType: payload.sourceType,
-      }),
+      payload: await app.imports.importToPersonalLibrary(
+        {
+          requestedByUserId: payload.requestedByUserId,
+          sourceLocator: payload.sourceLocator,
+          sourceType: payload.sourceType,
+        },
+        requiredActor.userId,
+      ),
       statusCode: 201,
     };
   }
 
   if ((method === 'GET' || method === 'HEAD') && pathname === '/api/settings/me') {
-    if (!actor) {
-      throw new Error(
-        'Workbench settings API requires a server-derived actor session.',
-      );
-    }
-
-    assertNoActorImpersonation(
-      actor,
-      requestUrl.searchParams.get('userId') ?? undefined,
-    );
-    assertNoActorImpersonation(
-      actor,
-      requestUrl.searchParams.get('actorUserId') ?? undefined,
-    );
+    const requiredActor = requireActor(actor);
+    assertNoActorImpersonation(requiredActor, queryActorUserId);
+    assertNoActorImpersonation(requiredActor, queryUserId);
 
     return {
-      payload: app.credentials.getWorkbenchSettings(actor.userId),
+      payload: app.credentials.getWorkbenchSettings(requiredActor.userId),
       statusCode: 200,
     };
   }
 
   if (method === 'POST' && pathname === '/api/settings/me') {
-    if (!actor) {
-      throw new Error(
-        'Workbench settings API requires a server-derived actor session.',
-      );
-    }
-
+    const requiredActor = requireActor(actor);
     const payload = parseWorkbenchSettingsUpdate(requestBody);
-    const actorCompatibilityFields = requestBody as WorkbenchSettingsRequestBody;
-
-    assertNoActorImpersonation(actor, actorCompatibilityFields.userId);
-    assertNoActorImpersonation(actor, actorCompatibilityFields.actorUserId);
+    assertNoActorImpersonation(requiredActor, payload.actorUserId);
+    assertNoActorImpersonation(requiredActor, payload.userId);
 
     return {
       payload: await app.credentials.saveWorkbenchSettings({
-        actorUserId: actorCompatibilityFields.actorUserId,
         apiKey: payload.apiKey,
         defaultImportTarget: payload.defaultImportTarget,
-        userId: actorCompatibilityFields.userId,
-      }, actor.userId),
+        userId: payload.userId,
+      }, requiredActor.userId),
       statusCode: 200,
     };
   }
@@ -470,14 +509,11 @@ export async function resolveHttpApi(
     readingDetailMatch &&
     (method === 'GET' || method === 'HEAD')
   ) {
-    if (!actor) {
-      throw new Error(
-        'Workbench reading API requires a server-derived actor session.',
-      );
-    }
+    const requiredActor = requireActor(actor);
+    assertNoActorImpersonation(requiredActor, queryActorUserId);
 
     const detail = await app.reading.getWorkbenchDetail({
-      actorUserId: actor.userId,
+      actorUserId: requiredActor.userId,
       libraryEntryId: decodePathSegment(readingDetailMatch[1]),
     });
 
@@ -497,20 +533,16 @@ export async function resolveHttpApi(
   const readingNoteMatch = pathname.match(/^\/api\/reading\/([^/]+)\/notes$/);
 
   if (readingNoteMatch && method === 'POST') {
-    if (!actor) {
-      throw new Error(
-        'Workbench reading API requires a server-derived actor session.',
-      );
-    }
-
+    const requiredActor = requireActor(actor);
     const payload = parseCreateReadingNoteRequest(requestBody);
-
-    assertNoActorImpersonation(actor, payload.authorUserId);
+    assertNoActorImpersonation(requiredActor, payload.authorUserId);
 
     return {
       payload: toReadingNoteResponse(
-        await app.reading.createWorkbenchNote({
-          authorUserId: actor.userId,
+        await app.reading.createNote({
+          actorSpaceId: payload.actorSpaceId,
+          actorUserId: requiredActor.userId,
+          authorUserId: payload.authorUserId,
           body: payload.body,
           libraryEntryId: decodePathSegment(readingNoteMatch[1]),
           visibility: payload.visibility,
@@ -523,22 +555,18 @@ export async function resolveHttpApi(
   const readingInsightMatch = pathname.match(/^\/api\/reading\/([^/]+)\/insights$/);
 
   if (readingInsightMatch && method === 'POST') {
-    if (!actor) {
-      throw new Error(
-        'Workbench reading API requires a server-derived actor session.',
-      );
-    }
-
+    const requiredActor = requireActor(actor);
     const payload = parseSaveReadingInsightRequest(requestBody);
-
-    assertNoActorImpersonation(actor, payload.startedByUserId);
+    assertNoActorImpersonation(requiredActor, payload.startedByUserId);
 
     return {
       payload: toReadingInsightResponse(
-        await app.reading.saveWorkbenchGeneratedInsight({
+        await app.reading.saveGeneratedInsight({
+          actorSpaceId: payload.actorSpaceId,
+          actorUserId: requiredActor.userId,
           evidenceSpans: payload.evidenceSpans,
           libraryEntryId: decodePathSegment(readingInsightMatch[1]),
-          startedByUserId: actor.userId,
+          startedByUserId: payload.startedByUserId,
           summary: payload.summary,
           title: payload.title,
         }),
@@ -555,15 +583,14 @@ export async function resolveHttpApi(
     writingDocumentMatch &&
     (method === 'GET' || method === 'HEAD')
   ) {
-    if (!actor) {
-      throw new Error(
-        'Workbench writing API requires a server-derived actor session.',
-      );
-    }
-
+    const requiredActor = requireActor(actor);
+    assertNoActorImpersonation(requiredActor, queryActorUserId);
     const spaceId = decodePathSegment(writingDocumentMatch[1]);
     const projectId = decodePathSegment(writingDocumentMatch[2]);
-    const document = await app.projectDocs.getWorkbenchDocument(projectId, actor.userId);
+    const document = await app.projectDocs.getWorkbenchDocument(
+      projectId,
+      requiredActor.userId,
+    );
 
     if (!document) {
       return {
@@ -585,18 +612,13 @@ export async function resolveHttpApi(
   }
 
   if (writingDocumentMatch && method === 'POST') {
-    if (!actor) {
-      throw new Error(
-        'Workbench writing API requires a server-derived actor session.',
-      );
-    }
-
+    const requiredActor = requireActor(actor);
     const spaceId = decodePathSegment(writingDocumentMatch[1]);
     const projectId = decodePathSegment(writingDocumentMatch[2]);
     const project = await getAuthorizedProjectForWorkbenchWrite(
       app,
       projectId,
-      actor.userId,
+      requiredActor.userId,
     );
 
     if (project.project.spaceId !== spaceId) {
@@ -606,6 +628,7 @@ export async function resolveHttpApi(
     }
 
     const payload = parseSaveWritingDocumentRequest(requestBody);
+    assertNoActorImpersonation(requiredActor, payload.actorUserId);
     const document = await app.projectDocs.saveWorkbenchDocument(
       {
         citations: payload.citations,
@@ -613,7 +636,7 @@ export async function resolveHttpApi(
         projectId,
         title: payload.title,
       },
-      actor.userId,
+      requiredActor.userId,
     );
 
     return {

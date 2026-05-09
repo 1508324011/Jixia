@@ -8,7 +8,7 @@ import {
 import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createJixiaApp } from "./app";
+import { createJixiaApp, type CreateJixiaAppOptions } from "./app";
 import { resolveHttpApi } from "./http-api";
 import {
   assertNoActorImpersonation,
@@ -47,6 +47,7 @@ interface LoggerLike {
 }
 
 export interface HttpServerOptions {
+  connectors?: CreateJixiaAppOptions["connectors"];
   env?: RuntimeConfigEnv;
   logger?: LoggerLike;
 }
@@ -1145,6 +1146,7 @@ export function createHttpServer(
   }
 
   const app = createJixiaApp({
+    connectors: options.connectors,
     env: {
       ...runtimeEnv,
       JIXIA_DATABASE_URL: runtimeConfig.databaseUrl,

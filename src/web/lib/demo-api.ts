@@ -132,7 +132,7 @@ export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
       projectId: string;
       spaceId: string;
       title: string;
-      }): Promise<WritingDocumentResponse> {
+    }): Promise<WritingDocumentResponse> {
       void input.spaceId;
 
       return requestJson<WritingDocumentResponse>(
