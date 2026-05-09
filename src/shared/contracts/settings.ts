@@ -7,7 +7,11 @@ export interface WorkbenchSettingsResponse {
 
 export interface UpdateWorkbenchSettingsRequest {
   apiKey?: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  actorUserId?: string;
   defaultImportTarget: DefaultImportTarget;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  userId?: string;
 }
 
 export const settingsContract = 'jixia-settings-contract';

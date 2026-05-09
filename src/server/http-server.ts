@@ -171,6 +171,9 @@ async function handleWorkbenchHttpApiRequest(
   }
 
   try {
+    const actorUserId = requestUrl.pathname === "/api/settings/me"
+      ? getActor(request).userId
+      : undefined;
     const requestBody = method === "GET" || method === "HEAD"
       ? undefined
       : await readJsonBody<unknown>(request);
@@ -179,6 +182,7 @@ async function handleWorkbenchHttpApiRequest(
       requestUrl,
       method,
       requestBody,
+      actorUserId,
     );
 
     if (fallbackResponse) {
