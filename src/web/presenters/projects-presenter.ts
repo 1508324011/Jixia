@@ -4,7 +4,7 @@ import type { ProjectListItem } from "@shared/contracts/projects";
 import type { SpaceSummary } from "@shared/contracts/spaces";
 
 import { apiClient } from "../lib/http-client";
-import { demoActorContext } from "./runtime-context";
+import { runtimeContext } from "./runtime-context";
 
 export interface ProjectCardView {
   item: ProjectListItem;
@@ -34,18 +34,13 @@ export function useProjectsPresenter(): ProjectsViewModel {
       setIsLoading(true);
       setError(null);
       const [nextSpaces, nextProjects] = await Promise.all([
-        apiClient.listSpaces(demoActorContext.actorUserId),
-        apiClient.listProjects(demoActorContext.actorUserId),
+        apiClient.listSpaces(),
+        apiClient.listProjects(),
       ]);
       const nextCards = await Promise.all(
         nextProjects.map(async (item) => ({
           item,
-          memberCount: (
-            await apiClient.listProjectMembers(
-              item.project.id,
-              demoActorContext.actorUserId,
-            )
-          ).length,
+          memberCount: (await apiClient.listProjectMembers(item.project.id)).length,
         })),
       );
 
@@ -75,13 +70,10 @@ export function useProjectsPresenter(): ProjectsViewModel {
       let nextSpaces = spaces;
 
       if (nextSpaces.length === 0) {
-        const createdSpace = await apiClient.createSpace(
-          demoActorContext.actorUserId,
-          {
-            kind: "shared",
-            name: demoActorContext.defaultSharedSpaceName,
-          },
-        );
+        const createdSpace = await apiClient.createSpace({
+          kind: "shared",
+          name: runtimeContext.defaultSharedSpaceName,
+        });
         nextSpaces = [createdSpace];
         setSpaces(nextSpaces);
       }
@@ -93,12 +85,11 @@ export function useProjectsPresenter(): ProjectsViewModel {
 
       await apiClient.createProject(
         {
-          name: `${demoActorContext.defaultProjectName} ${Date.now()
+          name: `${runtimeContext.defaultProjectName} ${Date.now()
             .toString()
             .slice(-4)}`,
           spaceId: targetSpace.id,
         },
-        demoActorContext.actorUserId,
       );
       await refresh();
     } catch (presenterError) {
@@ -118,8 +109,7 @@ export function useProjectsPresenter(): ProjectsViewModel {
         setError(null);
         await apiClient.addProjectMember(
           projectId,
-          { role: "viewer", userId: "user-bob" },
-          demoActorContext.actorUserId,
+          { role: "viewer", userId: runtimeContext.defaultProjectMemberUserId },
         );
         await refresh();
       } catch (presenterError) {

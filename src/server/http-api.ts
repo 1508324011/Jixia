@@ -16,6 +16,7 @@ import type {
   UpdateWorkbenchSettingsRequest,
 } from '@shared/contracts/settings';
 import type { WritingDocumentResponse } from '@shared/contracts/writing';
+import type { ProjectListItem } from '@shared/contracts/projects';
 
 import {
   assertNoActorImpersonation,
@@ -26,6 +27,14 @@ import type { JixiaApp } from './app';
 export interface HttpApiResponse {
   payload: unknown;
   statusCode: number;
+}
+
+async function getAuthorizedProjectForWorkbenchWrite(
+  app: JixiaApp,
+  projectId: string,
+  actorUserId: string,
+): Promise<ProjectListItem> {
+  return app.projects.getProject({ projectId }, actorUserId);
 }
 
 const TODAY_DISCOVERY_QUERY = 'tumor board biomarkers';
@@ -606,6 +615,18 @@ export async function resolveHttpApi(
     const requiredActor = requireActor(actor);
     const spaceId = decodePathSegment(writingDocumentMatch[1]);
     const projectId = decodePathSegment(writingDocumentMatch[2]);
+    const project = await getAuthorizedProjectForWorkbenchWrite(
+      app,
+      projectId,
+      requiredActor.userId,
+    );
+
+    if (project.project.spaceId !== spaceId) {
+      throw new Error(
+        `Project ${projectId} belongs to governance space ${project.project.spaceId}, not ${spaceId}.`,
+      );
+    }
+
     const payload = parseSaveWritingDocumentRequest(requestBody);
     assertNoActorImpersonation(requiredActor, payload.actorUserId);
     const document = await app.projectDocs.saveWorkbenchDocument(
@@ -617,12 +638,6 @@ export async function resolveHttpApi(
       },
       requiredActor.userId,
     );
-
-    if (document.spaceId !== spaceId) {
-      throw new Error(
-        `Project ${projectId} belongs to governance space ${document.spaceId}, not ${spaceId}.`,
-      );
-    }
 
     return {
       payload: { document } satisfies WritingDocumentResponse,

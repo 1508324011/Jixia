@@ -1,124 +1,77 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { once } from "node:events";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest';
 
-import type { PubmedConnector } from "../../src/server/connectors/pubmed.connector";
-import { createHttpServer } from "../../src/server/http-server";
+import {
+  loginAs,
+  startTestServer,
+  withSessionCookie,
+} from './http-session-test-helpers';
 
-function createStubPubmedConnector(): PubmedConnector {
-  return {
-    async lookup(locator, sourceType) {
-      return {
-        abstractText: `External ${sourceType.toUpperCase()} abstract for ${locator}`,
-        canonicalId: `${sourceType}:${locator}`,
-        title: `Imported ${sourceType.toUpperCase()} paper ${locator}`,
-      };
-    },
-    async search(query) {
-      return [
-        {
-          abstractText: `PubMed search result for ${query}`,
-          canonicalId: "pmid:654321",
-          reason: "PubMed query matched tumor-board biomarker curation work.",
-          sourceLabel: "PubMed",
-          sourceLocator: "654321",
-          sourceType: "pmid",
-          title: "Tumor board biomarkers for rapid review",
-        },
-      ];
-    },
-  };
-}
-
-async function startTestServer(storageRoot: string) {
-  const httpServer = createHttpServer({
-    connectors: {
-      pubmed: createStubPubmedConnector(),
-    },
-    env: { JIXIA_STORAGE_ROOT: storageRoot },
-  });
-
-  httpServer.server.listen(0, "127.0.0.1");
-  await once(httpServer.server, "listening");
-  const address = httpServer.server.address();
-
-  if (!address || typeof address === "string") {
-    throw new Error("Failed to bind test server.");
-  }
-
-  return {
-    close: async () => {
-      httpServer.server.close();
-      await once(httpServer.server, "close");
-    },
-    url: `http://127.0.0.1:${address.port}`,
-  };
-}
-
-async function createSharedSpace(serverUrl: string, actorUserId: string) {
+async function createSharedSpace(serverUrl: string, cookie: string, actorUserId: string) {
   const response = await fetch(`${serverUrl}/api/spaces`, {
-    body: JSON.stringify({ kind: "shared", name: `${actorUserId} shared` }),
-    headers: {
-      "Content-Type": "application/json",
-      "x-jixia-actor": actorUserId,
-    },
-    method: "POST",
+    body: JSON.stringify({ kind: 'shared', name: `${actorUserId} shared` }),
+    headers: withSessionCookie(cookie, {
+      'Content-Type': 'application/json',
+    }),
+    method: 'POST',
   });
 
   return (await response.json()) as { id: string };
 }
 
-async function createCredential(serverUrl: string, actorUserId: string) {
+async function createCredential(serverUrl: string, cookie: string, actorUserId: string) {
   const response = await fetch(`${serverUrl}/api/credentials`, {
     body: JSON.stringify({
-      provider: "openai",
+      provider: 'openai',
       rawSecret: `${actorUserId}-credential-placeholder`,
     }),
-    headers: {
-      "Content-Type": "application/json",
-      "x-jixia-actor": actorUserId,
-    },
-    method: "POST",
+    headers: withSessionCookie(cookie, {
+      'Content-Type': 'application/json',
+    }),
+    method: 'POST',
   });
 
   return (await response.json()) as { credentialRef: string };
 }
 
-async function importPaper(
-  serverUrl: string,
-  actorUserId: string,
-  spaceId: string,
-) {
-  const project = await fetch(`${serverUrl}/api/projects`, {
+async function createProject(serverUrl: string, cookie: string, actorUserId: string, spaceId: string) {
+  return fetch(`${serverUrl}/api/projects`, {
     body: JSON.stringify({
       name: `${actorUserId} actor-boundary project`,
       spaceId,
     }),
-    headers: {
-      "Content-Type": "application/json",
-      "x-jixia-actor": actorUserId,
-    },
-    method: "POST",
+    headers: withSessionCookie(cookie, {
+      'Content-Type': 'application/json',
+    }),
+    method: 'POST',
   }).then(
     (response) => response.json() as Promise<{ project: { id: string } }>,
   );
+}
+
+async function importPaper(
+  serverUrl: string,
+  cookie: string,
+  actorUserId: string,
+  spaceId: string,
+) {
+  const project = await createProject(serverUrl, cookie, actorUserId, spaceId);
 
   const response = await fetch(`${serverUrl}/api/import/paper`, {
     body: JSON.stringify({
-      scope: { id: project.project.id, type: "project" },
+      scope: { id: project.project.id, type: 'project' },
       sourceLocator: `10.1000/${actorUserId}-actor-boundary`,
-      sourceType: "doi",
+      sourceType: 'doi',
       spaceId,
-      visibility: "space_shared",
+      visibility: 'space_shared',
     }),
-    headers: {
-      "Content-Type": "application/json",
-      "x-jixia-actor": actorUserId,
-    },
-    method: "POST",
+    headers: withSessionCookie(cookie, {
+      'Content-Type': 'application/json',
+    }),
+    method: 'POST',
   });
 
   const imported = (await response.json()) as { entry: { id: string } };
@@ -126,13 +79,12 @@ async function importPaper(
   return { ...imported, projectId: project.project.id };
 }
 
-async function createNotebook(serverUrl: string, actorUserId: string) {
+async function createNotebook(serverUrl: string, cookie: string, actorUserId: string) {
   const response = await fetch(`${serverUrl}/api/notebooks`, {
     body: JSON.stringify({ title: `${actorUserId} notebook` }),
-    headers: {
+    headers: withSessionCookie(cookie, {
       'Content-Type': 'application/json',
-      'x-jixia-actor': actorUserId,
-    },
+    }),
     method: 'POST',
   });
 
@@ -141,15 +93,15 @@ async function createNotebook(serverUrl: string, actorUserId: string) {
 
 async function createProjectDoc(
   serverUrl: string,
+  cookie: string,
   actorUserId: string,
   projectId: string,
 ) {
   const response = await fetch(`${serverUrl}/api/project-docs`, {
     body: JSON.stringify({ projectId, title: `${actorUserId} project doc` }),
-    headers: {
+    headers: withSessionCookie(cookie, {
       'Content-Type': 'application/json',
-      'x-jixia-actor': actorUserId,
-    },
+    }),
     method: 'POST',
   });
 
@@ -158,6 +110,7 @@ async function createProjectDoc(
 
 async function createJob(
   serverUrl: string,
+  cookie: string,
   actorUserId: string,
   credentialRef: string,
   spaceId: string,
@@ -165,376 +118,41 @@ async function createJob(
   const response = await fetch(`${serverUrl}/api/jobs`, {
     body: JSON.stringify({
       credentialRef,
-      kind: "ai.summary",
+      kind: 'ai.summary',
       payload: { prompt: `Summarize for ${actorUserId}.` },
       spaceId,
     }),
-    headers: {
-      "Content-Type": "application/json",
-      "x-jixia-actor": actorUserId,
-    },
-    method: "POST",
+    headers: withSessionCookie(cookie, {
+      'Content-Type': 'application/json',
+    }),
+    method: 'POST',
   });
 
   return (await response.json()) as { id: string };
 }
 
-describe("http server actor boundary cleanup", () => {
-  it("protects workbench settings with server-derived actor authority", async () => {
-    const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-settings-actor-"));
+describe('http server actor boundary cleanup', () => {
+  it('returns 401 when protected routes have no server-derived actor', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-actor-401-'));
 
     try {
-      const server = await startTestServer(storageRoot);
+      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
 
       try {
-        const missingActor = await fetch(`${server.url}/api/settings/me`);
-        expect(missingActor.status).toBe(401);
+        const responses = await Promise.all([
+          fetch(`${server.url}/api/spaces`),
+          fetch(`${server.url}/api/credentials`),
+          fetch(`${server.url}/api/settings/me`),
+          fetch(`${server.url}/api/library/personal`),
+          fetch(`${server.url}/api/projects`),
+          fetch(`${server.url}/api/notebooks/notebook-1`),
+          fetch(`${server.url}/api/project-docs/project-doc-1`),
+          fetch(`${server.url}/api/reading/entry-1`),
+          fetch(`${server.url}/api/jobs`),
+          fetch(`${server.url}/api/jobs/job-1/stream`),
+        ]);
 
-        const spoofedQueryUserId = await fetch(
-          `${server.url}/api/settings/me?userId=user-bob`,
-          {
-            headers: {
-              "x-jixia-actor": "user-alice",
-            },
-          },
-        );
-        expect(spoofedQueryUserId.status).toBe(400);
-
-        const spoofedQueryActorUserId = await fetch(
-          `${server.url}/api/settings/me?actorUserId=user-bob`,
-          {
-            headers: {
-              "x-jixia-actor": "user-alice",
-            },
-          },
-        );
-        expect(spoofedQueryActorUserId.status).toBe(400);
-
-        const spoofedUserId = await fetch(`${server.url}/api/settings/me`, {
-          body: JSON.stringify({
-            apiKey: "settings-spoof-placeholder",
-            defaultImportTarget: "project-workspace",
-            userId: "user-bob",
-          }),
-          headers: {
-            "Content-Type": "application/json",
-            "x-jixia-actor": "user-alice",
-          },
-          method: "POST",
-        });
-        expect(spoofedUserId.status).toBe(400);
-
-        const spoofedActorUserId = await fetch(`${server.url}/api/settings/me`, {
-          body: JSON.stringify({
-            actorUserId: "user-bob",
-            apiKey: "settings-spoof-placeholder",
-            defaultImportTarget: "project-workspace",
-          }),
-          headers: {
-            "Content-Type": "application/json",
-            "x-jixia-actor": "user-alice",
-          },
-          method: "POST",
-        });
-        expect(spoofedActorUserId.status).toBe(400);
-
-        const savedResponse = await fetch(`${server.url}/api/settings/me`, {
-          body: JSON.stringify({
-            apiKey: "settings-actor-owned-placeholder",
-            defaultImportTarget: "project-workspace",
-          }),
-          headers: {
-            "Content-Type": "application/json",
-            "x-jixia-actor": "user-alice",
-          },
-          method: "POST",
-        });
-        expect(savedResponse.status).toBe(200);
-        await expect(savedResponse.json()).resolves.toMatchObject({
-          apiKeyConfigured: true,
-          defaultImportTarget: "project-workspace",
-        });
-
-        const settingsResponse = await fetch(`${server.url}/api/settings/me`, {
-          headers: {
-            Authorization: "Bearer user-alice",
-          },
-        });
-        expect(settingsResponse.status).toBe(200);
-        await expect(settingsResponse.json()).resolves.toMatchObject({
-          apiKeyConfigured: true,
-          defaultImportTarget: "project-workspace",
-        });
-
-        const bobSettingsResponse = await fetch(`${server.url}/api/settings/me`, {
-          headers: {
-            "x-jixia-actor": "user-bob",
-          },
-        });
-        expect(bobSettingsResponse.status).toBe(200);
-        await expect(bobSettingsResponse.json()).resolves.toMatchObject({
-          apiKeyConfigured: false,
-          defaultImportTarget: "personal-library",
-        });
-      } finally {
-        await server.close();
-      }
-    } finally {
-      rmSync(storageRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("rejects conflicting actor transport headers on protected routes", async () => {
-    const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-actor-conflict-"));
-
-    try {
-      const server = await startTestServer(storageRoot);
-
-      try {
-        const response = await fetch(`${server.url}/api/spaces`, {
-          headers: {
-            Authorization: "Bearer user-bob",
-            "x-jixia-actor": " user-alice ",
-          },
-        });
-
-        expect(response.status).toBe(400);
-        expect(response.headers.get("content-type")).toContain(
-          "application/json",
-        );
-        await expect(response.json()).resolves.toMatchObject({
-          error: expect.stringMatching(/conflicting actor sessions/i),
-        });
-      } finally {
-        await server.close();
-      }
-    } finally {
-      rmSync(storageRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("returns 401 when protected routes have no server-derived actor", async () => {
-    const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-actor-401-"));
-
-    try {
-      const server = await startTestServer(storageRoot);
-
-      try {
-        const [
-          spaces,
-          memberships,
-          credentials,
-          personalLibrary,
-          personalLibraryImport,
-          workbenchSettings,
-          workbenchSettingsSave,
-          libraryList,
-          libraryEntry,
-          importPaperResponse,
-          notebooks,
-          notebookRead,
-          notebookSave,
-          projectDocCreate,
-          projectDocRead,
-          projectDocSave,
-          projectDocPublish,
-          reading,
-          readingCompatNote,
-          readingCompatInsight,
-          note,
-          insight,
-          jobs,
-          createJobResponse,
-          jobDetail,
-          jobRun,
-          jobEvents,
-          jobAudit,
-          jobStream,
-          workbenchReadingNote,
-          workbenchReadingInsight,
-          workbenchWritingRead,
-          workbenchWritingSave,
-        ] =
-          await Promise.all([
-            fetch(`${server.url}/api/spaces`),
-            fetch(`${server.url}/api/spaces/space-1/memberships`),
-            fetch(`${server.url}/api/credentials`),
-            fetch(`${server.url}/api/library/personal`),
-            fetch(`${server.url}/api/library/personal/import`, {
-              body: JSON.stringify({
-                sourceLocator: '654321',
-                sourceType: 'pmid',
-              }),
-              headers: { 'Content-Type': 'application/json' },
-              method: 'POST',
-            }),
-            fetch(`${server.url}/api/settings/me`),
-            fetch(`${server.url}/api/settings/me`, {
-              body: JSON.stringify({
-                defaultImportTarget: 'project-workspace',
-              }),
-              headers: { 'Content-Type': 'application/json' },
-              method: 'POST',
-            }),
-            fetch(`${server.url}/api/library?spaceId=space-1`),
-            fetch(`${server.url}/api/library/entry-1`),
-            fetch(`${server.url}/api/import/paper`, {
-              body: JSON.stringify({
-                sourceLocator: "10.1000/unauthorized",
-                sourceType: "doi",
-                spaceId: "space-1",
-                visibility: "space_shared",
-              }),
-              headers: { "Content-Type": "application/json" },
-              method: "POST",
-            }),
-            fetch(`${server.url}/api/notebooks`, {
-              body: JSON.stringify({ title: 'Unauthorized notebook' }),
-              headers: { "Content-Type": "application/json" },
-              method: 'POST',
-            }),
-            fetch(`${server.url}/api/notebooks/notebook-1`),
-            fetch(`${server.url}/api/notebooks/notebook-1/versions`, {
-              body: JSON.stringify({ citations: [], content: 'Unauthorized notebook save' }),
-              headers: { "Content-Type": "application/json" },
-              method: 'POST',
-            }),
-            fetch(`${server.url}/api/project-docs`, {
-              body: JSON.stringify({ projectId: 'project-1', title: 'Unauthorized project doc' }),
-              headers: { "Content-Type": "application/json" },
-              method: 'POST',
-            }),
-            fetch(`${server.url}/api/project-docs/project-doc-1`),
-            fetch(`${server.url}/api/project-docs/project-doc-1/versions`, {
-              body: JSON.stringify({ citations: [], content: 'Unauthorized project doc save' }),
-              headers: { "Content-Type": "application/json" },
-              method: 'POST',
-            }),
-            fetch(`${server.url}/api/project-docs/project-doc-1/publish-state`, {
-              body: JSON.stringify({ publishState: 'review' }),
-              headers: { "Content-Type": "application/json" },
-              method: 'POST',
-            }),
-            fetch(`${server.url}/api/reading/entry-1`),
-          fetch(`${server.url}/api/reading/entry-1/notes`, {
-            body: JSON.stringify({
-              authorUserId: 'user-bob',
-              body: 'Unauthorized compatibility note',
-              visibility: 'private',
-            }),
-              headers: { 'Content-Type': 'application/json' },
-              method: 'POST',
-            }),
-          fetch(`${server.url}/api/reading/entry-1/insights`, {
-            body: JSON.stringify({
-              evidenceSpans: [],
-              startedByUserId: 'user-bob',
-              summary: 'Unauthorized compatibility insight',
-              title: 'Unauthorized compatibility',
-            }),
-              headers: { 'Content-Type': 'application/json' },
-              method: 'POST',
-            }),
-            fetch(`${server.url}/api/reading/notes`, {
-              body: JSON.stringify({
-                body: "Unauthorized note",
-                libraryEntryId: "entry-1",
-                visibility: "private",
-              }),
-              headers: { "Content-Type": "application/json" },
-              method: "POST",
-            }),
-            fetch(`${server.url}/api/reading/insights`, {
-              body: JSON.stringify({
-                evidenceSpans: [],
-                libraryEntryId: "entry-1",
-                summary: "Unauthorized insight",
-                title: "Unauthorized",
-              }),
-              headers: { "Content-Type": "application/json" },
-              method: "POST",
-            }),
-            fetch(`${server.url}/api/jobs`),
-            fetch(`${server.url}/api/jobs`, {
-              body: JSON.stringify({
-                credentialRef: "cred-1",
-                kind: "ai.summary",
-                payload: { prompt: "Unauthorized" },
-                spaceId: "space-1",
-              }),
-              headers: { "Content-Type": "application/json" },
-              method: "POST",
-            }),
-            fetch(`${server.url}/api/jobs/job-1`),
-            fetch(`${server.url}/api/jobs/job-1/run`, {
-              method: "POST",
-            }),
-            fetch(`${server.url}/api/jobs/job-1/events`),
-            fetch(`${server.url}/api/jobs/job-1/audit`),
-            fetch(`${server.url}/api/jobs/job-1/stream`),
-            fetch(`${server.url}/api/reading/entry-1/notes`, {
-              body: JSON.stringify({
-                body: 'Unauthorized compatibility note',
-                visibility: 'private',
-              }),
-              headers: { 'Content-Type': 'application/json' },
-              method: 'POST',
-            }),
-            fetch(`${server.url}/api/reading/entry-1/insights`, {
-              body: JSON.stringify({
-                summary: 'Unauthorized compatibility insight',
-                title: 'Unauthorized compatibility insight',
-              }),
-              headers: { 'Content-Type': 'application/json' },
-              method: 'POST',
-            }),
-            fetch(`${server.url}/api/writing/space-1/projects/project-1/document`),
-            fetch(`${server.url}/api/writing/space-1/projects/project-1/document`, {
-              body: JSON.stringify({
-                citations: [],
-                content: 'Unauthorized compatibility writer save',
-                title: 'Unauthorized writer',
-              }),
-              headers: { 'Content-Type': 'application/json' },
-              method: 'POST',
-            }),
-          ]);
-
-        for (const response of [
-          spaces,
-          memberships,
-          credentials,
-          personalLibrary,
-          personalLibraryImport,
-          workbenchSettings,
-          workbenchSettingsSave,
-          libraryList,
-          libraryEntry,
-          importPaperResponse,
-          notebooks,
-          notebookRead,
-          notebookSave,
-          projectDocCreate,
-          projectDocRead,
-          projectDocSave,
-          projectDocPublish,
-          reading,
-          readingCompatNote,
-          readingCompatInsight,
-          note,
-          insight,
-          jobs,
-          createJobResponse,
-          jobDetail,
-          jobRun,
-          jobEvents,
-          jobAudit,
-          jobStream,
-          workbenchReadingNote,
-          workbenchReadingInsight,
-          workbenchWritingRead,
-          workbenchWritingSave,
-        ]) {
+        for (const response of responses) {
           expect(response.status).toBe(401);
         }
       } finally {
@@ -545,481 +163,170 @@ describe("http server actor boundary cleanup", () => {
     }
   });
 
-  it("rejects spoofed legacy actor fields and actor query authority across protected routes", async () => {
-    const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-actor-400-"));
+  it('derives protected access from session cookies and rejects spoofed legacy actor fields', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-actor-400-'));
 
     try {
-      const server = await startTestServer(storageRoot);
+      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
 
       try {
-        const createdSpace = await createSharedSpace(server.url, "user-alice");
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+
+        const createdSpace = await createSharedSpace(server.url, aliceCookie, 'user-alice');
         const importedRecord = await importPaper(
           server.url,
-          "user-alice",
+          aliceCookie,
+          'user-alice',
           createdSpace.id,
         );
-        const credential = await createCredential(server.url, "user-alice");
+        const credential = await createCredential(server.url, aliceCookie, 'user-alice');
         const job = await createJob(
           server.url,
-          "user-alice",
+          aliceCookie,
+          'user-alice',
           credential.credentialRef,
           createdSpace.id,
         );
-        const notebook = await createNotebook(server.url, "user-alice");
+
+        const notebook = await createNotebook(server.url, aliceCookie, 'user-alice');
         const projectDoc = await createProjectDoc(
           server.url,
-          "user-alice",
+          aliceCookie,
+          'user-alice',
           importedRecord.projectId,
         );
 
-        const responses = await Promise.all([
-          fetch(`${server.url}/api/spaces?actorUserId=user-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/spaces?actorUserId=user-bob`, {
+        const mismatchResponses = await Promise.all([
+          fetch(`${server.url}/api/projects`, {
             body: JSON.stringify({
-              actorUserId: "user-bob",
-              kind: "shared",
-              name: "Mismatch",
+              actorUserId: 'user-bob',
+              name: 'Mismatch',
+              spaceId: createdSpace.id,
             }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/library?scopeType=project&scopeId=${importedRecord.projectId}&spaceId=${createdSpace.id}&actorUserId=user-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/library?scopeType=project&scopeId=${importedRecord.projectId}&spaceId=${createdSpace.id}&actorSpaceId=space-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/library/${importedRecord.entry.id}?actorUserId=user-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/library/${importedRecord.entry.id}?actorSpaceId=space-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
           }),
           fetch(`${server.url}/api/import/paper`, {
             body: JSON.stringify({
-              requestedByUserId: "user-bob",
-              sourceLocator: "10.1000/spoof-import",
-              sourceType: "doi",
-              spaceId: createdSpace.id,
-              visibility: "space_shared",
-            }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/library/personal/import`, {
-            body: JSON.stringify({
               requestedByUserId: 'user-bob',
-              sourceLocator: '654321',
-              sourceType: 'pmid',
+              sourceLocator: '10.1000/spoof-import',
+              sourceType: 'doi',
+              spaceId: createdSpace.id,
+              visibility: 'space_shared',
             }),
-            headers: {
+            headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
-              'x-jixia-actor': 'user-alice',
-            },
-            method: 'POST',
-          }),
-          fetch(`${server.url}/api/settings/me?actorUserId=user-bob`, {
-            headers: { 'x-jixia-actor': 'user-alice' },
-          }),
-          fetch(`${server.url}/api/settings/me`, {
-            body: JSON.stringify({
-              actorUserId: 'user-bob',
-              defaultImportTarget: 'project-workspace',
             }),
-            headers: {
-              'Content-Type': 'application/json',
-              'x-jixia-actor': 'user-alice',
-            },
-            method: 'POST',
-          }),
-          fetch(`${server.url}/api/settings/me`, {
-            body: JSON.stringify({
-              defaultImportTarget: 'project-workspace',
-              userId: 'user-bob',
-            }),
-            headers: {
-              'Content-Type': 'application/json',
-              'x-jixia-actor': 'user-alice',
-            },
             method: 'POST',
           }),
           fetch(`${server.url}/api/notebooks`, {
             body: JSON.stringify({ ownerId: 'user-bob', title: 'Spoofed notebook' }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": 'user-alice',
-            },
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
             method: 'POST',
-          }),
-          fetch(`${server.url}/api/notebooks/${notebook.id}?actorUserId=user-bob`, {
-            headers: { "x-jixia-actor": 'user-alice' },
           }),
           fetch(`${server.url}/api/notebooks/${notebook.id}/versions`, {
             body: JSON.stringify({ actorUserId: 'user-bob', citations: [], content: 'Spoofed notebook save' }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": 'user-alice',
-            },
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
             method: 'POST',
           }),
           fetch(`${server.url}/api/project-docs`, {
             body: JSON.stringify({ createdByUserId: 'user-bob', projectId: importedRecord.projectId, title: 'Spoofed project doc' }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": 'user-alice',
-            },
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
             method: 'POST',
-          }),
-          fetch(`${server.url}/api/project-docs/${projectDoc.id}?actorUserId=user-bob`, {
-            headers: { "x-jixia-actor": 'user-alice' },
           }),
           fetch(`${server.url}/api/project-docs/${projectDoc.id}/versions`, {
             body: JSON.stringify({ actorUserId: 'user-bob', citations: [], content: 'Spoofed project-doc save' }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": 'user-alice',
-            },
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
             method: 'POST',
           }),
           fetch(`${server.url}/api/project-docs/${projectDoc.id}/publish-state`, {
             body: JSON.stringify({ actorUserId: 'user-bob', publishState: 'review' }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": 'user-alice',
-            },
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
             method: 'POST',
           }),
-          fetch(`${server.url}/api/reading/${importedRecord.entry.id}?actorUserId=user-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/reading/${importedRecord.entry.id}?actorSpaceId=space-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
           fetch(`${server.url}/api/reading/notes`, {
-            body: JSON.stringify({
-              authorUserId: "user-bob",
-              body: "Spoofed note",
-              libraryEntryId: importedRecord.entry.id,
-              visibility: "private",
-            }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/reading/notes`, {
-            body: JSON.stringify({
-              actorSpaceId: "space-bob",
-              body: "Wrong space note",
-              libraryEntryId: importedRecord.entry.id,
-              visibility: "private",
-            }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/reading/insights`, {
-            body: JSON.stringify({
-              evidenceSpans: [],
-              libraryEntryId: importedRecord.entry.id,
-              startedByUserId: "user-bob",
-              summary: "Spoofed insight",
-              title: "Spoofed",
-            }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/reading/insights`, {
-            body: JSON.stringify({
-              actorSpaceId: "space-bob",
-              evidenceSpans: [],
-              libraryEntryId: importedRecord.entry.id,
-              summary: "Wrong space insight",
-              title: "Wrong Space",
-            }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/notes`, {
             body: JSON.stringify({
               authorUserId: 'user-bob',
-              body: 'Spoofed compatibility note',
+              body: 'Spoofed note',
+              libraryEntryId: importedRecord.entry.id,
               visibility: 'private',
             }),
-            headers: {
+            headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
-              'x-jixia-actor': 'user-alice',
-            },
+            }),
             method: 'POST',
           }),
-          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/insights`, {
+          fetch(`${server.url}/api/reading/insights`, {
             body: JSON.stringify({
+              evidenceSpans: [],
+              libraryEntryId: importedRecord.entry.id,
               startedByUserId: 'user-bob',
-              summary: 'Spoofed compatibility insight',
-              title: 'Spoofed compatibility insight',
+              summary: 'Spoofed insight',
+              title: 'Spoofed',
             }),
-            headers: {
+            headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
-              'x-jixia-actor': 'user-alice',
-            },
+            }),
             method: 'POST',
           }),
           fetch(`${server.url}/api/credentials?userId=user-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
+            headers: withSessionCookie(aliceCookie),
           }),
-          fetch(`${server.url}/api/credentials`, {
+          fetch(`${server.url}/api/settings/me?userId=user-bob`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/settings/me`, {
             body: JSON.stringify({
-              provider: "openai",
-              rawSecret: "spoofed-secret",
-              userId: "user-bob",
+              defaultImportTarget: 'personal-library',
+              userId: 'user-bob',
             }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/jobs?actorUserId=user-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs?spaceId=${createdSpace.id}&actorSpaceId=space-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs?actorSpaceId=space-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
           }),
           fetch(`${server.url}/api/jobs`, {
             body: JSON.stringify({
               credentialRef: credential.credentialRef,
-              kind: "ai.summary",
-              payload: { prompt: "Spoofed job" },
-              requestedByUserId: "user-bob",
+              kind: 'ai.summary',
+              payload: { prompt: 'Spoofed job' },
+              requestedByUserId: 'user-bob',
               spaceId: createdSpace.id,
             }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}?actorUserId=user-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}?actorSpaceId=space-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}/run`, {
-            body: JSON.stringify({ actorUserId: "user-bob" }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}/run`, {
-            body: JSON.stringify({ actorSpaceId: "space-bob" }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}/events?actorUserId=user-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}/events?actorSpaceId=space-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}/audit?actorUserId=user-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}/audit?actorSpaceId=space-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}/stream?actorUserId=user-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}/stream?actorSpaceId=space-bob`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/writing/${createdSpace.id}/projects/${importedRecord.projectId}/document?actorUserId=user-bob`, {
-            headers: { 'x-jixia-actor': 'user-alice' },
-          }),
-          fetch(`${server.url}/api/writing/${createdSpace.id}/projects/${importedRecord.projectId}/document`, {
-            body: JSON.stringify({
-              actorUserId: 'user-bob',
-              citations: [],
-              content: 'Spoofed compatibility writer save',
-              title: 'Spoofed writer',
-            }),
-            headers: {
+            headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
-              'x-jixia-actor': 'user-alice',
-            },
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/jobs/${job.id}/run`, {
+            body: JSON.stringify({ actorUserId: 'user-bob' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
             method: 'POST',
           }),
         ]);
 
-        for (const response of responses) {
+        for (const response of mismatchResponses) {
           expect(response.status).toBe(400);
         }
-      } finally {
-        await server.close();
-      }
-    } finally {
-      rmSync(storageRoot, { force: true, recursive: true });
-    }
-  }, 30_000);
-
-  it("allows protected routes with only server-derived actor headers and blocks non-member membership reads", async () => {
-    const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-actor-success-"));
-
-    try {
-      const server = await startTestServer(storageRoot);
-
-      try {
-        const createdSpace = await createSharedSpace(server.url, "user-alice");
-        const importedRecord = await importPaper(
-          server.url,
-          "user-alice",
-          createdSpace.id,
-        );
-        const credential = await createCredential(server.url, "user-alice");
-        const job = await createJob(
-          server.url,
-          "user-alice",
-          credential.credentialRef,
-          createdSpace.id,
-        );
-
-        const [
-          spaces,
-          memberships,
-          credentials,
-          library,
-          reading,
-          note,
-          insight,
-          jobs,
-          jobRecord,
-          runJob,
-          events,
-          audit,
-        ] = await Promise.all([
-          fetch(`${server.url}/api/spaces`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/spaces/${createdSpace.id}/memberships`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/credentials`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/library?scopeType=project&scopeId=${importedRecord.projectId}&spaceId=${createdSpace.id}`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/reading/${importedRecord.entry.id}`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/reading/notes`, {
-            body: JSON.stringify({
-              body: "Actor-owned note",
-              libraryEntryId: importedRecord.entry.id,
-              visibility: "private",
-            }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/reading/insights`, {
-            body: JSON.stringify({
-              evidenceSpans: [],
-              libraryEntryId: importedRecord.entry.id,
-              summary: "Actor-owned insight",
-              title: "Insight",
-            }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/jobs?spaceId=${createdSpace.id}`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}`, {
-            headers: { Authorization: "Bearer user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}/run`, {
-            headers: { Authorization: "Bearer user-alice" },
-            method: "POST",
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}/events`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-          fetch(`${server.url}/api/jobs/${job.id}/audit`, {
-            headers: { "x-jixia-actor": "user-alice" },
-          }),
-        ]);
-
-        const stream = await fetch(`${server.url}/api/jobs/${job.id}/stream`, {
-          headers: { "x-jixia-actor": "user-alice" },
-        });
-        const unauthorizedStream = await fetch(
-          `${server.url}/api/jobs/${job.id}/stream`,
-          { headers: { "x-jixia-actor": "user-bob" } },
-        );
-
-        expect(spaces.status).toBe(200);
-        expect(memberships.status).toBe(200);
-        expect(credentials.status).toBe(200);
-        expect(library.status).toBe(200);
-        expect(reading.status).toBe(200);
-        expect(note.status).toBe(200);
-        expect(insight.status).toBe(200);
-        expect(jobs.status).toBe(200);
-        expect(jobRecord.status).toBe(200);
-        expect(runJob.status).toBe(200);
-        expect(events.status).toBe(200);
-        expect(audit.status).toBe(200);
-        expect(stream.status).toBe(200);
-        expect(unauthorizedStream.status).toBe(403);
-        expect(unauthorizedStream.headers.get("content-type")).toContain(
-          "application/json",
-        );
-        stream.body?.cancel().catch(() => undefined);
-
-        const membershipsPayload = (await memberships.json()) as Array<{ userId: string }>;
-        expect(membershipsPayload.map((entry) => entry.userId)).toEqual(["user-alice"]);
-
-        const notePayload = (await note.json()) as { authorUserId: string };
-        expect(notePayload.authorUserId).toBe("user-alice");
-
-        const insightPayload = (await insight.json()) as { summary: string };
-        expect(insightPayload.summary).toBe("Actor-owned insight");
 
         const unauthorizedMemberships = await fetch(
           `${server.url}/api/spaces/${createdSpace.id}/memberships`,
-          { headers: { "x-jixia-actor": "user-bob" } },
+          { headers: withSessionCookie(bobCookie) },
         );
         expect(unauthorizedMemberships.status).toBe(403);
       } finally {
@@ -1029,4 +336,79 @@ describe("http server actor boundary cleanup", () => {
       rmSync(storageRoot, { force: true, recursive: true });
     }
   }, 30_000);
+
+  it('supports an explicit legacy test override only when gated on the server', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-actor-legacy-'));
+
+    try {
+      const server = await startTestServer({
+        JIXIA_ALLOW_LEGACY_ACTOR_OVERRIDE: 'true',
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
+
+      try {
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'Legacy Override Shared' }),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-jixia-actor': 'user-alice',
+          },
+          method: 'POST',
+        });
+
+        expect(createdSpace.status).toBe(200);
+
+        const conflictResponse = await fetch(`${server.url}/api/spaces`, {
+          headers: {
+            Authorization: 'Bearer user-bob',
+            'x-jixia-actor': ' user-alice ',
+          },
+        });
+
+        expect(conflictResponse.status).toBe(400);
+        await expect(conflictResponse.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/conflicting actor sessions/i),
+        });
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects production startup when legacy actor override is enabled', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-actor-prod-guard-'));
+
+    try {
+      await expect(
+        startTestServer({
+          JIXIA_ALLOW_LEGACY_ACTOR_OVERRIDE: 'true',
+          JIXIA_STORAGE_ROOT: storageRoot,
+          NODE_ENV: 'production',
+        }),
+      ).rejects.toThrow(/must not be enabled in production/i);
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('keeps static guards against browser actor header authority regressions', () => {
+    const actorSource = readFileSync('src/server/auth/actor.ts', 'utf8');
+    const httpClient = readFileSync('src/web/lib/http-client.ts', 'utf8');
+    const demoApi = readFileSync('src/web/lib/demo-api.ts', 'utf8');
+    const runtimeContext = readFileSync('src/web/presenters/runtime-context.ts', 'utf8');
+    const sessionSchema = readFileSync('prisma/schema.prisma', 'utf8');
+
+    expect(sessionSchema).toContain('model UserSession');
+    expect(sessionSchema).toContain('tokenHash  String   @unique');
+    expect(actorSource).toContain('readSessionTokenFromCookieHeader');
+    expect(actorSource).toContain('allowLegacyTestOverride');
+    expect(actorSource).not.toContain('Send x-jixia-actor for the lab-hosted MVP');
+    expect(actorSource).not.toContain('return normalizedDevHeaderActor ?? bearerActor');
+    expect(httpClient).not.toContain('x-jixia-actor');
+    expect(demoApi).not.toContain("x-jixia-actor");
+    expect(runtimeContext).not.toContain('actorUserId');
+    expect(runtimeContext).not.toContain('user-alice');
+  });
 });

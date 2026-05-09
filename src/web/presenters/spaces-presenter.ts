@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SpaceKind, SpaceSummary } from "@shared/contracts/spaces";
 
 import { apiClient } from "../lib/http-client";
-import { demoActorContext } from "./runtime-context";
 
 interface SpaceCardView {
   membershipCount: number;
@@ -26,16 +25,11 @@ export function useSpacesPresenter(): SpacesViewModel {
   const refresh = useCallback(async () => {
     try {
       setError(null);
-      const nextSpaces = await apiClient.listSpaces(
-        demoActorContext.actorUserId,
-      );
+      const nextSpaces = await apiClient.listSpaces();
 
         const nextCards = await Promise.all(
           nextSpaces.map(async (space) => {
-          const memberships = await apiClient.listMemberships(
-            space.id,
-            demoActorContext.actorUserId,
-          );
+          const memberships = await apiClient.listMemberships(space.id);
           return {
             membershipCount: memberships.length,
             summary: space,
@@ -63,7 +57,7 @@ export function useSpacesPresenter(): SpacesViewModel {
       try {
         setIsCreating(true);
         setError(null);
-        await apiClient.createSpace(demoActorContext.actorUserId, {
+        await apiClient.createSpace({
           kind,
           name:
             kind === "shared"

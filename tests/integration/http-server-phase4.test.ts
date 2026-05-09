@@ -1,62 +1,40 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { once } from "node:events";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { describe, expect, it } from "vitest";
 
-import { createHttpServer } from "../../src/server/http-server";
-
-async function startTestServer(storageRoot: string) {
-  const httpServer = createHttpServer({
-    env: { JIXIA_STORAGE_ROOT: storageRoot },
-  });
-
-  httpServer.server.listen(0, "127.0.0.1");
-  await once(httpServer.server, "listening");
-  const address = httpServer.server.address();
-
-  if (!address || typeof address === "string") {
-    throw new Error("Failed to bind test server.");
-  }
-
-  return {
-    close: async () => {
-      httpServer.server.close();
-      await once(httpServer.server, "close");
-    },
-    url: `http://127.0.0.1:${address.port}`,
-  };
-}
+import {
+  loginAs,
+  startTestServer,
+  withSessionCookie,
+} from "./http-session-test-helpers";
 
 describe("http server phase 4 reader slice", () => {
   it("serves reading detail, note creation, and generated insight endpoints", async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-phase4-"));
 
     try {
-      const server = await startTestServer(storageRoot);
+      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
 
       try {
-        const createdSpace = await fetch(
-          `${server.url}/api/spaces`,
-          {
-            body: JSON.stringify({ kind: "shared", name: "Phase 4 Shared" }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          },
-        ).then((response) => response.json() as Promise<{ id: string }>);
+        const aliceCookie = await loginAs(server.url, "user-alice");
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: "shared", name: "Phase 4 Shared" }),
+          headers: withSessionCookie(aliceCookie, {
+            "Content-Type": "application/json",
+          }),
+          method: "POST",
+        }).then((response) => response.json() as Promise<{ id: string }>);
         const project = await fetch(`${server.url}/api/projects`, {
           body: JSON.stringify({
             name: "Phase 4 Project",
             spaceId: createdSpace.id,
           }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             "Content-Type": "application/json",
-            "x-jixia-actor": "user-alice",
-          },
+          }),
           method: "POST",
         }).then(
           (response) =>
@@ -71,19 +49,17 @@ describe("http server phase 4 reader slice", () => {
             spaceId: createdSpace.id,
             visibility: "space_shared",
           }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             "Content-Type": "application/json",
-            "x-jixia-actor": "user-alice",
-          },
+          }),
           method: "POST",
         }).then(
           (response) => response.json() as Promise<{ entry: { id: string } }>,
         );
 
-        const detail = await fetch(
-          `${server.url}/api/reading/${importedRecord.entry.id}`,
-          { headers: { "x-jixia-actor": "user-alice" } },
-        ).then(
+        const detail = await fetch(`${server.url}/api/reading/${importedRecord.entry.id}`, {
+          headers: withSessionCookie(aliceCookie),
+        }).then(
           (response) =>
             response.json() as Promise<{
               asset: { canonicalId: string };
@@ -101,14 +77,12 @@ describe("http server phase 4 reader slice", () => {
             libraryEntryId: importedRecord.entry.id,
             visibility: "space_shared",
           }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             "Content-Type": "application/json",
-            "x-jixia-actor": "user-alice",
-          },
+          }),
           method: "POST",
         }).then(
-          (response) =>
-            response.json() as Promise<{ id: string; visibility: string }>,
+          (response) => response.json() as Promise<{ id: string; visibility: string }>,
         );
         expect(note.visibility).toBe("space_shared");
 
@@ -121,18 +95,16 @@ describe("http server phase 4 reader slice", () => {
             summary: "The imported paper supports the shared review workflow.",
             title: "AI summary",
           }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             "Content-Type": "application/json",
-            "x-jixia-actor": "user-alice",
-          },
+          }),
           method: "POST",
         }).then((response) => response.json() as Promise<{ summary: string }>);
         expect(insight.summary).toContain("shared review workflow");
 
-        const updatedDetail = await fetch(
-          `${server.url}/api/reading/${importedRecord.entry.id}`,
-          { headers: { "x-jixia-actor": "user-alice" } },
-        ).then(
+        const updatedDetail = await fetch(`${server.url}/api/reading/${importedRecord.entry.id}`, {
+          headers: withSessionCookie(aliceCookie),
+        }).then(
           (response) =>
             response.json() as Promise<{
               insights: unknown[];

@@ -1,62 +1,40 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { once } from "node:events";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { describe, expect, it } from "vitest";
 
-import { createHttpServer } from "../../src/server/http-server";
-
-async function startTestServer(storageRoot: string) {
-  const httpServer = createHttpServer({
-    env: { JIXIA_STORAGE_ROOT: storageRoot },
-  });
-
-  httpServer.server.listen(0, "127.0.0.1");
-  await once(httpServer.server, "listening");
-  const address = httpServer.server.address();
-
-  if (!address || typeof address === "string") {
-    throw new Error("Failed to bind test server.");
-  }
-
-  return {
-    close: async () => {
-      httpServer.server.close();
-      await once(httpServer.server, "close");
-    },
-    url: `http://127.0.0.1:${address.port}`,
-  };
-}
+import {
+  loginAs,
+  startTestServer,
+  withSessionCookie,
+} from "./http-session-test-helpers";
 
 describe("http server phase 3 library slice", () => {
   it("serves import and library list/get endpoints for the browser", async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-phase3-"));
 
     try {
-      const server = await startTestServer(storageRoot);
+      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
 
       try {
-        const createdSpace = await fetch(
-          `${server.url}/api/spaces`,
-          {
-            body: JSON.stringify({ kind: "shared", name: "Phase 3 Shared" }),
-            headers: {
-              "Content-Type": "application/json",
-              "x-jixia-actor": "user-alice",
-            },
-            method: "POST",
-          },
-        ).then((response) => response.json() as Promise<{ id: string }>);
+        const aliceCookie = await loginAs(server.url, "user-alice");
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: "shared", name: "Phase 3 Shared" }),
+          headers: withSessionCookie(aliceCookie, {
+            "Content-Type": "application/json",
+          }),
+          method: "POST",
+        }).then((response) => response.json() as Promise<{ id: string }>);
         const project = await fetch(`${server.url}/api/projects`, {
           body: JSON.stringify({
             name: "Phase 3 Project",
             spaceId: createdSpace.id,
           }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             "Content-Type": "application/json",
-            "x-jixia-actor": "user-alice",
-          },
+          }),
           method: "POST",
         }).then(
           (response) =>
@@ -71,10 +49,9 @@ describe("http server phase 3 library slice", () => {
             spaceId: createdSpace.id,
             visibility: "space_shared",
           }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             "Content-Type": "application/json",
-            "x-jixia-actor": "user-alice",
-          },
+          }),
           method: "POST",
         }).then(
           (response) =>
@@ -89,7 +66,7 @@ describe("http server phase 3 library slice", () => {
 
         const libraryEntries = await fetch(
           `${server.url}/api/library?scopeType=project&scopeId=${project.project.id}&spaceId=${createdSpace.id}`,
-          { headers: { "x-jixia-actor": "user-alice" } },
+          { headers: withSessionCookie(aliceCookie) },
         ).then(
           (response) =>
             response.json() as Promise<Array<{ entry: { id: string } }>>,
@@ -100,7 +77,7 @@ describe("http server phase 3 library slice", () => {
 
         const libraryEntry = await fetch(
           `${server.url}/api/library/${importedRecord.entry.id}`,
-          { headers: { "x-jixia-actor": "user-alice" } },
+          { headers: withSessionCookie(aliceCookie) },
         ).then(
           (response) =>
             response.json() as Promise<{ asset: { canonicalId: string } }>,

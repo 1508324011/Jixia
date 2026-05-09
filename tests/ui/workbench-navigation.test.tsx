@@ -86,6 +86,22 @@ describe('workbench navigation', () => {
           );
         }
 
+        if (url.endsWith('/api/session/me')) {
+          return new Response(
+            JSON.stringify({
+              user: {
+                displayName: 'Alice',
+                email: 'alice@example.test',
+                id: 'user-alice',
+              },
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
         if (url.endsWith('/api/library/personal/import') && init?.method === 'POST') {
           discoveryItems[0] = {
             ...discoveryItems[0],
@@ -180,6 +196,7 @@ describe('workbench navigation', () => {
 
     renderWorkbench('/home');
 
+    await screen.findByRole('link', { name: '搜索' });
     await user.click(screen.getByRole('link', { name: '搜索' }));
     expect(screen.getByRole('heading', { name: '外部搜索' })).toBeInTheDocument();
     await user.clear(screen.getByLabelText('检索主题'));
@@ -222,8 +239,9 @@ describe('workbench navigation', () => {
           apiKey: 'sk-browser-secret',
           defaultImportTarget: 'project-workspace',
         }),
+        credentials: 'same-origin',
         headers: expect.objectContaining({
-          'x-jixia-actor': 'user-alice',
+          'Content-Type': 'application/json',
         }),
         method: 'POST',
       }),

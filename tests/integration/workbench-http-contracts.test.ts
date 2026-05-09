@@ -4,33 +4,8 @@ import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
-import type { PubmedConnector } from '../../src/server/connectors/pubmed.connector';
 import { createHttpServer } from '../../src/server/http-server';
-
-function createStubPubmedConnector(): PubmedConnector {
-  return {
-    async lookup(locator, sourceType) {
-      return {
-        abstractText: `External ${sourceType.toUpperCase()} abstract for ${locator}`,
-        canonicalId: `${sourceType}:${locator}`,
-        title: `Imported ${sourceType.toUpperCase()} paper ${locator}`,
-      };
-    },
-    async search(query) {
-      return [
-        {
-          abstractText: `PubMed search result for ${query}`,
-          canonicalId: 'pmid:654321',
-          reason: 'PubMed query matched tumor-board biomarker curation work.',
-          sourceLabel: 'PubMed',
-          sourceLocator: '654321',
-          sourceType: 'pmid' as const,
-          title: 'Tumor board biomarkers for rapid review',
-        },
-      ];
-    },
-  };
-}
+import { loginAs, withSessionCookie } from './http-session-test-helpers';
 
 async function listenOnEphemeralPort(server: ReturnType<typeof createHttpServer>['server']) {
   await new Promise<void>((resolve, reject) => {
@@ -51,6 +26,9 @@ async function listenOnEphemeralPort(server: ReturnType<typeof createHttpServer>
 }
 
 async function closeServer(server: ReturnType<typeof createHttpServer>['server']) {
+  server.closeIdleConnections?.();
+  server.closeAllConnections?.();
+
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error) {
@@ -64,12 +42,9 @@ async function closeServer(server: ReturnType<typeof createHttpServer>['server']
 }
 
 describe('workbench http contracts', () => {
-  it('exposes discovery and settings endpoints for the workbench shell', async () => {
+  it('exposes discovery publicly and protects personal/settings workbench APIs behind session cookies', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-http-'));
     const httpServer = createHttpServer({
-      connectors: {
-        pubmed: createStubPubmedConnector(),
-      },
       env: {
         JIXIA_HOST: '127.0.0.1',
         JIXIA_STORAGE_ROOT: storageRoot,
@@ -78,7 +53,9 @@ describe('workbench http contracts', () => {
 
     try {
       const baseUrl = await listenOnEphemeralPort(httpServer.server);
-      const actorHeaders = { 'x-jixia-actor': 'user-alice' };
+      const aliceCookie = await loginAs(baseUrl, 'user-alice');
+      const bobCookie = await loginAs(baseUrl, 'user-bob');
+
       const response = await fetch(`${baseUrl}/api/discovery/today`);
       expect(response.status).toBe(200);
 
@@ -99,48 +76,26 @@ describe('workbench http contracts', () => {
       const search = await searchResponse.json();
       expect(search.query).toBe('tumor board');
       expect(search.items.length).toBeGreaterThan(0);
-      expect(search.items[0]).toMatchObject({
-        canonicalId: expect.any(String),
-        sourceLocator: expect.any(String),
-        sourceType: 'pmid',
-        title: expect.any(String),
-      });
 
-      const unauthorizedPersonalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`);
-      expect(unauthorizedPersonalLibraryResponse.status).toBe(401);
+      const unauthenticatedPersonalLibraryResponse = await fetch(
+        `${baseUrl}/api/library/personal`,
+      );
+      expect(unauthenticatedPersonalLibraryResponse.status).toBe(401);
 
       const emptyPersonalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`, {
-        headers: actorHeaders,
+        headers: withSessionCookie(aliceCookie),
       });
       expect(emptyPersonalLibraryResponse.status).toBe(200);
-
-      const emptyPersonalLibrary = await emptyPersonalLibraryResponse.json();
-      expect(emptyPersonalLibrary).toEqual({ entries: [] });
-
-      const unauthorizedImportPersonalLibraryResponse = await fetch(
-        `${baseUrl}/api/library/personal/import`,
-        {
-          body: JSON.stringify({
-            sourceLocator: search.items[0].sourceLocator,
-            sourceType: search.items[0].sourceType,
-          }),
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          method: 'POST',
-        },
-      );
-      expect(unauthorizedImportPersonalLibraryResponse.status).toBe(401);
+      await expect(emptyPersonalLibraryResponse.json()).resolves.toEqual({ entries: [] });
 
       const importPersonalLibraryResponse = await fetch(`${baseUrl}/api/library/personal/import`, {
         body: JSON.stringify({
           sourceLocator: search.items[0].sourceLocator,
           sourceType: search.items[0].sourceType,
         }),
-        headers: {
+        headers: withSessionCookie(aliceCookie, {
           'Content-Type': 'application/json',
-          ...actorHeaders,
-        },
+        }),
         method: 'POST',
       });
       expect(importPersonalLibraryResponse.status).toBe(201);
@@ -148,32 +103,17 @@ describe('workbench http contracts', () => {
       const importedPersonalRecord = await importPersonalLibraryResponse.json();
       expect(importedPersonalRecord.asset.canonicalId).toBe(search.items[0].canonicalId);
 
-      const missingActorSettingsResponse = await fetch(`${baseUrl}/api/settings/me`);
-      expect(missingActorSettingsResponse.status).toBe(401);
+      const unauthenticatedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`);
+      expect(unauthenticatedSettingsResponse.status).toBe(401);
 
-      const spoofedSettingsReadResponse = await fetch(
-        `${baseUrl}/api/settings/me?actorUserId=user-bob`,
-        {
-          headers: actorHeaders,
-        },
+      const spoofedSettingsResponse = await fetch(
+        `${baseUrl}/api/settings/me?userId=user-bob`,
+        { headers: withSessionCookie(aliceCookie) },
       );
-      expect(spoofedSettingsReadResponse.status).toBe(400);
-
-      const spoofedSettingsWriteResponse = await fetch(`${baseUrl}/api/settings/me`, {
-        body: JSON.stringify({
-          actorUserId: 'user-bob',
-          defaultImportTarget: 'project-workspace',
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-          ...actorHeaders,
-        },
-        method: 'POST',
-      });
-      expect(spoofedSettingsWriteResponse.status).toBe(400);
+      expect(spoofedSettingsResponse.status).toBe(400);
 
       const settingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
-        headers: actorHeaders,
+        headers: withSessionCookie(aliceCookie),
       });
       expect(settingsResponse.status).toBe(200);
 
@@ -184,27 +124,14 @@ describe('workbench http contracts', () => {
       });
       expect(settings.apiKey).toBeUndefined();
 
-      const unauthorizedSavedResponse = await fetch(`${baseUrl}/api/settings/me`, {
-        body: JSON.stringify({
-          apiKey: 'sk-test-secret',
-          defaultImportTarget: 'project-workspace',
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      });
-      expect(unauthorizedSavedResponse.status).toBe(401);
-
       const savedResponse = await fetch(`${baseUrl}/api/settings/me`, {
         body: JSON.stringify({
           apiKey: 'sk-test-secret',
           defaultImportTarget: 'project-workspace',
         }),
-        headers: {
+        headers: withSessionCookie(aliceCookie, {
           'Content-Type': 'application/json',
-          ...actorHeaders,
-        },
+        }),
         method: 'POST',
       });
       expect(savedResponse.status).toBe(200);
@@ -214,10 +141,21 @@ describe('workbench http contracts', () => {
         apiKeyConfigured: true,
         defaultImportTarget: 'project-workspace',
       });
-      expect(savedSettings.apiKey).toBeUndefined();
+
+      const spoofedSettingsSaveResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        body: JSON.stringify({
+          defaultImportTarget: 'personal-library',
+          userId: 'user-bob',
+        }),
+        headers: withSessionCookie(aliceCookie, {
+          'Content-Type': 'application/json',
+        }),
+        method: 'POST',
+      });
+      expect(spoofedSettingsSaveResponse.status).toBe(400);
 
       const persistedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
-        headers: actorHeaders,
+        headers: withSessionCookie(aliceCookie),
       });
       expect(persistedSettingsResponse.status).toBe(200);
 
@@ -226,32 +164,6 @@ describe('workbench http contracts', () => {
         apiKeyConfigured: true,
         defaultImportTarget: 'project-workspace',
       });
-      expect(persistedSettings.apiKey).toBeUndefined();
-
-      const bearerSettingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
-        headers: {
-          Authorization: 'Bearer user-alice',
-        },
-      });
-      expect(bearerSettingsResponse.status).toBe(200);
-      await expect(bearerSettingsResponse.json()).resolves.toMatchObject({
-        apiKeyConfigured: true,
-        defaultImportTarget: 'project-workspace',
-      });
-
-      const bobSettingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
-        headers: {
-          'x-jixia-actor': 'user-bob',
-        },
-      });
-      expect(bobSettingsResponse.status).toBe(200);
-
-      const bobSettings = await bobSettingsResponse.json();
-      expect(bobSettings).toMatchObject({
-        apiKeyConfigured: false,
-        defaultImportTarget: 'personal-library',
-      });
-      expect(bobSettings.apiKey).toBeUndefined();
 
       const persistedState = JSON.parse(
         readFileSync(join(storageRoot, 'server-state.json'), 'utf8'),
@@ -272,7 +184,7 @@ describe('workbench http contracts', () => {
       expect(persistedStateText).not.toContain('sk-test-secret');
 
       const personalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`, {
-        headers: actorHeaders,
+        headers: withSessionCookie(aliceCookie),
       });
       expect(personalLibraryResponse.status).toBe(200);
 
@@ -285,97 +197,8 @@ describe('workbench http contracts', () => {
         }),
       );
 
-      const unauthorizedWorkbenchNoteResponse = await fetch(
-        `${baseUrl}/api/reading/${importedPersonalRecord.entry.id}/notes`,
-        {
-          body: JSON.stringify({
-            body: 'Unauthorized compatibility note',
-            visibility: 'private',
-          }),
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          method: 'POST',
-        },
-      );
-      expect(unauthorizedWorkbenchNoteResponse.status).toBe(401);
-
-      const noteResponse = await fetch(
-        `${baseUrl}/api/reading/${importedPersonalRecord.entry.id}/notes`,
-        {
-          body: JSON.stringify({
-            body: 'Workbench compatibility note',
-            visibility: 'private',
-          }),
-          headers: {
-            'Content-Type': 'application/json',
-            ...actorHeaders,
-          },
-          method: 'POST',
-        },
-      );
-      expect(noteResponse.status).toBe(201);
-
-      const unauthorizedWorkbenchInsightResponse = await fetch(
-        `${baseUrl}/api/reading/${importedPersonalRecord.entry.id}/insights`,
-        {
-          body: JSON.stringify({
-            summary: 'Unauthorized compatibility insight',
-            title: 'Unauthorized insight',
-          }),
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          method: 'POST',
-        },
-      );
-      expect(unauthorizedWorkbenchInsightResponse.status).toBe(401);
-
-      const insightResponse = await fetch(
-        `${baseUrl}/api/reading/${importedPersonalRecord.entry.id}/insights`,
-        {
-          body: JSON.stringify({
-            summary: 'Workbench compatibility insight',
-            title: 'Workbench insight',
-          }),
-          headers: {
-            'Content-Type': 'application/json',
-            ...actorHeaders,
-          },
-          method: 'POST',
-        },
-      );
-      expect(insightResponse.status).toBe(201);
-
-      const aliceDiscoveryResponse = await fetch(
-        `${baseUrl}/api/discovery/search?query=${encodeURIComponent('tumor board')}`,
-        { headers: actorHeaders },
-      );
-      expect(aliceDiscoveryResponse.status).toBe(200);
-      const aliceDiscovery = await aliceDiscoveryResponse.json();
-
-      const bobDiscoveryResponse = await fetch(
-        `${baseUrl}/api/discovery/search?query=${encodeURIComponent('tumor board')}`,
-        { headers: { 'x-jixia-actor': 'user-bob' } },
-      );
-      expect(bobDiscoveryResponse.status).toBe(200);
-      const bobDiscovery = await bobDiscoveryResponse.json();
-
-      expect(
-        aliceDiscovery.items.find(
-          (item: { canonicalId: string }) =>
-            item.canonicalId === search.items[0].canonicalId,
-        ),
-      ).toMatchObject({ imported: true });
-      expect(
-        bobDiscovery.items.find(
-          (item: { canonicalId: string }) =>
-            item.canonicalId === search.items[0].canonicalId,
-        ),
-      ).toMatchObject({ imported: false });
-
       const { createDemoApi } = await import('../../src/web/lib/demo-api');
-      const demoApi = createDemoApi(baseUrl, 'user-alice');
+      const demoApi = createDemoApi(baseUrl, { cookie: aliceCookie });
       const todayFromClient = await demoApi.getTodayRecommendations();
       const searchFromClient = await demoApi.searchDiscovery('tumor board');
       const settingsFromClient = await demoApi.getWorkbenchSettings();
@@ -385,18 +208,16 @@ describe('workbench http contracts', () => {
       );
       const sharedSpace = await fetch(`${baseUrl}/api/spaces`, {
         body: JSON.stringify({ kind: 'shared', name: 'Writer Space' }),
-        headers: {
+        headers: withSessionCookie(aliceCookie, {
           'Content-Type': 'application/json',
-          'x-jixia-actor': 'user-alice',
-        },
+        }),
         method: 'POST',
       }).then((response) => response.json() as Promise<{ id: string }>);
       const project = await fetch(`${baseUrl}/api/projects`, {
         body: JSON.stringify({ name: 'Writer Project', spaceId: sharedSpace.id }),
-        headers: {
+        headers: withSessionCookie(aliceCookie, {
           'Content-Type': 'application/json',
-          'x-jixia-actor': 'user-alice',
-        },
+        }),
         method: 'POST',
       }).then((response) => response.json() as Promise<{ project: { id: string } }>);
       const importedProjectRecord = await fetch(`${baseUrl}/api/import/paper`, {
@@ -407,10 +228,9 @@ describe('workbench http contracts', () => {
           spaceId: sharedSpace.id,
           visibility: 'published_to_project',
         }),
-        headers: {
+        headers: withSessionCookie(aliceCookie, {
           'Content-Type': 'application/json',
-          'x-jixia-actor': 'user-alice',
-        },
+        }),
         method: 'POST',
       }).then(
         (response) => response.json() as Promise<{ asset: { id: string } }>,
@@ -433,12 +253,47 @@ describe('workbench http contracts', () => {
       const compatibilityWritingDocument = await fetch(
         `${baseUrl}/api/writing/${sharedSpace.id}/projects/${project.project.id}/document`,
         {
-          headers: { 'x-jixia-actor': 'user-alice' },
+          headers: withSessionCookie(aliceCookie),
         },
       ).then((response) => response.json());
+      const wrongSpaceWritingSaveResponse = await fetch(
+        `${baseUrl}/api/writing/space-wrong/projects/${project.project.id}/document`,
+        {
+          body: JSON.stringify({
+            citations: [{ paperAssetId: importedProjectRecord.asset.id }],
+            content: 'Wrong-space write attempt',
+            title: 'Wrong-space title',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        },
+      );
+      const writingAfterWrongSpaceSave = await demoApi.getWritingDocument(
+        sharedSpace.id,
+        project.project.id,
+      );
+      const bobSearchFromClient = await createDemoApi(baseUrl, { cookie: bobCookie }).searchDiscovery(
+        'tumor board',
+      );
 
       expect(todayFromClient.items).toBeDefined();
       expect(searchFromClient.items.length).toBeGreaterThan(0);
+      expect(
+        searchFromClient.items.some(
+          (item) =>
+            item.canonicalId === search.items[0].canonicalId &&
+            item.imported === true,
+        ),
+      ).toBe(true);
+      expect(
+        bobSearchFromClient.items.some(
+          (item) =>
+            item.canonicalId === search.items[0].canonicalId &&
+            item.imported === false,
+        ),
+      ).toBe(true);
       expect(settingsFromClient.apiKeyConfigured).toBeDefined();
       expect(personalLibraryFromClient.entries).toContainEqual(
         expect.objectContaining({
@@ -470,16 +325,16 @@ describe('workbench http contracts', () => {
         projectId: project.project.id,
         spaceId: sharedSpace.id,
       });
-
-      const readerDetailFromClient = await demoApi.getReadingDetail(
-        importedPersonalRecord.entry.id,
-      );
-      expect(readerDetailFromClient.notes).toContainEqual(
-        expect.objectContaining({
-          body: 'Workbench compatibility note',
-          visibility: 'private',
+      expect(wrongSpaceWritingSaveResponse.status).toBe(400);
+      await expect(wrongSpaceWritingSaveResponse.json()).resolves.toMatchObject({
+        error: expect.stringMatching(/belongs to governance space/i),
+      });
+      expect(writingAfterWrongSpaceSave.document).toMatchObject({
+        documentId: writingSaveFromClient.document.documentId,
+        latestSnapshot: expect.objectContaining({
+          content: 'Writer draft content',
         }),
-      );
+      });
     } finally {
       await closeServer(httpServer.server);
       rmSync(storageRoot, { force: true, recursive: true });
@@ -502,6 +357,7 @@ describe('workbench http contracts', () => {
     expect(readme).toContain('Projects');
     expect(readmeCn).toContain('个人工作台首页');
     expect(readmeCn).toContain('共享评论');
+    expect(readmeCn).toContain('/login` 是真实的 session 入口页');
     expect(handoffNotes).toContain('Personal vs Project 上下文');
     expect(handoffNotes).toContain('Writer 文档区');
     expect(

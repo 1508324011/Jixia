@@ -87,6 +87,16 @@ describe('project writer flow', () => {
               ? input.toString()
               : input.url;
 
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
+
         if (requestUrl.endsWith('/api/projects')) {
           return jsonResponse([projectFixture]);
         }
@@ -152,6 +162,16 @@ describe('project writer flow', () => {
             : input instanceof URL
               ? input.toString()
               : input.url;
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
 
         if (requestUrl.endsWith('/api/projects')) {
           return jsonResponse([projectFixture]);

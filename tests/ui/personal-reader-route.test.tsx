@@ -73,6 +73,16 @@ describe('personal reader route', () => {
               ? input.toString()
               : input.url;
 
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
+
         if (requestUrl.endsWith('/api/reading/entry-1') && (!init?.method || init.method === 'GET')) {
           return jsonResponse(readingDetail);
         }

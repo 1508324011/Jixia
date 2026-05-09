@@ -9,6 +9,7 @@ export * from "./contracts/notebook";
 export * from "./contracts/project-docs";
 export * from "./contracts/projects";
 export * from "./contracts/reading";
+export * from "./contracts/session";
 export * from "./contracts/settings";
 export * from "./contracts/spaces";
 export * from "./contracts/writing";
