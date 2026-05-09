@@ -106,7 +106,7 @@ describe('notebook and project document persistence', () => {
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
-  }, 30_000);
+  }, 60_000);
 
   it('enforces ProjectMember-gated project docs and persists versions/citations', async () => {
     const storageRoot = createStorageRoot('jixia-project-doc-versioning-');

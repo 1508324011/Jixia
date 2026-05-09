@@ -19,6 +19,10 @@ export interface PubmedConnector {
 const PUBMED_EUTILS_BASE = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
 const PUBMED_REQUEST_TIMEOUT_MS = 500;
 
+function shouldSkipLivePubmedRequests(): boolean {
+  return process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
+}
+
 const fallbackDiscoveryRecords: PubmedDiscoveryRecord[] = [
   {
     abstractText:
@@ -220,6 +224,10 @@ export function createPubmedConnector(): PubmedConnector {
       locator: string,
       sourceType: 'doi' | 'pmid',
     ): Promise<ImportedPaperMetadata> {
+      if (shouldSkipLivePubmedRequests()) {
+        return buildFallbackLookup(locator, sourceType);
+      }
+
       try {
         return await lookupLivePubmed(locator, sourceType);
       } catch {
@@ -237,6 +245,13 @@ export function createPubmedConnector(): PubmedConnector {
 
       if (cachedResults) {
         return cachedResults.map((record) => ({ ...record }));
+      }
+
+      if (shouldSkipLivePubmedRequests()) {
+        const fallbackResults = buildFallbackSearch(trimmedQuery);
+        discoveryCache.set(trimmedQuery, fallbackResults);
+
+        return fallbackResults.map((record) => ({ ...record }));
       }
 
       try {

@@ -102,6 +102,7 @@ describe('workbench http contracts', () => {
 
       const importedPersonalRecord = await importPersonalLibraryResponse.json();
       expect(importedPersonalRecord.asset.canonicalId).toBe(search.items[0].canonicalId);
+      expect(importedPersonalRecord.asset.storageKey).toBeUndefined();
 
       const unauthenticatedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`);
       expect(unauthenticatedSettingsResponse.status).toBe(401);
@@ -233,8 +234,9 @@ describe('workbench http contracts', () => {
         }),
         method: 'POST',
       }).then(
-        (response) => response.json() as Promise<{ asset: { id: string } }>,
+        (response) => response.json() as Promise<{ asset: { id: string; storageKey?: string } }>,
       );
+      expect(importedProjectRecord.asset.storageKey).toBeUndefined();
       const writingDocumentFromClient = await demoApi.getWritingDocument(
         sharedSpace.id,
         project.project.id,

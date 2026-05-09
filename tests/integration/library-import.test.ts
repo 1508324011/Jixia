@@ -68,7 +68,11 @@ describe('library import', () => {
         visibility: 'private',
       }, 'user-alice');
 
-      expect(uploaded.asset.storageKey).toMatch(/^papers\/.+\/paper\.pdf$/);
+      const storedPdfPath = join(storageRoot, 'papers', uploaded.asset.id, 'paper.pdf');
+
+      expect(uploaded.asset).not.toHaveProperty('storageKey');
+      expect(existsSync(storedPdfPath)).toBe(true);
+      expect(readFileSync(storedPdfPath, 'utf8')).toBe('%PDF-1.4 demo paper');
       expect(uploaded.entry.paperAssetId).toBe(uploaded.asset.id);
       expect(uploaded.entry.scope).toEqual({ id: 'user-alice', type: 'user' });
 
