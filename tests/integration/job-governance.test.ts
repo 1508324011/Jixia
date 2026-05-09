@@ -20,8 +20,7 @@ describe('job governance', () => {
       const credential = await app.credentials.createCredential({
         provider: 'openai',
         rawSecret: 'test-credential-placeholder',
-        userId: 'user-alice',
-      });
+      }, 'user-alice');
 
       expect(credential.credentialRef).toMatch(/^cred-/);
       expect(JSON.stringify(credential)).not.toContain('test-credential-placeholder');
@@ -86,8 +85,7 @@ describe('job governance', () => {
       const credential = await app.credentials.createCredential({
         provider: 'openai',
         rawSecret: 'repository-backed-job-credential',
-        userId: 'user-alice',
-      });
+      }, 'user-alice');
       const job = await app.jobs.createJob(
         {
           credentialRef: credential.credentialRef,
@@ -162,8 +160,7 @@ describe('job governance', () => {
       const credential = await app.credentials.createCredential({
         provider: 'openai',
         rawSecret: 'stale-job-credential-placeholder',
-        userId: 'user-alice',
-      });
+      }, 'user-alice');
       const job = await app.jobs.createJob(
         {
           credentialRef: credential.credentialRef,

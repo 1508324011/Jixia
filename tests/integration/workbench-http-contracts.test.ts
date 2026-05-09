@@ -97,7 +97,37 @@ describe('workbench http contracts', () => {
       const importedPersonalRecord = await importPersonalLibraryResponse.json();
       expect(importedPersonalRecord.asset.canonicalId).toBe(search.items[0].canonicalId);
 
-      const settingsResponse = await fetch(`${baseUrl}/api/settings/me`);
+      const missingActorSettingsResponse = await fetch(`${baseUrl}/api/settings/me`);
+      expect(missingActorSettingsResponse.status).toBe(401);
+
+      const spoofedSettingsReadResponse = await fetch(
+        `${baseUrl}/api/settings/me?actorUserId=user-bob`,
+        {
+          headers: {
+            'x-jixia-actor': 'user-alice',
+          },
+        },
+      );
+      expect(spoofedSettingsReadResponse.status).toBe(400);
+
+      const spoofedSettingsWriteResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        body: JSON.stringify({
+          actorUserId: 'user-bob',
+          defaultImportTarget: 'project-workspace',
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
+        },
+        method: 'POST',
+      });
+      expect(spoofedSettingsWriteResponse.status).toBe(400);
+
+      const settingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        headers: {
+          'x-jixia-actor': 'user-alice',
+        },
+      });
       expect(settingsResponse.status).toBe(200);
 
       const settings = await settingsResponse.json();
@@ -114,6 +144,7 @@ describe('workbench http contracts', () => {
         }),
         headers: {
           'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
         },
         method: 'POST',
       });
@@ -126,7 +157,11 @@ describe('workbench http contracts', () => {
       });
       expect(savedSettings.apiKey).toBeUndefined();
 
-      const persistedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`);
+      const persistedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        headers: {
+          'x-jixia-actor': 'user-alice',
+        },
+      });
       expect(persistedSettingsResponse.status).toBe(200);
 
       const persistedSettings = await persistedSettingsResponse.json();
@@ -135,6 +170,31 @@ describe('workbench http contracts', () => {
         defaultImportTarget: 'project-workspace',
       });
       expect(persistedSettings.apiKey).toBeUndefined();
+
+      const bearerSettingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        headers: {
+          Authorization: 'Bearer user-alice',
+        },
+      });
+      expect(bearerSettingsResponse.status).toBe(200);
+      await expect(bearerSettingsResponse.json()).resolves.toMatchObject({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'project-workspace',
+      });
+
+      const bobSettingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        headers: {
+          'x-jixia-actor': 'user-bob',
+        },
+      });
+      expect(bobSettingsResponse.status).toBe(200);
+
+      const bobSettings = await bobSettingsResponse.json();
+      expect(bobSettings).toMatchObject({
+        apiKeyConfigured: false,
+        defaultImportTarget: 'personal-library',
+      });
+      expect(bobSettings.apiKey).toBeUndefined();
 
       const persistedState = JSON.parse(
         readFileSync(join(storageRoot, 'server-state.json'), 'utf8'),

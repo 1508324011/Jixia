@@ -50,6 +50,39 @@ interface SaveWritingDocumentRequestBody {
   title?: string;
 }
 
+interface WorkbenchSettingsCompatibilityQuery {
+  actorUserId?: string;
+  userId?: string;
+}
+
+function requireWorkbenchActorUserId(actorUserId: string | undefined): string {
+  if (!actorUserId) {
+    throw new Error(
+      'Workbench settings require a server-derived actor session.',
+    );
+  }
+
+  return actorUserId;
+}
+
+function assertWorkbenchActorCompatibility(
+  actorUserId: string,
+  claimedUserId: string | undefined,
+): void {
+  if (claimedUserId && claimedUserId !== actorUserId) {
+    throw new Error('Request actor does not match the server-derived actor.');
+  }
+}
+
+function readWorkbenchSettingsCompatibilityQuery(
+  requestUrl: URL,
+): WorkbenchSettingsCompatibilityQuery {
+  return {
+    actorUserId: requestUrl.searchParams.get('actorUserId') ?? undefined,
+    userId: requestUrl.searchParams.get('userId') ?? undefined,
+  };
+}
+
 function isDefaultImportTarget(value: unknown): value is DefaultImportTarget {
   return value === 'personal-library' || value === 'project-workspace';
 }
@@ -75,10 +108,23 @@ function parseWorkbenchSettingsUpdate(
     throw new Error('Settings payload must be a JSON object.');
   }
 
-  const { apiKey, defaultImportTarget } = requestBody as Record<string, unknown>;
+  const {
+    actorUserId,
+    apiKey,
+    defaultImportTarget,
+    userId,
+  } = requestBody as Record<string, unknown>;
 
   if (typeof apiKey !== 'undefined' && typeof apiKey !== 'string') {
     throw new Error('apiKey must be a string when provided.');
+  }
+
+  if (typeof actorUserId !== 'undefined' && typeof actorUserId !== 'string') {
+    throw new Error('actorUserId must be a string when provided.');
+  }
+
+  if (typeof userId !== 'undefined' && typeof userId !== 'string') {
+    throw new Error('userId must be a string when provided.');
   }
 
   if (!isDefaultImportTarget(defaultImportTarget)) {
@@ -87,7 +133,9 @@ function parseWorkbenchSettingsUpdate(
 
   return {
     apiKey,
+    actorUserId,
     defaultImportTarget,
+    userId,
   };
 }
 
@@ -307,6 +355,7 @@ export async function resolveHttpApi(
   requestUrl: URL,
   method: string,
   requestBody?: unknown,
+  actorUserId?: string,
 ): Promise<HttpApiResponse | null> {
   const pathname = requestUrl.pathname;
 
@@ -362,21 +411,37 @@ export async function resolveHttpApi(
   }
 
   if ((method === 'GET' || method === 'HEAD') && pathname === '/api/settings/me') {
+    const effectiveActorUserId = requireWorkbenchActorUserId(actorUserId);
+    const compatibilityQuery = readWorkbenchSettingsCompatibilityQuery(requestUrl);
+
+    assertWorkbenchActorCompatibility(
+      effectiveActorUserId,
+      compatibilityQuery.userId,
+    );
+    assertWorkbenchActorCompatibility(
+      effectiveActorUserId,
+      compatibilityQuery.actorUserId,
+    );
+
     return {
-      payload: app.credentials.getWorkbenchSettings(DEFAULT_WORKBENCH_USER_ID),
+      payload: app.credentials.getWorkbenchSettings(effectiveActorUserId),
       statusCode: 200,
     };
   }
 
   if (method === 'POST' && pathname === '/api/settings/me') {
+    const effectiveActorUserId = requireWorkbenchActorUserId(actorUserId);
     const payload = parseWorkbenchSettingsUpdate(requestBody);
+
+    assertWorkbenchActorCompatibility(effectiveActorUserId, payload.userId);
+    assertWorkbenchActorCompatibility(effectiveActorUserId, payload.actorUserId);
 
     return {
       payload: await app.credentials.saveWorkbenchSettings({
         apiKey: payload.apiKey,
         defaultImportTarget: payload.defaultImportTarget,
-        userId: DEFAULT_WORKBENCH_USER_ID,
-      }),
+        userId: payload.userId,
+      }, effectiveActorUserId),
       statusCode: 200,
     };
   }

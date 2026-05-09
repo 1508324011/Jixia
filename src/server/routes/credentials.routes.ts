@@ -13,15 +13,16 @@ import type {
 export interface CredentialsRoutes {
   createCredential(
     input: CreateCredentialRequest,
-    actorUserId?: string,
+    actorUserId: string,
   ): Promise<CredentialRecord>;
   getWorkbenchSettings(userId: string): WorkbenchSettingsResponse;
   listCredentials(
     query: ListCredentialsQuery,
-    actorUserId?: string,
+    actorUserId: string,
   ): Promise<CredentialRecord[]>;
   saveWorkbenchSettings(
     input: SaveWorkbenchSettingsRequest,
+    actorUserId: string,
   ): Promise<WorkbenchSettingsResponse>;
 }
 
@@ -31,7 +32,7 @@ export function createCredentialsRoutes(
   return {
     createCredential(
       input: CreateCredentialRequest,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<CredentialRecord> {
       return service.createCredential(input, actorUserId);
     },
@@ -40,14 +41,15 @@ export function createCredentialsRoutes(
     },
     listCredentials(
       query: ListCredentialsQuery,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<CredentialRecord[]> {
       return service.listCredentials(query, actorUserId);
     },
     saveWorkbenchSettings(
       input: SaveWorkbenchSettingsRequest,
+      actorUserId: string,
     ): Promise<WorkbenchSettingsResponse> {
-      return service.saveWorkbenchSettings(input);
+      return service.saveWorkbenchSettings(input, actorUserId);
     },
   };
 }
