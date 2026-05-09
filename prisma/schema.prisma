@@ -68,6 +68,7 @@ model User {
   generatedInsights   GeneratedInsight[]
   notebookDocuments   NotebookDocument[]
   providerCredentials ProviderCredential[]
+  workbenchSettings   WorkbenchSettings?
   jobs                Job[]                @relation("JobRequestedBy")
   auditLogs           AuditLog[]
   createdProjects     Project[]            @relation("ProjectCreatedBy")
@@ -334,9 +335,34 @@ model ProviderCredential {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secret         ProviderCredentialSecret?
+  workbenchSettings WorkbenchSettings[]
   jobs           Job[]
 
   @@index([userId, provider])
+}
+
+model ProviderCredentialSecret {
+  credentialRef   String   @id
+  encryptedSecret String
+  encryptionIv    String
+  encryptionTag   String
+  algorithm       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  credential      ProviderCredential @relation(fields: [credentialRef], references: [id], onDelete: Cascade)
+}
+
+model WorkbenchSettings {
+  userId              String   @id
+  credentialRef       String?
+  defaultImportTarget String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credential          ProviderCredential? @relation(fields: [credentialRef], references: [id], onDelete: SetNull)
+
+  @@index([credentialRef])
 }
 
 model Job {

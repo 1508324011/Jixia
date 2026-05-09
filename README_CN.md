@@ -57,7 +57,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 - `/login` 是真实的 session 入口页；根路由仍然会先跳到 `/home`，而未登录浏览器会由受保护路由边界再重定向到 `/login?redirect=...`。
 - `POST /api/session/login`、`GET /api/session/me` 与 `POST /api/session/logout` 负责管理浏览器使用的服务端 `jixia_session` cookie。
 - `GET /api/discovery/today` 与 `GET /api/discovery/search?query=...` 提供当前 discovery 切片。
-- `GET /api/settings/me` 与 `POST /api/settings/me` 会持久化浏览器可见的 settings 状态，同时不把原始 API key 暴露到响应体或 settings 记录中。
+- `GET /api/settings/me` 与 `POST /api/settings/me` 会通过 Prisma-backed per-user workbench settings 与加密后的 provider credential secret 行持久化浏览器可见的 settings 状态，同时不把原始 API key 暴露到响应体或 settings 记录中。
 - `GET /api/library/personal` 与 `POST /api/library/personal/import` 由服务端托管个人导入归属。
 - `GET /api/reading/:entryId`、`POST /api/reading/:entryId/notes`、`POST /api/reading/:entryId/insights` 支撑 paper workspace。
 - `GET /api/projects/:projectId/writing/document` 与 `POST /api/projects/:projectId/writing/document` 是 project-first workbench 主流程下的 canonical 浏览器 Writer 端点。
@@ -85,7 +85,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 
 ## Task 11 运维启动手册
 
-Task 11 的目标是把已经验证过的 Web 交互层收敛成一个可重复启动的实验室服务器包。当前运行时会启动一个 Node 22 HTTP 服务，托管构建后的浏览器应用，暴露 `/health`，并把服务端状态持久化到配置存储根目录下，同时由 Prisma/SQLite 支撑项目协作。这是 Prisma-backed Project 协作数据 的实验室服务器路径。
+Task 11 的目标是把已经验证过的 Web 交互层收敛成一个可重复启动的实验室服务器包。当前运行时会启动一个 Node 22 HTTP 服务，托管构建后的浏览器应用，暴露 `/health`，并把服务端状态持久化到配置存储根目录下，同时由 Prisma/SQLite 支撑项目协作、provider credential secrets 与 workbench settings。这是 Prisma-backed Project 协作数据 的实验室服务器路径。
 
 ### 前置条件
 
@@ -98,12 +98,13 @@ Task 11 的目标是把已经验证过的 Web 交互层收敛成一个可重复�
 先将 `.env.example` 复制为 `.env`，再填写 operator 对应的值。
 
 - `JIXIA_STORAGE_ROOT` 用来控制 Jixia 的服务端持久化存储目录。在实验室服务器上，建议使用 `/var/lib/jixia/storage` 这样的持久盘路径。
-- 当前运行时会把旧的非 Project 状态与 workbench settings 持久化到 `JIXIA_STORAGE_ROOT/server-state.json`。
-- `JIXIA_DATABASE_URL` 控制 Prisma-backed `Space`、`Project`、`ProjectMember`、library、notebook 与 Project Doc 权威数据使用的 SQLite 数据库。建议放在 `file:/var/lib/jixia/data/jixia.db` 这样的持久路径。
+- 当前运行时仍会把旧的非 Prisma beta 状态保存在 `JIXIA_STORAGE_ROOT/server-state.json`，但新的 credential secret material 与 workbench settings 不再写入这里。
+- `JIXIA_DATABASE_URL` 控制 Prisma-backed `Space`、`Project`、`ProjectMember`、library、notebook、Project Doc、provider credential secret 与 workbench settings 权威数据使用的 SQLite 数据库。建议放在 `file:/var/lib/jixia/data/jixia.db` 这样的持久路径。
+- `JIXIA_STORAGE_ROOT/credentials.key` 是 provider credential secret 的本地加密权威。可跨重启使用的加密凭据同时需要持久 SQLite 数据库与这个持久 key 文件；如果 key 丢失或被替换，已有 credential rows 会 fail closed，而不会静默重建或暴露明文。
 - `JIXIA_HOST` 控制绑定地址。本地仅自用时可使用 `127.0.0.1`；在 Docker 或需要对实验室网络提供服务时使用 `0.0.0.0`。
 - `JIXIA_PORT` 控制 HTTP 监听端口。Task 11 的默认端口为 `3000`。
 
-实验室服务器需要同时持久化 `/var/lib/jixia/storage` 与 `/var/lib/jixia/data`。
+实验室服务器需要同时持久化 `/var/lib/jixia/storage` 与 `/var/lib/jixia/data`，并把 `credentials.key` 纳入 storage root 的备份计划。
 
 ### 本地 Node 启动路径
 
@@ -123,4 +124,4 @@ cp .env.example .env
 docker compose up --build
 ```
 
-仓库内置的 `docker-compose.yml` 会映射运行端口，把 `JIXIA_STORAGE_ROOT` 固定到挂载后的 `/var/lib/jixia/storage`，并把 `JIXIA_DATABASE_URL` 指向挂载后的 `/var/lib/jixia/data`，用于 Prisma-backed 协作数据，同时继续将状态文件持久化到 `/var/lib/jixia/storage/server-state.json`。
+仓库内置的 `docker-compose.yml` 会映射运行端口，把 `JIXIA_STORAGE_ROOT` 固定到挂载后的 `/var/lib/jixia/storage`，并把 `JIXIA_DATABASE_URL` 指向挂载后的 `/var/lib/jixia/data`，用于 Prisma-backed Project 协作数据，同时继续将 legacy beta 状态文件持久化到 `/var/lib/jixia/storage/server-state.json`，并把 credential encryption key material 放在同一个持久 storage root 下。

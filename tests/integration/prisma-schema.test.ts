@@ -23,6 +23,8 @@ describe('prisma schema', () => {
     expect(schema).toContain('model ProjectDocVersion');
     expect(schema).toContain('model ProjectDocCitation');
     expect(schema).toContain('model ProviderCredential');
+    expect(schema).toContain('model ProviderCredentialSecret');
+    expect(schema).toContain('model WorkbenchSettings');
     expect(schema).toContain('model Job');
     expect(schema).toContain('model JobEvent');
     expect(schema).toContain('model AuditLog');
@@ -66,6 +68,27 @@ describe('prisma schema', () => {
     expect(schema).toMatch(
       /model ProviderCredential[\s\S]*@@index\(\[userId, provider\]\)/,
     );
+    expect(schema).not.toMatch(
+      /model ProviderCredential[\s\S]*@@unique\(\[userId, provider\]\)/,
+    );
+    expect(schema).toMatch(
+      /model ProviderCredentialSecret[\s\S]*\n\s+credentialRef\s+String\s+@id/,
+    );
+    expect(schema).toMatch(
+      /model ProviderCredentialSecret[\s\S]*\n\s+encryptedSecret\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ProviderCredentialSecret[\s\S]*\n\s+credential\s+ProviderCredential\s+@relation\(fields: \[credentialRef\], references: \[id\], onDelete: Cascade\)/,
+    );
+    expect(schema).toMatch(
+      /model WorkbenchSettings[\s\S]*\n\s+userId\s+String\s+@id/,
+    );
+    expect(schema).toMatch(
+      /model WorkbenchSettings[\s\S]*\n\s+credentialRef\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model WorkbenchSettings[\s\S]*\n\s+defaultImportTarget\s+String/,
+    );
     expect(schema).toMatch(
       /model Job[\s\S]*@@index\(\[spaceId, requestedByUserId\]\)/,
     );
@@ -88,6 +111,7 @@ describe('prisma schema', () => {
     expect(existsSync('src/db/repositories/notebook.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/project-doc.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/job.repository.ts')).toBe(true);
+    expect(existsSync('src/db/repositories/credentials.repository.ts')).toBe(true);
     expect(
       existsSync(
         'prisma/migrations/20260504000000_scoped_library_entries/migration.sql',
@@ -103,6 +127,11 @@ describe('prisma schema', () => {
         'prisma/migrations/20260507000000_job_governance_persistence/migration.sql',
       ),
     ).toBe(true);
+    expect(
+      existsSync(
+        'prisma/migrations/20260509000000_credentials_workbench_settings_authority/migration.sql',
+      ),
+    ).toBe(true);
     expect(clientEntrypoint).toContain('PrismaClient');
     expect(clientEntrypoint).toContain('createPrismaClient');
     expect(dbIndex).toContain('createProjectRepository');
@@ -111,6 +140,7 @@ describe('prisma schema', () => {
     expect(dbIndex).toContain('createNotebookRepository');
     expect(dbIndex).toContain('createProjectDocRepository');
     expect(dbIndex).toContain('createJobRepository');
+    expect(dbIndex).toContain('createCredentialsRepository');
     expect(packageJson.scripts?.['prisma:generate']).toBe('prisma generate');
     expect(packageJson.scripts?.prebuild).toBe('npm run prisma:generate');
     expect(packageJson.scripts?.pretest).toBe('npm run prisma:generate');
@@ -142,6 +172,10 @@ describe('prisma schema', () => {
       'src/db/repositories/job.repository.ts',
       'utf8',
     );
+    const credentialsRepository = readFileSync(
+      'src/db/repositories/credentials.repository.ts',
+      'utf8',
+    );
 
     expect(projectRepository).not.toContain('@shared/contracts/');
     expect(spaceRepository).not.toContain('@shared/contracts/');
@@ -149,6 +183,53 @@ describe('prisma schema', () => {
     expect(notebookRepository).not.toContain('@shared/contracts/');
     expect(projectDocRepository).not.toContain('@shared/contracts/');
     expect(jobRepository).not.toContain('@shared/contracts/');
+    expect(credentialsRepository).not.toContain('@shared/contracts/');
+  });
+
+  it('keeps credential secrets and workbench settings on Prisma authority', () => {
+    const appWiring = readFileSync('src/server/app.ts', 'utf8');
+    const credentialsService = readFileSync(
+      'src/server/services/credentials.service.ts',
+      'utf8',
+    );
+    const credentialsRepository = readFileSync(
+      'src/db/repositories/credentials.repository.ts',
+      'utf8',
+    );
+    const migration = readFileSync(
+      'prisma/migrations/20260509000000_credentials_workbench_settings_authority/migration.sql',
+      'utf8',
+    );
+    const serializedStateBlock = appWiring.slice(
+      appWiring.indexOf('const serializedState: SerializedJixiaAppState = {'),
+      appWiring.indexOf('function markLibraryBootstrapComplete'),
+    );
+
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "ProviderCredentialSecret"');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "WorkbenchSettings"');
+    expect(credentialsRepository).toContain('providerCredentialSecret.create');
+    expect(credentialsRepository).toContain('workbenchSettings.upsert');
+    expect(credentialsRepository).toContain('bootstrapLegacyAuthority');
+    expect(credentialsRepository).toContain('hasStoredCredentials');
+    expect(credentialsService).toContain('repository.createCredential');
+    expect(credentialsService).toContain('repository.getWorkbenchSettings');
+    expect(credentialsService).toContain('repository.upsertWorkbenchSettings');
+    expect(credentialsService).not.toContain('store.credentials.push');
+    expect(credentialsService).not.toContain('store.workbenchSettings.push');
+    expect(credentialsService).not.toContain('store.persist');
+    expect(credentialsService).not.toContain('actorUserId ?? input.userId');
+    expect(credentialsService).not.toContain('actorUserId ?? query.userId');
+
+    expect(appWiring).toContain('createCredentialAuthorityBootstrappedCredentialsRepository');
+    expect(appWiring).toContain('createCredentialAuthorityBootstrappedJobRepository');
+    expect(appWiring).toContain('legacyCredentials');
+    expect(appWiring).toContain('legacyWorkbenchSettings');
+    expect(appWiring).toContain('markCredentialAuthorityBootstrapComplete');
+    expect(appWiring).toContain('ensureCredentialAuthorityUsable');
+    expect(appWiring).not.toContain('credentials: state.credentials');
+    expect(appWiring).not.toContain('workbenchSettings: state.workbenchSettings');
+    expect(serializedStateBlock).not.toContain('credentials: state.legacyCredentials');
+    expect(serializedStateBlock).not.toContain('workbenchSettings: state.legacyWorkbenchSettings');
   });
 
   it('keeps project service authority out of legacy json project arrays', () => {

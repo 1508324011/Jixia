@@ -8,7 +8,10 @@ import type {
   WorkbenchSettingsResponse,
 } from "@shared/contracts/settings";
 
-import type { JobRepository } from '../../db';
+import type {
+  CredentialsRepository,
+  PersistedCredentialWithSecretRecord,
+} from "../../db";
 
 import type { EncryptedSecretPayload, SecretBox } from "../security/secret-box";
 
@@ -16,7 +19,8 @@ const DEFAULT_IMPORT_TARGET: DefaultImportTarget = "personal-library";
 const WORKBENCH_API_KEY_PROVIDER = "workbench-api-key";
 
 export interface StoredCredential
-  extends CredentialRecord, EncryptedSecretPayload {}
+  extends CredentialRecord,
+    EncryptedSecretPayload {}
 
 export interface WorkbenchSettingsRecord {
   credentialRef: string | null;
@@ -33,12 +37,9 @@ export interface SaveWorkbenchSettingsRequest {
 }
 
 export interface CredentialsStore {
-  credentials: StoredCredential[];
-  jobRepository: JobRepository;
   nextId(prefix: string): string;
-  persist(): void;
-  secretBox: SecretBox;
-  workbenchSettings: WorkbenchSettingsRecord[];
+  repository: CredentialsRepository;
+  resolveSecretBox(): Promise<SecretBox>;
 }
 
 export interface CredentialsService {
@@ -46,8 +47,11 @@ export interface CredentialsService {
     input: CreateCredentialRequest,
     actorUserId: string,
   ): Promise<CredentialRecord>;
-  getStoredCredential(credentialRef: string): StoredCredential | null;
-  getWorkbenchSettings(actorUserId: string): WorkbenchSettingsResponse;
+  getStoredCredential(
+    credentialRef: string,
+    actorUserId: string,
+  ): Promise<StoredCredential | null>;
+  getWorkbenchSettings(actorUserId: string): Promise<WorkbenchSettingsResponse>;
   listCredentials(
     query: ListCredentialsQuery,
     actorUserId: string,
@@ -56,52 +60,6 @@ export interface CredentialsService {
     input: SaveWorkbenchSettingsRequest,
     actorUserId: string,
   ): Promise<WorkbenchSettingsResponse>;
-}
-
-function toCredentialRecord(credential: StoredCredential): CredentialRecord {
-  return {
-    createdAt: credential.createdAt,
-    credentialRef: credential.credentialRef,
-    provider: credential.provider,
-    userId: credential.userId,
-  };
-}
-
-function createStoredCredential(
-  store: CredentialsStore,
-  input: {
-    provider: string;
-    rawSecret: string;
-    userId: string;
-  },
-): StoredCredential {
-  return {
-    createdAt: new Date().toISOString(),
-    credentialRef: store.nextId("cred"),
-    ...store.secretBox.encrypt(input.rawSecret),
-    provider: input.provider,
-    userId: input.userId,
-  };
-}
-
-async function persistCredentialReference(
-  store: CredentialsStore,
-  credential: StoredCredential,
-): Promise<void> {
-  await store.jobRepository.createProviderCredentialReference({
-    createdAt: credential.createdAt,
-    credentialRef: credential.credentialRef,
-    provider: credential.provider,
-    secretRef: credential.credentialRef,
-    userId: credential.userId,
-  });
-}
-
-function findWorkbenchSettings(
-  store: CredentialsStore,
-  userId: string,
-): WorkbenchSettingsRecord | null {
-  return store.workbenchSettings.find((settings) => settings.userId === userId) ?? null;
 }
 
 function requireActorUserId(actorUserId: string): string {
@@ -123,13 +81,81 @@ function assertNoCredentialActorMismatch(
   }
 }
 
-function toWorkbenchSettingsResponse(
-  settings: WorkbenchSettingsRecord | null,
-): WorkbenchSettingsResponse {
+function readLegacyClaimedUserId(value: { userId?: string }): string | undefined {
+  return value.userId;
+}
+
+function toCredentialRecord(record: {
+  createdAt: string;
+  credentialRef: string;
+  provider: string;
+  userId: string;
+}): CredentialRecord {
   return {
-    apiKeyConfigured: Boolean(settings?.credentialRef),
-    defaultImportTarget: settings?.defaultImportTarget ?? DEFAULT_IMPORT_TARGET,
+    createdAt: record.createdAt,
+    credentialRef: record.credentialRef,
+    provider: record.provider,
+    userId: record.userId,
   };
+}
+
+async function toWorkbenchSettingsResponse(
+  store: CredentialsStore,
+  actorUserId: string,
+): Promise<WorkbenchSettingsResponse> {
+  const settings = await store.repository.getWorkbenchSettings(actorUserId);
+
+  if (!settings) {
+    return {
+      apiKeyConfigured: false,
+      defaultImportTarget: DEFAULT_IMPORT_TARGET,
+    };
+  }
+
+  let hasUsableCredential = false;
+
+  if (settings.credentialRef) {
+    const credential = await store.repository.getCredentialForUser({
+      credentialRef: settings.credentialRef,
+      userId: actorUserId,
+    });
+
+    if (credential) {
+      try {
+        const secretBox = await store.resolveSecretBox();
+
+        secretBox.decrypt(credential);
+        hasUsableCredential = true;
+      } catch {
+        hasUsableCredential = false;
+      }
+    }
+  }
+
+  return {
+    apiKeyConfigured: hasUsableCredential,
+    defaultImportTarget: settings.defaultImportTarget,
+  };
+}
+
+function assertExistingCredentialSecretUsable(
+  secretBox: SecretBox,
+  credential: PersistedCredentialWithSecretRecord | null,
+  credentialRef: string,
+): asserts credential is PersistedCredentialWithSecretRecord {
+  if (!credential) {
+    throw new Error(
+      `Workbench credential ${credentialRef} is missing encrypted secret material and cannot be replaced until the persisted authority is repaired.`,
+    );
+  }
+
+  try {
+    secretBox.decrypt(credential);
+  } catch {
+    throw new Error(
+      `Workbench credential ${credentialRef} cannot be decrypted with the current credentials.key and must not be overwritten until the original key is restored.`,
+    );
+  }
 }
 
 export function createCredentialsService(
@@ -142,32 +168,51 @@ export function createCredentialsService(
     ): Promise<CredentialRecord> {
       const effectiveUserId = requireActorUserId(actorUserId);
 
-      assertNoCredentialActorMismatch(effectiveUserId, input.userId);
+      assertNoCredentialActorMismatch(
+        effectiveUserId,
+        readLegacyClaimedUserId(input),
+      );
+      const secretBox = await store.resolveSecretBox();
 
-      const credential = createStoredCredential(store, {
+      const credential = await store.repository.createCredential({
+        credentialRef: store.nextId("cred"),
+        encryptedSecret: secretBox.encrypt(input.rawSecret),
         provider: input.provider,
-        rawSecret: input.rawSecret,
         userId: effectiveUserId,
       });
 
-      await persistCredentialReference(store, credential);
-
-      store.credentials.push(credential);
-      store.persist();
-
       return toCredentialRecord(credential);
     },
-    getStoredCredential(credentialRef: string): StoredCredential | null {
-      return (
-        store.credentials.find(
-          (credential) => credential.credentialRef === credentialRef,
-        ) ?? null
-      );
+    async getStoredCredential(
+      credentialRef: string,
+      actorUserId: string,
+    ): Promise<StoredCredential | null> {
+      const effectiveUserId = requireActorUserId(actorUserId);
+      const credential = await store.repository.getCredentialForUser({
+        credentialRef,
+        userId: effectiveUserId,
+      });
+
+      if (!credential) {
+        return null;
+      }
+
+      try {
+        const secretBox = await store.resolveSecretBox();
+
+        secretBox.decrypt(credential);
+      } catch {
+        return null;
+      }
+
+      return { ...toCredentialRecord(credential), ...credential };
     },
-    getWorkbenchSettings(actorUserId: string): WorkbenchSettingsResponse {
+    async getWorkbenchSettings(
+      actorUserId: string,
+    ): Promise<WorkbenchSettingsResponse> {
       const effectiveUserId = requireActorUserId(actorUserId);
 
-      return toWorkbenchSettingsResponse(findWorkbenchSettings(store, effectiveUserId));
+      return toWorkbenchSettingsResponse(store, effectiveUserId);
     },
     async listCredentials(
       query: ListCredentialsQuery,
@@ -175,11 +220,14 @@ export function createCredentialsService(
     ): Promise<CredentialRecord[]> {
       const effectiveUserId = requireActorUserId(actorUserId);
 
-      assertNoCredentialActorMismatch(effectiveUserId, query.userId);
+      assertNoCredentialActorMismatch(
+        effectiveUserId,
+        readLegacyClaimedUserId(query),
+      );
 
-      return store.credentials
-        .filter((credential) => credential.userId === effectiveUserId)
-        .map(toCredentialRecord);
+      return (await store.repository.listCredentialsForUser(effectiveUserId)).map(
+        toCredentialRecord,
+      );
     },
     async saveWorkbenchSettings(
       input: SaveWorkbenchSettingsRequest,
@@ -190,40 +238,59 @@ export function createCredentialsService(
       assertNoCredentialActorMismatch(effectiveUserId, input.userId);
       assertNoCredentialActorMismatch(effectiveUserId, input.actorUserId);
 
-      let credentialRef = findWorkbenchSettings(store, effectiveUserId)?.credentialRef ?? null;
+      let credentialRef =
+        (await store.repository.getWorkbenchSettings(effectiveUserId))
+          ?.credentialRef ?? null;
 
       if (typeof input.apiKey === "string" && input.apiKey.trim()) {
-        const credential = createStoredCredential(store, {
-          provider: WORKBENCH_API_KEY_PROVIDER,
-          rawSecret: input.apiKey,
-          userId: effectiveUserId,
-        });
+        const secretBox = await store.resolveSecretBox();
+        const existingCredential = credentialRef
+          ? await store.repository.getCredentialForUser({
+              credentialRef,
+              userId: effectiveUserId,
+            })
+          : null;
 
-        await persistCredentialReference(store, credential);
+        if (credentialRef) {
+          assertExistingCredentialSecretUsable(
+            secretBox,
+            existingCredential,
+            credentialRef,
+          );
+        }
 
-        store.credentials.push(credential);
-        credentialRef = credential.credentialRef;
+        const encryptedSecret = secretBox.encrypt(input.apiKey);
+
+        if (
+          existingCredential &&
+          existingCredential.provider === WORKBENCH_API_KEY_PROVIDER
+        ) {
+          credentialRef = (
+            await store.repository.replaceCredentialSecret({
+              credentialRef: existingCredential.credentialRef,
+              encryptedSecret,
+              userId: effectiveUserId,
+            })
+          ).credentialRef;
+        } else {
+          const credential = await store.repository.createCredential({
+            credentialRef: store.nextId("cred"),
+            encryptedSecret,
+            provider: WORKBENCH_API_KEY_PROVIDER,
+            userId: effectiveUserId,
+          });
+
+          credentialRef = credential.credentialRef;
+        }
       }
 
-      const existingIndex = store.workbenchSettings.findIndex(
-        (settings) => settings.userId === effectiveUserId,
-      );
-      const record: WorkbenchSettingsRecord = {
+      await store.repository.upsertWorkbenchSettings({
         credentialRef,
         defaultImportTarget: input.defaultImportTarget,
-        updatedAt: new Date().toISOString(),
         userId: effectiveUserId,
-      };
+      });
 
-      if (existingIndex === -1) {
-        store.workbenchSettings.push(record);
-      } else {
-        store.workbenchSettings[existingIndex] = record;
-      }
-
-      store.persist();
-
-      return toWorkbenchSettingsResponse(record);
+      return toWorkbenchSettingsResponse(store, effectiveUserId);
     },
   };
 }

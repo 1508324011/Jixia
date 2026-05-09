@@ -482,7 +482,7 @@ export async function resolveHttpApi(
     assertNoActorImpersonation(requiredActor, queryUserId);
 
     return {
-      payload: app.credentials.getWorkbenchSettings(requiredActor.userId),
+      payload: await app.credentials.getWorkbenchSettings(requiredActor.userId),
       statusCode: 200,
     };
   }

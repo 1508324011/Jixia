@@ -1,10 +1,14 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { Buffer } from 'node:buffer';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
 import { createHttpServer } from '../../src/server/http-server';
+import { createPrismaClient } from '../../src/db';
+import { createSecretBox } from '../../src/server/security/secret-box';
+import { createJixiaApp } from '../../src/server/app';
 import { loginAs, withSessionCookie } from './http-session-test-helpers';
 
 async function listenOnEphemeralPort(server: ReturnType<typeof createHttpServer>['server']) {
@@ -166,23 +170,33 @@ describe('workbench http contracts', () => {
         defaultImportTarget: 'project-workspace',
       });
 
-      const persistedState = JSON.parse(
-        readFileSync(join(storageRoot, 'server-state.json'), 'utf8'),
-      ) as {
-        credentials?: Array<{ encryptedSecret?: string }>;
-        workbenchSettings?: Array<{ credentialRef?: string; defaultImportTarget?: string }>;
-      };
-      const persistedStateText = readFileSync(join(storageRoot, 'server-state.json'), 'utf8');
+      const persistedStatePath = join(storageRoot, 'server-state.json');
+      const persistedStateText = existsSync(persistedStatePath)
+        ? readFileSync(persistedStatePath, 'utf8')
+        : '';
+      const prisma = createPrismaClient({
+        url: `file:${join(storageRoot, 'jixia.db')}`,
+      });
 
-      expect(persistedState.credentials).toHaveLength(1);
-      expect(persistedState.credentials?.[0]?.encryptedSecret).toBeDefined();
-      expect(persistedState.workbenchSettings).toMatchObject([
-        {
+      try {
+        await expect(prisma.providerCredential.findMany()).resolves.toHaveLength(1);
+        await expect(prisma.providerCredentialSecret.findMany()).resolves.toHaveLength(1);
+        await expect(prisma.workbenchSettings.findUnique({
+          where: { userId: 'user-alice' },
+        })).resolves.toMatchObject({
           credentialRef: expect.any(String),
           defaultImportTarget: 'project-workspace',
-        },
-      ]);
+        });
+      } finally {
+        await prisma.$disconnect();
+      }
+
       expect(persistedStateText).not.toContain('sk-test-secret');
+      expect(persistedStateText).not.toContain(
+        Buffer.from('sk-test-secret', 'utf8').toString('base64'),
+      );
+      expect(persistedStateText).not.toContain('encryptedSecret');
+      expect(persistedStateText).not.toContain('workbenchSettings');
 
       const personalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`, {
         headers: withSessionCookie(aliceCookie),
@@ -370,5 +384,428 @@ describe('workbench http contracts', () => {
         join(process.cwd(), 'docs/plans/2026-03-23-jixia-web-interaction-implementation.md'),
       ),
     ).toBe(true);
+  });
+
+  it('bootstraps legacy credential settings once and lets Prisma win over stale json', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-legacy-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-workbench-legacy.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    const now = new Date().toISOString();
+    const legacySecret = createSecretBox(env).encrypt('legacy-api-key');
+
+    writeFileSync(
+      join(storageRoot, 'server-state.json'),
+      JSON.stringify(
+        {
+          credentials: [
+            {
+              ...legacySecret,
+              createdAt: now,
+              credentialRef: 'cred-legacy',
+              provider: 'workbench-api-key',
+              userId: 'user-alice',
+            },
+          ],
+          nextSequence: 10,
+          workbenchSettings: [
+            {
+              credentialRef: 'cred-legacy',
+              defaultImportTarget: 'project-workspace',
+              updatedAt: now,
+              userId: 'user-alice',
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const prisma = createPrismaClient({ url: databaseUrl });
+
+    try {
+      const firstApp = createJixiaApp({ env });
+
+      await expect(
+        firstApp.credentials.getWorkbenchSettings('user-alice'),
+      ).resolves.toEqual({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'project-workspace',
+      });
+      await firstApp.close();
+
+      await expect(prisma.providerCredential.findMany()).resolves.toHaveLength(1);
+      await expect(prisma.providerCredentialSecret.findMany()).resolves.toHaveLength(1);
+      await expect(
+        prisma.workbenchSettings.findUnique({ where: { userId: 'user-alice' } }),
+      ).resolves.toMatchObject({
+        credentialRef: 'cred-legacy',
+        defaultImportTarget: 'project-workspace',
+      });
+
+      const cleanedState = readFileSync(join(storageRoot, 'server-state.json'), 'utf8');
+      expect(cleanedState).not.toContain('credentials');
+      expect(cleanedState).not.toContain('workbenchSettings');
+
+      const staleSecret = createSecretBox(env).encrypt('stale-api-key');
+      writeFileSync(
+        join(storageRoot, 'server-state.json'),
+        JSON.stringify(
+          {
+            credentials: [
+              {
+                ...staleSecret,
+                createdAt: now,
+                credentialRef: 'cred-stale',
+                provider: 'workbench-api-key',
+                userId: 'user-alice',
+              },
+            ],
+            nextSequence: 11,
+            workbenchSettings: [
+              {
+                credentialRef: 'cred-stale',
+                defaultImportTarget: 'personal-library',
+                updatedAt: now,
+                userId: 'user-alice',
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      );
+
+      const secondApp = createJixiaApp({ env });
+
+      await expect(
+        secondApp.credentials.getWorkbenchSettings('user-alice'),
+      ).resolves.toEqual({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'project-workspace',
+      });
+      await secondApp.close();
+
+      await expect(prisma.providerCredential.findMany()).resolves.toHaveLength(1);
+      await expect(prisma.providerCredentialSecret.findMany()).resolves.toHaveLength(1);
+      await expect(
+        prisma.workbenchSettings.findUnique({ where: { userId: 'user-alice' } }),
+      ).resolves.toMatchObject({
+        credentialRef: 'cred-legacy',
+        defaultImportTarget: 'project-workspace',
+      });
+    } finally {
+      await prisma.$disconnect();
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('keeps settings durable through Prisma and fails closed when credential rows cannot be decrypted', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-key-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-workbench-key.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    const prisma = createPrismaClient({ url: databaseUrl });
+
+    try {
+      const firstApp = createJixiaApp({ env });
+
+      await expect(
+        firstApp.credentials.saveWorkbenchSettings(
+          {
+            apiKey: 'durable-api-key',
+            defaultImportTarget: 'project-workspace',
+          },
+          'user-alice',
+        ),
+      ).resolves.toEqual({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'project-workspace',
+      });
+      await firstApp.close();
+
+      const secondApp = createJixiaApp({ env });
+
+      await expect(
+        secondApp.credentials.getWorkbenchSettings('user-alice'),
+      ).resolves.toEqual({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'project-workspace',
+      });
+      await secondApp.close();
+
+      writeFileSync(join(storageRoot, 'credentials.key'), Buffer.alloc(32, 7).toString('base64'));
+
+      const wrongKeyApp = createJixiaApp({ env });
+
+      await expect(
+        wrongKeyApp.credentials.getWorkbenchSettings('user-alice'),
+      ).resolves.toEqual({
+        apiKeyConfigured: false,
+        defaultImportTarget: 'project-workspace',
+      });
+      await expect(
+        wrongKeyApp.credentials.getStoredCredential('cred-1', 'user-alice'),
+      ).resolves.toBeNull();
+      await expect(
+        wrongKeyApp.credentials.saveWorkbenchSettings(
+          {
+            apiKey: 'must-not-overwrite-with-wrong-key',
+            defaultImportTarget: 'personal-library',
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/cannot be decrypted/i);
+      await wrongKeyApp.close();
+
+      await expect(prisma.providerCredential.findMany()).resolves.toHaveLength(1);
+      await expect(prisma.providerCredentialSecret.findMany()).resolves.toHaveLength(1);
+
+      await prisma.providerCredentialSecret.deleteMany();
+
+      const danglingCredentialApp = createJixiaApp({ env });
+
+      await expect(
+        danglingCredentialApp.credentials.getWorkbenchSettings('user-alice'),
+      ).resolves.toEqual({
+        apiKeyConfigured: false,
+        defaultImportTarget: 'project-workspace',
+      });
+      await expect(
+        danglingCredentialApp.credentials.saveWorkbenchSettings(
+          {
+            apiKey: 'must-not-recreate-dangling-secret',
+            defaultImportTarget: 'personal-library',
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/missing encrypted secret material/i);
+      await danglingCredentialApp.close();
+
+      await expect(prisma.providerCredential.findMany()).resolves.toHaveLength(1);
+      await expect(prisma.providerCredentialSecret.findMany()).resolves.toHaveLength(0);
+    } finally {
+      await prisma.$disconnect();
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('rotates the persisted workbench credential secret without creating duplicate credential rows', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-rotation-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-workbench-rotation.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    const prisma = createPrismaClient({ url: databaseUrl });
+
+    try {
+      const app = createJixiaApp({ env });
+
+      await expect(
+        app.credentials.saveWorkbenchSettings(
+          {
+            apiKey: 'first-api-key',
+            defaultImportTarget: 'personal-library',
+          },
+          'user-alice',
+        ),
+      ).resolves.toEqual({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'personal-library',
+      });
+
+      const firstSettings = await prisma.workbenchSettings.findUnique({
+        where: { userId: 'user-alice' },
+      });
+      const firstSettingsCredentialRef = firstSettings?.credentialRef;
+
+      expect(firstSettingsCredentialRef).toEqual(expect.any(String));
+      if (!firstSettingsCredentialRef) {
+        throw new Error('Expected first settings save to bind a credential ref.');
+      }
+
+      await expect(prisma.providerCredential.findMany()).resolves.toHaveLength(1);
+      await expect(prisma.providerCredentialSecret.findMany()).resolves.toHaveLength(1);
+
+      const firstCredentialRow = await prisma.providerCredential.findUniqueOrThrow({
+        include: { secret: true },
+        where: { id: firstSettingsCredentialRef },
+      });
+
+      await expect(
+        app.credentials.saveWorkbenchSettings(
+          {
+            apiKey: 'second-api-key',
+            defaultImportTarget: 'project-workspace',
+          },
+          'user-alice',
+        ),
+      ).resolves.toEqual({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'project-workspace',
+      });
+
+      const secondSettings = await prisma.workbenchSettings.findUniqueOrThrow({
+        where: { userId: 'user-alice' },
+      });
+      const credentialRows = await prisma.providerCredential.findMany({
+        include: { secret: true },
+      });
+      const secretRows = await prisma.providerCredentialSecret.findMany();
+
+      expect(secondSettings.credentialRef).toBe(firstSettingsCredentialRef);
+      expect(secondSettings.defaultImportTarget).toBe('project-workspace');
+      expect(credentialRows).toHaveLength(1);
+      expect(secretRows).toHaveLength(1);
+      expect(credentialRows[0]?.id).toBe(firstSettingsCredentialRef);
+      expect(credentialRows[0]?.provider).toBe('workbench-api-key');
+      expect(credentialRows[0]?.secret?.encryptedSecret).not.toBe(
+        firstCredentialRow.secret?.encryptedSecret,
+      );
+
+      await app.close();
+    } finally {
+      await prisma.$disconnect();
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('persists credential ids across restart and scopes stored credential access to the owner', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-credential-sequence-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-credential-sequence.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    const prisma = createPrismaClient({ url: databaseUrl });
+
+    try {
+      const firstApp = createJixiaApp({ env });
+      const firstCredential = await firstApp.credentials.createCredential(
+        {
+          provider: 'openai',
+          rawSecret: 'first-secret',
+        },
+        'user-alice',
+      );
+
+      expect(firstCredential.credentialRef).toBe('cred-1');
+      await firstApp.close();
+
+      const persistedState = JSON.parse(
+        readFileSync(join(storageRoot, 'server-state.json'), 'utf8'),
+      ) as { nextSequence?: number };
+
+      expect(persistedState.nextSequence).toBeGreaterThanOrEqual(1);
+
+      const secondApp = createJixiaApp({ env });
+      const secondCredential = await secondApp.credentials.createCredential(
+        {
+          provider: 'anthropic',
+          rawSecret: 'second-secret',
+        },
+        'user-alice',
+      );
+
+      expect(secondCredential.credentialRef).toBe('cred-2');
+      await expect(
+        secondApp.credentials.getStoredCredential(firstCredential.credentialRef, 'user-bob'),
+      ).resolves.toBeNull();
+      await expect(
+        secondApp.credentials.getStoredCredential(firstCredential.credentialRef, 'user-alice'),
+      ).resolves.toMatchObject({
+        credentialRef: 'cred-1',
+        provider: 'openai',
+        userId: 'user-alice',
+      });
+      await secondApp.close();
+
+      const persistedCredentials = await prisma.providerCredential.findMany({
+        orderBy: [{ id: 'asc' }],
+      });
+
+      expect(persistedCredentials.map((credential) => credential.id)).toEqual([
+        'cred-1',
+        'cred-2',
+      ]);
+    } finally {
+      await prisma.$disconnect();
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('shares one credential bootstrap across concurrent settings and jobs access', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-credential-bootstrap-race-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-credential-bootstrap-race.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    const now = new Date().toISOString();
+    const legacySecret = createSecretBox(env).encrypt('legacy-api-key');
+
+    writeFileSync(
+      join(storageRoot, 'server-state.json'),
+      JSON.stringify(
+        {
+          credentials: [
+            {
+              ...legacySecret,
+              createdAt: now,
+              credentialRef: 'cred-legacy',
+              provider: 'workbench-api-key',
+              userId: 'user-alice',
+            },
+          ],
+          nextSequence: 4,
+          workbenchSettings: [
+            {
+              credentialRef: 'cred-legacy',
+              defaultImportTarget: 'project-workspace',
+              updatedAt: now,
+              userId: 'user-alice',
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const prisma = createPrismaClient({ url: databaseUrl });
+
+    try {
+      const app = createJixiaApp({ env });
+      const [settings, jobs] = await Promise.all([
+        app.credentials.getWorkbenchSettings('user-alice'),
+        app.jobs.listJobs({ actorUserId: 'user-alice' }),
+      ]);
+
+      expect(settings).toEqual({
+        apiKeyConfigured: true,
+        defaultImportTarget: 'project-workspace',
+      });
+      expect(jobs).toEqual([]);
+
+      await expect(prisma.providerCredential.findMany()).resolves.toHaveLength(1);
+      await expect(prisma.providerCredentialSecret.findMany()).resolves.toHaveLength(1);
+      await expect(
+        prisma.workbenchSettings.findUnique({ where: { userId: 'user-alice' } }),
+      ).resolves.toMatchObject({
+        credentialRef: 'cred-legacy',
+        defaultImportTarget: 'project-workspace',
+      });
+
+      await app.close();
+    } finally {
+      await prisma.$disconnect();
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
   });
 });
