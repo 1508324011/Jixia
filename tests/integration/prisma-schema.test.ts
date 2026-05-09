@@ -274,4 +274,23 @@ describe('prisma schema', () => {
     expect(projectDocsService).not.toContain('store.paperAssets');
     expect(projectDocsService).not.toContain('store.libraryEntries');
   });
+
+  it('keeps credentials and settings ownership on the server-derived actor boundary', () => {
+    const credentialsService = readFileSync(
+      'src/server/services/credentials.service.ts',
+      'utf8',
+    );
+    const credentialsRoutes = readFileSync(
+      'src/server/routes/credentials.routes.ts',
+      'utf8',
+    );
+    const workbenchHttpApi = readFileSync('src/server/http-api.ts', 'utf8');
+
+    expect(credentialsService).not.toContain('actorUserId ?? input.userId');
+    expect(credentialsService).not.toContain('actorUserId ?? query.userId');
+    expect(credentialsRoutes).not.toContain('saveWorkbenchSettings(input)');
+    expect(workbenchHttpApi).not.toContain('userId: DEFAULT_WORKBENCH_USER_ID');
+    expect(workbenchHttpApi).toContain("requestUrl.searchParams.get('actorUserId')");
+    expect(workbenchHttpApi).toContain('payload.actorUserId');
+  });
 });

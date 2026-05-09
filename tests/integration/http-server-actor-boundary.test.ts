@@ -180,6 +180,110 @@ async function createJob(
 }
 
 describe("http server actor boundary cleanup", () => {
+  it("protects workbench settings with server-derived actor authority", async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-settings-actor-"));
+
+    try {
+      const server = await startTestServer(storageRoot);
+
+      try {
+        const missingActor = await fetch(`${server.url}/api/settings/me`);
+        expect(missingActor.status).toBe(401);
+
+        const spoofedQueryUserId = await fetch(
+          `${server.url}/api/settings/me?userId=user-bob`,
+          {
+            headers: {
+              "x-jixia-actor": "user-alice",
+            },
+          },
+        );
+        expect(spoofedQueryUserId.status).toBe(400);
+
+        const spoofedQueryActorUserId = await fetch(
+          `${server.url}/api/settings/me?actorUserId=user-bob`,
+          {
+            headers: {
+              "x-jixia-actor": "user-alice",
+            },
+          },
+        );
+        expect(spoofedQueryActorUserId.status).toBe(400);
+
+        const spoofedUserId = await fetch(`${server.url}/api/settings/me`, {
+          body: JSON.stringify({
+            apiKey: "settings-spoof-placeholder",
+            defaultImportTarget: "project-workspace",
+            userId: "user-bob",
+          }),
+          headers: {
+            "Content-Type": "application/json",
+            "x-jixia-actor": "user-alice",
+          },
+          method: "POST",
+        });
+        expect(spoofedUserId.status).toBe(400);
+
+        const spoofedActorUserId = await fetch(`${server.url}/api/settings/me`, {
+          body: JSON.stringify({
+            actorUserId: "user-bob",
+            apiKey: "settings-spoof-placeholder",
+            defaultImportTarget: "project-workspace",
+          }),
+          headers: {
+            "Content-Type": "application/json",
+            "x-jixia-actor": "user-alice",
+          },
+          method: "POST",
+        });
+        expect(spoofedActorUserId.status).toBe(400);
+
+        const savedResponse = await fetch(`${server.url}/api/settings/me`, {
+          body: JSON.stringify({
+            apiKey: "settings-actor-owned-placeholder",
+            defaultImportTarget: "project-workspace",
+          }),
+          headers: {
+            "Content-Type": "application/json",
+            "x-jixia-actor": "user-alice",
+          },
+          method: "POST",
+        });
+        expect(savedResponse.status).toBe(200);
+        await expect(savedResponse.json()).resolves.toMatchObject({
+          apiKeyConfigured: true,
+          defaultImportTarget: "project-workspace",
+        });
+
+        const settingsResponse = await fetch(`${server.url}/api/settings/me`, {
+          headers: {
+            Authorization: "Bearer user-alice",
+          },
+        });
+        expect(settingsResponse.status).toBe(200);
+        await expect(settingsResponse.json()).resolves.toMatchObject({
+          apiKeyConfigured: true,
+          defaultImportTarget: "project-workspace",
+        });
+
+        const bobSettingsResponse = await fetch(`${server.url}/api/settings/me`, {
+          headers: {
+            "x-jixia-actor": "user-bob",
+          },
+        });
+        expect(bobSettingsResponse.status).toBe(200);
+        await expect(bobSettingsResponse.json()).resolves.toMatchObject({
+          apiKeyConfigured: false,
+          defaultImportTarget: "personal-library",
+        });
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it("rejects conflicting actor transport headers on protected routes", async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-actor-conflict-"));
 

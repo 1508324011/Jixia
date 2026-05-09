@@ -505,8 +505,8 @@ export async function resolveHttpApi(
       payload: await app.credentials.saveWorkbenchSettings({
         apiKey: payload.apiKey,
         defaultImportTarget: payload.defaultImportTarget,
-        userId: requiredActor.userId,
-      }),
+        userId: payload.userId,
+      }, requiredActor.userId),
       statusCode: 200,
     };
   }

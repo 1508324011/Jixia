@@ -146,7 +146,7 @@ describe('workbench navigation', () => {
       }),
     );
 
-        renderWorkbench('/home');
+    renderWorkbench('/home');
 
     await user.click(screen.getByRole('link', { name: '搜索' }));
     expect(screen.getByRole('heading', { name: '外部搜索' })).toBeInTheDocument();
@@ -189,6 +189,9 @@ describe('workbench navigation', () => {
         body: JSON.stringify({
           apiKey: 'sk-browser-secret',
           defaultImportTarget: 'project-workspace',
+        }),
+        headers: expect.objectContaining({
+          'x-jixia-actor': 'user-alice',
         }),
         method: 'POST',
       }),
