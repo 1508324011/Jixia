@@ -5,10 +5,39 @@ import { tmpdir } from "node:os";
 
 import { describe, expect, it } from "vitest";
 
+import type { PubmedConnector } from "../../src/server/connectors/pubmed.connector";
 import { createHttpServer } from "../../src/server/http-server";
+
+function createStubPubmedConnector(): PubmedConnector {
+  return {
+    async lookup(locator, sourceType) {
+      return {
+        abstractText: `External ${sourceType.toUpperCase()} abstract for ${locator}`,
+        canonicalId: `${sourceType}:${locator}`,
+        title: `Imported ${sourceType.toUpperCase()} paper ${locator}`,
+      };
+    },
+    async search(query) {
+      return [
+        {
+          abstractText: `PubMed search result for ${query}`,
+          canonicalId: "pmid:654321",
+          reason: "PubMed query matched tumor-board biomarker curation work.",
+          sourceLabel: "PubMed",
+          sourceLocator: "654321",
+          sourceType: "pmid",
+          title: "Tumor board biomarkers for rapid review",
+        },
+      ];
+    },
+  };
+}
 
 async function startTestServer(storageRoot: string) {
   const httpServer = createHttpServer({
+    connectors: {
+      pubmed: createStubPubmedConnector(),
+    },
     env: { JIXIA_STORAGE_ROOT: storageRoot },
   });
 
@@ -295,6 +324,10 @@ describe("http server actor boundary cleanup", () => {
           spaces,
           memberships,
           credentials,
+          personalLibrary,
+          personalLibraryImport,
+          workbenchSettings,
+          workbenchSettingsSave,
           libraryList,
           libraryEntry,
           importPaperResponse,
@@ -315,11 +348,32 @@ describe("http server actor boundary cleanup", () => {
           jobEvents,
           jobAudit,
           jobStream,
+          workbenchReadingNote,
+          workbenchReadingInsight,
+          workbenchWritingRead,
+          workbenchWritingSave,
         ] =
           await Promise.all([
             fetch(`${server.url}/api/spaces`),
             fetch(`${server.url}/api/spaces/space-1/memberships`),
             fetch(`${server.url}/api/credentials`),
+            fetch(`${server.url}/api/library/personal`),
+            fetch(`${server.url}/api/library/personal/import`, {
+              body: JSON.stringify({
+                sourceLocator: '654321',
+                sourceType: 'pmid',
+              }),
+              headers: { 'Content-Type': 'application/json' },
+              method: 'POST',
+            }),
+            fetch(`${server.url}/api/settings/me`),
+            fetch(`${server.url}/api/settings/me`, {
+              body: JSON.stringify({
+                defaultImportTarget: 'project-workspace',
+              }),
+              headers: { 'Content-Type': 'application/json' },
+              method: 'POST',
+            }),
             fetch(`${server.url}/api/library?spaceId=space-1`),
             fetch(`${server.url}/api/library/entry-1`),
             fetch(`${server.url}/api/import/paper`, {
@@ -397,12 +451,42 @@ describe("http server actor boundary cleanup", () => {
             fetch(`${server.url}/api/jobs/job-1/events`),
             fetch(`${server.url}/api/jobs/job-1/audit`),
             fetch(`${server.url}/api/jobs/job-1/stream`),
+            fetch(`${server.url}/api/reading/entry-1/notes`, {
+              body: JSON.stringify({
+                body: 'Unauthorized compatibility note',
+                visibility: 'private',
+              }),
+              headers: { 'Content-Type': 'application/json' },
+              method: 'POST',
+            }),
+            fetch(`${server.url}/api/reading/entry-1/insights`, {
+              body: JSON.stringify({
+                summary: 'Unauthorized compatibility insight',
+                title: 'Unauthorized compatibility insight',
+              }),
+              headers: { 'Content-Type': 'application/json' },
+              method: 'POST',
+            }),
+            fetch(`${server.url}/api/writing/space-1/projects/project-1/document`),
+            fetch(`${server.url}/api/writing/space-1/projects/project-1/document`, {
+              body: JSON.stringify({
+                citations: [],
+                content: 'Unauthorized compatibility writer save',
+                title: 'Unauthorized writer',
+              }),
+              headers: { 'Content-Type': 'application/json' },
+              method: 'POST',
+            }),
           ]);
 
         for (const response of [
           spaces,
           memberships,
           credentials,
+          personalLibrary,
+          personalLibraryImport,
+          workbenchSettings,
+          workbenchSettingsSave,
           libraryList,
           libraryEntry,
           importPaperResponse,
@@ -423,6 +507,10 @@ describe("http server actor boundary cleanup", () => {
           jobEvents,
           jobAudit,
           jobStream,
+          workbenchReadingNote,
+          workbenchReadingInsight,
+          workbenchWritingRead,
+          workbenchWritingSave,
         ]) {
           expect(response.status).toBe(401);
         }
@@ -453,6 +541,12 @@ describe("http server actor boundary cleanup", () => {
           "user-alice",
           credential.credentialRef,
           createdSpace.id,
+        );
+        const notebook = await createNotebook(server.url, "user-alice");
+        const projectDoc = await createProjectDoc(
+          server.url,
+          "user-alice",
+          importedRecord.projectId,
         );
 
         const responses = await Promise.all([
@@ -497,6 +591,43 @@ describe("http server actor boundary cleanup", () => {
             },
             method: "POST",
           }),
+          fetch(`${server.url}/api/library/personal/import`, {
+            body: JSON.stringify({
+              requestedByUserId: 'user-bob',
+              sourceLocator: '654321',
+              sourceType: 'pmid',
+            }),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-alice',
+            },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/settings/me?actorUserId=user-bob`, {
+            headers: { 'x-jixia-actor': 'user-alice' },
+          }),
+          fetch(`${server.url}/api/settings/me`, {
+            body: JSON.stringify({
+              actorUserId: 'user-bob',
+              defaultImportTarget: 'project-workspace',
+            }),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-alice',
+            },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/settings/me`, {
+            body: JSON.stringify({
+              defaultImportTarget: 'project-workspace',
+              userId: 'user-bob',
+            }),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-alice',
+            },
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/notebooks`, {
             body: JSON.stringify({ ownerId: 'user-bob', title: 'Spoofed notebook' }),
             headers: {
@@ -505,10 +636,10 @@ describe("http server actor boundary cleanup", () => {
             },
             method: 'POST',
           }),
-          fetch(`${server.url}/api/notebooks/${(await createNotebook(server.url, 'user-alice')).id}?actorUserId=user-bob`, {
+          fetch(`${server.url}/api/notebooks/${notebook.id}?actorUserId=user-bob`, {
             headers: { "x-jixia-actor": 'user-alice' },
           }),
-          fetch(`${server.url}/api/notebooks/${(await createNotebook(server.url, 'user-alice')).id}/versions`, {
+          fetch(`${server.url}/api/notebooks/${notebook.id}/versions`, {
             body: JSON.stringify({ actorUserId: 'user-bob', citations: [], content: 'Spoofed notebook save' }),
             headers: {
               "Content-Type": "application/json",
@@ -524,10 +655,10 @@ describe("http server actor boundary cleanup", () => {
             },
             method: 'POST',
           }),
-          fetch(`${server.url}/api/project-docs/${(await createProjectDoc(server.url, 'user-alice', importedRecord.projectId)).id}?actorUserId=user-bob`, {
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}?actorUserId=user-bob`, {
             headers: { "x-jixia-actor": 'user-alice' },
           }),
-          fetch(`${server.url}/api/project-docs/${(await createProjectDoc(server.url, 'user-alice', importedRecord.projectId)).id}/versions`, {
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/versions`, {
             body: JSON.stringify({ actorUserId: 'user-bob', citations: [], content: 'Spoofed project-doc save' }),
             headers: {
               "Content-Type": "application/json",
@@ -535,7 +666,7 @@ describe("http server actor boundary cleanup", () => {
             },
             method: 'POST',
           }),
-          fetch(`${server.url}/api/project-docs/${(await createProjectDoc(server.url, 'user-alice', importedRecord.projectId)).id}/publish-state`, {
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/publish-state`, {
             body: JSON.stringify({ actorUserId: 'user-bob', publishState: 'review' }),
             headers: {
               "Content-Type": "application/json",
@@ -602,6 +733,30 @@ describe("http server actor boundary cleanup", () => {
               "x-jixia-actor": "user-alice",
             },
             method: "POST",
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/notes`, {
+            body: JSON.stringify({
+              authorUserId: 'user-bob',
+              body: 'Spoofed compatibility note',
+              visibility: 'private',
+            }),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-alice',
+            },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/insights`, {
+            body: JSON.stringify({
+              startedByUserId: 'user-bob',
+              summary: 'Spoofed compatibility insight',
+              title: 'Spoofed compatibility insight',
+            }),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-alice',
+            },
+            method: 'POST',
           }),
           fetch(`${server.url}/api/credentials?userId=user-bob`, {
             headers: { "x-jixia-actor": "user-alice" },
@@ -680,6 +835,22 @@ describe("http server actor boundary cleanup", () => {
           }),
           fetch(`${server.url}/api/jobs/${job.id}/stream?actorSpaceId=space-bob`, {
             headers: { "x-jixia-actor": "user-alice" },
+          }),
+          fetch(`${server.url}/api/writing/${createdSpace.id}/projects/${importedRecord.projectId}/document?actorUserId=user-bob`, {
+            headers: { 'x-jixia-actor': 'user-alice' },
+          }),
+          fetch(`${server.url}/api/writing/${createdSpace.id}/projects/${importedRecord.projectId}/document`, {
+            body: JSON.stringify({
+              actorUserId: 'user-bob',
+              citations: [],
+              content: 'Spoofed compatibility writer save',
+              title: 'Spoofed writer',
+            }),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-alice',
+            },
+            method: 'POST',
           }),
         ]);
 

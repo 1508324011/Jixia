@@ -4,7 +4,33 @@ import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
+import type { PubmedConnector } from '../../src/server/connectors/pubmed.connector';
 import { createHttpServer } from '../../src/server/http-server';
+
+function createStubPubmedConnector(): PubmedConnector {
+  return {
+    async lookup(locator, sourceType) {
+      return {
+        abstractText: `External ${sourceType.toUpperCase()} abstract for ${locator}`,
+        canonicalId: `${sourceType}:${locator}`,
+        title: `Imported ${sourceType.toUpperCase()} paper ${locator}`,
+      };
+    },
+    async search(query) {
+      return [
+        {
+          abstractText: `PubMed search result for ${query}`,
+          canonicalId: 'pmid:654321',
+          reason: 'PubMed query matched tumor-board biomarker curation work.',
+          sourceLabel: 'PubMed',
+          sourceLocator: '654321',
+          sourceType: 'pmid' as const,
+          title: 'Tumor board biomarkers for rapid review',
+        },
+      ];
+    },
+  };
+}
 
 async function listenOnEphemeralPort(server: ReturnType<typeof createHttpServer>['server']) {
   await new Promise<void>((resolve, reject) => {
@@ -41,6 +67,9 @@ describe('workbench http contracts', () => {
   it('exposes discovery and settings endpoints for the workbench shell', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-http-'));
     const httpServer = createHttpServer({
+      connectors: {
+        pubmed: createStubPubmedConnector(),
+      },
       env: {
         JIXIA_HOST: '127.0.0.1',
         JIXIA_STORAGE_ROOT: storageRoot,
@@ -49,6 +78,7 @@ describe('workbench http contracts', () => {
 
     try {
       const baseUrl = await listenOnEphemeralPort(httpServer.server);
+      const actorHeaders = { 'x-jixia-actor': 'user-alice' };
       const response = await fetch(`${baseUrl}/api/discovery/today`);
       expect(response.status).toBe(200);
 
@@ -76,11 +106,31 @@ describe('workbench http contracts', () => {
         title: expect.any(String),
       });
 
-      const emptyPersonalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`);
+      const unauthorizedPersonalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`);
+      expect(unauthorizedPersonalLibraryResponse.status).toBe(401);
+
+      const emptyPersonalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`, {
+        headers: actorHeaders,
+      });
       expect(emptyPersonalLibraryResponse.status).toBe(200);
 
       const emptyPersonalLibrary = await emptyPersonalLibraryResponse.json();
       expect(emptyPersonalLibrary).toEqual({ entries: [] });
+
+      const unauthorizedImportPersonalLibraryResponse = await fetch(
+        `${baseUrl}/api/library/personal/import`,
+        {
+          body: JSON.stringify({
+            sourceLocator: search.items[0].sourceLocator,
+            sourceType: search.items[0].sourceType,
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+      expect(unauthorizedImportPersonalLibraryResponse.status).toBe(401);
 
       const importPersonalLibraryResponse = await fetch(`${baseUrl}/api/library/personal/import`, {
         body: JSON.stringify({
@@ -89,6 +139,7 @@ describe('workbench http contracts', () => {
         }),
         headers: {
           'Content-Type': 'application/json',
+          ...actorHeaders,
         },
         method: 'POST',
       });
@@ -103,9 +154,7 @@ describe('workbench http contracts', () => {
       const spoofedSettingsReadResponse = await fetch(
         `${baseUrl}/api/settings/me?actorUserId=user-bob`,
         {
-          headers: {
-            'x-jixia-actor': 'user-alice',
-          },
+          headers: actorHeaders,
         },
       );
       expect(spoofedSettingsReadResponse.status).toBe(400);
@@ -117,16 +166,14 @@ describe('workbench http contracts', () => {
         }),
         headers: {
           'Content-Type': 'application/json',
-          'x-jixia-actor': 'user-alice',
+          ...actorHeaders,
         },
         method: 'POST',
       });
       expect(spoofedSettingsWriteResponse.status).toBe(400);
 
       const settingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
-        headers: {
-          'x-jixia-actor': 'user-alice',
-        },
+        headers: actorHeaders,
       });
       expect(settingsResponse.status).toBe(200);
 
@@ -137,6 +184,18 @@ describe('workbench http contracts', () => {
       });
       expect(settings.apiKey).toBeUndefined();
 
+      const unauthorizedSavedResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        body: JSON.stringify({
+          apiKey: 'sk-test-secret',
+          defaultImportTarget: 'project-workspace',
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      });
+      expect(unauthorizedSavedResponse.status).toBe(401);
+
       const savedResponse = await fetch(`${baseUrl}/api/settings/me`, {
         body: JSON.stringify({
           apiKey: 'sk-test-secret',
@@ -144,7 +203,7 @@ describe('workbench http contracts', () => {
         }),
         headers: {
           'Content-Type': 'application/json',
-          'x-jixia-actor': 'user-alice',
+          ...actorHeaders,
         },
         method: 'POST',
       });
@@ -158,9 +217,7 @@ describe('workbench http contracts', () => {
       expect(savedSettings.apiKey).toBeUndefined();
 
       const persistedSettingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
-        headers: {
-          'x-jixia-actor': 'user-alice',
-        },
+        headers: actorHeaders,
       });
       expect(persistedSettingsResponse.status).toBe(200);
 
@@ -214,7 +271,9 @@ describe('workbench http contracts', () => {
       ]);
       expect(persistedStateText).not.toContain('sk-test-secret');
 
-      const personalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`);
+      const personalLibraryResponse = await fetch(`${baseUrl}/api/library/personal`, {
+        headers: actorHeaders,
+      });
       expect(personalLibraryResponse.status).toBe(200);
 
       const personalLibrary = await personalLibraryResponse.json();
@@ -226,8 +285,97 @@ describe('workbench http contracts', () => {
         }),
       );
 
+      const unauthorizedWorkbenchNoteResponse = await fetch(
+        `${baseUrl}/api/reading/${importedPersonalRecord.entry.id}/notes`,
+        {
+          body: JSON.stringify({
+            body: 'Unauthorized compatibility note',
+            visibility: 'private',
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+      expect(unauthorizedWorkbenchNoteResponse.status).toBe(401);
+
+      const noteResponse = await fetch(
+        `${baseUrl}/api/reading/${importedPersonalRecord.entry.id}/notes`,
+        {
+          body: JSON.stringify({
+            body: 'Workbench compatibility note',
+            visibility: 'private',
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+            ...actorHeaders,
+          },
+          method: 'POST',
+        },
+      );
+      expect(noteResponse.status).toBe(201);
+
+      const unauthorizedWorkbenchInsightResponse = await fetch(
+        `${baseUrl}/api/reading/${importedPersonalRecord.entry.id}/insights`,
+        {
+          body: JSON.stringify({
+            summary: 'Unauthorized compatibility insight',
+            title: 'Unauthorized insight',
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+      expect(unauthorizedWorkbenchInsightResponse.status).toBe(401);
+
+      const insightResponse = await fetch(
+        `${baseUrl}/api/reading/${importedPersonalRecord.entry.id}/insights`,
+        {
+          body: JSON.stringify({
+            summary: 'Workbench compatibility insight',
+            title: 'Workbench insight',
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+            ...actorHeaders,
+          },
+          method: 'POST',
+        },
+      );
+      expect(insightResponse.status).toBe(201);
+
+      const aliceDiscoveryResponse = await fetch(
+        `${baseUrl}/api/discovery/search?query=${encodeURIComponent('tumor board')}`,
+        { headers: actorHeaders },
+      );
+      expect(aliceDiscoveryResponse.status).toBe(200);
+      const aliceDiscovery = await aliceDiscoveryResponse.json();
+
+      const bobDiscoveryResponse = await fetch(
+        `${baseUrl}/api/discovery/search?query=${encodeURIComponent('tumor board')}`,
+        { headers: { 'x-jixia-actor': 'user-bob' } },
+      );
+      expect(bobDiscoveryResponse.status).toBe(200);
+      const bobDiscovery = await bobDiscoveryResponse.json();
+
+      expect(
+        aliceDiscovery.items.find(
+          (item: { canonicalId: string }) =>
+            item.canonicalId === search.items[0].canonicalId,
+        ),
+      ).toMatchObject({ imported: true });
+      expect(
+        bobDiscovery.items.find(
+          (item: { canonicalId: string }) =>
+            item.canonicalId === search.items[0].canonicalId,
+        ),
+      ).toMatchObject({ imported: false });
+
       const { createDemoApi } = await import('../../src/web/lib/demo-api');
-      const demoApi = createDemoApi(baseUrl);
+      const demoApi = createDemoApi(baseUrl, 'user-alice');
       const todayFromClient = await demoApi.getTodayRecommendations();
       const searchFromClient = await demoApi.searchDiscovery('tumor board');
       const settingsFromClient = await demoApi.getWorkbenchSettings();
@@ -239,6 +387,16 @@ describe('workbench http contracts', () => {
       expect(personalLibraryFromClient.entries).toContainEqual(
         expect.objectContaining({
           canonicalId: search.items[0].canonicalId,
+        }),
+      );
+
+      const readerDetailFromClient = await demoApi.getReadingDetail(
+        importedPersonalRecord.entry.id,
+      );
+      expect(readerDetailFromClient.notes).toContainEqual(
+        expect.objectContaining({
+          body: 'Workbench compatibility note',
+          visibility: 'private',
         }),
       );
     } finally {
