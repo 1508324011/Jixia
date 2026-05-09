@@ -14,11 +14,20 @@ import type { NoteVisibility } from '@shared/contracts/reading';
 
 import { requestJson } from './http-client';
 
+const DEFAULT_DEMO_ACTOR_USER_ID = 'user-alice';
+
 function resolveApiUrl(baseUrl: string, pathname: string): string {
   return baseUrl ? new URL(pathname, baseUrl).toString() : pathname;
 }
 
-export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
+export function createDemoApi(
+  baseUrl = '',
+  actorUserId = DEFAULT_DEMO_ACTOR_USER_ID,
+) {
+  function actorHeaders(): Record<string, string> {
+    return actorUserId ? { 'x-jixia-actor': actorUserId } : {};
+  }
+
   function buildSearchUrl(pathname: string, query: string): string {
     const requestUrl = new URL(resolveApiUrl(baseUrl, pathname), 'http://localhost');
     requestUrl.searchParams.set('query', query);
@@ -32,33 +41,23 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
     return resolveApiUrl(baseUrl, pathname);
   }
 
-  function actorHeaders(): Record<string, string> {
-    return { 'x-jixia-actor': actorUserId };
-  }
-
   return {
     getTodayRecommendations(): Promise<DiscoveryTodayResponse> {
       return requestJson<DiscoveryTodayResponse>(
         resolveApiUrl(baseUrl, '/api/discovery/today'),
-        {
-          headers: actorHeaders(),
-        },
+        { headers: actorHeaders() },
       );
     },
     searchDiscovery(query: string): Promise<DiscoverySearchResponse> {
       return requestJson<DiscoverySearchResponse>(
         buildSearchUrl('/api/discovery/search', query),
-        {
-          headers: actorHeaders(),
-        },
+        { headers: actorHeaders() },
       );
     },
     getPersonalLibraryEntries(): Promise<LibraryListResponse> {
       return requestJson<LibraryListResponse>(
         resolvePath('/api/library/personal'),
-        {
-          headers: actorHeaders(),
-        },
+        { headers: actorHeaders() },
       );
     },
     importToPersonalLibrary(input: {
@@ -126,9 +125,7 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
 
       return requestJson<WritingDocumentResponse>(
         resolvePath(`/api/projects/${projectId}/writing/document`),
-        {
-          headers: actorHeaders(),
-        },
+        { headers: actorHeaders() },
       );
     },
     saveWritingDocument(input: {
@@ -137,7 +134,7 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
       projectId: string;
       spaceId: string;
       title: string;
-      }): Promise<WritingDocumentResponse> {
+    }): Promise<WritingDocumentResponse> {
       void input.spaceId;
 
       return requestJson<WritingDocumentResponse>(
@@ -156,9 +153,7 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
     getWorkbenchSettings(): Promise<WorkbenchSettingsResponse> {
       return requestJson<WorkbenchSettingsResponse>(
         resolvePath('/api/settings/me'),
-        {
-          headers: { 'x-jixia-actor': actorUserId },
-        },
+        { headers: actorHeaders() },
       );
     },
     saveWorkbenchSettings(
@@ -168,7 +163,7 @@ export function createDemoApi(baseUrl = '', actorUserId = 'user-alice') {
         resolvePath('/api/settings/me'),
         {
           body: JSON.stringify(input),
-          headers: { 'x-jixia-actor': actorUserId },
+          headers: actorHeaders(),
           method: 'POST',
         },
       );

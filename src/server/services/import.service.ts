@@ -53,11 +53,14 @@ export interface ImportService {
     input: ImportLibraryEntryRequest,
     actorUserId: string,
   ): Promise<ImportedLibraryRecord>;
-  importToPersonalLibrary(input: {
-    requestedByUserId: string;
-    sourceLocator: string;
-    sourceType: "doi" | "pmid" | "arxiv";
-  }): Promise<ImportedLibraryRecord>;
+  importToPersonalLibrary(
+    input: {
+      requestedByUserId?: string;
+      sourceLocator: string;
+      sourceType: "doi" | "pmid" | "arxiv";
+    },
+    actorUserId: string,
+  ): Promise<ImportedLibraryRecord>;
   searchDiscovery(query: string): Promise<TodayRecommendation[]>;
   uploadPdf(
     input: UploadPdfToLibraryRequest,
@@ -271,21 +274,24 @@ export function createImportService(store: ImportStore): ImportService {
         }),
       );
     },
-    async importToPersonalLibrary(input: {
-      requestedByUserId: string;
-      sourceLocator: string;
-      sourceType: "doi" | "pmid" | "arxiv";
-    }): Promise<ImportedLibraryRecord> {
+    async importToPersonalLibrary(
+      input: {
+        requestedByUserId?: string;
+        sourceLocator: string;
+        sourceType: "doi" | "pmid" | "arxiv";
+      },
+      actorUserId: string,
+    ): Promise<ImportedLibraryRecord> {
       return this.importPaper(
         {
           requestedByUserId: input.requestedByUserId,
-          scope: { id: input.requestedByUserId, type: "user" },
+          scope: { id: actorUserId, type: "user" },
           sourceLocator: input.sourceLocator,
           sourceType: input.sourceType,
           spaceId: "",
           visibility: "private",
         },
-        input.requestedByUserId,
+        actorUserId,
       );
     },
     async searchDiscovery(query: string): Promise<TodayRecommendation[]> {
