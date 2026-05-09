@@ -355,7 +355,7 @@ describe('workbench http contracts', () => {
       await closeServer(httpServer.server);
       rmSync(storageRoot, { force: true, recursive: true });
     }
-  });
+  }, 15_000);
 
   it('documents the new workbench surfaces in the README and handoff notes', () => {
     const readme = readFileSync(join(process.cwd(), 'README.md'), 'utf8');

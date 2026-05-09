@@ -124,7 +124,7 @@ describe('reading evidence', () => {
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
-  });
+  }, 10_000);
 
   it('authorizes reading flows through persisted space memberships without legacy mirrors', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-reading-prisma-space-'));

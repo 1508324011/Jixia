@@ -1,20 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import type { WritingDocumentView } from '@shared/contracts/writing';
+import type { ProjectDocRecord } from '@shared/contracts/project-docs';
 
-import { createDemoApi } from '../lib/demo-api';
-import { ApiError } from '../lib/http-client';
+import { ApiError, apiClient } from '../lib/http-client';
 
 interface ProjectWriterListProps {
   projectId: string;
-  spaceId: string;
 }
 
-const demoApi = createDemoApi();
-
-export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps) {
-  const [document, setDocument] = useState<WritingDocumentView | null>(null);
+export function ProjectWriterList({ projectId }: ProjectWriterListProps) {
+  const [document, setDocument] = useState<ProjectDocRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -26,10 +22,10 @@ export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps
       setLoadError(null);
 
       try {
-        const response = await demoApi.getWritingDocument(spaceId, projectId);
+        const nextDocument = await apiClient.getLatestProjectDoc(projectId);
 
         if (!isCancelled) {
-          setDocument(response.document);
+          setDocument(nextDocument);
         }
       } catch (error) {
         if (!isCancelled) {
@@ -55,7 +51,7 @@ export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps
     return () => {
       isCancelled = true;
     };
-  }, [projectId, spaceId]);
+  }, [projectId]);
 
   return (
     <div className="panel-grid" aria-label="project writer documents">
@@ -71,22 +67,26 @@ export function ProjectWriterList({ projectId, spaceId }: ProjectWriterListProps
         </article>
       ) : document ? (
         <article className="panel">
-          <div className="status-badge">{document.publishState}</div>
-          <h3 className="panel-title">{document.title}</h3>
+          <h3 className="panel-title">Known Writer draft</h3>
           <p className="quiet-copy">
-            {document.latestSnapshot?.content ?? 'The draft exists but does not have saved content yet.'}
+            Open the server-owned project document that was already shared with this project.
           </p>
           <Link
             className="panel-link"
-            to={`/projects/${projectId}/writing/${document.documentId}`}
+            to={`/projects/${projectId}/writing/${document.id}`}
           >
             打开 Writer 文稿
           </Link>
         </article>
       ) : (
         <article className="panel">
-          <h3 className="panel-title">No promoted Writer draft yet</h3>
-          <p className="quiet-copy">Use Reader to promote a governed insight into Writer.</p>
+          <h3 className="panel-title">No Writer draft selected yet</h3>
+          <p className="quiet-copy">
+            Promote a governed Reader insight to create a project document before reopening it here.
+          </p>
+          <Link className="panel-link" to={`/projects/${projectId}/library`}>
+            Open project library
+          </Link>
         </article>
       )}
     </div>

@@ -28,6 +28,7 @@ export function useProjectContext(
 ): ProjectContextViewModel {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const isMountedRef = useRef(false);
   const refreshGenerationRef = useRef(0);
@@ -46,6 +47,7 @@ export function useProjectContext(
 
     try {
       setIsLoading(true);
+      setHasLoaded(false);
       setError(null);
       const nextProjects = await apiClient.listProjects();
 
@@ -67,6 +69,7 @@ export function useProjectContext(
       );
     } finally {
       if (canCommitRefresh(generation)) {
+        setHasLoaded(true);
         setIsLoading(false);
       }
     }
@@ -92,12 +95,12 @@ export function useProjectContext(
       return error;
     }
 
-    if (projectId && projects.length > 0 && !project) {
+    if (projectId && hasLoaded && !project) {
       return `Project ${projectId} is not visible to the current actor.`;
     }
 
     return null;
-  }, [error, project, projectId, projects.length]);
+  }, [error, hasLoaded, project, projectId]);
 
   return useMemo(
     () => ({

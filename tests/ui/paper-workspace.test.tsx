@@ -4,24 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/web/app';
 
-const projectFixture = {
-  membership: {
-    joinedAt: '2026-05-08T00:00:00.000Z',
-    projectId: 'project-alpha',
-    role: 'owner',
-    userId: 'user-alice',
-  },
-  project: {
-    createdAt: '2026-05-08T00:00:00.000Z',
-    createdByUserId: 'user-alice',
-    id: 'project-alpha',
-    name: 'Project Alpha',
-    spaceId: 'space-alpha',
-    status: 'active',
-    updatedAt: '2026-05-08T00:00:00.000Z',
-  },
-};
-
 function renderWorkbench(pathname: string) {
   window.history.replaceState({}, '', pathname);
   render(<App />);
@@ -44,6 +26,32 @@ afterEach(() => {
 describe('paper workspace', () => {
   it('paper page persists shared notes, governed insights, and project-first writer promotion actions', async () => {
     const user = userEvent.setup();
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:00:00.000Z',
+        projectId: 'project-alpha',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:00:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-alpha',
+        name: 'Tumor board project',
+        spaceId: 'space-alpha',
+        status: 'active',
+        updatedAt: '2026-03-23T00:00:00.000Z',
+      },
+    };
+    const projectDocRecord = {
+      createdAt: '2026-03-23T00:30:00.000Z',
+      createdByUserId: 'user-alice',
+      id: 'doc-alpha',
+      projectId: 'project-alpha',
+      publishState: 'draft',
+      title: 'Tumor board literature synthesis',
+      updatedAt: '2026-03-23T00:30:00.000Z',
+    } as const;
     const readingDetail = {
       asset: {
         abstractText: 'Imported PMID metadata for 654321',
@@ -106,14 +114,8 @@ describe('paper workspace', () => {
           return jsonResponse([projectFixture]);
         }
 
-        if (
-          requestUrl.endsWith('/api/projects/project-alpha/writing/document') &&
-          (!init?.method || init.method === 'GET')
-        ) {
-          return jsonResponse(
-            { error: 'No Writer document exists for project project-alpha.' },
-            404,
-          );
+        if (requestUrl.endsWith('/api/projects/project-alpha/writing-document')) {
+          return jsonResponse(null);
         }
 
         if (requestUrl.endsWith('/api/reading/entry-1') && (!init?.method || init.method === 'GET')) {
@@ -135,7 +137,7 @@ describe('paper workspace', () => {
           };
           readingDetail.notes.push(note);
 
-          return jsonResponse(note, 200);
+          return jsonResponse({ note }, 200);
         }
 
         if (requestUrl.endsWith('/api/reading/insights') && init?.method === 'POST') {
@@ -157,40 +159,24 @@ describe('paper workspace', () => {
           };
           readingDetail.insights.push(insight);
 
-          return jsonResponse(insight, 200);
+          return jsonResponse({ insight }, 200);
         }
 
-        if (
-          requestUrl.endsWith('/api/projects/project-alpha/writing/document') &&
-          init?.method === 'POST'
-        ) {
+        if (requestUrl.endsWith('/api/project-docs') && init?.method === 'POST') {
+          return jsonResponse(projectDocRecord);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-alpha/versions') && init?.method === 'POST') {
           const body = JSON.parse(String(init.body)) as { content: string };
           promotedDraft = body.content;
 
           return jsonResponse({
-            document: {
-              documentId: 'doc-alpha',
-              latestSnapshot: {
-                capturedAt: '2026-03-23T00:30:00.000Z',
-                citations: [],
-                content: promotedDraft,
-                doc: {
-                  createdAt: '2026-03-23T00:30:00.000Z',
-                  id: 'doc-alpha',
-                  projectId: 'project-alpha',
-                  publishState: 'draft',
-                  spaceId: 'space-alpha',
-                  title: 'Tumor board literature synthesis',
-                  updatedAt: '2026-03-23T00:30:00.000Z',
-                },
-                docVersionId: 'doc-version-1',
-                versionNumber: 1,
-              },
-              projectId: 'project-alpha',
-              publishState: 'draft',
-              spaceId: 'space-alpha',
-              title: 'Tumor board literature synthesis',
-            },
+            capturedAt: '2026-03-23T00:30:00.000Z',
+            citations: [],
+            content: promotedDraft,
+            document: projectDocRecord,
+            versionId: 'project-doc-version-1',
+            versionNumber: 1,
           });
         }
 
@@ -214,10 +200,9 @@ describe('paper workspace', () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Generate insight' }));
+    await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
 
-        await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
-
-    expect(await screen.findByText('Promoted latest insight into Writer.')).toBeInTheDocument();
+    expect(await screen.findByText('Promoted latest insight into Writer as doc-alpha.')).toBeInTheDocument();
     expect(promotedDraft).toContain('shared review workflow');
     expect(screen.getByRole('link', { name: 'Open writing' })).toHaveAttribute(
       'href',

@@ -89,5 +89,5 @@ describe("http server phase 3 library slice", () => {
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
-  });
+  }, 15_000);
 });

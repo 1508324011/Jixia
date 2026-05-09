@@ -178,7 +178,7 @@ describe('notebook and project document persistence', () => {
         { documentId: projectDoc.id },
         'user-bob',
       );
-      expect(bobReadable.projectId).toBe(project.project.id);
+      expect(bobReadable.document.projectId).toBe(project.project.id);
 
       await expect(
         firstApp.projectDocs.getDocument({ documentId: projectDoc.id }, 'user-charlie'),
@@ -382,9 +382,13 @@ describe('notebook and project document persistence', () => {
       );
 
       expect(reopenedDocument).toMatchObject({
-        id: document.id,
-        projectId: project.project.id,
-        title: 'Tumor board literature synthesis',
+        content: 'Promoted governed insight paragraph.',
+        document: {
+          id: document.id,
+          projectId: project.project.id,
+          title: 'Tumor board literature synthesis',
+        },
+        versionNumber: 1,
       });
 
       const reopenedSnapshot = await reopenedApp.projectDocs.saveDocument(

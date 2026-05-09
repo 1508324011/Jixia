@@ -83,12 +83,12 @@ function deriveWorkflowContext(pathname: string): WorkflowContext {
     "/projects/:projectId/library",
     pathname,
   );
-    if (projectLibraryMatch?.params.projectId) {
-      return {
-        currentSection: "library",
-        projectId: projectLibraryMatch.params.projectId,
-      };
-    }
+  if (projectLibraryMatch?.params.projectId) {
+    return {
+      currentSection: "library",
+      projectId: projectLibraryMatch.params.projectId,
+    };
+  }
 
   if (pathname === "/search") {
     return {

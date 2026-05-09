@@ -543,6 +543,22 @@ async function handleApiRequest(
       return true;
     }
 
+    const latestProjectDocumentMatch = pathname.match(
+      /^\/api\/projects\/([^/]+)\/writing-document$/,
+    );
+    if (latestProjectDocumentMatch && method === "GET") {
+      const actor = await getActor(request, actorOptions);
+      const [, projectId] = latestProjectDocumentMatch;
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      sendJson(
+        response,
+        200,
+        await app.projectDocs.findLatestProjectDocument(projectId, actor.userId),
+        method,
+      );
+      return true;
+    }
+
     const projectWritingMatch = pathname.match(/^\/api\/projects\/([^/]+)\/writing\/document$/);
     if (projectWritingMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);

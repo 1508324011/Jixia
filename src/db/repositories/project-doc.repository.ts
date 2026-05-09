@@ -157,6 +157,17 @@ async function getNextVersionNumber(
   return (latestVersion?.versionNumber ?? 0) + 1;
 }
 
+async function getLatestVersion(
+  prisma: ProjectDocClient,
+  documentId: string,
+): Promise<ProjectDocVersionWithRelations | null> {
+  return prisma.projectDocVersion.findFirst({
+    include: PROJECT_DOC_VERSION_INCLUDE,
+    orderBy: { versionNumber: 'desc' },
+    where: { projectDocId: documentId },
+  });
+}
+
 export async function initializeProjectDocPersistence(
   prisma: JixiaPrismaClient,
 ): Promise<void> {
@@ -265,11 +276,7 @@ export function createProjectDocRepository(
     ): Promise<PersistedProjectDocSnapshot | null> {
       await ensureInitialized();
 
-      const snapshot = await prisma.projectDocVersion.findFirst({
-        include: PROJECT_DOC_VERSION_INCLUDE,
-        orderBy: { versionNumber: 'desc' },
-        where: { projectDocId: documentId },
-      });
+      const snapshot = await getLatestVersion(prisma, documentId);
 
       return snapshot ? mapSnapshot(snapshot) : null;
     },
