@@ -192,12 +192,15 @@ describe('prisma schema', () => {
     expect(appWiring).not.toContain('memberships: state.memberships');
     expect(appWiring).not.toContain('spaces: state.spaces');
     expect(demoApi).toContain('createDemoApi(');
-    expect(demoApi).toContain('function actorHeaders()');
-    expect(demoApi).toContain("'x-jixia-actor': actorUserId");
+    expect(demoApi).toContain('function requestHeaders()');
+    expect(demoApi).toContain('Cookie: options.cookie');
+    expect(demoApi).not.toContain("'x-jixia-actor'");
     expect(httpApi).toContain('requireActor(actor)');
     expect(httpApi).not.toContain('requestedByUserId: DEFAULT_WORKBENCH_USER_ID');
     expect(httpApi).not.toContain('userId: DEFAULT_WORKBENCH_USER_ID');
-    expect(httpServer).toContain('isProtectedWorkbenchHttpApiPath');
+    expect(httpServer).toContain('function isWorkbenchHttpApiPath');
+    expect(httpServer).toContain('getOptionalActor(request, actorOptions)');
+    expect(httpServer).toContain('sessionRoutes: app.session');
 
     expect(importService).toContain('libraryRepository.importScopedEntry');
     expect(importService).toContain('scope: { id: actorUserId, type: "user" }');
