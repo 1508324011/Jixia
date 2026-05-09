@@ -8,7 +8,7 @@ import {
 import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createJixiaApp } from "./app";
+import { createJixiaApp, type CreateJixiaAppOptions } from "./app";
 import { resolveHttpApi } from "./http-api";
 import {
   assertNoActorImpersonation,
@@ -40,6 +40,7 @@ interface LoggerLike {
 }
 
 export interface HttpServerOptions {
+  connectors?: CreateJixiaAppOptions["connectors"];
   env?: RuntimeConfigEnv;
   logger?: LoggerLike;
 }
@@ -155,8 +156,25 @@ function isWorkbenchHttpApiPath(pathname: string): boolean {
     pathname === "/api/library/personal" ||
     pathname === "/api/library/personal/import" ||
     pathname === "/api/settings/me" ||
+    /^\/api\/reading\/[^/]+\/notes$/.test(pathname) ||
+    /^\/api\/reading\/[^/]+\/insights$/.test(pathname) ||
     /^\/api\/writing\/[^/]+\/projects\/[^/]+\/document$/.test(pathname)
   );
+}
+
+function isProtectedWorkbenchHttpApiPath(pathname: string): boolean {
+  return (
+    pathname === "/api/library/personal" ||
+    pathname === "/api/library/personal/import" ||
+    pathname === "/api/settings/me" ||
+    /^\/api\/reading\/[^/]+\/notes$/.test(pathname) ||
+    /^\/api\/reading\/[^/]+\/insights$/.test(pathname) ||
+    /^\/api\/writing\/[^/]+\/projects\/[^/]+\/document$/.test(pathname)
+  );
+}
+
+function hasActorTransport(request: IncomingMessage): boolean {
+  return Boolean(request.headers["x-jixia-actor"] || request.headers.authorization);
 }
 
 async function handleWorkbenchHttpApiRequest(
@@ -174,11 +192,16 @@ async function handleWorkbenchHttpApiRequest(
     const requestBody = method === "GET" || method === "HEAD"
       ? undefined
       : await readJsonBody<unknown>(request);
+    const actor = isProtectedWorkbenchHttpApiPath(requestUrl.pathname) ||
+        hasActorTransport(request)
+      ? getActor(request)
+      : undefined;
     const fallbackResponse = await resolveHttpApi(
       app,
       requestUrl,
       method,
       requestBody,
+      actor,
     );
 
     if (fallbackResponse) {
@@ -954,6 +977,7 @@ export function createHttpServer(
   const runtimeEnv = options.env ?? process.env;
   const runtimeConfig = readRuntimeConfig(runtimeEnv);
   const app = createJixiaApp({
+    connectors: options.connectors,
     env: {
       ...runtimeEnv,
       JIXIA_DATABASE_URL: runtimeConfig.databaseUrl,
@@ -991,11 +1015,15 @@ export function createHttpServer(
           const requestBody = method === "GET" || method === "HEAD"
             ? undefined
             : await readJsonBody<unknown>(request);
+          const fallbackActor = hasActorTransport(request)
+            ? getActor(request)
+            : undefined;
           const fallbackResponse = await resolveHttpApi(
             app,
             requestUrl,
             method,
             requestBody,
+            fallbackActor,
           );
 
           if (fallbackResponse) {
