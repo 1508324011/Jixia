@@ -2,6 +2,7 @@ import type {
   LibraryEntryView,
   ListLibraryEntriesQuery,
 } from "@shared/contracts/library";
+import { extname } from "node:path";
 import type { ScopeRef } from "@shared/contracts/projects";
 
 import type {
@@ -11,11 +12,21 @@ import type {
   ProjectRepository,
 } from "../../db";
 
+import type { FileStore } from "../storage/file-store";
+
 import { mapPersistedLibraryEntryView } from "./import.service";
 
 export interface LibraryStore {
+  fileStore: FileStore;
   libraryRepository: LibraryRepository;
   projectRepository: ProjectRepository;
+}
+
+export interface AuthorizedPaperFile {
+  body: Buffer;
+  contentDisposition: string;
+  contentLength: number;
+  contentType: string;
 }
 
 export interface GetLibraryEntryRequest {
@@ -42,8 +53,31 @@ export interface LibraryService {
     actorSpaceId?: string,
   ): Promise<PersistedLibraryEntryView>;
   getEntry(input: GetLibraryEntryRequest): Promise<LibraryEntryView | null>;
+  getEntryFile(input: GetLibraryEntryRequest): Promise<AuthorizedPaperFile>;
   listEntries(input: ListLibraryEntriesRequest): Promise<LibraryEntryView[]>;
   listPersonalEntries(actorUserId: string): Promise<LibraryEntryView[]>;
+}
+
+function resolveContentType(storageKey: string): string {
+  return extname(storageKey).toLowerCase() === ".pdf"
+    ? "application/pdf"
+    : "application/octet-stream";
+}
+
+function sanitizeFileNamePart(value: string): string {
+  return value
+    .trim()
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function resolveDownloadFileName(view: PersistedLibraryEntryView): string {
+  const extension = view.asset.storageKey
+    ? extname(view.asset.storageKey).toLowerCase() || ".pdf"
+    : ".pdf";
+  const baseName = sanitizeFileNamePart(view.asset.title) || `paper-${view.asset.id}`;
+
+  return `${baseName}${extension}`;
 }
 
 function resolveQueryScope(
@@ -254,6 +288,35 @@ export function createLibraryService(store: LibraryStore): LibraryService {
       );
 
       return mapPersistedLibraryEntryView(view);
+    },
+    async getEntryFile(
+      input: GetLibraryEntryRequest,
+    ): Promise<AuthorizedPaperFile> {
+      const view = await this.assertCanAccessEntry(
+        input.entryId,
+        input.actorUserId,
+        input.actorSpaceId,
+      );
+
+      if (!view.asset.storageKey) {
+        throw new Error(
+          `Paper asset file is not available for library entry ${input.entryId}.`,
+        );
+      }
+
+      const body = await store.fileStore.readBuffer(view.asset.storageKey).catch(() => {
+        throw new Error(
+          `Paper asset file is not available for library entry ${input.entryId}.`,
+        );
+      });
+      const fileName = resolveDownloadFileName(view);
+
+      return {
+        body,
+        contentDisposition: `attachment; filename="${fileName}"`,
+        contentLength: body.byteLength,
+        contentType: resolveContentType(view.asset.storageKey),
+      };
     },
   };
 }

@@ -1,15 +1,15 @@
 import { BrowserRouter } from "react-router-dom";
 
-import { AppShell } from "./components/app-shell";
+import { SessionAuthProvider } from "./lib/session-auth";
 import { AppRouter } from "./router";
 import "./styles/app.css";
 
 export function App() {
   return (
-    <BrowserRouter>
-      <AppShell>
+    <SessionAuthProvider>
+      <BrowserRouter>
         <AppRouter />
-      </AppShell>
-    </BrowserRouter>
+      </BrowserRouter>
+    </SessionAuthProvider>
   );
 }

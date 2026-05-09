@@ -5,7 +5,7 @@ import type { JobEventRecord, JobRecord } from "@shared/contracts/jobs";
 import type { SpaceSummary } from "@shared/contracts/spaces";
 
 import { apiClient } from "../lib/http-client";
-import { demoActorContext } from "./runtime-context";
+import { runtimeContext } from "./runtime-context";
 
 export interface JobsViewModel {
   activeJob: JobRecord | null;
@@ -41,12 +41,8 @@ export function useJobsPresenter(): JobsViewModel {
   const refresh = useCallback(async () => {
     try {
       setError(null);
-      const nextSpaces = await apiClient.listSpaces(
-        demoActorContext.actorUserId,
-      );
-      const nextCredentials = await apiClient.listCredentials(
-        demoActorContext.actorUserId,
-      );
+      const nextSpaces = await apiClient.listSpaces();
+      const nextCredentials = await apiClient.listCredentials();
       setSpaces(nextSpaces);
       setCredentials(nextCredentials);
 
@@ -57,10 +53,7 @@ export function useJobsPresenter(): JobsViewModel {
       }
 
       const nextJobs = sortJobs(
-        await apiClient.listJobs(
-          demoActorContext.actorUserId,
-          nextSpaces[0].id,
-        ),
+        await apiClient.listJobs(nextSpaces[0].id),
       );
       setJobs(nextJobs);
 
@@ -70,10 +63,7 @@ export function useJobsPresenter(): JobsViewModel {
       }
 
       setEvents(
-        await apiClient.listJobEvents(
-          demoActorContext.actorUserId,
-          nextJobs[0].id,
-        ),
+        await apiClient.listJobEvents(nextJobs[0].id),
       );
     } catch (presenterError) {
       setError(
@@ -97,7 +87,6 @@ export function useJobsPresenter(): JobsViewModel {
 
     subscriptionRef.current = apiClient.subscribeToJobEvents(
       {
-        actorUserId: demoActorContext.actorUserId,
         jobId: activeJob.id,
       },
       (event) => {
@@ -132,13 +121,13 @@ export function useJobsPresenter(): JobsViewModel {
       setIsRunningSample(true);
       setError(null);
 
-      let nextSpaces = await apiClient.listSpaces(demoActorContext.actorUserId);
+      let nextSpaces = await apiClient.listSpaces();
       if (nextSpaces.length === 0) {
-        await apiClient.createSpace(demoActorContext.actorUserId, {
+        await apiClient.createSpace({
           kind: "shared",
-          name: demoActorContext.defaultSharedSpaceName,
+          name: runtimeContext.defaultSharedSpaceName,
         });
-        nextSpaces = await apiClient.listSpaces(demoActorContext.actorUserId);
+        nextSpaces = await apiClient.listSpaces();
       }
 
       const nextActorSpaceId = nextSpaces[0]?.id;
@@ -146,17 +135,13 @@ export function useJobsPresenter(): JobsViewModel {
         throw new Error("No space is available for the sample job.");
       }
 
-      let nextCredentials = await apiClient.listCredentials(
-        demoActorContext.actorUserId,
-      );
+      let nextCredentials = await apiClient.listCredentials();
       if (nextCredentials.length === 0) {
-        await apiClient.createCredential(demoActorContext.actorUserId, {
+        await apiClient.createCredential({
           provider: "openai",
           rawSecret: "local-demo-credential-placeholder",
         });
-        nextCredentials = await apiClient.listCredentials(
-          demoActorContext.actorUserId,
-        );
+        nextCredentials = await apiClient.listCredentials();
       }
 
       const credential = nextCredentials[0];
@@ -164,7 +149,7 @@ export function useJobsPresenter(): JobsViewModel {
         throw new Error("No credential is available for the sample job.");
       }
 
-      const createdJob = await apiClient.createJob(demoActorContext.actorUserId, {
+      const createdJob = await apiClient.createJob({
         credentialRef: credential.credentialRef,
         kind: "ai.summary",
         payload: { prompt: "Summarize the current shared research lane." },
@@ -176,7 +161,7 @@ export function useJobsPresenter(): JobsViewModel {
       setJobs((currentJobs) => sortJobs([createdJob, ...currentJobs]));
       setEvents([]);
 
-      await apiClient.runJob(demoActorContext.actorUserId, createdJob.id);
+      await apiClient.runJob(createdJob.id);
 
       await refresh();
     } catch (presenterError) {

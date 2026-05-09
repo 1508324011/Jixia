@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectListItem } from "@shared/contracts/projects";
 
 import { apiClient } from "../lib/http-client";
-import { demoActorContext } from "./runtime-context";
 
 export interface ProjectContextViewModel {
   error: string | null;
@@ -50,9 +49,7 @@ export function useProjectContext(
       setIsLoading(true);
       setHasLoaded(false);
       setError(null);
-      const nextProjects = await apiClient.listProjects(
-        demoActorContext.actorUserId,
-      );
+      const nextProjects = await apiClient.listProjects();
 
       if (!canCommitRefresh(generation)) {
         return;

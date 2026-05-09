@@ -23,6 +23,8 @@ describe('prisma schema', () => {
     expect(schema).toContain('model ProjectDocVersion');
     expect(schema).toContain('model ProjectDocCitation');
     expect(schema).toContain('model ProviderCredential');
+    expect(schema).toContain('model ProviderCredentialSecret');
+    expect(schema).toContain('model WorkbenchSettings');
     expect(schema).toContain('model Job');
     expect(schema).toContain('model JobEvent');
     expect(schema).toContain('model AuditLog');
@@ -63,6 +65,35 @@ describe('prisma schema', () => {
       /model ProjectDocCitation[\s\S]*\n\s+projectDocVersionId\s+String/,
     );
     expect(schema).toMatch(/model Job[\s\S]*\n\s+credentialRef\s+String/);
+    expect(schema).toMatch(
+      /model ProviderCredential[\s\S]*@@index\(\[userId, provider\]\)/,
+    );
+    expect(schema).not.toMatch(
+      /model ProviderCredential[\s\S]*@@unique\(\[userId, provider\]\)/,
+    );
+    expect(schema).toMatch(
+      /model ProviderCredentialSecret[\s\S]*\n\s+credentialRef\s+String\s+@id/,
+    );
+    expect(schema).toMatch(
+      /model ProviderCredentialSecret[\s\S]*\n\s+encryptedSecret\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ProviderCredentialSecret[\s\S]*\n\s+credential\s+ProviderCredential\s+@relation\(fields: \[credentialRef\], references: \[id\], onDelete: Cascade\)/,
+    );
+    expect(schema).toMatch(
+      /model WorkbenchSettings[\s\S]*\n\s+userId\s+String\s+@id/,
+    );
+    expect(schema).toMatch(
+      /model WorkbenchSettings[\s\S]*\n\s+credentialRef\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model WorkbenchSettings[\s\S]*\n\s+defaultImportTarget\s+String/,
+    );
+    expect(schema).toMatch(
+      /model Job[\s\S]*@@index\(\[spaceId, requestedByUserId\]\)/,
+    );
+    expect(schema).toMatch(/model JobEvent[\s\S]*@@index\(\[jobId\]\)/);
+    expect(schema).toMatch(/model AuditLog[\s\S]*@@index\(\[jobId\]\)/);
   });
 
   it('creates typed database entrypoints and repositories', () => {
@@ -80,6 +111,7 @@ describe('prisma schema', () => {
     expect(existsSync('src/db/repositories/notebook.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/project-doc.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/job.repository.ts')).toBe(true);
+    expect(existsSync('src/db/repositories/credentials.repository.ts')).toBe(true);
     expect(
       existsSync(
         'prisma/migrations/20260504000000_scoped_library_entries/migration.sql',
@@ -90,6 +122,16 @@ describe('prisma schema', () => {
         'prisma/migrations/20260505000000_notebook_project_docs/migration.sql',
       ),
     ).toBe(true);
+    expect(
+      existsSync(
+        'prisma/migrations/20260507000000_job_governance_persistence/migration.sql',
+      ),
+    ).toBe(true);
+    expect(
+      existsSync(
+        'prisma/migrations/20260509000000_credentials_workbench_settings_authority/migration.sql',
+      ),
+    ).toBe(true);
     expect(clientEntrypoint).toContain('PrismaClient');
     expect(clientEntrypoint).toContain('createPrismaClient');
     expect(dbIndex).toContain('createProjectRepository');
@@ -97,6 +139,8 @@ describe('prisma schema', () => {
     expect(dbIndex).toContain('createLibraryRepository');
     expect(dbIndex).toContain('createNotebookRepository');
     expect(dbIndex).toContain('createProjectDocRepository');
+    expect(dbIndex).toContain('createJobRepository');
+    expect(dbIndex).toContain('createCredentialsRepository');
     expect(packageJson.scripts?.['prisma:generate']).toBe('prisma generate');
     expect(packageJson.scripts?.prebuild).toBe('npm run prisma:generate');
     expect(packageJson.scripts?.pretest).toBe('npm run prisma:generate');
@@ -128,6 +172,10 @@ describe('prisma schema', () => {
       'src/db/repositories/job.repository.ts',
       'utf8',
     );
+    const credentialsRepository = readFileSync(
+      'src/db/repositories/credentials.repository.ts',
+      'utf8',
+    );
 
     expect(projectRepository).not.toContain('@shared/contracts/');
     expect(spaceRepository).not.toContain('@shared/contracts/');
@@ -135,6 +183,53 @@ describe('prisma schema', () => {
     expect(notebookRepository).not.toContain('@shared/contracts/');
     expect(projectDocRepository).not.toContain('@shared/contracts/');
     expect(jobRepository).not.toContain('@shared/contracts/');
+    expect(credentialsRepository).not.toContain('@shared/contracts/');
+  });
+
+  it('keeps credential secrets and workbench settings on Prisma authority', () => {
+    const appWiring = readFileSync('src/server/app.ts', 'utf8');
+    const credentialsService = readFileSync(
+      'src/server/services/credentials.service.ts',
+      'utf8',
+    );
+    const credentialsRepository = readFileSync(
+      'src/db/repositories/credentials.repository.ts',
+      'utf8',
+    );
+    const migration = readFileSync(
+      'prisma/migrations/20260509000000_credentials_workbench_settings_authority/migration.sql',
+      'utf8',
+    );
+    const serializedStateBlock = appWiring.slice(
+      appWiring.indexOf('const serializedState: SerializedJixiaAppState = {'),
+      appWiring.indexOf('function markLibraryBootstrapComplete'),
+    );
+
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "ProviderCredentialSecret"');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "WorkbenchSettings"');
+    expect(credentialsRepository).toContain('providerCredentialSecret.create');
+    expect(credentialsRepository).toContain('workbenchSettings.upsert');
+    expect(credentialsRepository).toContain('bootstrapLegacyAuthority');
+    expect(credentialsRepository).toContain('hasStoredCredentials');
+    expect(credentialsService).toContain('repository.createCredential');
+    expect(credentialsService).toContain('repository.getWorkbenchSettings');
+    expect(credentialsService).toContain('repository.upsertWorkbenchSettings');
+    expect(credentialsService).not.toContain('store.credentials.push');
+    expect(credentialsService).not.toContain('store.workbenchSettings.push');
+    expect(credentialsService).not.toContain('store.persist');
+    expect(credentialsService).not.toContain('actorUserId ?? input.userId');
+    expect(credentialsService).not.toContain('actorUserId ?? query.userId');
+
+    expect(appWiring).toContain('createCredentialAuthorityBootstrappedCredentialsRepository');
+    expect(appWiring).toContain('createCredentialAuthorityBootstrappedJobRepository');
+    expect(appWiring).toContain('legacyCredentials');
+    expect(appWiring).toContain('legacyWorkbenchSettings');
+    expect(appWiring).toContain('markCredentialAuthorityBootstrapComplete');
+    expect(appWiring).toContain('ensureCredentialAuthorityUsable');
+    expect(appWiring).not.toContain('credentials: state.credentials');
+    expect(appWiring).not.toContain('workbenchSettings: state.workbenchSettings');
+    expect(serializedStateBlock).not.toContain('credentials: state.legacyCredentials');
+    expect(serializedStateBlock).not.toContain('workbenchSettings: state.legacyWorkbenchSettings');
   });
 
   it('keeps project service authority out of legacy json project arrays', () => {
@@ -163,6 +258,9 @@ describe('prisma schema', () => {
 
   it('cuts targeted server flows over to repository-backed document authority', () => {
     const appWiring = readFileSync('src/server/app.ts', 'utf8');
+    const demoApi = readFileSync('src/web/lib/demo-api.ts', 'utf8');
+    const httpApi = readFileSync('src/server/http-api.ts', 'utf8');
+    const httpServer = readFileSync('src/server/http-server.ts', 'utf8');
     const importService = readFileSync('src/server/services/import.service.ts', 'utf8');
     const libraryService = readFileSync('src/server/services/library.service.ts', 'utf8');
     const readingService = readFileSync('src/server/services/reading.service.ts', 'utf8');
@@ -174,8 +272,20 @@ describe('prisma schema', () => {
 
     expect(appWiring).not.toContain('memberships: state.memberships');
     expect(appWiring).not.toContain('spaces: state.spaces');
+    expect(demoApi).toContain('createDemoApi(');
+    expect(demoApi).toContain('function requestHeaders()');
+    expect(demoApi).toContain('Cookie: options.cookie');
+    expect(demoApi).not.toContain("'x-jixia-actor'");
+    expect(httpApi).toContain('requireActor(actor)');
+    expect(httpApi).not.toContain('requestedByUserId: DEFAULT_WORKBENCH_USER_ID');
+    expect(httpApi).not.toContain('userId: DEFAULT_WORKBENCH_USER_ID');
+    expect(httpServer).toContain('function isWorkbenchHttpApiPath');
+    expect(httpServer).toContain('getOptionalActor(request, actorOptions)');
+    expect(httpServer).toContain('sessionRoutes: app.session');
 
     expect(importService).toContain('libraryRepository.importScopedEntry');
+    expect(importService).toContain('scope: { id: actorUserId, type: "user" }');
+    expect(importService).not.toContain('scope: { id: input.requestedByUserId, type: "user" }');
     expect(importService).not.toContain('actorUserId ?? input.requestedByUserId');
     expect(importService).not.toContain('store.memberships.some');
     expect(importService).not.toContain('store.spaces.find');
@@ -185,6 +295,8 @@ describe('prisma schema', () => {
     expect(libraryService).not.toContain('store.spaces.find');
 
     expect(readingService).toContain('libraryService.assertCanAccessEntry');
+    expect(readingService).toContain('readingRepository.listNotesForEntry');
+    expect(readingService).toContain('readingRepository.saveGeneratedInsight');
     expect(readingService).not.toContain('actorUserId ?? input.authorUserId');
     expect(readingService).not.toContain('actorUserId ?? input.startedByUserId');
     expect(readingService).not.toContain('store.memberships.some');
@@ -202,14 +314,78 @@ describe('prisma schema', () => {
     expect(projectDocsService).not.toContain('store.projectMembers.some');
 
     expect(jobsRoutes).toContain('spaceRepository.denyNonMember');
+    expect(jobsRoutes).toContain('jobRepository.createQueuedJobWithAudit');
+    expect(jobsRoutes).toContain('jobRepository.listJobsForActor');
     expect(jobsRoutes).not.toContain('actorUserId ?? input.requestedByUserId');
     expect(jobsRoutes).not.toContain('store.memberships.some');
     expect(jobsRoutes).not.toContain('store.spaces.find');
+    expect(jobsRoutes).not.toContain('store.jobs.push');
+    expect(jobsRoutes).not.toContain('store.jobs.find');
+    expect(jobsRoutes).not.toContain('store.jobs.filter');
+
+    const credentialsService = readFileSync(
+      'src/server/services/credentials.service.ts',
+      'utf8',
+    );
+    expect(credentialsService).not.toContain('actorUserId ?? input.userId');
+    expect(credentialsService).not.toContain('actorUserId ?? query.userId');
 
     expect(jobStreamRoutes).toContain('await findAuthorizedJob');
+    expect(jobStreamRoutes).toContain('jobRepository.listJobEvents');
     expect(jobGovernance).toContain('spaceRepository.denyNonMember');
+    expect(jobGovernance).toContain('jobRepository.getJob');
     expect(jobGovernance).not.toContain('store.memberships.some');
     expect(jobGovernance).not.toContain('store.spaces.find');
+    expect(jobGovernance).not.toContain('store.jobs.find');
+  });
+
+  it('keeps governed jobs on Prisma repositories instead of json runtime arrays', () => {
+    const appWiring = readFileSync('src/server/app.ts', 'utf8');
+    const jobRepository = readFileSync(
+      'src/db/repositories/job.repository.ts',
+      'utf8',
+    );
+    const jobsRoutes = readFileSync('src/server/routes/jobs.routes.ts', 'utf8');
+    const jobRunner = readFileSync('src/server/jobs/job-runner.ts', 'utf8');
+    const jobBus = readFileSync('src/server/jobs/job-bus.ts', 'utf8');
+    const jobStreamRoutes = readFileSync('src/server/routes/job-stream.routes.ts', 'utf8');
+    const auditService = readFileSync('src/server/services/audit.service.ts', 'utf8');
+
+    expect(jobRepository).toContain('createQueuedJobWithAudit');
+    expect(jobRepository).toContain('providerCredential.findUnique');
+    expect(jobRepository).toContain('providerCredential.create');
+    expect(jobRepository).toContain('providerCredential.update');
+    expect(jobRepository).toContain('already belongs to another user');
+    expect(jobRepository).toContain('jobEvent.create');
+    expect(jobRepository).toContain('auditLog.create');
+    expect(jobRepository).not.toContain('JobRepository.getJob is not implemented');
+    expect(jobRepository).not.toContain('@shared/contracts/');
+
+    expect(appWiring).toContain('createJobRepository');
+    expect(appWiring).toContain('jobRepository');
+    expect(appWiring).not.toContain('jobs: state.jobs');
+    expect(appWiring).not.toContain('jobEvents: state.jobEvents');
+    expect(appWiring).not.toContain('auditLogs: state.auditLogs');
+    expect(appWiring).not.toContain('createJobBus(state.jobEvents');
+
+    expect(jobsRoutes).not.toContain('store.jobs.push');
+    expect(jobsRoutes).not.toContain('store.jobs.find');
+    expect(jobsRoutes).not.toContain('store.jobs.filter');
+    expect(jobsRoutes).not.toContain('store.persist');
+
+    expect(jobRunner).toContain('jobRepository.updateJobStatus');
+    expect(jobRunner).toContain('jobRepository.appendJobEvent');
+    expect(jobRunner).not.toContain('store.jobs.find');
+    expect(jobRunner).not.toContain('store.persist');
+
+    expect(jobBus).not.toContain('events.push');
+    expect(jobBus).not.toContain('events.filter');
+    expect(jobBus).not.toContain('persist()');
+    expect(jobStreamRoutes).toContain('jobRepository.listJobEvents');
+
+    expect(auditService).toContain('jobRepository.createAuditRecord');
+    expect(auditService).toContain('jobRepository.listAuditRecordsByJob');
+    expect(auditService).not.toContain('store.auditLogs');
   });
 
   it('keeps library asset authority in Prisma scoped repositories', () => {
@@ -219,6 +395,8 @@ describe('prisma schema', () => {
     const readingService = readFileSync('src/server/services/reading.service.ts', 'utf8');
     const notebookService = readFileSync('src/server/services/notebooks.service.ts', 'utf8');
     const projectDocsService = readFileSync('src/server/services/project-docs.service.ts', 'utf8');
+    const libraryContract = readFileSync('src/shared/contracts/library.ts', 'utf8');
+    const httpServer = readFileSync('src/server/http-server.ts', 'utf8');
     const libraryRepository = readFileSync(
       'src/db/repositories/library.repository.ts',
       'utf8',
@@ -245,12 +423,22 @@ describe('prisma schema', () => {
     expect(importService).toContain('libraryRepository.importScopedEntry');
     expect(importService).not.toContain('store.paperAssets');
     expect(importService).not.toContain('store.libraryEntries');
+    expect(importService).not.toContain('storageKey: asset.storageKey');
 
     expect(libraryService).toContain('libraryRepository.listLibraryEntriesForScope');
+    expect(libraryService).toContain('fileStore.readBuffer');
     expect(libraryService).not.toContain('store.paperAssets');
     expect(libraryService).not.toContain('store.libraryEntries');
 
     expect(readingService).toContain('libraryService.assertCanAccessEntry');
+    expect(appWiring).toContain('createReadingRepository(prismaClient)');
+    expect(appWiring).toContain('initializeReadingPersistence(prismaClient)');
+    expect(appWiring).toContain('legacyConversations');
+    expect(appWiring).toContain('legacyInsights');
+    expect(appWiring).toContain('legacyNotes');
+    expect(appWiring).not.toContain('conversations: state.conversations');
+    expect(appWiring).not.toContain('insights: state.insights');
+    expect(appWiring).not.toContain('notes: state.notes');
     expect(readingService).not.toContain('store.paperAssets');
     expect(readingService).not.toContain('store.libraryEntries');
 
@@ -261,5 +449,27 @@ describe('prisma schema', () => {
     expect(projectDocsService).toMatch(/listLibraryEntriesForAsset/);
     expect(projectDocsService).not.toContain('store.paperAssets');
     expect(projectDocsService).not.toContain('store.libraryEntries');
+    expect(libraryContract).not.toContain('storageKey?: string');
+    expect(httpServer).toContain('const libraryEntryFileMatch = pathname.match');
+    expect(httpServer).toContain('^\\/api\\/library\\/([^/]+)\\/file$');
+  });
+
+  it('keeps credentials and settings ownership on the server-derived actor boundary', () => {
+    const credentialsService = readFileSync(
+      'src/server/services/credentials.service.ts',
+      'utf8',
+    );
+    const credentialsRoutes = readFileSync(
+      'src/server/routes/credentials.routes.ts',
+      'utf8',
+    );
+    const workbenchHttpApi = readFileSync('src/server/http-api.ts', 'utf8');
+
+    expect(credentialsService).not.toContain('actorUserId ?? input.userId');
+    expect(credentialsService).not.toContain('actorUserId ?? query.userId');
+    expect(credentialsRoutes).not.toContain('saveWorkbenchSettings(input)');
+    expect(workbenchHttpApi).not.toContain('userId: DEFAULT_WORKBENCH_USER_ID');
+    expect(workbenchHttpApi).toContain("requestUrl.searchParams.get('actorUserId')");
+    expect(workbenchHttpApi).toContain('payload.actorUserId');
   });
 });

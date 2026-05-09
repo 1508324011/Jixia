@@ -8,13 +8,20 @@ import {
 import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createJixiaApp } from "./app";
+import { createJixiaApp, type CreateJixiaAppOptions } from "./app";
 import { resolveHttpApi } from "./http-api";
 import {
   assertNoActorImpersonation,
   assertNoSpaceContextMismatch,
   getActor,
+  getOptionalActor,
 } from "./auth/actor";
+import {
+  createClearedSessionCookieHeader,
+  createSessionCookieHeader,
+  readSessionTokenFromCookieHeader,
+  shouldUseSecureSessionCookies,
+} from "./services/session.service";
 import {
   readRuntimeConfig,
   type RuntimeConfig,
@@ -40,11 +47,13 @@ interface LoggerLike {
 }
 
 export interface HttpServerOptions {
+  connectors?: CreateJixiaAppOptions["connectors"];
   env?: RuntimeConfigEnv;
   logger?: LoggerLike;
 }
 
 export interface JixiaHttpServer {
+  close(): Promise<void>;
   runtimeConfig: RuntimeConfig;
   server: Server;
 }
@@ -84,6 +93,27 @@ function sendBody(
   response.end(body);
 }
 
+function sendBodyWithHeaders(
+  response: ServerResponse,
+  statusCode: number,
+  contentType: string,
+  body: Buffer | string,
+  method: string,
+  headers: Record<string, string>,
+): void {
+  response.writeHead(statusCode, {
+    "Content-Type": contentType,
+    ...headers,
+  });
+
+  if (method === "HEAD") {
+    response.end();
+    return;
+  }
+
+  response.end(body);
+}
+
 function sendJson(
   response: ServerResponse,
   statusCode: number,
@@ -96,6 +126,23 @@ function sendJson(
     "application/json; charset=utf-8",
     JSON.stringify(payload),
     method,
+  );
+}
+
+function sendJsonWithHeaders(
+  response: ServerResponse,
+  statusCode: number,
+  payload: unknown,
+  method: string,
+  headers: Record<string, string>,
+): void {
+  sendBodyWithHeaders(
+    response,
+    statusCode,
+    "application/json; charset=utf-8",
+    JSON.stringify(payload),
+    method,
+    headers,
   );
 }
 
@@ -120,6 +167,10 @@ function sendJsonError(
 function statusCodeForError(error: unknown): number {
   if (!(error instanceof Error)) {
     return 500;
+  }
+
+  if (/file is not available/i.test(error.message)) {
+    return 404;
   }
 
   if (/server-derived actor session/i.test(error.message)) {
@@ -148,6 +199,16 @@ async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
   return JSON.parse(rawBody) as T;
 }
 
+function readSingleHeader(
+  value: string | string[] | undefined,
+): string | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return value ?? null;
+}
+
 function isWorkbenchHttpApiPath(pathname: string): boolean {
   return (
     pathname === "/api/discovery/today" ||
@@ -155,6 +216,8 @@ function isWorkbenchHttpApiPath(pathname: string): boolean {
     pathname === "/api/library/personal" ||
     pathname === "/api/library/personal/import" ||
     pathname === "/api/settings/me" ||
+    /^\/api\/reading\/[^/]+\/notes$/.test(pathname) ||
+    /^\/api\/reading\/[^/]+\/insights$/.test(pathname) ||
     /^\/api\/writing\/[^/]+\/projects\/[^/]+\/document$/.test(pathname)
   );
 }
@@ -171,6 +234,14 @@ async function handleWorkbenchHttpApiRequest(
   }
 
   try {
+    const actorOptions = {
+      allowLegacyTestOverride: false,
+      sessionRoutes: app.session,
+    };
+    const actor = requestUrl.pathname === "/api/discovery/today" ||
+        requestUrl.pathname === "/api/discovery/search"
+      ? await getOptionalActor(request, actorOptions)
+      : await getActor(request, actorOptions);
     const requestBody = method === "GET" || method === "HEAD"
       ? undefined
       : await readJsonBody<unknown>(request);
@@ -179,6 +250,7 @@ async function handleWorkbenchHttpApiRequest(
       requestUrl,
       method,
       requestBody,
+      actor,
     );
 
     if (fallbackResponse) {
@@ -230,9 +302,15 @@ async function handleApiRequest(
   response: ServerResponse,
   requestUrl: URL,
   app: ReturnType<typeof createJixiaApp>,
+  allowLegacyActorOverride: boolean,
+  useSecureSessionCookies: boolean,
 ): Promise<boolean> {
   const method = request.method ?? "GET";
   const pathname = requestUrl.pathname;
+  const actorOptions = {
+    allowLegacyTestOverride: allowLegacyActorOverride,
+    sessionRoutes: app.session,
+  };
 
   try {
     if (pathname === "/api/health" && (method === "GET" || method === "HEAD")) {
@@ -240,8 +318,78 @@ async function handleApiRequest(
       return true;
     }
 
+    if (pathname === "/api/session/login" && method === "POST") {
+      const body = await readJsonBody<{ email?: string; userId?: string }>(request);
+      const login = await app.session.createLoginSession(body, {
+        userAgent: readSingleHeader(request.headers["user-agent"]) ?? undefined,
+      });
+
+      sendJsonWithHeaders(
+        response,
+        200,
+        { user: login.user },
+        method,
+        {
+          "Set-Cookie": createSessionCookieHeader(
+            login.sessionToken,
+            login.maxAgeSeconds,
+            { secure: useSecureSessionCookies },
+          ),
+        },
+      );
+      return true;
+    }
+
+    if (pathname === "/api/session/me" && (method === "GET" || method === "HEAD")) {
+      const sessionToken = readSessionTokenFromCookieHeader(
+        readSingleHeader(request.headers.cookie),
+      );
+
+      if (!sessionToken) {
+        throw new Error(
+          "Project API requires a server-derived actor session from the session cookie.",
+        );
+      }
+
+      const user = await app.session.getCurrentUserFromToken(sessionToken, {
+        userAgent: readSingleHeader(request.headers["user-agent"]) ?? undefined,
+      });
+
+      if (!user) {
+        throw new Error(
+          "Project API requires a server-derived actor session from the session cookie.",
+        );
+      }
+
+      sendJson(response, 200, { user }, method);
+      return true;
+    }
+
+    if (pathname === "/api/session/logout" && method === "POST") {
+      const sessionToken = readSessionTokenFromCookieHeader(
+        readSingleHeader(request.headers.cookie),
+      );
+
+      if (sessionToken) {
+        await app.session.revokeSessionToken(sessionToken);
+      }
+
+      sendJsonWithHeaders(
+        response,
+        200,
+        { ok: true },
+        method,
+        {
+          "Set-Cookie": createClearedSessionCookieHeader({
+            secure: useSecureSessionCookies,
+          }),
+        },
+      );
+      return true;
+    }
+
     if (pathname === "/api/spaces" && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
         response,
@@ -253,7 +401,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/spaces" && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       const body = await readJsonBody<{
         actorUserId?: string;
@@ -280,7 +428,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/library" && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const requestedScope = parseLibraryScope(requestUrl);
       const spaceId = optionalQueryParam(requestUrl, "spaceId") ?? "";
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
@@ -308,14 +456,14 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/projects" && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(response, 200, await app.projects.listProjects(actor.userId), method);
       return true;
     }
 
     if (pathname === "/api/projects" && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const body = await readJsonBody<{
         actorUserId?: string;
         description?: string;
@@ -346,7 +494,7 @@ async function handleApiRequest(
       /^\/api\/projects\/([^/]+)\/members$/,
     );
     if (projectMembersMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, projectId] = projectMembersMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
@@ -359,7 +507,7 @@ async function handleApiRequest(
     }
 
     if (projectMembersMatch && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, projectId] = projectMembersMatch;
       const body = await readJsonBody<{
         actorUserId?: string;
@@ -383,7 +531,7 @@ async function handleApiRequest(
 
     const projectMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
     if (projectMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, projectId] = projectMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
@@ -399,7 +547,7 @@ async function handleApiRequest(
       /^\/api\/projects\/([^/]+)\/writing-document$/,
     );
     if (latestProjectDocumentMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, projectId] = latestProjectDocumentMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
@@ -411,8 +559,63 @@ async function handleApiRequest(
       return true;
     }
 
+    const projectWritingMatch = pathname.match(/^\/api\/projects\/([^/]+)\/writing\/document$/);
+    if (projectWritingMatch && method === "GET") {
+      const actor = await getActor(request, actorOptions);
+      const [, projectId] = projectWritingMatch;
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+
+      const document = await app.projectDocs.getWorkbenchDocument(projectId, actor.userId);
+
+      if (!document) {
+        sendJsonError(
+          response,
+          404,
+          `No Writer document exists for project ${projectId}.`,
+          method,
+        );
+        return true;
+      }
+
+      sendJson(response, 200, { document }, method);
+      return true;
+    }
+
+    if (projectWritingMatch && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      const [, projectId] = projectWritingMatch;
+      const body = await readJsonBody<{
+        actorUserId?: string;
+        citations: Array<{
+          evidenceSpan?: string;
+          paperAssetId: string;
+        }>;
+        content: string;
+        title: string;
+      }>(request);
+      assertNoActorImpersonation(actor, body.actorUserId);
+
+      sendJson(
+        response,
+        200,
+        {
+          document: await app.projectDocs.saveWorkbenchDocument(
+            {
+              citations: body.citations,
+              content: body.content,
+              projectId,
+              title: body.title,
+            },
+            actor.userId,
+          ),
+        },
+        method,
+      );
+      return true;
+    }
+
     if (pathname === "/api/notebooks" && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const body = await readJsonBody<{
         actorUserId?: string;
         ownerId?: string;
@@ -438,7 +641,7 @@ async function handleApiRequest(
 
     const notebookMatch = pathname.match(/^\/api\/notebooks\/([^/]+)$/);
     if (notebookMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, documentId] = notebookMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
 
@@ -455,7 +658,7 @@ async function handleApiRequest(
       /^\/api\/notebooks\/([^/]+)\/versions$/,
     );
     if (notebookVersionsMatch && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, documentId] = notebookVersionsMatch;
       const body = await readJsonBody<{
         actorUserId?: string;
@@ -484,7 +687,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/project-docs" && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const body = await readJsonBody<{
         actorUserId?: string;
         createdByUserId?: string;
@@ -514,7 +717,7 @@ async function handleApiRequest(
 
     const projectDocMatch = pathname.match(/^\/api\/project-docs\/([^/]+)$/);
     if (projectDocMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
 
@@ -531,7 +734,7 @@ async function handleApiRequest(
       /^\/api\/project-docs\/([^/]+)\/versions$/,
     );
     if (projectDocVersionsMatch && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocVersionsMatch;
       const body = await readJsonBody<{
         actorUserId?: string;
@@ -563,7 +766,7 @@ async function handleApiRequest(
       /^\/api\/project-docs\/([^/]+)\/publish-state$/,
     );
     if (projectDocPublishStateMatch && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocPublishStateMatch;
       const body = await readJsonBody<{
         actorUserId?: string;
@@ -587,8 +790,34 @@ async function handleApiRequest(
     }
 
     const libraryEntryMatch = pathname.match(/^\/api\/library\/([^/]+)$/);
+    const libraryEntryFileMatch = pathname.match(/^\/api\/library\/([^/]+)\/file$/);
+    if (libraryEntryFileMatch && (method === "GET" || method === "HEAD")) {
+      const actor = await getActor(request, actorOptions);
+      const [, entryId] = libraryEntryFileMatch;
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+
+      const file = await app.library.getEntryFile({
+        actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
+        actorUserId: actor.userId,
+        entryId,
+      });
+
+      sendBodyWithHeaders(
+        response,
+        200,
+        file.contentType,
+        file.body,
+        method,
+        {
+          "Content-Disposition": file.contentDisposition,
+          "Content-Length": String(file.contentLength),
+        },
+      );
+      return true;
+    }
+
     if (libraryEntryMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, entryId] = libraryEntryMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
 
@@ -606,7 +835,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/import/paper" && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const body = await readJsonBody<{
         projectId?: string;
         requestedByUserId?: string;
@@ -630,7 +859,7 @@ async function handleApiRequest(
 
     const readingDetailMatch = pathname.match(/^\/api\/reading\/([^/]+)$/);
     if (readingDetailMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, entryId] = readingDetailMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
 
@@ -648,7 +877,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/reading/notes" && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const body = await readJsonBody<{
         actorSpaceId?: string;
         authorUserId?: string;
@@ -676,7 +905,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/reading/insights" && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const body = await readJsonBody<{
         actorSpaceId?: string;
         evidenceSpans: Array<{
@@ -713,7 +942,7 @@ async function handleApiRequest(
       /^\/api\/spaces\/([^/]+)\/memberships$/,
     );
     if (membershipsMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, spaceId] = membershipsMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
@@ -726,7 +955,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/credentials" && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const userId = optionalQueryParam(requestUrl, "userId");
       assertNoActorImpersonation(actor, userId);
       sendJson(
@@ -739,7 +968,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/credentials" && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const body = await readJsonBody<{
         provider: string;
         rawSecret: string;
@@ -756,7 +985,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/jobs" && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
         response,
@@ -772,7 +1001,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/jobs" && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const body = await readJsonBody<{
         credentialRef: string;
         kind: string;
@@ -792,7 +1021,7 @@ async function handleApiRequest(
 
     const jobRunMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/run$/);
     if (jobRunMatch && method === "POST") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, jobId] = jobRunMatch;
       const body = await readJsonBody<{
         actorSpaceId?: string;
@@ -814,7 +1043,7 @@ async function handleApiRequest(
 
     const jobEventsMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/events$/);
     if (jobEventsMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, jobId] = jobEventsMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
@@ -832,7 +1061,7 @@ async function handleApiRequest(
 
     const jobStreamMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/stream$/);
     if (jobStreamMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, jobId] = jobStreamMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       const accessQuery = {
@@ -866,7 +1095,7 @@ async function handleApiRequest(
 
     const jobAuditMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/audit$/);
     if (jobAuditMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, jobId] = jobAuditMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
@@ -884,7 +1113,7 @@ async function handleApiRequest(
 
     const jobMatch = pathname.match(/^\/api\/jobs\/([^/]+)$/);
     if (jobMatch && method === "GET") {
-      const actor = getActor(request);
+      const actor = await getActor(request, actorOptions);
       const [, jobId] = jobMatch;
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
       sendJson(
@@ -969,7 +1198,19 @@ export function createHttpServer(
 
   const runtimeEnv = options.env ?? process.env;
   const runtimeConfig = readRuntimeConfig(runtimeEnv);
+  const useSecureSessionCookies = shouldUseSecureSessionCookies(runtimeEnv);
+
+  if (
+    runtimeEnv.NODE_ENV === "production" &&
+    runtimeEnv.JIXIA_ALLOW_LEGACY_ACTOR_OVERRIDE === "true"
+  ) {
+    throw new Error(
+      "JIXIA_ALLOW_LEGACY_ACTOR_OVERRIDE must not be enabled in production.",
+    );
+  }
+
   const app = createJixiaApp({
+    connectors: options.connectors,
     env: {
       ...runtimeEnv,
       JIXIA_DATABASE_URL: runtimeConfig.databaseUrl,
@@ -997,13 +1238,24 @@ export function createHttpServer(
           return;
         }
 
-        const handled = await handleApiRequest(request, response, requestUrl, app);
+        const handled = await handleApiRequest(
+          request,
+          response,
+          requestUrl,
+          app,
+          runtimeEnv.JIXIA_ALLOW_LEGACY_ACTOR_OVERRIDE === "true",
+          useSecureSessionCookies,
+        );
 
         if (handled) {
           return;
         }
 
         try {
+          const actor = await getOptionalActor(request, {
+            allowLegacyTestOverride: false,
+            sessionRoutes: app.session,
+          });
           const requestBody = method === "GET" || method === "HEAD"
             ? undefined
             : await readJsonBody<unknown>(request);
@@ -1012,6 +1264,7 @@ export function createHttpServer(
             requestUrl,
             method,
             requestBody,
+            actor,
           );
 
           if (fallbackResponse) {
@@ -1048,7 +1301,33 @@ export function createHttpServer(
     handleStaticRequest(response, requestUrl.pathname, method);
   });
 
+  let closePromise: Promise<void> | null = null;
+
+  server.once("close", () => {
+    void app.close();
+  });
+
   return {
+    close(): Promise<void> {
+      closePromise ??= (async () => {
+        if (server.listening) {
+          await new Promise<void>((resolve, reject) => {
+            server.close((error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+
+              resolve();
+            });
+          });
+        }
+
+        await app.close();
+      })();
+
+      return closePromise;
+    },
     runtimeConfig,
     server,
   };

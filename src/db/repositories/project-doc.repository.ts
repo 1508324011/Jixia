@@ -62,7 +62,7 @@ export interface ProjectDocRepository {
   findLatestDocumentForProject(
     projectId: string,
   ): Promise<PersistedProjectDocRecord | null>;
-  findLatestSnapshot(
+  getLatestSnapshot(
     documentId: string,
   ): Promise<PersistedProjectDocSnapshot | null>;
   getDocumentForProject(
@@ -265,20 +265,20 @@ export function createProjectDocRepository(
       await ensureInitialized();
 
       const document = await prisma.projectDoc.findFirst({
-        orderBy: { updatedAt: 'desc' },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
         where: { projectId },
       });
 
       return document ? mapDocument(document) : null;
     },
-    async findLatestSnapshot(
+    async getLatestSnapshot(
       documentId: string,
     ): Promise<PersistedProjectDocSnapshot | null> {
       await ensureInitialized();
 
-      const version = await getLatestVersion(prisma, documentId);
+      const snapshot = await getLatestVersion(prisma, documentId);
 
-      return version ? mapSnapshot(version) : null;
+      return snapshot ? mapSnapshot(snapshot) : null;
     },
     async getDocumentForProject(
       documentId: string,

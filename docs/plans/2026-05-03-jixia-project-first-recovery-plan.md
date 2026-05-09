@@ -282,6 +282,27 @@ Acceptance criteria:
 - Repository tests verify key constraints and access patterns.
 - Runtime code does not treat `server-state.json` as the collaborative source of truth.
 
+Current implementation note (2026-05-07): governed AI job state has joined the
+Prisma-backed authority path. `ProviderCredential`, `Job`, `JobEvent`, and
+`AuditLog` rows are created by migration
+`20260507000000_job_governance_persistence`; job create/list/detail/run/event,
+SSE bootstrap, and job audit flows use `JobRepository` plus persisted
+`SpaceRepository` membership checks. Legacy `server-state.json` job/event/audit
+arrays are intentionally ignored as runtime truth.
+
+Current implementation note (2026-05-09): credential secret material and
+workbench settings have joined the Prisma-backed authority path. Migration
+`20260509000000_credentials_workbench_settings_authority` adds
+`ProviderCredentialSecret` and `WorkbenchSettings`; credential creation now writes
+metadata plus encrypted secret material through a credentials repository, and
+`GET`/`POST /api/settings/me` reads/writes per-user settings from Prisma. Legacy
+`server-state.json` credential/settings arrays are treated only as one-time
+bootstrap input and are removed from runtime persistence after bootstrap; stale
+JSON must not override existing Prisma rows. Durable encrypted credentials require
+both a durable `JIXIA_DATABASE_URL` and durable `JIXIA_STORAGE_ROOT/credentials.key`;
+missing or wrong key material fails closed for credential use and settings
+configured state.
+
 ### Phase 4: Server-owned files and literature assets
 
 Goal: make uploaded and imported literature assets authoritative on the server.

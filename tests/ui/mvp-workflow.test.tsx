@@ -52,7 +52,7 @@ const projectDocRecordFixture = {
   publishState: 'draft',
   title: 'Tumor board literature synthesis',
   updatedAt: '2026-05-03T00:30:00.000Z',
-};
+} as const;
 
 function installFetchMock() {
   const readingInsights: Array<{
@@ -80,40 +80,38 @@ function installFetchMock() {
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const requestUrl = new URL(String(input), window.location.origin);
-    const headers = new Headers(init?.headers);
-    const actor = headers.get('x-jixia-actor');
     const bodyText = typeof init?.body === 'string' ? init.body : undefined;
     const body = bodyText ? JSON.parse(bodyText) as Record<string, unknown> : null;
 
-    if (requestUrl.pathname.startsWith('/api/')) {
-      const protectedRoute = requestUrl.pathname !== '/api/health';
+    if (requestUrl.pathname === '/api/session/me') {
+      return Response.json({
+        user: {
+          displayName: 'Alice',
+          email: 'alice@example.test',
+          id: 'user-alice',
+        },
+      });
+    }
 
-      if (protectedRoute && !actor) {
-        return Response.json(
-          { error: 'Missing server-derived actor session.' },
-          { status: 401 },
-        );
-      }
+    if (
+      requestUrl.searchParams.has('actorUserId') ||
+      requestUrl.searchParams.has('actorSpaceId') ||
+      requestUrl.searchParams.has('userId')
+    ) {
+      return Response.json(
+        { error: 'Actor authority must travel by session cookie only.' },
+        { status: 400 },
+      );
+    }
 
-      if (
-        requestUrl.searchParams.has('actorUserId') ||
-        requestUrl.searchParams.has('actorSpaceId') ||
-        requestUrl.searchParams.has('userId')
-      ) {
-        return Response.json(
-          { error: 'Actor authority must travel by session header only.' },
-          { status: 400 },
-        );
-      }
-
-      if (requestUrl.pathname.startsWith('/api/project-docs/')) {
-        if (body && ('actorUserId' in body || 'createdByUserId' in body)) {
-          return Response.json(
-            { error: 'Actor authority must travel by session header only.' },
-            { status: 400 },
-          );
-        }
-      }
+    if (
+      body &&
+      ('actorUserId' in body || 'createdByUserId' in body || 'startedByUserId' in body)
+    ) {
+      return Response.json(
+        { error: 'Actor authority must travel by session cookie only.' },
+        { status: 400 },
+      );
     }
 
     if (requestUrl.pathname.startsWith('/api/writing/')) {
@@ -128,7 +126,7 @@ function installFetchMock() {
     }
 
     if (requestUrl.pathname === '/api/projects') {
-      return Response.json(actor === 'user-alice' ? [projectFixture] : []);
+      return Response.json([projectFixture]);
     }
 
     if (requestUrl.pathname === '/api/projects/project-recovery/members') {
@@ -226,6 +224,10 @@ function installFetchMock() {
       });
     }
 
+    if (requestUrl.pathname === '/api/projects/project-recovery/writing-document') {
+      return Response.json(projectDocSnapshot?.document ?? null);
+    }
+
     return Response.json({ error: 'Unhandled mock route' }, { status: 404 });
   });
 
@@ -253,7 +255,7 @@ describe('mvp workflow shell', () => {
     renderLegacyWorkflow();
 
     expect(
-      screen.getByRole('heading', { name: 'Projects' }),
+      await screen.findByRole('heading', { name: 'Projects' }),
     ).toBeInTheDocument();
     expect(
       screen.getByText('Space is governance · Project is collaboration'),
@@ -320,8 +322,8 @@ describe('mvp workflow shell', () => {
 
     renderLegacyWorkflow();
 
-    expect(screen.getByTestId('app-shell')).toHaveClass('app-shell');
-    expect(screen.getByRole('heading', { name: 'Projects' })).toHaveClass('page-title');
+    expect(await screen.findByTestId('app-shell')).toHaveClass('app-shell');
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toHaveClass('page-title');
 
     await waitFor(() =>
       expect(
@@ -389,7 +391,7 @@ describe('mvp workflow shell', () => {
 
     render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'Reader' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Reader' })).toBeInTheDocument();
     expect(screen.getByText('Entry · entry-recovery')).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText('context bar')).toHaveTextContent(
@@ -407,7 +409,7 @@ describe('mvp workflow shell', () => {
 
     render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'Library' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText('context bar')).toHaveTextContent(
         'Context · space-recovery / project-recovery',
@@ -424,7 +426,7 @@ describe('mvp workflow shell', () => {
 
     render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'Writing' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Writing' })).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText('context bar')).toHaveTextContent(
         'Space context · space-recovery',

@@ -8,7 +8,6 @@ import type {
 
 import { apiClient } from "../lib/http-client";
 import { useProjectContext } from "./project-context";
-import { demoActorContext } from "./runtime-context";
 
 interface SaveProjectDocInput {
   citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
@@ -109,10 +108,7 @@ export function useProjectDocPresenter(
 
     try {
       setError(null);
-      const nextSnapshot = await apiClient.getProjectDoc(
-        documentId,
-        demoActorContext.actorUserId,
-      );
+      const nextSnapshot = await apiClient.getProjectDoc(documentId);
 
       if (!canCommitRequest(generation)) {
         return;
@@ -160,7 +156,6 @@ export function useProjectDocPresenter(
         const nextSnapshot = await apiClient.saveProjectDocVersion(
           documentId,
           input,
-          demoActorContext.actorUserId,
         );
 
         if (!canCommitRequest(generation)) {

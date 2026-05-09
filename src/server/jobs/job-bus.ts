@@ -3,10 +3,8 @@ import type { JobEventRecord } from "@shared/contracts/jobs";
 export type JobEventListener = (event: JobEventRecord) => void;
 
 export interface JobBus {
-  listEvents(jobId: string): JobEventRecord[];
   publish(event: JobEventRecord): void;
   subscribe(jobId: string, listener: JobEventListener): () => void;
-  toSse(jobId: string): string;
 }
 
 function formatSseEvent(event: JobEventRecord): string {
@@ -14,18 +12,13 @@ function formatSseEvent(event: JobEventRecord): string {
 }
 
 export function createJobBus(
-  events: JobEventRecord[],
-  persist: () => void,
+  onPublish?: (event: JobEventRecord) => void,
 ): JobBus {
   const listeners = new Map<string, Set<JobEventListener>>();
 
   return {
-    listEvents(jobId: string): JobEventRecord[] {
-      return events.filter((event) => event.jobId === jobId);
-    },
     publish(event: JobEventRecord): void {
-      events.push(event);
-      persist();
+      onPublish?.(event);
       listeners.get(event.jobId)?.forEach((listener) => listener(event));
     },
     subscribe(jobId: string, listener: JobEventListener): () => void {
@@ -45,10 +38,9 @@ export function createJobBus(
         }
       };
     },
-    toSse(jobId: string): string {
-      return this.listEvents(jobId)
-        .map((event) => formatSseEvent(event))
-        .join("");
-    },
   };
+}
+
+export function toSseEventStream(events: JobEventRecord[]): string {
+  return events.map((event) => formatSseEvent(event)).join("");
 }

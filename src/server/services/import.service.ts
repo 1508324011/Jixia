@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { TodayRecommendation } from "@shared/contracts/discovery";
 import type {
@@ -53,11 +53,14 @@ export interface ImportService {
     input: ImportLibraryEntryRequest,
     actorUserId: string,
   ): Promise<ImportedLibraryRecord>;
-  importToPersonalLibrary(input: {
-    requestedByUserId: string;
-    sourceLocator: string;
-    sourceType: "doi" | "pmid" | "arxiv";
-  }): Promise<ImportedLibraryRecord>;
+  importToPersonalLibrary(
+    input: {
+      requestedByUserId?: string;
+      sourceLocator: string;
+      sourceType: "doi" | "pmid" | "arxiv";
+    },
+    actorUserId: string,
+  ): Promise<ImportedLibraryRecord>;
   searchDiscovery(query: string): Promise<TodayRecommendation[]>;
   uploadPdf(
     input: UploadPdfToLibraryRequest,
@@ -152,13 +155,16 @@ function createPrismaOwnedAssetId(): string {
   return `asset-${randomUUID()}`;
 }
 
+function calculateChecksum(contents: Buffer): string {
+  return createHash("sha256").update(contents).digest("hex");
+}
+
 function mapAsset(asset: PersistedPaperAssetRecord): PaperAssetRecord {
   return {
     abstractText: asset.abstractText,
     canonicalId: asset.canonicalId,
     createdAt: asset.createdAt,
     id: asset.id,
-    storageKey: asset.storageKey,
     title: asset.title,
   };
 }
@@ -245,9 +251,10 @@ export function createImportService(store: ImportStore): ImportService {
       );
 
       const assetId = createPrismaOwnedAssetId();
-      const storageKey = await store.fileStore.writeText(
+      const pdfBytes = Buffer.from(input.pdfContents, "utf8");
+      const storageKey = await store.fileStore.writeBuffer(
         createPaperPdfStorageKey(assetId),
-        input.pdfContents,
+        pdfBytes,
       );
       const visibility = visibilityForScope(scope, input.visibility);
 
@@ -255,6 +262,7 @@ export function createImportService(store: ImportStore): ImportService {
         await store.libraryRepository.importScopedEntry({
           asset: {
             canonicalId: `upload:${assetId}`,
+            checksum: calculateChecksum(pdfBytes),
             id: assetId,
             importedByUserId: actorUserId,
             sourceLocator: assetId,
@@ -271,21 +279,24 @@ export function createImportService(store: ImportStore): ImportService {
         }),
       );
     },
-    async importToPersonalLibrary(input: {
-      requestedByUserId: string;
-      sourceLocator: string;
-      sourceType: "doi" | "pmid" | "arxiv";
-    }): Promise<ImportedLibraryRecord> {
+    async importToPersonalLibrary(
+      input: {
+        requestedByUserId?: string;
+        sourceLocator: string;
+        sourceType: "doi" | "pmid" | "arxiv";
+      },
+      actorUserId: string,
+    ): Promise<ImportedLibraryRecord> {
       return this.importPaper(
         {
           requestedByUserId: input.requestedByUserId,
-          scope: { id: input.requestedByUserId, type: "user" },
+          scope: { id: actorUserId, type: "user" },
           sourceLocator: input.sourceLocator,
           sourceType: input.sourceType,
           spaceId: "",
           visibility: "private",
         },
-        input.requestedByUserId,
+        actorUserId,
       );
     },
     async searchDiscovery(query: string): Promise<TodayRecommendation[]> {

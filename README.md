@@ -54,14 +54,16 @@ Personal-facing routes are workbench shorthand over server-side ownership and sc
 
 ## Truthful Runtime Notes
 
-- `/login` is still a shell-level entry page; the current browser flow on `main` enters the product through `/home`.
+- `/login` is the real session entry page; the root route still redirects to `/home`, and unauthenticated browsers are redirected back to `/login?redirect=...` by the protected route boundary.
+- `POST /api/session/login`, `GET /api/session/me`, and `POST /api/session/logout` manage the server-owned `jixia_session` cookie used by browser auth.
 - `GET /api/discovery/today` and `GET /api/discovery/search?query=...` serve the discovery slice.
-- `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings without exposing raw API keys in responses or stored settings records.
+- `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings through Prisma-backed per-user workbench settings and encrypted provider credential secret rows without exposing raw API keys in responses or stored settings records.
 - `GET /api/library/personal` and `POST /api/library/personal/import` keep personal import ownership on the server.
 - `GET /api/reading/:entryId`, `POST /api/reading/:entryId/notes`, and `POST /api/reading/:entryId/insights` back the paper workspace.
 - `GET /api/projects/:projectId/writing-document` lets the project workspace reopen the latest visible shared Writer draft, or truthfully report that the project has no shared draft yet.
 - `GET /api/project-docs/:documentId` returns the latest Project Doc snapshot; when a document exists but has not been saved yet, the server returns an empty snapshot with `versionNumber: 0` instead of browser-authored fallback content.
-- `GET /api/writing/:spaceId/projects/:projectId/document` and `POST /api/writing/:spaceId/projects/:projectId/document` provide a workbench compatibility surface; Project Docs remain the authoritative project writing runtime.
+- `GET /api/writing/:spaceId/projects/:projectId/document` and `POST /api/writing/:spaceId/projects/:projectId/document` remain compatibility-only workbench endpoints for preserved legacy deep links; Project Docs remain the authoritative project writing runtime.
+- `GET /api/projects/:projectId/writing/document` and `POST /api/projects/:projectId/writing/document` remain workbench compatibility endpoints backed by Project Docs for newer route callers; the project-doc routes are the authoritative project writing runtime.
 
 ## Verification Snapshot
 
@@ -85,7 +87,7 @@ The handoff note in `docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md` 
 
 ## Task 11 Operator Runbook
 
-Task 11 turns the verified web interaction shell into a reproducibly runnable lab-server package. The current runtime starts a Node 22 HTTP server, serves the built browser app from `dist/`, exposes `/health`, and persists server-managed state under the configured storage root while Prisma/SQLite backs project collaboration. This is the Prisma-backed project collaboration path for lab-server operation.
+Task 11 turns the verified web interaction shell into a reproducibly runnable lab-server package. The current runtime starts a Node 22 HTTP server, serves the built browser app from `dist/`, exposes `/health`, and persists server-managed state under the configured storage root while Prisma/SQLite backs project collaboration, provider credential secrets, and workbench settings. This is the Prisma-backed project collaboration path for lab-server operation.
 
 ### Prerequisites
 
@@ -98,12 +100,13 @@ Task 11 turns the verified web interaction shell into a reproducibly runnable la
 Copy `.env.example` to `.env` and fill in operator-specific values.
 
 - `JIXIA_STORAGE_ROOT` controls where Jixia persists server-managed storage assets. On a lab server, keep this on durable storage such as `/var/lib/jixia/storage`.
-- The current runtime persists legacy non-project state and workbench settings to `JIXIA_STORAGE_ROOT/server-state.json`.
-- `JIXIA_DATABASE_URL` controls the SQLite database used for Prisma-backed `Space`, `Project`, `ProjectMember`, library, notebook, and Project Doc authority. Keep it on durable storage such as `file:/var/lib/jixia/data/jixia.db`.
+- The current runtime still keeps legacy non-Prisma beta state in `JIXIA_STORAGE_ROOT/server-state.json`, but new credential secret material and workbench settings are no longer written there.
+- `JIXIA_DATABASE_URL` controls the SQLite database used for Prisma-backed `Space`, `Project`, `ProjectMember`, library, notebook, Project Doc, provider credential secret, and workbench settings authority. Keep it on durable storage such as `file:/var/lib/jixia/data/jixia.db`.
+- `JIXIA_STORAGE_ROOT/credentials.key` is the local encryption authority for provider credential secrets. Durable encrypted credentials require both the durable SQLite database and this durable key file; losing or replacing the key makes existing credential rows unusable rather than silently recreating or exposing them.
 - `JIXIA_HOST` controls the bind host. Use `127.0.0.1` for local-only runs and `0.0.0.0` when the process is containerized or needs to listen on the lab network.
 - `JIXIA_PORT` controls the HTTP port. Task 11 uses `3000` as the default runtime port.
 
-Persist both `/var/lib/jixia/storage` and `/var/lib/jixia/data` on the lab server.
+Persist both `/var/lib/jixia/storage` and `/var/lib/jixia/data` on the lab server, and include `credentials.key` in the storage-root backup plan.
 
 ### Local Node startup path
 
@@ -123,4 +126,4 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The included `docker-compose.yml` maps the runtime port, pins `JIXIA_STORAGE_ROOT` to the mounted `/var/lib/jixia/storage` path, points `JIXIA_DATABASE_URL` at the mounted `/var/lib/jixia/data` path for Prisma-backed collaboration, and persists `server-state.json` at `/var/lib/jixia/storage/server-state.json`.
+The included `docker-compose.yml` maps the runtime port, pins `JIXIA_STORAGE_ROOT` to the mounted `/var/lib/jixia/storage` path, points `JIXIA_DATABASE_URL` at the mounted `/var/lib/jixia/data` path for Prisma-backed collaboration, persists legacy beta state at `/var/lib/jixia/storage/server-state.json`, and keeps credential encryption key material under the same durable storage root.

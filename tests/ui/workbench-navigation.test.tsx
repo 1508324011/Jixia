@@ -4,6 +4,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/web/app';
 
+const projectFixture = {
+  membership: {
+    joinedAt: '2026-05-08T00:00:00.000Z',
+    projectId: 'project-alpha',
+    role: 'owner',
+    userId: 'user-alice',
+  },
+  project: {
+    createdAt: '2026-05-08T00:00:00.000Z',
+    createdByUserId: 'user-alice',
+    id: 'project-alpha',
+    name: 'Project Alpha',
+    spaceId: 'space-alpha',
+    status: 'active',
+    updatedAt: '2026-05-08T00:00:00.000Z',
+  },
+};
+
 function renderWorkbench(pathname = '/home') {
   window.history.replaceState({}, '', pathname);
   render(<App />);
@@ -68,6 +86,22 @@ describe('workbench navigation', () => {
           );
         }
 
+        if (url.endsWith('/api/session/me')) {
+          return new Response(
+            JSON.stringify({
+              user: {
+                displayName: 'Alice',
+                email: 'alice@example.test',
+                id: 'user-alice',
+              },
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
         if (url.endsWith('/api/library/personal/import') && init?.method === 'POST') {
           discoveryItems[0] = {
             ...discoveryItems[0],
@@ -116,6 +150,20 @@ describe('workbench navigation', () => {
           );
         }
 
+        if (url.endsWith('/api/projects')) {
+          return new Response(JSON.stringify([projectFixture]), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        if (url.endsWith('/api/projects/project-alpha/members')) {
+          return new Response(JSON.stringify([projectFixture.membership]), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
         if (url.endsWith('/api/settings/me') && init?.method === 'POST') {
           return new Response(
             JSON.stringify({
@@ -146,8 +194,9 @@ describe('workbench navigation', () => {
       }),
     );
 
-        renderWorkbench('/home');
+    renderWorkbench('/home');
 
+    await screen.findByRole('link', { name: '搜索' });
     await user.click(screen.getByRole('link', { name: '搜索' }));
     expect(screen.getByRole('heading', { name: '外部搜索' })).toBeInTheDocument();
     await user.clear(screen.getByLabelText('检索主题'));
@@ -189,6 +238,10 @@ describe('workbench navigation', () => {
         body: JSON.stringify({
           apiKey: 'sk-browser-secret',
           defaultImportTarget: 'project-workspace',
+        }),
+        credentials: 'same-origin',
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json',
         }),
         method: 'POST',
       }),

@@ -65,6 +65,16 @@ describe('project writer flow', () => {
               ? input.toString()
               : input.url;
 
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
+
         if (requestUrl.endsWith('/api/projects')) {
           return jsonResponse([projectFixture]);
         }
@@ -80,7 +90,7 @@ describe('project writer flow', () => {
     renderWorkbench('/projects/project-1');
 
     expect(await screen.findByText('Writer 文档区')).toBeInTheDocument();
-    expect(screen.getByText('No Writer draft selected yet')).toBeInTheDocument();
+    expect(await screen.findByText('No Writer draft selected yet')).toBeInTheDocument();
     expect(
       screen.getByText('Promote a governed Reader insight to create a project document before reopening it here.'),
     ).toBeInTheDocument();
@@ -139,7 +149,16 @@ describe('project writer flow', () => {
             : input instanceof URL
               ? input.toString()
               : input.url;
-        const headers = new Headers(init?.headers);
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
 
         if (requestUrl.endsWith('/api/projects')) {
           return jsonResponse([projectFixture]);
@@ -150,12 +169,10 @@ describe('project writer flow', () => {
         }
 
         if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
-          expect(headers.get('x-jixia-actor')).toBe('user-alice');
           return jsonResponse(documentState);
         }
 
         if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
-          expect(headers.get('x-jixia-actor')).toBe('user-alice');
           const body = JSON.parse(String(init.body)) as { content: string };
           documentState.content = body.content;
           documentState.capturedAt = '2026-03-23T00:45:00.000Z';
@@ -244,7 +261,16 @@ describe('project writer flow', () => {
             : input instanceof URL
               ? input.toString()
               : input.url;
-        const headers = new Headers(init?.headers);
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return Promise.resolve(jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          }));
+        }
 
         if (requestUrl.endsWith('/api/projects')) {
           return Promise.resolve(jsonResponse([projectFixture]));
@@ -255,13 +281,10 @@ describe('project writer flow', () => {
         }
 
         if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
-          expect(headers.get('x-jixia-actor')).toBe('user-alice');
           return Promise.resolve(jsonResponse(documentState));
         }
 
         if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
-          expect(headers.get('x-jixia-actor')).toBe('user-alice');
-
           return pendingSaveRequest.promise;
         }
 
@@ -298,5 +321,65 @@ describe('project writer flow', () => {
       await screen.findByDisplayValue('Queued writer edits that should survive the save.'),
     ).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Reload draft' })).toBeEnabled();
+  });
+
+  it('project page treats a missing writer draft as an empty state instead of a runtime failure', async () => {
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-05-08T00:00:00.000Z',
+        projectId: 'project-alpha',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-05-08T00:00:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-alpha',
+        name: 'Project Alpha',
+        spaceId: 'space-alpha',
+        status: 'active',
+        updatedAt: '2026-05-08T00:00:00.000Z',
+      },
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([projectFixture]);
+        }
+
+        if (requestUrl.endsWith('/api/projects/project-alpha/writing-document')) {
+          return jsonResponse(
+            { error: 'No Writer document exists for project project-alpha.' },
+            404,
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-alpha');
+
+    expect(await screen.findByText('No Writer draft selected yet')).toBeInTheDocument();
+    expect(screen.queryByText('Writer preview unavailable')).not.toBeInTheDocument();
   });
 });

@@ -4,6 +4,7 @@ import type {
   ProjectDocRecord,
   ProjectDocSnapshot,
 } from '@shared/contracts/project-docs';
+import type { WritingDocumentView } from '@shared/contracts/writing';
 
 import type {
   ProjectDocsService,
@@ -28,6 +29,22 @@ export interface ProjectDocsRoutes {
     input: SaveProjectDocRequest,
     actorUserId: string,
   ): Promise<ProjectDocSnapshot>;
+  getWorkbenchDocument(
+    projectId: string,
+    actorUserId: string,
+  ): Promise<WritingDocumentView | null>;
+  saveWorkbenchDocument(
+    input: {
+      citations: Array<{
+        evidenceSpan?: string;
+        paperAssetId: string;
+      }>;
+      content: string;
+      projectId: string;
+      title: string;
+    },
+    actorUserId: string,
+  ): Promise<WritingDocumentView>;
   transitionPublishState(
     input: TransitionProjectDocPublishStateRequest,
     actorUserId: string,
@@ -49,6 +66,12 @@ export function createProjectDocsRoutes(
     },
     saveDocument(input, actorUserId) {
       return service.saveDocument(input, actorUserId);
+    },
+    getWorkbenchDocument(projectId, actorUserId) {
+      return service.getWorkbenchDocument(projectId, actorUserId);
+    },
+    saveWorkbenchDocument(input, actorUserId) {
+      return service.saveWorkbenchDocument(input, actorUserId);
     },
     transitionPublishState(input, actorUserId) {
       return service.transitionPublishState(input, actorUserId);

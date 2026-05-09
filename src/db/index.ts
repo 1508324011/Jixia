@@ -7,6 +7,42 @@ export {
 } from './client';
 
 export {
+  createCredentialsRepository,
+  initializeCredentialPersistence,
+  type BootstrapLegacyCredentialAuthorityInput,
+  type CreatePersistedCredentialParams,
+  type CredentialSecretLookup,
+  type CredentialsRepository,
+  type LegacyCredentialBootstrapInput,
+  type LegacyWorkbenchSettingsBootstrapInput,
+  type PersistedCredentialRecord,
+  type PersistedCredentialWithSecretRecord,
+  type PersistedDefaultImportTarget,
+  type PersistedEncryptedSecretRecord,
+  type PersistedWorkbenchSettingsRecord,
+  type UpsertWorkbenchSettingsParams,
+} from './repositories/credentials.repository';
+
+export {
+  createJobRepository,
+  initializeJobPersistence,
+  type AppendJobEventParams,
+  type CreateAuditRecordParams,
+  type CreateJobParams,
+  type CreateProviderCredentialReferenceParams,
+  type CreateQueuedJobWithAuditParams,
+  type JobLookup,
+  type JobRepository,
+  type ListJobsForActorQuery,
+  type PersistedAuditLogRecord,
+  type PersistedJobEventRecord,
+  type PersistedJobRecord,
+  type PersistedJobStatus,
+  type PersistedProviderCredentialReferenceRecord,
+  type PersistedQueuedJobWithAudit,
+} from './repositories/job.repository';
+
+export {
   createLibraryRepository,
   initializeLibraryPersistence,
   type BootstrapLegacyLibraryInput,
@@ -60,6 +96,34 @@ export {
   type PersistedProjectDocSnapshot,
   type ProjectDocRepository,
 } from './repositories/project-doc.repository';
+
+export {
+  createReadingRepository,
+  initializeReadingPersistence,
+  type CreatePersistedConversationParams,
+  type CreatePersistedNoteParams,
+  type ListEntryNotesQuery,
+  type PersistedConversationRecord,
+  type PersistedEvidenceSpanRecord,
+  type PersistedGeneratedInsightRecord,
+  type PersistedNoteRecord,
+  type PersistedNoteVisibility,
+  type PersistedReadingStateRecord,
+  type ReadingRepository,
+  type SavePersistedGeneratedInsightParams,
+  type TouchReadingStateParams,
+} from './repositories/reading.repository';
+
+export {
+  createSessionRepository,
+  initializeSessionPersistence,
+  type CreateUserSessionParams,
+  type PersistedSessionUserRecord,
+  type PersistedUserSessionRecord,
+  type PersistedUserSessionWithUserRecord,
+  type SeedUserParams,
+  type SessionRepository,
+} from './repositories/session.repository';
 
 export {
   createSpaceRepository,

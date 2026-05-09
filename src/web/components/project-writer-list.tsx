@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom';
 
 import type { ProjectDocRecord } from '@shared/contracts/project-docs';
 
-import { apiClient } from '../lib/http-client';
-import { demoActorContext } from '../presenters/runtime-context';
+import { ApiError, apiClient } from '../lib/http-client';
 
 interface ProjectWriterListProps {
   projectId: string;
@@ -23,20 +22,22 @@ export function ProjectWriterList({ projectId }: ProjectWriterListProps) {
       setLoadError(null);
 
       try {
-        const nextDocument = await apiClient.getLatestProjectDoc(
-          projectId,
-          demoActorContext.actorUserId,
-        );
+        const nextDocument = await apiClient.getLatestProjectDoc(projectId);
 
         if (!isCancelled) {
           setDocument(nextDocument);
         }
       } catch (error) {
         if (!isCancelled) {
-          setDocument(null);
-          setLoadError(
-            error instanceof Error ? error.message : 'Failed to load the Writer preview.',
-          );
+          if (error instanceof ApiError && error.status === 404) {
+            setDocument(null);
+            setLoadError(null);
+          } else {
+            setDocument(null);
+            setLoadError(
+              error instanceof Error ? error.message : 'Failed to load the Writer preview.',
+            );
+          }
         }
       } finally {
         if (!isCancelled) {

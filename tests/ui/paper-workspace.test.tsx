@@ -24,25 +24,34 @@ afterEach(() => {
 });
 
 describe('paper workspace', () => {
-  it('paper page persists private notes, shared comments, and writer promotion actions', async () => {
+  it('paper page persists shared notes, governed insights, and project-first writer promotion actions', async () => {
     const user = userEvent.setup();
     const projectFixture = {
       membership: {
         joinedAt: '2026-03-23T00:00:00.000Z',
-        projectId: 'project-1',
+        projectId: 'project-alpha',
         role: 'owner',
         userId: 'user-alice',
       },
       project: {
         createdAt: '2026-03-23T00:00:00.000Z',
         createdByUserId: 'user-alice',
-        id: 'project-1',
+        id: 'project-alpha',
         name: 'Tumor board project',
-        spaceId: 'personal-space-user-alice',
+        spaceId: 'space-alpha',
         status: 'active',
         updatedAt: '2026-03-23T00:00:00.000Z',
       },
     };
+    const projectDocRecord = {
+      createdAt: '2026-03-23T00:30:00.000Z',
+      createdByUserId: 'user-alice',
+      id: 'doc-alpha',
+      projectId: 'project-alpha',
+      publishState: 'draft',
+      title: 'Tumor board literature synthesis',
+      updatedAt: '2026-03-23T00:30:00.000Z',
+    } as const;
     const readingDetail = {
       asset: {
         abstractText: 'Imported PMID metadata for 654321',
@@ -53,10 +62,14 @@ describe('paper workspace', () => {
       },
       entry: {
         addedAt: '2026-03-23T00:00:00.000Z',
+        createdAt: '2026-03-23T00:00:00.000Z',
         id: 'entry-1',
         paperAssetId: 'asset-1',
-        spaceId: 'personal-space-user-alice',
-        visibility: 'private',
+        scope: { id: 'project-alpha', type: 'project' },
+        scopeId: 'project-alpha',
+        scopeType: 'project',
+        spaceId: 'space-alpha',
+        visibility: 'space_shared',
       },
       insights: [] as Array<{
         conversationId: string;
@@ -86,17 +99,30 @@ describe('paper workspace', () => {
             : input instanceof URL
               ? input.toString()
               : input.url;
-        const headers = new Headers(init?.headers);
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
 
         if (requestUrl.endsWith('/api/projects')) {
           return jsonResponse([projectFixture]);
+        }
+
+        if (requestUrl.endsWith('/api/projects/project-alpha/writing-document')) {
+          return jsonResponse(null);
         }
 
         if (requestUrl.endsWith('/api/reading/entry-1') && (!init?.method || init.method === 'GET')) {
           return jsonResponse(readingDetail);
         }
 
-        if (requestUrl.endsWith('/api/reading/entry-1/notes') && init?.method === 'POST') {
+        if (requestUrl.endsWith('/api/reading/notes') && init?.method === 'POST') {
           const body = JSON.parse(String(init.body)) as {
             body: string;
             visibility: 'private' | 'space_shared';
@@ -111,10 +137,10 @@ describe('paper workspace', () => {
           };
           readingDetail.notes.push(note);
 
-          return jsonResponse({ note }, 201);
+          return jsonResponse({ note }, 200);
         }
 
-        if (requestUrl.endsWith('/api/reading/entry-1/insights') && init?.method === 'POST') {
+        if (requestUrl.endsWith('/api/reading/insights') && init?.method === 'POST') {
           const body = JSON.parse(String(init.body)) as { summary: string };
           const insight = {
             conversationId: 'conversation-1',
@@ -133,25 +159,14 @@ describe('paper workspace', () => {
           };
           readingDetail.insights.push(insight);
 
-          return jsonResponse({ insight }, 201);
+          return jsonResponse({ insight }, 200);
         }
 
         if (requestUrl.endsWith('/api/project-docs') && init?.method === 'POST') {
-          expect(headers.get('x-jixia-actor')).toBe('user-alice');
-
-          return jsonResponse({
-            createdAt: '2026-03-23T00:30:00.000Z',
-            createdByUserId: 'user-alice',
-            id: 'doc-project-1',
-            projectId: 'project-1',
-            publishState: 'draft',
-            title: 'Tumor board literature synthesis',
-            updatedAt: '2026-03-23T00:30:00.000Z',
-          });
+          return jsonResponse(projectDocRecord);
         }
 
-        if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
-          expect(headers.get('x-jixia-actor')).toBe('user-alice');
+        if (requestUrl.endsWith('/api/project-docs/doc-alpha/versions') && init?.method === 'POST') {
           const body = JSON.parse(String(init.body)) as { content: string };
           promotedDraft = body.content;
 
@@ -159,15 +174,7 @@ describe('paper workspace', () => {
             capturedAt: '2026-03-23T00:30:00.000Z',
             citations: [],
             content: promotedDraft,
-            document: {
-              createdAt: '2026-03-23T00:30:00.000Z',
-              createdByUserId: 'user-alice',
-              id: 'doc-project-1',
-              projectId: 'project-1',
-              publishState: 'draft',
-              title: 'Tumor board literature synthesis',
-              updatedAt: '2026-03-23T00:30:00.000Z',
-            },
+            document: projectDocRecord,
             versionId: 'project-doc-version-1',
             versionNumber: 1,
           });
@@ -177,7 +184,7 @@ describe('paper workspace', () => {
       }),
     );
 
-    renderWorkbench('/projects/project-1/library/entry-1/reader');
+    renderWorkbench('/projects/project-alpha/library/entry-1/reader');
 
     expect(await screen.findByText('Tumor board biomarkers for rapid review')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'AI 对话' })).toBeInTheDocument();
@@ -185,26 +192,21 @@ describe('paper workspace', () => {
     expect(screen.getByRole('tab', { name: '共享评论' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '关键信息' })).toBeInTheDocument();
 
-    await user.type(screen.getByRole('textbox', { name: 'Private note' }), 'Private note for later synthesis.');
-    await user.click(screen.getByRole('button', { name: 'Save private note' }));
+    await user.clear(screen.getByRole('textbox', { name: 'Shared note draft' }));
+    await user.type(screen.getByRole('textbox', { name: 'Shared note draft' }), 'Shared note for later synthesis.');
+    await user.click(screen.getByRole('button', { name: 'Save note' }));
+    expect(
+      await screen.findByText('Shared note for later synthesis.', { selector: 'p' }),
+    ).toBeInTheDocument();
 
-    await user.type(screen.getByRole('textbox', { name: 'Project comment' }), 'Project-visible comment for the tumor board.');
-    await user.click(screen.getByRole('button', { name: 'Save project comment' }));
-
-    await user.type(screen.getByRole('textbox', { name: 'Insight summary' }), 'Governed insight ready for Writer promotion.');
-    await user.click(screen.getByRole('button', { name: 'Save insight' }));
-
-    expect(await screen.findByText('Private note for later synthesis.')).toBeInTheDocument();
-    expect(screen.getByText('Project-visible comment for the tumor board.')).toBeInTheDocument();
-    expect(screen.getByText('Governed insight ready for Writer promotion.')).toBeInTheDocument();
-
+    await user.click(screen.getByRole('button', { name: 'Generate insight' }));
     await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
 
-    expect(await screen.findByText('Promoted latest insight into Writer as doc-project-1.')).toBeInTheDocument();
-    expect(promotedDraft).toContain('Governed insight ready for Writer promotion.');
+    expect(await screen.findByText('Promoted latest insight into Writer as doc-alpha.')).toBeInTheDocument();
+    expect(promotedDraft).toContain('shared review workflow');
     expect(screen.getByRole('link', { name: 'Open writing' })).toHaveAttribute(
       'href',
-      '/projects/project-1/writing/doc-project-1',
+      '/projects/project-alpha/writing/doc-alpha',
     );
   });
 });

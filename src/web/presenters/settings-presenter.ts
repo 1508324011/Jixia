@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CredentialRecord } from "@shared/contracts/credentials";
 
 import { apiClient } from "../lib/http-client";
-import { demoActorContext } from "./runtime-context";
 
 export interface SettingsViewModel {
   createSampleCredential(): Promise<void>;
@@ -21,9 +20,7 @@ export function useSettingsPresenter(): SettingsViewModel {
   const refresh = useCallback(async () => {
     try {
       setError(null);
-      setCredentials(
-        await apiClient.listCredentials(demoActorContext.actorUserId),
-      );
+      setCredentials(await apiClient.listCredentials());
     } catch (presenterError) {
       setError(
         presenterError instanceof Error
@@ -41,7 +38,7 @@ export function useSettingsPresenter(): SettingsViewModel {
       try {
         setIsMutating(true);
         setError(null);
-        await apiClient.createCredential(demoActorContext.actorUserId, {
+        await apiClient.createCredential({
           provider: "openai",
           rawSecret: "local-settings-credential-placeholder",
         });

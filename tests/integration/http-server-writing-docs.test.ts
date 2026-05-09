@@ -1,44 +1,21 @@
 import { mkdtempSync, rmSync } from 'node:fs';
-import { once } from 'node:events';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
-import { createHttpServer } from '../../src/server/http-server';
+import {
+  loginAs,
+  startTestServer,
+  withSessionCookie,
+} from './http-session-test-helpers';
 
-async function startTestServer(storageRoot: string) {
-  const httpServer = createHttpServer({
-    env: {
-      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-writing-docs.db')}`,
-      JIXIA_STORAGE_ROOT: storageRoot,
-    },
-  });
-
-  httpServer.server.listen(0, '127.0.0.1');
-  await once(httpServer.server, 'listening');
-  const address = httpServer.server.address();
-
-  if (!address || typeof address === 'string') {
-    throw new Error('Failed to bind test server.');
-  }
-
-  return {
-    close: async () => {
-      httpServer.server.close();
-      await once(httpServer.server, 'close');
-    },
-    url: `http://127.0.0.1:${address.port}`,
-  };
-}
-
-async function createSpace(serverUrl: string, actorUserId: string) {
+async function createSpace(serverUrl: string, cookie: string, actorUserId: string) {
   return fetch(`${serverUrl}/api/spaces`, {
     body: JSON.stringify({ kind: 'shared', name: `${actorUserId} writing docs` }),
-    headers: {
+    headers: withSessionCookie(cookie, {
       'Content-Type': 'application/json',
-      'x-jixia-actor': actorUserId,
-    },
+    }),
     method: 'POST',
   }).then((response) => response.json() as Promise<{ id: string }>);
 }
@@ -48,15 +25,20 @@ describe('http server notebook and project-doc api', () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-notebooks-'));
 
     try {
-      const server = await startTestServer(storageRoot);
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-writing-docs.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
 
       try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+
         const createResponse = await fetch(`${server.url}/api/notebooks`, {
           body: JSON.stringify({ ownerId: 'user-alice', title: 'HTTP Notebook' }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
-            'x-jixia-actor': 'user-alice',
-          },
+          }),
           method: 'POST',
         });
         const notebook = (await createResponse.json()) as { id: string };
@@ -64,17 +46,16 @@ describe('http server notebook and project-doc api', () => {
         expect(createResponse.status).toBe(200);
 
         const ownerRead = await fetch(`${server.url}/api/notebooks/${notebook.id}`, {
-          headers: { 'x-jixia-actor': 'user-alice' },
+          headers: withSessionCookie(aliceCookie),
         });
         const nonOwnerRead = await fetch(`${server.url}/api/notebooks/${notebook.id}`, {
-          headers: { 'x-jixia-actor': 'user-bob' },
+          headers: withSessionCookie(bobCookie),
         });
         const actorMismatch = await fetch(`${server.url}/api/notebooks`, {
           body: JSON.stringify({ ownerId: 'user-alice', title: 'Spoofed Notebook' }),
-          headers: {
+          headers: withSessionCookie(bobCookie, {
             'Content-Type': 'application/json',
-            'x-jixia-actor': 'user-bob',
-          },
+          }),
           method: 'POST',
         });
 
@@ -93,69 +74,69 @@ describe('http server notebook and project-doc api', () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-docs-'));
 
     try {
-      const server = await startTestServer(storageRoot);
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-writing-docs.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
 
       try {
-        const sharedSpace = await createSpace(server.url, 'user-alice');
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+        const charlieCookie = await loginAs(server.url, 'user-charlie');
+
+        const sharedSpace = await createSpace(server.url, aliceCookie, 'user-alice');
         const project = await fetch(`${server.url}/api/projects`, {
           body: JSON.stringify({ name: 'HTTP Project Docs', spaceId: sharedSpace.id }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
-            'x-jixia-actor': 'user-alice',
-          },
+          }),
           method: 'POST',
         }).then(
           (response) => response.json() as Promise<{ project: { id: string } }>,
         );
         await fetch(`${server.url}/api/projects/${project.project.id}/members`, {
           body: JSON.stringify({ role: 'viewer', userId: 'user-bob' }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
-            'x-jixia-actor': 'user-alice',
-          },
+          }),
           method: 'POST',
         });
 
         const createResponse = await fetch(`${server.url}/api/project-docs`, {
           body: JSON.stringify({ projectId: project.project.id, title: 'HTTP Project Draft' }),
-          headers: {
+          headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
-            'x-jixia-actor': 'user-alice',
-          },
+          }),
           method: 'POST',
         });
         const projectDoc = (await createResponse.json()) as { id: string };
 
         expect(createResponse.status).toBe(200);
 
-        const memberRead = await fetch(
-          `${server.url}/api/project-docs/${projectDoc.id}`,
-          { headers: { 'x-jixia-actor': 'user-bob' } },
-        );
-        const nonMemberRead = await fetch(
-          `${server.url}/api/project-docs/${projectDoc.id}`,
-          { headers: { 'x-jixia-actor': 'user-charlie' } },
-        );
+        const memberRead = await fetch(`${server.url}/api/project-docs/${projectDoc.id}`, {
+          headers: withSessionCookie(bobCookie),
+        });
+        const nonMemberRead = await fetch(`${server.url}/api/project-docs/${projectDoc.id}`, {
+          headers: withSessionCookie(charlieCookie),
+        });
         const spoofedCreate = await fetch(`${server.url}/api/project-docs`, {
           body: JSON.stringify({
             createdByUserId: 'user-alice',
             projectId: project.project.id,
             title: 'Spoofed Project Draft',
           }),
-          headers: {
+          headers: withSessionCookie(bobCookie, {
             'Content-Type': 'application/json',
-            'x-jixia-actor': 'user-bob',
-          },
+          }),
           method: 'POST',
         });
         const viewerSave = await fetch(
           `${server.url}/api/project-docs/${projectDoc.id}/versions`,
           {
             body: JSON.stringify({ citations: [], content: 'Viewer cannot write' }),
-            headers: {
+            headers: withSessionCookie(bobCookie, {
               'Content-Type': 'application/json',
-              'x-jixia-actor': 'user-bob',
-            },
+            }),
             method: 'POST',
           },
         );
@@ -163,20 +144,19 @@ describe('http server notebook and project-doc api', () => {
           `${server.url}/api/project-docs/${projectDoc.id}/versions`,
           {
             body: JSON.stringify({ citations: [], content: 'Owner saved draft' }),
-            headers: {
+            headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
-              'x-jixia-actor': 'user-alice',
-            },
+            }),
             method: 'POST',
           },
         );
         const ownerRead = await fetch(
           `${server.url}/api/project-docs/${projectDoc.id}`,
-          { headers: { 'x-jixia-actor': 'user-alice' } },
+          { headers: withSessionCookie(aliceCookie) },
         );
         const latestProjectDocument = await fetch(
           `${server.url}/api/projects/${project.project.id}/writing-document`,
-          { headers: { 'x-jixia-actor': 'user-alice' } },
+          { headers: withSessionCookie(aliceCookie) },
         );
 
         const ownerSnapshot = await ownerRead.json() as {

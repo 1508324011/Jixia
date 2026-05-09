@@ -8,20 +8,26 @@ import type { WorkbenchSettingsResponse } from "@shared/contracts/settings";
 import type {
   CredentialsService,
   SaveWorkbenchSettingsRequest,
+  StoredCredential,
 } from "../services/credentials.service";
 
 export interface CredentialsRoutes {
   createCredential(
     input: CreateCredentialRequest,
-    actorUserId?: string,
+    actorUserId: string,
   ): Promise<CredentialRecord>;
-  getWorkbenchSettings(userId: string): WorkbenchSettingsResponse;
+  getWorkbenchSettings(actorUserId: string): Promise<WorkbenchSettingsResponse>;
+  getStoredCredential(
+    credentialRef: string,
+    actorUserId: string,
+  ): Promise<StoredCredential | null>;
   listCredentials(
     query: ListCredentialsQuery,
-    actorUserId?: string,
+    actorUserId: string,
   ): Promise<CredentialRecord[]>;
   saveWorkbenchSettings(
     input: SaveWorkbenchSettingsRequest,
+    actorUserId: string,
   ): Promise<WorkbenchSettingsResponse>;
 }
 
@@ -31,23 +37,30 @@ export function createCredentialsRoutes(
   return {
     createCredential(
       input: CreateCredentialRequest,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<CredentialRecord> {
       return service.createCredential(input, actorUserId);
     },
-    getWorkbenchSettings(userId: string): WorkbenchSettingsResponse {
-      return service.getWorkbenchSettings(userId);
+    getWorkbenchSettings(actorUserId: string): Promise<WorkbenchSettingsResponse> {
+      return service.getWorkbenchSettings(actorUserId);
+    },
+    getStoredCredential(
+      credentialRef: string,
+      actorUserId: string,
+    ): Promise<StoredCredential | null> {
+      return service.getStoredCredential(credentialRef, actorUserId);
     },
     listCredentials(
       query: ListCredentialsQuery,
-      actorUserId?: string,
+      actorUserId: string,
     ): Promise<CredentialRecord[]> {
       return service.listCredentials(query, actorUserId);
     },
     saveWorkbenchSettings(
       input: SaveWorkbenchSettingsRequest,
+      actorUserId: string,
     ): Promise<WorkbenchSettingsResponse> {
-      return service.saveWorkbenchSettings(input);
+      return service.saveWorkbenchSettings(input, actorUserId);
     },
   };
 }

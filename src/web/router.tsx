@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
+import { AppShell } from "./components/app-shell";
+import { ProtectedRoute } from "./components/protected-route";
 import { WorkbenchLayout } from "./components/workbench-layout";
 import { HomePage } from "./pages/home-page";
 import { JobsPage } from "./pages/jobs-page";
@@ -14,42 +16,53 @@ import { SpacesPage } from "./pages/spaces-page";
 import { TodayPage } from "./pages/today-page";
 import { WritingPage } from "./pages/writing-page";
 
+function WorkbenchShell() {
+  return (
+    <AppShell>
+      <WorkbenchLayout />
+    </AppShell>
+  );
+}
+
 export function AppRouter() {
   return (
     <Routes>
       <Route path="/" element={<Navigate replace to="/home" />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route element={<WorkbenchLayout />}>
-        <Route path="/home" element={<HomePage />} />
-        <Route path="/today" element={<TodayPage />} />
-        <Route path="/search" element={<SearchPage />} />
-        <Route path="/library" element={<LibraryPage mode="personal" />} />
-        <Route path="/projects" element={<ProjectsPage />} />
-        <Route path="/projects/:projectId" element={<ProjectPage />} />
-        <Route path="/projects/:projectId/library" element={<LibraryPage />} />
-        <Route
-          path="/projects/:projectId/library/:entryId/reader"
-          element={<ReaderPage />}
-        />
-        <Route
-          path="/projects/:projectId/writing/:docId"
-          element={<WritingPage />}
-        />
-        <Route path="/spaces" element={<SpacesPage />} />
-        <Route
-          path="/spaces/:spaceId/projects/:projectId/library"
-          element={<LibraryPage />}
-        />
-        <Route
-          path="/spaces/:spaceId/projects/:projectId/library/:entryId/reader"
-          element={<ReaderPage />}
-        />
-        <Route
-          path="/spaces/:spaceId/projects/:projectId/writing/:docId"
-          element={<WritingPage />}
-        />
-        <Route path="/jobs" element={<JobsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+      <Route element={<ProtectedRoute />}>
+        <Route element={<WorkbenchShell />}>
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/today" element={<TodayPage />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/library" element={<LibraryPage mode="personal" />} />
+          <Route path="/library/:entryId/reader" element={<ReaderPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects/:projectId" element={<ProjectPage />} />
+          <Route path="/projects/:projectId/library" element={<LibraryPage />} />
+          <Route
+            path="/projects/:projectId/library/:entryId/reader"
+            element={<ReaderPage />}
+          />
+          <Route
+            path="/projects/:projectId/writing/:docId"
+            element={<WritingPage />}
+          />
+          <Route path="/spaces" element={<SpacesPage />} />
+          <Route
+            path="/spaces/:spaceId/projects/:projectId/library"
+            element={<LibraryPage />}
+          />
+          <Route
+            path="/spaces/:spaceId/projects/:projectId/library/:entryId/reader"
+            element={<ReaderPage />}
+          />
+          <Route
+            path="/spaces/:spaceId/projects/:projectId/writing/:docId"
+            element={<WritingPage />}
+          />
+          <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
       </Route>
     </Routes>
   );

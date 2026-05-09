@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { useProjectDocPresenter } from "../presenters/project-doc-presenter";
 
 export function WritingPage() {
-  const { projectId, docId } = useParams();
+  const { projectId = "", docId = "" } = useParams();
   const presenter = useProjectDocPresenter(projectId, docId);
   const [draftContent, setDraftContent] = useState(presenter.content);
   const [draftVersionId, setDraftVersionId] = useState<string | null>(
@@ -16,7 +16,11 @@ export function WritingPage() {
   const draftContentRef = useRef(draftContent);
   const mutationLockRef = useRef<"save" | "reload" | null>(null);
   const snapshotVersionId = presenter.snapshot?.versionId ?? null;
-  const isMutating = presenter.isSaving || isSavePendingLocally || isReloading || mutationLockRef.current !== null;
+  const isMutating =
+    presenter.isSaving ||
+    isSavePendingLocally ||
+    isReloading ||
+    mutationLockRef.current !== null;
   const isDraftHydrating = snapshotVersionId !== draftVersionId;
 
   useEffect(() => {
@@ -103,7 +107,7 @@ export function WritingPage() {
   const publishStateLabel = activeDocument?.publishState ?? "draft";
   const contextDocumentId = activeDocument?.id ?? docId;
   const projectLabel = presenter.project?.project.name ?? projectId;
-  const spaceId = presenter.project?.project.spaceId ?? "No governance space";
+  const resolvedSpaceId = presenter.project?.project.spaceId ?? "No governance space";
   const pageError = presenter.projectError ?? presenter.error;
 
   return (
@@ -121,12 +125,10 @@ export function WritingPage() {
       </header>
 
       <section aria-label="context bar" className="context-bar">
-        <span>Space context · {spaceId}</span>
+        <span>Space context · {resolvedSpaceId}</span>
         <span>Project context · {projectLabel} · {contextDocumentId}</span>
         <span className="status-badge">{publishStateLabel}</span>
-        <span className="status-badge">
-          {presenter.citations.length} citations
-        </span>
+        <span className="status-badge">{presenter.citations.length} citations</span>
         <span className="status-badge">governed citations</span>
       </section>
 
@@ -193,7 +195,7 @@ export function WritingPage() {
             <>
               <h2 className="panel-title">Draft canvas</h2>
               <p className="quiet-copy">
-                Project context · {projectLabel} · {docId}
+                Project context · {projectLabel} · {docId || "No document"}
               </p>
               <p className="quiet-copy">Promote an insight from Reader to start this document.</p>
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}

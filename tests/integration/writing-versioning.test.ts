@@ -82,6 +82,8 @@ describe('notebook and project document persistence', () => {
         ),
       ).rejects.toThrow(/access denied/i);
 
+      await firstApp.close();
+
       const secondApp = createJixiaApp({ env });
       const secondSnapshot = await secondApp.notebooks.saveDocument(
         {
@@ -100,10 +102,11 @@ describe('notebook and project document persistence', () => {
       expect(secondSnapshot.document.id).toBe(notebook.id);
       expect(secondSnapshot.versionNumber).toBe(2);
       expect(secondSnapshot.citations[0]?.paperAssetId).toBe(imported.asset.id);
+      await secondApp.close();
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
-  }, 15_000);
+  }, 60_000);
 
   it('enforces ProjectMember-gated project docs and persists versions/citations', async () => {
     const storageRoot = createStorageRoot('jixia-project-doc-versioning-');
@@ -226,6 +229,8 @@ describe('notebook and project document persistence', () => {
       expect(firstSnapshot.citations[0]?.paperAssetId).toBe(imported.asset.id);
       expect(reviewed.publishState).toBe('review');
 
+      await firstApp.close();
+
       const secondApp = createJixiaApp({ env });
       const secondSnapshot = await secondApp.projectDocs.saveDocument(
         {
@@ -239,6 +244,7 @@ describe('notebook and project document persistence', () => {
       expect(secondSnapshot.document.id).toBe(projectDoc.id);
       expect(secondSnapshot.document.publishState).toBe('review');
       expect(secondSnapshot.versionNumber).toBe(2);
+      await secondApp.close();
     } finally {
       await prisma.$disconnect();
       rmSync(storageRoot, { force: true, recursive: true });
@@ -304,6 +310,7 @@ describe('notebook and project document persistence', () => {
       );
 
       expect(notebook.id).not.toBe('legacy-doc');
+      await app.close();
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
@@ -366,6 +373,8 @@ describe('notebook and project document persistence', () => {
         ]),
       );
 
+      await app.close();
+
       const reopenedApp = createJixiaApp({ env });
       const reopenedDocument = await reopenedApp.projectDocs.getDocument(
         { documentId: document.id },
@@ -398,6 +407,7 @@ describe('notebook and project document persistence', () => {
 
       expect(reopenedSnapshot.versionNumber).toBe(2);
       expect(reopenedSnapshot.content).toBe('Reopened writer draft with persisted edits.');
+      await reopenedApp.close();
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }

@@ -13,13 +13,21 @@ export function RecentOpenedPanel() {
       </div>
 
       <ul className="recent-opened-panel__list">
-        {items.map((item) => (
-          <li key={item.id} className="recent-opened-panel__item">
-            <span className="status-badge">{item.kind}</span>
-            <strong>{item.title}</strong>
-            <span className="quiet-copy">{item.context}</span>
+        {items.length > 0 ? (
+          items.map((item) => (
+            <li key={item.id} className="recent-opened-panel__item">
+              <span className="status-badge">{item.kind}</span>
+              <strong>{item.title}</strong>
+              <span className="quiet-copy">{item.context}</span>
+            </li>
+          ))
+        ) : (
+          <li className="recent-opened-panel__item">
+            <span className="quiet-copy">
+              No recent items yet. Open a project, paper, or Writer draft to populate this list.
+            </span>
           </li>
-        ))}
+        )}
       </ul>
     </aside>
   );

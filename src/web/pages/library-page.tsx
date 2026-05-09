@@ -163,7 +163,7 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
                 <p className="quiet-copy">Visibility · {entry.visibility}</p>
                 <Link
                   className="panel-link"
-                  to={`/projects/project-1/library/${entry.entryId}/reader`}
+                  to={`/library/${entry.entryId}/reader`}
                 >
                   Open reader
                 </Link>

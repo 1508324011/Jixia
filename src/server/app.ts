@@ -2,18 +2,27 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
-import type { JobEventRecord } from '@shared/contracts/jobs';
 import type { ConversationRecord, NoteRecord } from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import {
   createPrismaClient,
+  createCredentialsRepository,
+  createJobRepository,
   createNotebookRepository,
   createProjectDocRepository,
   createLibraryRepository,
   createProjectRepository,
+  createReadingRepository,
+  createSessionRepository,
+  initializeReadingPersistence,
   createSpaceRepository,
+  type BootstrapLegacyCredentialAuthorityInput,
   type BootstrapLegacyLibraryInput,
+  type CredentialsRepository,
+  type JobRepository,
+  type LegacyCredentialBootstrapInput,
+  type LegacyWorkbenchSettingsBootstrapInput,
   type LibraryRepository,
   readDatabaseUrl,
 } from '../db';
@@ -29,6 +38,10 @@ import {
   createCredentialsRoutes,
   type CredentialsRoutes,
 } from './routes/credentials.routes';
+import {
+  createSessionRoutes,
+  type SessionRoutes,
+} from './routes/session.routes';
 import {
   createImportRoutes,
   type ImportRoutes,
@@ -71,18 +84,13 @@ import {
 } from './routes/spaces.routes';
 import {
   createCredentialsService,
-  type StoredCredential,
-  type WorkbenchSettingsRecord,
 } from './services/credentials.service';
-import { createSecretBox } from './security/secret-box';
-import {
-  createAuditService,
-  type AuditLogRecord,
-} from './services/audit.service';
+import { createSessionService } from './services/session.service';
+import { createSecretBox, hasSecretBoxKey } from './security/secret-box';
+import { createAuditService } from './services/audit.service';
 import { createImportService } from './services/import.service';
-import { createEvidenceLinkService } from './services/evidence-link.service';
 import { createJobBus } from './jobs/job-bus';
-import { createJobRunner, type StoredJob } from './jobs/job-runner';
+import { createJobRunner } from './jobs/job-runner';
 import { createLibraryService } from './services/library.service';
 import { createNotebookService } from './services/notebooks.service';
 import { createProjectDocsService } from './services/project-docs.service';
@@ -101,7 +109,16 @@ import {
 } from './storage/storage-root';
 
 const APP_STATE_FILE = 'server-state.json';
+const CREDENTIAL_AUTHORITY_BOOTSTRAP_MARKER_FILE =
+  '.credential-authority-prisma-bootstrap-complete';
 const LIBRARY_BOOTSTRAP_MARKER_FILE = '.library-prisma-bootstrap-complete';
+
+interface LegacyReadingStateRecord {
+  lastReadAt: string;
+  libraryEntryId: string;
+  progressPercent: number;
+  userId: string;
+}
 
 export interface CreateJixiaAppOptions {
   connectors?: {
@@ -113,38 +130,50 @@ export interface CreateJixiaAppOptions {
 
 export interface JixiaAppEnv extends StorageRootEnv {
   JIXIA_DATABASE_URL?: string;
+  NODE_ENV?: string;
 }
 
 export interface JixiaAppState {
-  auditLogs: AuditLogRecord[];
-  conversations: ConversationRecord[];
-  credentials: StoredCredential[];
-  insights: GeneratedInsightRecord[];
-  jobEvents: JobEventRecord[];
-  jobs: StoredJob[];
+  legacyConversations: ConversationRecord[];
+  legacyCredentials: LegacyCredentialBootstrapInput[];
+  legacyInsights: GeneratedInsightRecord[];
   legacyLibraryEntries: LegacyStoredLibraryEntry[];
+  legacyNotes: NoteRecord[];
+  legacyReadingStates: LegacyReadingStateRecord[];
   legacyPaperAssets: LegacyStoredPaperAsset[];
+  legacyWorkbenchSettings: LegacyWorkbenchSettingsBootstrapInput[];
   memberships: SpaceMembership[];
   nextSequence: number;
-  notes: NoteRecord[];
   spaces: StoredSpace[];
-  workbenchSettings: WorkbenchSettingsRecord[];
 }
 
 type SerializedJixiaAppState = Partial<
-  Omit<JixiaAppState, 'legacyLibraryEntries' | 'legacyPaperAssets'>
+  Omit<
+    JixiaAppState,
+    | 'legacyCredentials'
+    | 'legacyLibraryEntries'
+    | 'legacyPaperAssets'
+    | 'legacyWorkbenchSettings'
+  >
 > & {
   citationLinks?: unknown;
   docVersions?: unknown;
   libraryEntries?: LegacyStoredLibraryEntry[];
+  conversations?: ConversationRecord[];
+  credentials?: LegacyCredentialBootstrapInput[];
+  insights?: GeneratedInsightRecord[];
+  notes?: NoteRecord[];
+  readingStates?: LegacyReadingStateRecord[];
   paperAssets?: LegacyStoredPaperAsset[];
   projectMembers?: unknown;
   projects?: unknown;
+  workbenchSettings?: LegacyWorkbenchSettingsBootstrapInput[];
   writingDocs?: unknown;
 };
 
 interface LoadedJixiaAppState {
   hadLegacyCollaborativeKeys: boolean;
+  hadLegacyReadingKeys: boolean;
   state: JixiaAppState;
 }
 
@@ -167,6 +196,7 @@ interface LegacyStoredLibraryEntry {
 }
 
 export interface JixiaApp {
+  close(): Promise<void>;
   credentials: CredentialsRoutes;
   health: HealthRoutes;
   imports: ImportRoutes;
@@ -177,24 +207,23 @@ export interface JixiaApp {
   projectDocs: ProjectDocsRoutes;
   projects: ProjectsRoutes;
   reading: ReadingRoutes;
+  session: SessionRoutes;
   spaces: SpacesRoutes;
 }
 
 function createState(): JixiaAppState {
   return {
-    auditLogs: [],
-    conversations: [],
-    credentials: [],
-    insights: [],
-    jobEvents: [],
-    jobs: [],
+    legacyConversations: [],
+    legacyCredentials: [],
+    legacyInsights: [],
     legacyLibraryEntries: [],
+    legacyNotes: [],
+    legacyReadingStates: [],
     legacyPaperAssets: [],
+    legacyWorkbenchSettings: [],
     memberships: [],
     nextSequence: 0,
-    notes: [],
     spaces: [],
-    workbenchSettings: [],
   };
 }
 
@@ -215,6 +244,12 @@ function resolveLibraryBootstrapMarkerPath(
   return join(resolveStorageRoot(env), LIBRARY_BOOTSTRAP_MARKER_FILE);
 }
 
+function resolveCredentialAuthorityBootstrapMarkerPath(
+  env: StorageRootEnv = process.env,
+): string {
+  return join(resolveStorageRoot(env), CREDENTIAL_AUTHORITY_BOOTSTRAP_MARKER_FILE);
+}
+
 function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
   const initialState = createState();
   const statePath = resolveAppStatePath(env);
@@ -222,6 +257,7 @@ function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
   if (!existsSync(statePath)) {
     return {
       hadLegacyCollaborativeKeys: false,
+      hadLegacyReadingKeys: false,
       state: initialState,
     };
   }
@@ -233,25 +269,32 @@ function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
     hasOwnProperty(parsed, 'writingDocs') ||
     hasOwnProperty(parsed, 'docVersions') ||
     hasOwnProperty(parsed, 'citationLinks');
+  const hadLegacyReadingKeys =
+    hasOwnProperty(parsed, 'conversations') ||
+    hasOwnProperty(parsed, 'insights') ||
+    hasOwnProperty(parsed, 'notes') ||
+    hasOwnProperty(parsed, 'readingStates');
 
   return {
     hadLegacyCollaborativeKeys,
+    hadLegacyReadingKeys,
     state: {
-      auditLogs: parsed.auditLogs ?? initialState.auditLogs,
-      conversations: parsed.conversations ?? initialState.conversations,
-      credentials: parsed.credentials ?? initialState.credentials,
-      insights: parsed.insights ?? initialState.insights,
-      jobEvents: parsed.jobEvents ?? initialState.jobEvents,
-      jobs: parsed.jobs ?? initialState.jobs,
+      legacyConversations:
+        parsed.conversations ?? initialState.legacyConversations,
+      legacyCredentials:
+        parsed.credentials ?? initialState.legacyCredentials,
+      legacyInsights: parsed.insights ?? initialState.legacyInsights,
       legacyLibraryEntries:
         parsed.libraryEntries ?? initialState.legacyLibraryEntries,
+      legacyNotes: parsed.notes ?? initialState.legacyNotes,
+      legacyReadingStates:
+        parsed.readingStates ?? initialState.legacyReadingStates,
       legacyPaperAssets: parsed.paperAssets ?? initialState.legacyPaperAssets,
+      legacyWorkbenchSettings:
+        parsed.workbenchSettings ?? initialState.legacyWorkbenchSettings,
       memberships: parsed.memberships ?? initialState.memberships,
       nextSequence: parsed.nextSequence ?? initialState.nextSequence,
-      notes: parsed.notes ?? initialState.notes,
       spaces: parsed.spaces ?? initialState.spaces,
-      workbenchSettings:
-        parsed.workbenchSettings ?? initialState.workbenchSettings,
     },
   };
 }
@@ -266,19 +309,15 @@ function persistState(
 
   mkdirSync(rootDirectory, { recursive: true });
   const serializedState: SerializedJixiaAppState = {
-    auditLogs: state.auditLogs,
-    conversations: state.conversations,
-    credentials: state.credentials,
-    insights: state.insights,
-    jobEvents: state.jobEvents,
-    jobs: state.jobs,
+    conversations: state.legacyConversations,
+    insights: state.legacyInsights,
     libraryEntries: state.legacyLibraryEntries,
     memberships,
     nextSequence: state.nextSequence,
-    notes: state.notes,
+    notes: state.legacyNotes,
     paperAssets: state.legacyPaperAssets,
+    readingStates: state.legacyReadingStates,
     spaces,
-    workbenchSettings: state.workbenchSettings,
   };
 
   writeFileSync(resolveAppStatePath(env), JSON.stringify(serializedState, null, 2));
@@ -292,6 +331,18 @@ function markLibraryBootstrapComplete(
   mkdirSync(rootDirectory, { recursive: true });
   writeFileSync(
     resolveLibraryBootstrapMarkerPath(env),
+    JSON.stringify({ completedAt: new Date().toISOString() }, null, 2),
+  );
+}
+
+function markCredentialAuthorityBootstrapComplete(
+  env: StorageRootEnv = process.env,
+): void {
+  const rootDirectory = resolveStorageRoot(env);
+
+  mkdirSync(rootDirectory, { recursive: true });
+  writeFileSync(
+    resolveCredentialAuthorityBootstrapMarkerPath(env),
     JSON.stringify({ completedAt: new Date().toISOString() }, null, 2),
   );
 }
@@ -352,6 +403,139 @@ function clearLegacyLibraryState(
   return true;
 }
 
+function hasLegacyReadingBootstrapInput(
+  state: Pick<
+    JixiaAppState,
+    'legacyConversations' | 'legacyInsights' | 'legacyNotes' | 'legacyReadingStates'
+  >,
+): boolean {
+  return (
+    state.legacyConversations.length > 0 ||
+    state.legacyInsights.length > 0 ||
+    state.legacyNotes.length > 0 ||
+    state.legacyReadingStates.length > 0
+  );
+}
+
+function clearLegacyReadingState(
+  state: Pick<
+    JixiaAppState,
+    'legacyConversations' | 'legacyInsights' | 'legacyNotes' | 'legacyReadingStates'
+  >,
+): boolean {
+  if (!hasLegacyReadingBootstrapInput(state)) {
+    return false;
+  }
+
+  state.legacyConversations = [];
+  state.legacyInsights = [];
+  state.legacyNotes = [];
+  state.legacyReadingStates = [];
+
+  return true;
+}
+
+function hasLegacyCredentialBootstrapInput(
+  state: Pick<JixiaAppState, 'legacyCredentials' | 'legacyWorkbenchSettings'>,
+): boolean {
+  return state.legacyCredentials.length > 0 || state.legacyWorkbenchSettings.length > 0;
+}
+
+function resolveLegacyCredentialBootstrapInput(
+  state: Pick<JixiaAppState, 'legacyCredentials' | 'legacyWorkbenchSettings'>,
+  credentialAuthorityBootstrapMarkerExists: boolean,
+): BootstrapLegacyCredentialAuthorityInput {
+  if (
+    credentialAuthorityBootstrapMarkerExists ||
+    !hasLegacyCredentialBootstrapInput(state)
+  ) {
+    return {
+      credentials: [],
+      workbenchSettings: [],
+    };
+  }
+
+  return {
+    credentials: state.legacyCredentials,
+    workbenchSettings: state.legacyWorkbenchSettings,
+  };
+}
+
+function clearLegacyCredentialState(
+  state: Pick<JixiaAppState, 'legacyCredentials' | 'legacyWorkbenchSettings'>,
+): boolean {
+  if (!hasLegacyCredentialBootstrapInput(state)) {
+    return false;
+  }
+
+  state.legacyCredentials = [];
+  state.legacyWorkbenchSettings = [];
+
+  return true;
+}
+
+async function bootstrapLegacyReadingState(
+  readingRepository: ReturnType<typeof createReadingRepository>,
+  state: Pick<
+    JixiaAppState,
+    'legacyConversations' | 'legacyInsights' | 'legacyNotes' | 'legacyReadingStates'
+  >,
+): Promise<boolean> {
+  if (!hasLegacyReadingBootstrapInput(state)) {
+    return false;
+  }
+
+  for (const conversation of state.legacyConversations) {
+    await readingRepository.createConversation({
+      createdAt: conversation.createdAt,
+      id: conversation.id,
+      libraryEntryId: conversation.libraryEntryId,
+      startedByUserId: conversation.startedByUserId,
+      title: conversation.title,
+    });
+  }
+
+  for (const note of state.legacyNotes) {
+    await readingRepository.createNote({
+      authorUserId: note.authorUserId,
+      body: note.body,
+      createdAt: note.createdAt,
+      id: note.id,
+      libraryEntryId: note.libraryEntryId,
+      visibility: note.visibility,
+    });
+  }
+
+  for (const insight of state.legacyInsights) {
+    await readingRepository.saveGeneratedInsight({
+      conversationId: insight.conversationId,
+      createdAt: insight.createdAt,
+      createdByUserId:
+        state.legacyConversations.find(
+          (conversation) => conversation.id === insight.conversationId,
+        )?.startedByUserId ?? 'user-alice',
+      evidenceSpans: insight.evidenceSpans.map((span, index) => ({
+        ...span,
+        orderIndex: index,
+      })),
+      id: insight.id,
+      libraryEntryId: insight.libraryEntryId,
+      summary: insight.summary,
+    });
+  }
+
+  for (const readingState of state.legacyReadingStates) {
+    await readingRepository.touchReadingState({
+      lastReadAt: readingState.lastReadAt,
+      libraryEntryId: readingState.libraryEntryId,
+      progressPercent: readingState.progressPercent,
+      userId: readingState.userId,
+    });
+  }
+
+  return true;
+}
+
 function createBootstrappedLibraryRepository(
   repository: LibraryRepository,
   legacyInput: BootstrapLegacyLibraryInput,
@@ -400,14 +584,173 @@ function createBootstrappedLibraryRepository(
   };
 }
 
+function createCredentialAuthorityBootstrappedJobRepository(
+  repository: JobRepository,
+  credentialsRepository: CredentialsRepository,
+  ensureBootstrapped: () => Promise<void>,
+  env: JixiaAppEnv | undefined,
+): JobRepository {
+  return {
+    async appendJobEvent(input) {
+      await ensureBootstrapped();
+
+      return repository.appendJobEvent(input);
+    },
+    async createAuditRecord(input) {
+      await ensureBootstrapped();
+
+      return repository.createAuditRecord(input);
+    },
+    async createProviderCredentialReference(input) {
+      await ensureBootstrapped();
+
+      return repository.createProviderCredentialReference(input);
+    },
+    async createQueuedJobWithAudit(input) {
+      await ensureBootstrapped();
+
+      return repository.createQueuedJobWithAudit(input);
+    },
+    async getJob(query) {
+      await ensureBootstrapped();
+
+      return repository.getJob(query);
+    },
+    async getProviderCredentialReference(credentialRef) {
+      await ensureBootstrapped();
+
+      const credential = await repository.getProviderCredentialReference(credentialRef);
+
+      if (credential) {
+        await assertCredentialSecretUsable(
+          credentialsRepository,
+          credentialRef,
+          env,
+        );
+      }
+
+      return credential;
+    },
+    async listAuditRecordsByJob(jobId) {
+      await ensureBootstrapped();
+
+      return repository.listAuditRecordsByJob(jobId);
+    },
+    async listJobEvents(jobId) {
+      await ensureBootstrapped();
+
+      return repository.listJobEvents(jobId);
+    },
+    async listJobsForActor(query) {
+      await ensureBootstrapped();
+
+      return repository.listJobsForActor(query);
+    },
+    async updateJobStatus(jobId, status) {
+      await ensureBootstrapped();
+
+      return repository.updateJobStatus(jobId, status);
+    },
+  };
+}
+
+async function ensureCredentialAuthorityUsable(
+  repository: CredentialsRepository,
+  env: JixiaAppEnv | undefined,
+): Promise<void> {
+  if ((await repository.hasStoredCredentials()) && !hasSecretBoxKey(env)) {
+    throw new Error(
+      'Credential encryption key is missing from the storage root. Existing credential rows cannot be used until credentials.key is restored.',
+    );
+  }
+}
+
+async function assertCredentialSecretUsable(
+  repository: CredentialsRepository,
+  credentialRef: string,
+  env: JixiaAppEnv | undefined,
+): Promise<void> {
+  const credential = await repository.getCredentialByRef(credentialRef);
+
+  if (!credential) {
+    throw new Error(
+      `Credential ${credentialRef} is missing encrypted secret material.`,
+    );
+  }
+
+  createSecretBox(env, { allowKeyCreation: false }).decrypt(credential);
+}
+
+function createCredentialAuthorityBootstrappedCredentialsRepository(
+  repository: CredentialsRepository,
+  ensureBootstrapped: () => Promise<void>,
+): CredentialsRepository {
+  return {
+    async bootstrapLegacyAuthority(input) {
+      await repository.bootstrapLegacyAuthority(input);
+    },
+    async createCredential(input) {
+      await ensureBootstrapped();
+
+      return repository.createCredential(input);
+    },
+    async replaceCredentialSecret(input) {
+      await ensureBootstrapped();
+
+      return repository.replaceCredentialSecret(input);
+    },
+    async getCredentialByRef(credentialRef) {
+      await ensureBootstrapped();
+
+      return repository.getCredentialByRef(credentialRef);
+    },
+    async getCredentialForUser(query) {
+      await ensureBootstrapped();
+
+      return repository.getCredentialForUser(query);
+    },
+    async getWorkbenchSettings(userId) {
+      await ensureBootstrapped();
+
+      return repository.getWorkbenchSettings(userId);
+    },
+    async hasStoredCredentials() {
+      await ensureBootstrapped();
+
+      return repository.hasStoredCredentials();
+    },
+    async listCredentialsForUser(userId) {
+      await ensureBootstrapped();
+
+      return repository.listCredentialsForUser(userId);
+    },
+    async upsertWorkbenchSettings(input) {
+      await ensureBootstrapped();
+
+      return repository.upsertWorkbenchSettings(input);
+    },
+  };
+}
+
 export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const loadedState = loadState(options.env);
   const state = loadedState.state;
   const persist = (): void => {
     persistState(state, options.env);
   };
+  const persistedNextId = (prefix: string): string => {
+    const id = nextId(state, prefix);
+
+    persist();
+
+    return id;
+  };
 
   if (loadedState.hadLegacyCollaborativeKeys) {
+    persist();
+  }
+
+  if (loadedState.hadLegacyReadingKeys) {
     persist();
   }
 
@@ -441,6 +784,52 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     repository: spaceRepository,
   });
   const projectRepository = createProjectRepository(prismaClient);
+  const sessionRepository = createSessionRepository(prismaClient);
+  const fileStore = createFileStore(options.env);
+  const rawCredentialsRepository = createCredentialsRepository(prismaClient);
+  const credentialAuthorityBootstrapMarkerPath =
+    resolveCredentialAuthorityBootstrapMarkerPath(options.env);
+  const credentialAuthorityBootstrapMarkerExists = existsSync(
+    credentialAuthorityBootstrapMarkerPath,
+  );
+  const legacyCredentialBootstrapInput = resolveLegacyCredentialBootstrapInput(
+    state,
+    credentialAuthorityBootstrapMarkerExists,
+  );
+  const clearLegacyCredentialAuthority = (): void => {
+    markCredentialAuthorityBootstrapComplete(options.env);
+
+    if (clearLegacyCredentialState(state)) {
+      persist();
+    }
+  };
+
+  if (
+    credentialAuthorityBootstrapMarkerExists &&
+    clearLegacyCredentialState(state)
+  ) {
+    persist();
+  }
+  let credentialAuthorityBootstrap: Promise<void> | null = null;
+
+  async function ensureCredentialAuthorityBootstrap(): Promise<void> {
+    credentialAuthorityBootstrap ??= rawCredentialsRepository
+      .bootstrapLegacyAuthority(legacyCredentialBootstrapInput)
+      .then(clearLegacyCredentialAuthority);
+
+    await credentialAuthorityBootstrap;
+  }
+
+  const credentialsRepository = createCredentialAuthorityBootstrappedCredentialsRepository(
+    rawCredentialsRepository,
+    ensureCredentialAuthorityBootstrap,
+  );
+  const jobRepository = createCredentialAuthorityBootstrappedJobRepository(
+    createJobRepository(prismaClient),
+    credentialsRepository,
+    ensureCredentialAuthorityBootstrap,
+    options.env,
+  );
   const libraryBootstrapMarkerPath = resolveLibraryBootstrapMarkerPath(options.env);
   const libraryBootstrapMarkerExists = existsSync(libraryBootstrapMarkerPath);
   const legacyLibraryBootstrapInput = resolveLegacyLibraryBootstrapInput(
@@ -469,15 +858,33 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const importService = createImportService({
     arxivConnector: options.connectors?.arxiv ?? createArxivConnector(),
-    fileStore: createFileStore(options.env),
+    fileStore,
     libraryRepository,
     projectRepository,
     pubmedConnector: options.connectors?.pubmed ?? createPubmedConnector(),
   });
   const libraryService = createLibraryService({
+    fileStore,
     libraryRepository,
     projectRepository,
   });
+  const readingRepository = createReadingRepository(prismaClient);
+  let readingBootstrap: Promise<void> | null = null;
+
+  async function ensureReadingBootstrap(): Promise<void> {
+    readingBootstrap ??= (async () => {
+      await libraryRepository.bootstrapLegacyLibrary({ assets: [], entries: [] });
+      await initializeReadingPersistence(prismaClient);
+
+      const bootstrapped = await bootstrapLegacyReadingState(readingRepository, state);
+
+      if (bootstrapped && clearLegacyReadingState(state)) {
+        persist();
+      }
+    })();
+
+    await readingBootstrap;
+  }
   const notebookRepository = createNotebookRepository(prismaClient);
   const notebookService = createNotebookService({
     libraryService,
@@ -491,64 +898,92 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     projectRepository,
   });
   const readingService = createReadingService({
-    conversations: state.conversations,
-    evidenceLinkService: createEvidenceLinkService(),
-    insights: state.insights,
     libraryService,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
+    readingRepository: {
+      async createConversation(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.createConversation(input);
+      },
+      async createNote(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.createNote(input);
+      },
+      async getReadingState(libraryEntryId, userId) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.getReadingState(libraryEntryId, userId);
+      },
+      async listGeneratedInsightsForEntry(libraryEntryId) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.listGeneratedInsightsForEntry(libraryEntryId);
+      },
+      async listNotesForEntry(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.listNotesForEntry(input);
+      },
+      async saveGeneratedInsight(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.saveGeneratedInsight(input);
+      },
+      async touchReadingState(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.touchReadingState(input);
+      },
     },
-    notes: state.notes,
-    persist,
   });
   const credentialsService = createCredentialsService({
-    credentials: state.credentials,
     nextId(prefix: string): string {
-      return nextId(state, prefix);
+      return persistedNextId(prefix);
     },
-    persist,
-    secretBox: createSecretBox(options.env),
-    workbenchSettings: state.workbenchSettings,
+    repository: credentialsRepository,
+    async resolveSecretBox() {
+      await ensureCredentialAuthorityUsable(credentialsRepository, options.env);
+
+      return createSecretBox(options.env);
+    },
+  });
+  const sessionService = createSessionService({
+    repository: sessionRepository,
   });
   const auditService = createAuditService({
-    auditLogs: state.auditLogs,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
-    },
-    persist,
+    jobRepository,
+    nextId: persistedNextId,
   });
-  const jobBus = createJobBus(state.jobEvents, persist);
+  const jobBus = createJobBus();
   const jobRunner = createJobRunner({
     auditService,
-    credentials: state.credentials,
     jobBus,
-    jobs: state.jobs,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
-    },
-    persist,
+    jobRepository,
+    nextId: persistedNextId,
   });
   const jobsRoutes = createJobsRoutes({
     auditService,
-    credentials: state.credentials,
     jobBus,
+    jobRepository,
     jobRunner,
-    jobs: state.jobs,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
-    },
-    persist,
+    nextId: persistedNextId,
     spaceRepository,
   });
+  let closePromise: Promise<void> | null = null;
 
   return {
+    close(): Promise<void> {
+      closePromise ??= prismaClient.$disconnect().catch(() => undefined);
+      return closePromise;
+    },
     credentials: createCredentialsRoutes(credentialsService),
     health: createHealthRoutes(),
     imports: createImportRoutes(importService),
     jobs: jobsRoutes,
     jobStream: createJobStreamRoutes({
       jobBus,
-      jobs: state.jobs,
+      jobRepository,
       spaceRepository,
     }),
     library: createLibraryRoutes(libraryService),
@@ -556,6 +991,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     projectDocs: createProjectDocsRoutes(projectDocsService),
     projects: createProjectsRoutes(projectsService),
     reading: createReadingRoutes(readingService),
+    session: createSessionRoutes(sessionService),
     spaces: createSpacesRoutes(spacesService),
   };
 }

@@ -13,6 +13,7 @@ import {
   Settings,
 } from "lucide-react";
 
+import { useSessionAuth } from "../lib/session-auth";
 import { useProjectContext } from "../presenters/project-context";
 
 const SIDEBAR_COLLAPSED_KEY = "jixia-sidebar-collapsed";
@@ -25,10 +26,10 @@ interface WorkflowContext {
     | "library"
     | "reader"
     | "writing"
-      | "jobs"
-      | "settings";
+    | "jobs"
+    | "settings";
   docId?: string;
-  entryId: string;
+  entryId?: string;
   projectId?: string;
   spaceId?: string;
 }
@@ -74,7 +75,6 @@ function deriveWorkflowContext(pathname: string): WorkflowContext {
     return {
       currentSection: "writing",
       docId: projectWritingMatch.params.docId,
-      entryId: "entry-1",
       projectId: projectWritingMatch.params.projectId,
     };
   }
@@ -86,7 +86,6 @@ function deriveWorkflowContext(pathname: string): WorkflowContext {
   if (projectLibraryMatch?.params.projectId) {
     return {
       currentSection: "library",
-      entryId: "entry-1",
       projectId: projectLibraryMatch.params.projectId,
     };
   }
@@ -94,34 +93,29 @@ function deriveWorkflowContext(pathname: string): WorkflowContext {
   if (pathname === "/search") {
     return {
       currentSection: "search",
-      entryId: "entry-1",
     };
   }
 
   if (pathname === "/jobs") {
     return {
       currentSection: "jobs",
-      entryId: "entry-1",
     };
   }
 
   if (pathname === "/settings") {
     return {
       currentSection: "settings",
-      entryId: "entry-1",
     };
   }
 
   if (pathname === "/spaces") {
     return {
       currentSection: "spaces",
-      entryId: "entry-1",
     };
   }
 
   return {
     currentSection: "projects",
-    entryId: "entry-1",
   };
 }
 
@@ -183,9 +177,10 @@ function isActiveSection(
   }
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { logout, user } = useSessionAuth();
   const [isCollapsed, setIsCollapsed] = useState(readCollapsedPreference);
 
   const context = useMemo(
@@ -231,22 +226,24 @@ export function AppShell({ children }: { children: ReactNode }) {
         key: "reader",
         label: "Reader",
         subtitle: "Read with evidence",
-        to: resolvedProjectId
+        to: resolvedProjectId && context.entryId
           ? `/projects/${resolvedProjectId}/library/${context.entryId}/reader`
-          : "/projects",
+          : resolvedProjectId
+            ? `/projects/${resolvedProjectId}/library`
+            : "/projects",
         icon: BookOpen,
       },
-        {
-          key: "writing",
-          label: "Writing",
-          subtitle: "Versioned drafting",
-          to: resolvedProjectId && context.docId
-            ? `/projects/${resolvedProjectId}/writing/${context.docId}`
-            : resolvedProjectId
-              ? `/projects/${resolvedProjectId}`
-              : "/projects",
-          icon: FileText,
-        },
+      {
+        key: "writing",
+        label: "Writing",
+        subtitle: "Versioned drafting",
+        to: resolvedProjectId && context.docId
+          ? `/projects/${resolvedProjectId}/writing/${context.docId}`
+          : resolvedProjectId
+            ? `/projects/${resolvedProjectId}`
+            : "/projects",
+        icon: FileText,
+      },
       {
         key: "jobs",
         label: "Jobs",
@@ -273,6 +270,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
 
     navigate("/projects");
+  }
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } finally {
+      navigate("/login", { replace: true });
+    }
   }
 
   return (
@@ -472,12 +477,24 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2">
+            {user ? (
+              <span className="inline-flex items-center rounded-full bg-notion-sidebar-hover px-2.5 py-1 text-xs font-medium text-notion-text-secondary">
+                {user.displayName}
+              </span>
+            ) : null}
             <button
               type="button"
               onClick={handleGoBack}
               className="inline-flex items-center rounded-lg border border-notion-border bg-white px-3 py-1.5 text-sm text-notion-text-secondary transition-colors hover:border-notion-accent/30 hover:text-notion-accent"
             >
               Back
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              className="inline-flex items-center rounded-lg border border-notion-border bg-white px-3 py-1.5 text-sm text-notion-text-secondary transition-colors hover:border-notion-accent/30 hover:text-notion-accent"
+            >
+              Logout
             </button>
             <span className="inline-flex items-center rounded-full bg-notion-accent-light px-2.5 py-1 text-xs font-medium text-notion-accent">
               server-first shell
@@ -491,4 +508,15 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
     </div>
   );
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  const { isAuthenticated, isLoading } = useSessionAuth();
+
+  if (location.pathname === "/login" || isLoading || !isAuthenticated) {
+    return <>{children}</>;
+  }
+
+  return <AuthenticatedAppShell>{children}</AuthenticatedAppShell>;
 }

@@ -7,8 +7,9 @@ import { useProjectContext } from '../presenters/project-context';
 const projectTabs = ['概览', '共享 Library', 'Writer', '活动'];
 
 export function ProjectPage() {
-  const { projectId } = useParams();
+  const { projectId = '' } = useParams();
   const projectContext = useProjectContext(projectId);
+  const { error, isLoading, project } = projectContext;
 
   if (!projectId) {
     return (
@@ -36,8 +37,32 @@ export function ProjectPage() {
     );
   }
 
-  const projectLabel = projectContext.project?.project.name ?? projectId;
-  const spaceId = projectContext.project?.project.spaceId ?? 'No governance space';
+  if (isLoading) {
+    return (
+      <main className="page-shell">
+        <header className="page-header">
+          <p className="page-kicker">Project workspace</p>
+          <h1 className="page-title">Loading project workspace…</h1>
+          <p className="page-description">Resolving project context from server-owned membership data.</p>
+        </header>
+      </main>
+    );
+  }
+
+  if (error || !project) {
+    return (
+      <main className="page-shell">
+        <header className="page-header">
+          <p className="page-kicker">Project workspace</p>
+          <h1 className="page-title">Project unavailable</h1>
+          <p className="page-description">{error ?? `Project ${projectId} is not visible to the current actor.`}</p>
+        </header>
+      </main>
+    );
+  }
+
+  const projectLabel = project.project.name;
+  const spaceId = project.project.spaceId;
 
   return (
     <main className="page-shell">
@@ -50,27 +75,16 @@ export function ProjectPage() {
 
       <section className="context-bar" aria-label="project context bar">
         <span>Governed by space · {spaceId}</span>
-        <span>Your role · {projectContext.project?.membership.role ?? 'Loading role'}</span>
+        <span>Your role · {project.membership.role}</span>
+        <span className="status-badge">{project.project.status}</span>
         <button className="panel-link" type="button" onClick={() => void projectContext.refresh()}>
           Refresh
         </button>
       </section>
-
-      {projectContext.error ? (
-        <section className="panel-grid" aria-label="project errors">
-          <article className="panel">
-            <h2 className="panel-title">Project workspace unavailable</h2>
-            <p className="quiet-copy">{projectContext.error}</p>
-          </article>
-        </section>
-      ) : null}
-
       <section className="panel project-workspace-panel">
         <ProjectTabs tabs={projectTabs} />
         <p className="quiet-copy">
-          {projectContext.isLoading
-            ? 'Loading server-visible project context.'
-            : '先从概览进入共享 Library、Writer 和协作动态。'}
+          先从概览进入共享 Library、Writer 和协作动态。
         </p>
         <Link className="panel-link" to={`/projects/${projectId}/library`}>
           Open project library

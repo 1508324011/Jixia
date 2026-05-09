@@ -4,7 +4,6 @@ import type { LibraryEntryView } from "@shared/contracts/library";
 import type { ProjectListItem } from "@shared/contracts/projects";
 
 import { apiClient } from "../lib/http-client";
-import { demoActorContext } from "./runtime-context";
 import { useProjectContext } from "./project-context";
 
 export interface LibraryViewModel {
@@ -32,7 +31,6 @@ export function useLibraryPresenter(projectId: string): LibraryViewModel {
         setIsLoading(true);
         setError(null);
         const nextEntries = await apiClient.listLibraryEntries(
-          demoActorContext.actorUserId,
           { id: projectContext.project.project.id, type: "project" },
           projectContext.project.project.spaceId,
         );

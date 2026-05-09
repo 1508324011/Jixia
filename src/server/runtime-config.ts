@@ -7,9 +7,11 @@ const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 3000;
 
 export interface RuntimeConfigEnv extends StorageRootEnv {
+  JIXIA_ALLOW_LEGACY_ACTOR_OVERRIDE?: string;
   JIXIA_DATABASE_URL?: string;
   JIXIA_HOST?: string;
   JIXIA_PORT?: string;
+  NODE_ENV?: string;
 }
 
 export interface RuntimeConfig {
