@@ -282,7 +282,7 @@ model ProviderCredential {
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   jobs           Job[]
 
-  @@unique([userId, provider])
+  @@index([userId, provider])
 }
 
 model Job {
@@ -300,6 +300,9 @@ model Job {
   providerCredential ProviderCredential @relation(fields: [credentialRef], references: [id], onDelete: Restrict)
   events            JobEvent[]
   auditLogs         AuditLog[]
+
+  @@index([spaceId, requestedByUserId])
+  @@index([requestedByUserId])
 }
 
 model JobEvent {
@@ -309,6 +312,8 @@ model JobEvent {
   message      String
   recordedAt   DateTime  @default(now())
   job          Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
 }
 
 model AuditLog {
@@ -322,4 +327,7 @@ model AuditLog {
   space        Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   actor        User      @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
   job          Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([jobId])
+  @@index([spaceId, actorUserId])
 }

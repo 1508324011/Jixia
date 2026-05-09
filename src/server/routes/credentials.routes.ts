@@ -15,7 +15,7 @@ export interface CredentialsRoutes {
     input: CreateCredentialRequest,
     actorUserId: string,
   ): Promise<CredentialRecord>;
-  getWorkbenchSettings(userId: string): WorkbenchSettingsResponse;
+  getWorkbenchSettings(actorUserId: string): WorkbenchSettingsResponse;
   listCredentials(
     query: ListCredentialsQuery,
     actorUserId: string,
@@ -36,8 +36,8 @@ export function createCredentialsRoutes(
     ): Promise<CredentialRecord> {
       return service.createCredential(input, actorUserId);
     },
-    getWorkbenchSettings(userId: string): WorkbenchSettingsResponse {
-      return service.getWorkbenchSettings(userId);
+    getWorkbenchSettings(actorUserId: string): WorkbenchSettingsResponse {
+      return service.getWorkbenchSettings(actorUserId);
     },
     listCredentials(
       query: ListCredentialsQuery,

@@ -2,18 +2,19 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
-import type { JobEventRecord } from '@shared/contracts/jobs';
 import type { ConversationRecord, NoteRecord } from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import {
   createPrismaClient,
+  createJobRepository,
   createNotebookRepository,
   createProjectDocRepository,
   createLibraryRepository,
   createProjectRepository,
   createSpaceRepository,
   type BootstrapLegacyLibraryInput,
+  type JobRepository,
   type LibraryRepository,
   readDatabaseUrl,
 } from '../db';
@@ -75,14 +76,11 @@ import {
   type WorkbenchSettingsRecord,
 } from './services/credentials.service';
 import { createSecretBox } from './security/secret-box';
-import {
-  createAuditService,
-  type AuditLogRecord,
-} from './services/audit.service';
+import { createAuditService } from './services/audit.service';
 import { createImportService } from './services/import.service';
 import { createEvidenceLinkService } from './services/evidence-link.service';
 import { createJobBus } from './jobs/job-bus';
-import { createJobRunner, type StoredJob } from './jobs/job-runner';
+import { createJobRunner } from './jobs/job-runner';
 import { createLibraryService } from './services/library.service';
 import { createNotebookService } from './services/notebooks.service';
 import { createProjectDocsService } from './services/project-docs.service';
@@ -116,12 +114,9 @@ export interface JixiaAppEnv extends StorageRootEnv {
 }
 
 export interface JixiaAppState {
-  auditLogs: AuditLogRecord[];
   conversations: ConversationRecord[];
   credentials: StoredCredential[];
   insights: GeneratedInsightRecord[];
-  jobEvents: JobEventRecord[];
-  jobs: StoredJob[];
   legacyLibraryEntries: LegacyStoredLibraryEntry[];
   legacyPaperAssets: LegacyStoredPaperAsset[];
   memberships: SpaceMembership[];
@@ -182,12 +177,9 @@ export interface JixiaApp {
 
 function createState(): JixiaAppState {
   return {
-    auditLogs: [],
     conversations: [],
     credentials: [],
     insights: [],
-    jobEvents: [],
-    jobs: [],
     legacyLibraryEntries: [],
     legacyPaperAssets: [],
     memberships: [],
@@ -237,12 +229,9 @@ function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
   return {
     hadLegacyCollaborativeKeys,
     state: {
-      auditLogs: parsed.auditLogs ?? initialState.auditLogs,
       conversations: parsed.conversations ?? initialState.conversations,
       credentials: parsed.credentials ?? initialState.credentials,
       insights: parsed.insights ?? initialState.insights,
-      jobEvents: parsed.jobEvents ?? initialState.jobEvents,
-      jobs: parsed.jobs ?? initialState.jobs,
       legacyLibraryEntries:
         parsed.libraryEntries ?? initialState.legacyLibraryEntries,
       legacyPaperAssets: parsed.paperAssets ?? initialState.legacyPaperAssets,
@@ -266,12 +255,9 @@ function persistState(
 
   mkdirSync(rootDirectory, { recursive: true });
   const serializedState: SerializedJixiaAppState = {
-    auditLogs: state.auditLogs,
     conversations: state.conversations,
     credentials: state.credentials,
     insights: state.insights,
-    jobEvents: state.jobEvents,
-    jobs: state.jobs,
     libraryEntries: state.legacyLibraryEntries,
     memberships,
     nextSequence: state.nextSequence,
@@ -400,11 +386,94 @@ function createBootstrappedLibraryRepository(
   };
 }
 
+function createCredentialReferenceBootstrappedJobRepository(
+  repository: JobRepository,
+  credentials: StoredCredential[],
+): JobRepository {
+  let bootstrapped: Promise<void> | null = null;
+
+  async function ensureBootstrapped(): Promise<void> {
+    bootstrapped ??= Promise.all(
+      credentials.map((credential) =>
+        repository.createProviderCredentialReference({
+          createdAt: credential.createdAt,
+          credentialRef: credential.credentialRef,
+          provider: credential.provider,
+          secretRef: credential.credentialRef,
+          userId: credential.userId,
+        }),
+      ),
+    ).then(() => undefined);
+
+    await bootstrapped;
+  }
+
+  return {
+    async appendJobEvent(input) {
+      await ensureBootstrapped();
+
+      return repository.appendJobEvent(input);
+    },
+    async createAuditRecord(input) {
+      await ensureBootstrapped();
+
+      return repository.createAuditRecord(input);
+    },
+    async createProviderCredentialReference(input) {
+      await ensureBootstrapped();
+
+      return repository.createProviderCredentialReference(input);
+    },
+    async createQueuedJobWithAudit(input) {
+      await ensureBootstrapped();
+
+      return repository.createQueuedJobWithAudit(input);
+    },
+    async getJob(query) {
+      await ensureBootstrapped();
+
+      return repository.getJob(query);
+    },
+    async getProviderCredentialReference(credentialRef) {
+      await ensureBootstrapped();
+
+      return repository.getProviderCredentialReference(credentialRef);
+    },
+    async listAuditRecordsByJob(jobId) {
+      await ensureBootstrapped();
+
+      return repository.listAuditRecordsByJob(jobId);
+    },
+    async listJobEvents(jobId) {
+      await ensureBootstrapped();
+
+      return repository.listJobEvents(jobId);
+    },
+    async listJobsForActor(query) {
+      await ensureBootstrapped();
+
+      return repository.listJobsForActor(query);
+    },
+    async updateJobStatus(jobId, status) {
+      await ensureBootstrapped();
+
+      return repository.updateJobStatus(jobId, status);
+    },
+  };
+}
+
 export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const loadedState = loadState(options.env);
   const state = loadedState.state;
   const persist = (): void => {
     persistState(state, options.env);
+  };
+  const persistedNextId = (prefix: string): string => {
+    const id = nextId(state, prefix);
+
+    persist();
+
+    return id;
   };
 
   if (loadedState.hadLegacyCollaborativeKeys) {
@@ -441,6 +510,10 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     repository: spaceRepository,
   });
   const projectRepository = createProjectRepository(prismaClient);
+  const jobRepository = createCredentialReferenceBootstrappedJobRepository(
+    createJobRepository(prismaClient),
+    state.credentials,
+  );
   const libraryBootstrapMarkerPath = resolveLibraryBootstrapMarkerPath(options.env);
   const libraryBootstrapMarkerExists = existsSync(libraryBootstrapMarkerPath);
   const legacyLibraryBootstrapInput = resolveLegacyLibraryBootstrapInput(
@@ -503,6 +576,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const credentialsService = createCredentialsService({
     credentials: state.credentials,
+    jobRepository,
     nextId(prefix: string): string {
       return nextId(state, prefix);
     },
@@ -511,33 +585,22 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     workbenchSettings: state.workbenchSettings,
   });
   const auditService = createAuditService({
-    auditLogs: state.auditLogs,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
-    },
-    persist,
+    jobRepository,
+    nextId: persistedNextId,
   });
-  const jobBus = createJobBus(state.jobEvents, persist);
+  const jobBus = createJobBus();
   const jobRunner = createJobRunner({
     auditService,
-    credentials: state.credentials,
     jobBus,
-    jobs: state.jobs,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
-    },
-    persist,
+    jobRepository,
+    nextId: persistedNextId,
   });
   const jobsRoutes = createJobsRoutes({
     auditService,
-    credentials: state.credentials,
     jobBus,
+    jobRepository,
     jobRunner,
-    jobs: state.jobs,
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
-    },
-    persist,
+    nextId: persistedNextId,
     spaceRepository,
   });
 
@@ -548,7 +611,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     jobs: jobsRoutes,
     jobStream: createJobStreamRoutes({
       jobBus,
-      jobs: state.jobs,
+      jobRepository,
       spaceRepository,
     }),
     library: createLibraryRoutes(libraryService),

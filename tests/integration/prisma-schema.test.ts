@@ -63,6 +63,14 @@ describe('prisma schema', () => {
       /model ProjectDocCitation[\s\S]*\n\s+projectDocVersionId\s+String/,
     );
     expect(schema).toMatch(/model Job[\s\S]*\n\s+credentialRef\s+String/);
+    expect(schema).toMatch(
+      /model ProviderCredential[\s\S]*@@index\(\[userId, provider\]\)/,
+    );
+    expect(schema).toMatch(
+      /model Job[\s\S]*@@index\(\[spaceId, requestedByUserId\]\)/,
+    );
+    expect(schema).toMatch(/model JobEvent[\s\S]*@@index\(\[jobId\]\)/);
+    expect(schema).toMatch(/model AuditLog[\s\S]*@@index\(\[jobId\]\)/);
   });
 
   it('creates typed database entrypoints and repositories', () => {
@@ -90,6 +98,11 @@ describe('prisma schema', () => {
         'prisma/migrations/20260505000000_notebook_project_docs/migration.sql',
       ),
     ).toBe(true);
+    expect(
+      existsSync(
+        'prisma/migrations/20260507000000_job_governance_persistence/migration.sql',
+      ),
+    ).toBe(true);
     expect(clientEntrypoint).toContain('PrismaClient');
     expect(clientEntrypoint).toContain('createPrismaClient');
     expect(dbIndex).toContain('createProjectRepository');
@@ -97,6 +110,7 @@ describe('prisma schema', () => {
     expect(dbIndex).toContain('createLibraryRepository');
     expect(dbIndex).toContain('createNotebookRepository');
     expect(dbIndex).toContain('createProjectDocRepository');
+    expect(dbIndex).toContain('createJobRepository');
     expect(packageJson.scripts?.['prisma:generate']).toBe('prisma generate');
     expect(packageJson.scripts?.prebuild).toBe('npm run prisma:generate');
     expect(packageJson.scripts?.pretest).toBe('npm run prisma:generate');
@@ -214,14 +228,78 @@ describe('prisma schema', () => {
     expect(projectDocsService).not.toContain('store.projectMembers.some');
 
     expect(jobsRoutes).toContain('spaceRepository.denyNonMember');
+    expect(jobsRoutes).toContain('jobRepository.createQueuedJobWithAudit');
+    expect(jobsRoutes).toContain('jobRepository.listJobsForActor');
     expect(jobsRoutes).not.toContain('actorUserId ?? input.requestedByUserId');
     expect(jobsRoutes).not.toContain('store.memberships.some');
     expect(jobsRoutes).not.toContain('store.spaces.find');
+    expect(jobsRoutes).not.toContain('store.jobs.push');
+    expect(jobsRoutes).not.toContain('store.jobs.find');
+    expect(jobsRoutes).not.toContain('store.jobs.filter');
+
+    const credentialsService = readFileSync(
+      'src/server/services/credentials.service.ts',
+      'utf8',
+    );
+    expect(credentialsService).not.toContain('actorUserId ?? input.userId');
+    expect(credentialsService).not.toContain('actorUserId ?? query.userId');
 
     expect(jobStreamRoutes).toContain('await findAuthorizedJob');
+    expect(jobStreamRoutes).toContain('jobRepository.listJobEvents');
     expect(jobGovernance).toContain('spaceRepository.denyNonMember');
+    expect(jobGovernance).toContain('jobRepository.getJob');
     expect(jobGovernance).not.toContain('store.memberships.some');
     expect(jobGovernance).not.toContain('store.spaces.find');
+    expect(jobGovernance).not.toContain('store.jobs.find');
+  });
+
+  it('keeps governed jobs on Prisma repositories instead of json runtime arrays', () => {
+    const appWiring = readFileSync('src/server/app.ts', 'utf8');
+    const jobRepository = readFileSync(
+      'src/db/repositories/job.repository.ts',
+      'utf8',
+    );
+    const jobsRoutes = readFileSync('src/server/routes/jobs.routes.ts', 'utf8');
+    const jobRunner = readFileSync('src/server/jobs/job-runner.ts', 'utf8');
+    const jobBus = readFileSync('src/server/jobs/job-bus.ts', 'utf8');
+    const jobStreamRoutes = readFileSync('src/server/routes/job-stream.routes.ts', 'utf8');
+    const auditService = readFileSync('src/server/services/audit.service.ts', 'utf8');
+
+    expect(jobRepository).toContain('createQueuedJobWithAudit');
+    expect(jobRepository).toContain('providerCredential.findUnique');
+    expect(jobRepository).toContain('providerCredential.create');
+    expect(jobRepository).toContain('providerCredential.update');
+    expect(jobRepository).toContain('already belongs to another user');
+    expect(jobRepository).toContain('jobEvent.create');
+    expect(jobRepository).toContain('auditLog.create');
+    expect(jobRepository).not.toContain('JobRepository.getJob is not implemented');
+    expect(jobRepository).not.toContain('@shared/contracts/');
+
+    expect(appWiring).toContain('createJobRepository');
+    expect(appWiring).toContain('jobRepository');
+    expect(appWiring).not.toContain('jobs: state.jobs');
+    expect(appWiring).not.toContain('jobEvents: state.jobEvents');
+    expect(appWiring).not.toContain('auditLogs: state.auditLogs');
+    expect(appWiring).not.toContain('createJobBus(state.jobEvents');
+
+    expect(jobsRoutes).not.toContain('store.jobs.push');
+    expect(jobsRoutes).not.toContain('store.jobs.find');
+    expect(jobsRoutes).not.toContain('store.jobs.filter');
+    expect(jobsRoutes).not.toContain('store.persist');
+
+    expect(jobRunner).toContain('jobRepository.updateJobStatus');
+    expect(jobRunner).toContain('jobRepository.appendJobEvent');
+    expect(jobRunner).not.toContain('store.jobs.find');
+    expect(jobRunner).not.toContain('store.persist');
+
+    expect(jobBus).not.toContain('events.push');
+    expect(jobBus).not.toContain('events.filter');
+    expect(jobBus).not.toContain('persist()');
+    expect(jobStreamRoutes).toContain('jobRepository.listJobEvents');
+
+    expect(auditService).toContain('jobRepository.createAuditRecord');
+    expect(auditService).toContain('jobRepository.listAuditRecordsByJob');
+    expect(auditService).not.toContain('store.auditLogs');
   });
 
   it('keeps library asset authority in Prisma scoped repositories', () => {

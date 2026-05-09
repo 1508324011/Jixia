@@ -282,6 +282,16 @@ Acceptance criteria:
 - Repository tests verify key constraints and access patterns.
 - Runtime code does not treat `server-state.json` as the collaborative source of truth.
 
+Current implementation note (2026-05-07): governed AI job state has joined the
+Prisma-backed authority path. `ProviderCredential`, `Job`, `JobEvent`, and
+`AuditLog` rows are created by migration
+`20260507000000_job_governance_persistence`; job create/list/detail/run/event,
+SSE bootstrap, and job audit flows use `JobRepository` plus persisted
+`SpaceRepository` membership checks. Legacy `server-state.json` job/event/audit
+arrays are intentionally ignored as runtime truth; legacy credential secret
+material remains encrypted in JSON, while the job-facing `ProviderCredential`
+row stores only the stable credential reference and safe `secretRef` bridge.
+
 ### Phase 4: Server-owned files and literature assets
 
 Goal: make uploaded and imported literature assets authoritative on the server.

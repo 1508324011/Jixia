@@ -8,6 +8,8 @@ import type {
   WorkbenchSettingsResponse,
 } from "@shared/contracts/settings";
 
+import type { JobRepository } from '../../db';
+
 import type { EncryptedSecretPayload, SecretBox } from "../security/secret-box";
 
 const DEFAULT_IMPORT_TARGET: DefaultImportTarget = "personal-library";
@@ -25,13 +27,14 @@ export interface WorkbenchSettingsRecord {
 
 export interface SaveWorkbenchSettingsRequest {
   apiKey?: string;
+  actorUserId?: string;
   defaultImportTarget: DefaultImportTarget;
-  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
   userId?: string;
 }
 
 export interface CredentialsStore {
   credentials: StoredCredential[];
+  jobRepository: JobRepository;
   nextId(prefix: string): string;
   persist(): void;
   secretBox: SecretBox;
@@ -44,7 +47,7 @@ export interface CredentialsService {
     actorUserId: string,
   ): Promise<CredentialRecord>;
   getStoredCredential(credentialRef: string): StoredCredential | null;
-  getWorkbenchSettings(userId: string): WorkbenchSettingsResponse;
+  getWorkbenchSettings(actorUserId: string): WorkbenchSettingsResponse;
   listCredentials(
     query: ListCredentialsQuery,
     actorUserId: string,
@@ -81,11 +84,43 @@ function createStoredCredential(
   };
 }
 
+async function persistCredentialReference(
+  store: CredentialsStore,
+  credential: StoredCredential,
+): Promise<void> {
+  await store.jobRepository.createProviderCredentialReference({
+    createdAt: credential.createdAt,
+    credentialRef: credential.credentialRef,
+    provider: credential.provider,
+    secretRef: credential.credentialRef,
+    userId: credential.userId,
+  });
+}
+
 function findWorkbenchSettings(
   store: CredentialsStore,
   userId: string,
 ): WorkbenchSettingsRecord | null {
   return store.workbenchSettings.find((settings) => settings.userId === userId) ?? null;
+}
+
+function requireActorUserId(actorUserId: string): string {
+  if (!actorUserId) {
+    throw new Error("Credentials require a server-derived actor user id.");
+  }
+
+  return actorUserId;
+}
+
+function assertNoCredentialActorMismatch(
+  actorUserId: string,
+  claimedUserId: string | undefined,
+): void {
+  if (claimedUserId && claimedUserId !== actorUserId) {
+    throw new Error(
+      "Request body actor does not match the server-derived actor.",
+    );
+  }
 }
 
 function toWorkbenchSettingsResponse(
@@ -105,21 +140,17 @@ export function createCredentialsService(
       input: CreateCredentialRequest,
       actorUserId: string,
     ): Promise<CredentialRecord> {
-      if (!actorUserId) {
-        throw new Error("Credentials require an actor user id.");
-      }
+      const effectiveUserId = requireActorUserId(actorUserId);
 
-      if (input.userId && input.userId !== actorUserId) {
-        throw new Error(
-          "Request body actor does not match the server-derived actor.",
-        );
-      }
+      assertNoCredentialActorMismatch(effectiveUserId, input.userId);
 
       const credential = createStoredCredential(store, {
         provider: input.provider,
         rawSecret: input.rawSecret,
-        userId: actorUserId,
+        userId: effectiveUserId,
       });
+
+      await persistCredentialReference(store, credential);
 
       store.credentials.push(credential);
       store.persist();
@@ -133,62 +164,55 @@ export function createCredentialsService(
         ) ?? null
       );
     },
-    getWorkbenchSettings(userId: string): WorkbenchSettingsResponse {
-      return toWorkbenchSettingsResponse(findWorkbenchSettings(store, userId));
+    getWorkbenchSettings(actorUserId: string): WorkbenchSettingsResponse {
+      const effectiveUserId = requireActorUserId(actorUserId);
+
+      return toWorkbenchSettingsResponse(findWorkbenchSettings(store, effectiveUserId));
     },
     async listCredentials(
       query: ListCredentialsQuery,
       actorUserId: string,
     ): Promise<CredentialRecord[]> {
-      if (!actorUserId) {
-        throw new Error("Credentials require an actor user id.");
-      }
+      const effectiveUserId = requireActorUserId(actorUserId);
 
-      if (query.userId && query.userId !== actorUserId) {
-        throw new Error(
-          "Request actor does not match the server-derived actor.",
-        );
-      }
+      assertNoCredentialActorMismatch(effectiveUserId, query.userId);
 
       return store.credentials
-        .filter((credential) => credential.userId === actorUserId)
+        .filter((credential) => credential.userId === effectiveUserId)
         .map(toCredentialRecord);
     },
     async saveWorkbenchSettings(
       input: SaveWorkbenchSettingsRequest,
       actorUserId: string,
     ): Promise<WorkbenchSettingsResponse> {
-      if (!actorUserId) {
-        throw new Error("Workbench settings require an actor user id.");
-      }
+      const effectiveUserId = requireActorUserId(actorUserId);
 
-      if (input.userId && input.userId !== actorUserId) {
-        throw new Error(
-          "Request body actor does not match the server-derived actor.",
-        );
-      }
+      assertNoCredentialActorMismatch(effectiveUserId, input.userId);
+      assertNoCredentialActorMismatch(effectiveUserId, input.actorUserId);
 
-      let credentialRef = findWorkbenchSettings(store, actorUserId)?.credentialRef ?? null;
+      let credentialRef = findWorkbenchSettings(store, effectiveUserId)?.credentialRef ?? null;
 
       if (typeof input.apiKey === "string" && input.apiKey.trim()) {
         const credential = createStoredCredential(store, {
           provider: WORKBENCH_API_KEY_PROVIDER,
           rawSecret: input.apiKey,
-          userId: actorUserId,
+          userId: effectiveUserId,
         });
+
+        await persistCredentialReference(store, credential);
 
         store.credentials.push(credential);
         credentialRef = credential.credentialRef;
       }
 
       const existingIndex = store.workbenchSettings.findIndex(
-        (settings) => settings.userId === actorUserId,
+        (settings) => settings.userId === effectiveUserId,
       );
       const record: WorkbenchSettingsRecord = {
         credentialRef,
         defaultImportTarget: input.defaultImportTarget,
         updatedAt: new Date().toISOString(),
-        userId: actorUserId,
+        userId: effectiveUserId,
       };
 
       if (existingIndex === -1) {

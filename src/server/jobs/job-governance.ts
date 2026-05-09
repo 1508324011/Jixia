@@ -1,6 +1,4 @@
-import type { SpaceRepository } from '../../db';
-
-import type { StoredJob } from './job-runner';
+import type { JobRepository, PersistedJobRecord, SpaceRepository } from '../../db';
 
 export interface JobAccessRequest {
   actorUserId: string;
@@ -9,7 +7,7 @@ export interface JobAccessRequest {
 }
 
 export interface JobGovernanceStore {
-  jobs: StoredJob[];
+  jobRepository: JobRepository;
   spaceRepository: SpaceRepository;
 }
 
@@ -72,8 +70,8 @@ export function assertSafeJobPayload(
 export async function findAuthorizedJob(
   store: JobGovernanceStore,
   input: JobAccessRequest,
-): Promise<StoredJob> {
-  const job = store.jobs.find((candidate) => candidate.id === input.jobId);
+): Promise<PersistedJobRecord> {
+  const job = await store.jobRepository.getJob({ jobId: input.jobId });
 
   if (!job) {
     throw new Error(`Job ${input.jobId} does not exist.`);
