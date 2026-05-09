@@ -5,6 +5,7 @@ import type {
   ProjectDocRecord,
   ProjectDocSnapshot,
 } from '@shared/contracts/project-docs';
+import type { WritingDocumentView, WritingDocSnapshot } from '@shared/contracts/writing';
 
 import type {
   LibraryRepository,
@@ -41,6 +42,22 @@ export interface ProjectDocsService {
     input: SaveProjectDocRequest,
     actorUserId: string,
   ): Promise<ProjectDocSnapshot>;
+  getWorkbenchDocument(
+    projectId: string,
+    actorUserId: string,
+  ): Promise<WritingDocumentView | null>;
+  saveWorkbenchDocument(
+    input: {
+      citations: Array<{
+        evidenceSpan?: string;
+        paperAssetId: string;
+      }>;
+      content: string;
+      projectId: string;
+      title: string;
+    },
+    actorUserId: string,
+  ): Promise<WritingDocumentView>;
   transitionPublishState(
     input: TransitionProjectDocPublishStateRequest,
     actorUserId: string,
@@ -119,6 +136,77 @@ function mapSnapshot(snapshot: {
     document: mapDocument(snapshot.document),
     versionId: snapshot.versionId,
     versionNumber: snapshot.versionNumber,
+  };
+}
+
+function mapWritingSnapshot(
+  snapshot: ProjectDocSnapshot,
+  projectId: string,
+  spaceId: string,
+): WritingDocSnapshot {
+  return {
+    capturedAt: snapshot.capturedAt,
+    citations: snapshot.citations.map((citation) => ({
+      docVersionId: citation.projectDocVersionId,
+      evidenceSpan: citation.evidenceSpan,
+      id: citation.id,
+      paperAssetId: citation.paperAssetId,
+    })),
+    content: snapshot.content,
+    doc: {
+      createdAt: snapshot.document.createdAt,
+      id: snapshot.document.id,
+      projectId,
+      publishState: snapshot.document.publishState,
+      spaceId,
+      title: snapshot.document.title,
+      updatedAt: snapshot.document.updatedAt,
+    },
+    docVersionId: snapshot.versionId,
+    versionNumber: snapshot.versionNumber,
+  };
+}
+
+function mapWritingDocument(
+  document: ProjectDocRecord,
+  spaceId: string,
+  latestSnapshot: ProjectDocSnapshot | null,
+): WritingDocumentView {
+  return {
+    documentId: document.id,
+    latestSnapshot: latestSnapshot
+      ? mapWritingSnapshot(latestSnapshot, document.projectId, spaceId)
+      : null,
+    projectId: document.projectId,
+    publishState: document.publishState,
+    spaceId,
+    title: document.title,
+  };
+}
+
+async function getAuthorizedProject(
+  store: ProjectDocsStore,
+  projectId: string,
+  actorUserId: string,
+): Promise<{
+  membership: Awaited<ReturnType<ProjectRepository['getProjectMember']>>;
+  project: NonNullable<Awaited<ReturnType<ProjectRepository['findProject']>>>;
+}> {
+  const membership = await store.projectRepository.getProjectMember(projectId, actorUserId);
+
+  if (!membership) {
+    throw new Error('Access denied for the requested project document.');
+  }
+
+  const project = await store.projectRepository.findProject(projectId);
+
+  if (!project) {
+    throw new Error(`Project ${projectId} does not exist.`);
+  }
+
+  return {
+    membership,
+    project,
   };
 }
 
@@ -326,6 +414,64 @@ export function createProjectDocsService(
           documentId: input.documentId,
         }),
       );
+    },
+    async getWorkbenchDocument(
+      projectId: string,
+      actorUserId: string,
+    ): Promise<WritingDocumentView | null> {
+      const { project } = await getAuthorizedProject(store, projectId, actorUserId);
+      const document = await store.projectDocRepository.findLatestDocumentForProject(projectId);
+
+      if (!document) {
+        return null;
+      }
+
+      const latestSnapshot = await store.projectDocRepository.getLatestSnapshot(document.id);
+
+      return mapWritingDocument(document, project.spaceId, latestSnapshot);
+    },
+    async saveWorkbenchDocument(
+      input: {
+        citations: Array<{
+          evidenceSpan?: string;
+          paperAssetId: string;
+        }>;
+        content: string;
+        projectId: string;
+        title: string;
+      },
+      actorUserId: string,
+    ): Promise<WritingDocumentView> {
+      const { membership, project } = await getAuthorizedProject(
+        store,
+        input.projectId,
+        actorUserId,
+      );
+
+      if (membership?.role === 'viewer') {
+        throw new Error('Access denied for the requested project document mutation.');
+      }
+
+      let document = await store.projectDocRepository.findLatestDocumentForProject(input.projectId);
+
+      if (!document) {
+        document = await store.projectDocRepository.createDocument({
+          createdByUserId: actorUserId,
+          projectId: input.projectId,
+          title: input.title,
+        });
+      }
+
+      const snapshot = await this.saveDocument(
+        {
+          citations: input.citations,
+          content: input.content,
+          documentId: document.id,
+        },
+        actorUserId,
+      );
+
+      return mapWritingDocument(snapshot.document, project.spaceId, snapshot);
     },
     async transitionPublishState(
       input: TransitionProjectDocPublishStateRequest,

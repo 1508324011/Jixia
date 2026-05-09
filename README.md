@@ -59,7 +59,8 @@ Personal-facing routes are workbench shorthand over server-side ownership and sc
 - `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings without exposing raw API keys in responses or stored settings records.
 - `GET /api/library/personal` and `POST /api/library/personal/import` keep personal import ownership on the server.
 - `GET /api/reading/:entryId`, `POST /api/reading/:entryId/notes`, and `POST /api/reading/:entryId/insights` back the paper workspace.
-- `GET /api/writing/:spaceId/projects/:projectId/document` and `POST /api/writing/:spaceId/projects/:projectId/document` provide a workbench compatibility surface; Project Docs remain the authoritative project writing runtime.
+- `GET /api/projects/:projectId/writing/document` and `POST /api/projects/:projectId/writing/document` are the canonical browser-facing Writer endpoints for the project-first workbench flow.
+- `GET /api/writing/:spaceId/projects/:projectId/document` and `POST /api/writing/:spaceId/projects/:projectId/document` remain compatibility-only workbench endpoints for preserved legacy deep links; Project Docs remain the authoritative project writing runtime.
 
 ## Verification Snapshot
 

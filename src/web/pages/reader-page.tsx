@@ -5,30 +5,31 @@ import type { NoteVisibility, ReadingDetailView } from "@shared/contracts/readin
 
 import { PaperWorkspaceTabs } from "../components/paper-workspace-tabs";
 import { createDemoApi } from "../lib/demo-api";
+import { ApiError } from "../lib/http-client";
 import { useReaderPresenter } from "../presenters/reader-presenter";
 
 const demoApi = createDemoApi();
 const DEFAULT_WRITER_TITLE = "Tumor board literature synthesis";
-const WORKBENCH_PROJECT_ID = "project-1";
 
 export function ReaderPage() {
   const {
     spaceId,
-    projectId = WORKBENCH_PROJECT_ID,
-    entryId = "entry-1",
+    projectId = "",
+    entryId = "",
   } = useParams();
   const hasLegacySpaceContext = typeof spaceId === "string" && spaceId.length > 0;
-  const useWorkbenchReader = projectId === WORKBENCH_PROJECT_ID;
+  const hasProjectRouteContext = typeof projectId === "string" && projectId.length > 0;
+  const isPersonalReaderRoute = !hasLegacySpaceContext && !hasProjectRouteContext;
   const projectReader = useReaderPresenter(projectId, entryId);
   const [detail, setDetail] = useState<ReadingDetailView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isWorkbenchLoading, setIsWorkbenchLoading] = useState(useWorkbenchReader);
+  const [isWorkbenchLoading, setIsWorkbenchLoading] = useState(isPersonalReaderRoute);
   const [privateNoteBody, setPrivateNoteBody] = useState("");
   const [projectCommentBody, setProjectCommentBody] = useState("");
   const [insightSummary, setInsightSummary] = useState("");
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [writingDocumentId, setWritingDocumentId] = useState<string>("doc-1");
+  const [writingDocumentId, setWritingDocumentId] = useState<string | null>(null);
   const [isSavingPrivateNote, setIsSavingPrivateNote] = useState(false);
   const [isSavingProjectComment, setIsSavingProjectComment] = useState(false);
   const [isSavingInsight, setIsSavingInsight] = useState(false);
@@ -38,7 +39,7 @@ export function ReaderPage() {
   );
 
   useEffect(() => {
-    if (!useWorkbenchReader || hasLegacySpaceContext) {
+    if (!isPersonalReaderRoute || hasLegacySpaceContext) {
       setIsWorkbenchLoading(false);
       return;
     }
@@ -74,7 +75,68 @@ export function ReaderPage() {
     return () => {
       isCancelled = true;
     };
-  }, [entryId, hasLegacySpaceContext, useWorkbenchReader]);
+  }, [entryId, hasLegacySpaceContext, isPersonalReaderRoute]);
+
+  useEffect(() => {
+    if (!hasProjectRouteContext) {
+      setWritingDocumentId(null);
+      return;
+    }
+
+    const currentProject = projectReader.project?.project;
+    const currentEntry = projectReader.entry;
+
+    if (
+      !currentProject ||
+      !currentEntry ||
+      currentEntry.scope.type !== "project" ||
+      currentEntry.scope.id !== currentProject.id
+    ) {
+      setWritingDocumentId(null);
+      return;
+    }
+
+    const currentProjectId = currentProject.id;
+    const currentProjectSpaceId = currentProject.spaceId;
+
+    let isCancelled = false;
+
+    async function loadWritingDocument(): Promise<void> {
+      try {
+        const response = await demoApi.getWritingDocument(
+          currentProjectSpaceId,
+          currentProjectId,
+        );
+
+        if (!isCancelled) {
+          setWritingDocumentId(response.document.documentId);
+        }
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        if (error instanceof ApiError && error.status === 404) {
+          setWritingDocumentId(null);
+          return;
+        }
+
+        setWritingDocumentId(null);
+      }
+    }
+
+    void loadWritingDocument();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    hasProjectRouteContext,
+    projectReader.entry?.scope.id,
+    projectReader.entry?.scope.type,
+    projectReader.project?.project.id,
+    projectReader.project?.project.spaceId,
+  ]);
 
   const privateNotes = useMemo(
     () => detail?.notes.filter((note) => note.visibility === "private") ?? [],
@@ -85,9 +147,7 @@ export function ReaderPage() {
     [detail],
   );
   const latestInsight = detail?.insights.at(-1) ?? null;
-  const workbenchWritingPath = detail
-    ? `/spaces/${detail.entry.spaceId}/projects/${projectId}/writing/${writingDocumentId}`
-    : null;
+  const workbenchWritingPath = null;
 
   if (hasLegacySpaceContext) {
     return (
@@ -122,12 +182,12 @@ export function ReaderPage() {
             </p>
             <p className="quiet-copy">Governed action source · queued → running → succeeded</p>
             <PaperWorkspaceTabs />
+            <p className="quiet-copy">
+              Legacy `/spaces/...` reader routes stay compatibility-only. Open the canonical
+              `/projects/:projectId` workspace to reach a real Writer document.
+            </p>
           </aside>
         </section>
-
-        <Link className="panel-link" to={`/spaces/${spaceId}/projects/${projectId}/writing/doc-1`}>
-          Open writing
-        </Link>
       </main>
     );
   }
@@ -209,34 +269,12 @@ export function ReaderPage() {
       return;
     }
 
-    setIsPromoting(true);
-    setMutationError(null);
-    setSuccessMessage(null);
-
-    try {
-      const response = await demoApi.saveWritingDocument({
-        citations: latestInsight.evidenceSpans.map((span) => ({
-          evidenceSpan: span.quote,
-          paperAssetId: span.paperAssetId,
-        })),
-        content: latestInsight.summary,
-        projectId,
-        spaceId: detail.entry.spaceId,
-        title: DEFAULT_WRITER_TITLE,
-      });
-
-      setWritingDocumentId(response.document.documentId);
-      setSuccessMessage("Promoted latest insight into Writer.");
-    } catch (error) {
-      setMutationError(
-        error instanceof Error ? error.message : "Failed to promote the latest insight.",
-      );
-    } finally {
-      setIsPromoting(false);
-    }
+    setMutationError(
+      "Open a real project workspace before promoting personal reading insights into Writer.",
+    );
   }
 
-  if (!useWorkbenchReader) {
+  if (hasProjectRouteContext) {
     const {
       asset,
       entry,
@@ -253,6 +291,46 @@ export function ReaderPage() {
     const resolvedSpaceId = project?.project.spaceId ?? "No governance space";
     const projectLabel = project?.project.name ?? (projectId || "No project");
     const contextProjectId = project?.project.id ?? projectId;
+    const latestProjectInsight = insights.at(-1) ?? null;
+    const canOpenWriter = Boolean(
+      writingDocumentId &&
+      project &&
+      entry &&
+      entry.scope.type === "project" &&
+      entry.scope.id === contextProjectId,
+    );
+
+    async function handleProjectPromoteLatestInsight(): Promise<void> {
+      if (!project || !latestProjectInsight) {
+        return;
+      }
+
+      setIsPromoting(true);
+      setMutationError(null);
+      setSuccessMessage(null);
+
+      try {
+        const response = await demoApi.saveWritingDocument({
+          citations: latestProjectInsight.evidenceSpans.map((span) => ({
+            evidenceSpan: span.quote,
+            paperAssetId: span.paperAssetId,
+          })),
+          content: latestProjectInsight.summary,
+          projectId: project.project.id,
+          spaceId: project.project.spaceId,
+          title: DEFAULT_WRITER_TITLE,
+        });
+
+        setWritingDocumentId(response.document.documentId);
+        setSuccessMessage("Promoted latest insight into Writer.");
+      } catch (error) {
+        setMutationError(
+          error instanceof Error ? error.message : "Failed to promote the latest insight.",
+        );
+      } finally {
+        setIsPromoting(false);
+      }
+    }
 
     return (
       <main className="page-shell">
@@ -307,6 +385,7 @@ export function ReaderPage() {
               <span className="status-badge">quoted evidence</span> · governed AI · Writer promotion
             </p>
             <p className="quiet-copy">Governed action source · queued → running → succeeded</p>
+            <PaperWorkspaceTabs />
             <label className="quiet-copy" htmlFor="reader-note-input">
               Shared note draft
             </label>
@@ -327,10 +406,25 @@ export function ReaderPage() {
               className="panel-link"
               type="button"
               disabled={isMutating}
-              onClick={() => void saveGeneratedInsight()}
+              onClick={() =>
+                void saveGeneratedInsight(
+                  "The imported paper supports the shared review workflow.",
+                  "AI summary",
+                )
+              }
             >
               {isMutating ? "Generating…" : "Generate insight"}
             </button>
+            <button
+              className="panel-link"
+              type="button"
+              disabled={!latestProjectInsight || isMutating || isPromoting}
+              onClick={() => void handleProjectPromoteLatestInsight()}
+            >
+              {isPromoting ? "Promoting…" : "Promote latest insight to Writer"}
+            </button>
+            {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
+            {successMessage ? <p className="quiet-copy">{successMessage}</p> : null}
             <div className="shell-grid">
               {notes.map((note) => (
                 <div key={note.id} className="hero-card">
@@ -349,9 +443,18 @@ export function ReaderPage() {
           </aside>
         </section>
 
-        <Link className="panel-link" to={`/projects/${contextProjectId}/writing/doc-1`}>
-          Open writing
-        </Link>
+        {canOpenWriter ? (
+          <Link
+            className="panel-link"
+            to={`/projects/${contextProjectId}/writing/${writingDocumentId}`}
+          >
+            Open writing
+          </Link>
+        ) : (
+          <p className="quiet-copy">
+            This reader entry is not currently available in the selected project Writer flow.
+          </p>
+        )}
       </main>
     );
   }
@@ -368,7 +471,7 @@ export function ReaderPage() {
       </header>
 
       <section aria-label="context bar" className="context-bar">
-        <span>Project context · {projectId}</span>
+        <span>Personal context</span>
         <span>Entry · {entryId}</span>
         {detail ? <span>Space context · {detail.entry.spaceId}</span> : null}
         <span className="status-badge">{privateNotes.length} private notes</span>
@@ -494,6 +597,9 @@ export function ReaderPage() {
 
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
               {successMessage ? <p className="quiet-copy">{successMessage}</p> : null}
+              <p className="quiet-copy">
+                Personal reader does not invent a project. Open a real project workspace before Writer promotion.
+              </p>
 
               <div className="stack-xs">
                 <h3 className="panel-title">Private notes</h3>

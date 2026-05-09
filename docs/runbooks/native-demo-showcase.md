@@ -55,13 +55,13 @@ workbench entry -> settings ready -> PubMed search -> personal import -> Reader 
 13. Enter a short governed summary into **Insight summary**, then click **Save insight**.
 14. Confirm the saved private note, project comment, and governed insight remain visible in the paper workspace.
 15. Click **Promote latest insight to Writer**.
-16. Open **Projects** once to confirm the top-level shell is reachable, then move directly to `/projects/project-1` because the list page does not yet link into a concrete project route.
-17. On `/projects/project-1`, confirm the promoted draft preview appears in **Writer 文档区**.
+16. Open **Projects** and confirm the top-level list now loads real server-visible projects.
+17. Open a concrete project from the list, then confirm the promoted draft preview appears in **Writer 文档区**.
 18. Click **打开 Writer 文稿**.
 19. In **Writing**, update **Draft content**, click **Save draft**, then click **Reload draft**.
 20. Confirm the Writer view reopens with the saved draft content still present.
 21. Stop the server process and restart the app process with the same `.env` and `npm run start:server` command.
-22. Reopen `http://127.0.0.1:3000`, return to **Library**, **Reader**, and `/projects/project-1`, and confirm:
+22. Reopen `http://127.0.0.1:3000`, return to **Library**, **Reader**, and the same `/projects/:projectId` route, and confirm:
     - the imported personal-library paper still exists
     - the saved private note still exists
     - the saved project comment still exists
@@ -92,6 +92,6 @@ Current-host pass completed on 2026-03-23 with `JIXIA_STORAGE_ROOT=/home/zhurui/
 
 - The root route still redirects straight to `/home`, while `/login` is reachable but remains a shell-only page. The product flow is real after entry, but authentication itself is not.
 - Live PubMed search returned a real result set for `tumor board biomarkers`; the first rendered identifier in this pass was `PubMed · pmid:38181798`, so the current-host experience is no longer tied to the deterministic fallback titles used in tests.
-- The top-level **Projects** page is still a shell index. To inspect the promoted draft preview, the walkthrough had to open `/projects/project-1` directly.
-- The reopened Writer route still lands under the legacy `/spaces/personal-space-user-alice/projects/project-1/writing/...` path even when the user starts from workbench routes. The draft survives that route jump, but the URL transition is still confusing.
+- The top-level **Projects** page now loads real server-visible projects and links into canonical `/projects/:projectId` routes.
+- Reopened Writer routes now stay on canonical `/projects/:projectId/writing/:docId` paths for the main workbench flow, while legacy `/spaces/...` routes remain compatibility-only deep links.
 - Persistence itself worked cleanly after restart: the imported paper, private note, project comment, governed insight, and reopened Writer draft were all still present after the app process restarted.

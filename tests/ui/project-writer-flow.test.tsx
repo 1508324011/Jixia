@@ -4,6 +4,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/web/app';
 
+const projectFixture = {
+  membership: {
+    joinedAt: '2026-05-08T00:00:00.000Z',
+    projectId: 'project-alpha',
+    role: 'owner',
+    userId: 'user-alice',
+  },
+  project: {
+    createdAt: '2026-05-08T00:00:00.000Z',
+    createdByUserId: 'user-alice',
+    id: 'project-alpha',
+    name: 'Project Alpha',
+    spaceId: 'space-alpha',
+    status: 'active',
+    updatedAt: '2026-05-08T00:00:00.000Z',
+  },
+};
+
 function renderWorkbench(pathname: string) {
   window.history.replaceState({}, '', pathname);
   render(<App />);
@@ -28,7 +46,7 @@ describe('project writer flow', () => {
     const user = userEvent.setup();
     const documentState = {
       document: {
-        documentId: 'doc-1',
+        documentId: 'doc-alpha',
         latestSnapshot: {
           capturedAt: '2026-03-23T00:40:00.000Z',
           citations: [
@@ -42,16 +60,19 @@ describe('project writer flow', () => {
           content: 'Promoted governed insight paragraph.',
           doc: {
             createdAt: '2026-03-23T00:35:00.000Z',
-            id: 'doc-1',
+            id: 'doc-alpha',
+            projectId: 'project-alpha',
             publishState: 'draft',
-            spaceId: 'personal-space-user-alice',
+            spaceId: 'space-alpha',
             title: 'Tumor board literature synthesis',
+            updatedAt: '2026-03-23T00:35:00.000Z',
           },
           docVersionId: 'doc-version-1',
+          versionNumber: 1,
         },
-        projectId: 'project-1',
+        projectId: 'project-alpha',
         publishState: 'draft',
-        spaceId: 'personal-space-user-alice',
+        spaceId: 'space-alpha',
         title: 'Tumor board literature synthesis',
       },
     };
@@ -66,15 +87,19 @@ describe('project writer flow', () => {
               ? input.toString()
               : input.url;
 
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([projectFixture]);
+        }
+
         if (
-          requestUrl.endsWith('/api/writing/personal-space-user-alice/projects/project-1/document') &&
+          requestUrl.endsWith('/api/projects/project-alpha/writing/document') &&
           (!init?.method || init.method === 'GET')
         ) {
           return jsonResponse(documentState);
         }
 
         if (
-          requestUrl.endsWith('/api/writing/personal-space-user-alice/projects/project-1/document') &&
+          requestUrl.endsWith('/api/projects/project-alpha/writing/document') &&
           init?.method === 'POST'
         ) {
           const body = JSON.parse(String(init.body)) as { content: string; title: string };
@@ -99,9 +124,9 @@ describe('project writer flow', () => {
       }),
     );
 
-    renderWorkbench('/projects/project-1');
+    renderWorkbench('/projects/project-alpha');
 
-    expect(screen.getByText('Writer 文档区')).toBeInTheDocument();
+    expect(await screen.findByText('Writer 文档区')).toBeInTheDocument();
     expect(screen.getByText('将成熟内容整理进入 Writer')).toBeInTheDocument();
 
     expect(await screen.findByText('Promoted governed insight paragraph.')).toBeInTheDocument();
@@ -115,5 +140,40 @@ describe('project writer flow', () => {
     await user.click(screen.getByRole('button', { name: 'Reload draft' }));
 
     expect(await screen.findByDisplayValue('Reopened writer draft with persisted edits.')).toBeInTheDocument();
+  });
+
+  it('project page treats a missing writer draft as an empty state instead of a runtime failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([projectFixture]);
+        }
+
+        if (
+          requestUrl.endsWith('/api/projects/project-alpha/writing/document') &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          return jsonResponse(
+            { error: 'No Writer document exists for project project-alpha.' },
+            404,
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-alpha');
+
+    expect(await screen.findByText('No promoted Writer draft yet')).toBeInTheDocument();
+    expect(screen.queryByText('Writer preview unavailable')).not.toBeInTheDocument();
   });
 });

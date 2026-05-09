@@ -380,6 +380,62 @@ describe('workbench http contracts', () => {
       const searchFromClient = await demoApi.searchDiscovery('tumor board');
       const settingsFromClient = await demoApi.getWorkbenchSettings();
       const personalLibraryFromClient = await demoApi.getPersonalLibraryEntries();
+      const writingReadWithoutActor = await fetch(
+        `${baseUrl}/api/writing/space-alpha/projects/project-alpha/document`,
+      );
+      const sharedSpace = await fetch(`${baseUrl}/api/spaces`, {
+        body: JSON.stringify({ kind: 'shared', name: 'Writer Space' }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
+        },
+        method: 'POST',
+      }).then((response) => response.json() as Promise<{ id: string }>);
+      const project = await fetch(`${baseUrl}/api/projects`, {
+        body: JSON.stringify({ name: 'Writer Project', spaceId: sharedSpace.id }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
+        },
+        method: 'POST',
+      }).then((response) => response.json() as Promise<{ project: { id: string } }>);
+      const importedProjectRecord = await fetch(`${baseUrl}/api/import/paper`, {
+        body: JSON.stringify({
+          scope: { id: project.project.id, type: 'project' },
+          sourceLocator: search.items[0].sourceLocator,
+          sourceType: search.items[0].sourceType,
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-jixia-actor': 'user-alice',
+        },
+        method: 'POST',
+      }).then(
+        (response) => response.json() as Promise<{ asset: { id: string } }>,
+      );
+      const writingDocumentFromClient = await demoApi.getWritingDocument(
+        sharedSpace.id,
+        project.project.id,
+      ).catch((error) => error);
+      const writingSaveFromClient = await demoApi.saveWritingDocument({
+        citations: [{ paperAssetId: importedProjectRecord.asset.id }],
+        content: 'Writer draft content',
+        projectId: project.project.id,
+        spaceId: sharedSpace.id,
+        title: 'Writer draft title',
+      });
+      const reloadedWritingDocument = await demoApi.getWritingDocument(
+        sharedSpace.id,
+        project.project.id,
+      );
+      const compatibilityWritingDocument = await fetch(
+        `${baseUrl}/api/writing/${sharedSpace.id}/projects/${project.project.id}/document`,
+        {
+          headers: { 'x-jixia-actor': 'user-alice' },
+        },
+      ).then((response) => response.json());
 
       expect(todayFromClient.items).toBeDefined();
       expect(searchFromClient.items.length).toBeGreaterThan(0);
@@ -389,6 +445,31 @@ describe('workbench http contracts', () => {
           canonicalId: search.items[0].canonicalId,
         }),
       );
+      expect(writingReadWithoutActor.status).toBe(401);
+      expect(writingDocumentFromClient).toBeInstanceOf(Error);
+      expect((writingDocumentFromClient as Error).message).toContain('No Writer document exists');
+      expect(writingSaveFromClient.document).toMatchObject({
+        projectId: project.project.id,
+        spaceId: sharedSpace.id,
+      });
+      expect(writingSaveFromClient.document.latestSnapshot).toMatchObject({
+        content: 'Writer draft content',
+        doc: expect.objectContaining({
+          projectId: project.project.id,
+          spaceId: sharedSpace.id,
+          title: 'Writer draft title',
+        }),
+      });
+      expect(reloadedWritingDocument.document).toMatchObject({
+        documentId: writingSaveFromClient.document.documentId,
+        projectId: project.project.id,
+        spaceId: sharedSpace.id,
+      });
+      expect(compatibilityWritingDocument.document).toMatchObject({
+        documentId: writingSaveFromClient.document.documentId,
+        projectId: project.project.id,
+        spaceId: sharedSpace.id,
+      });
 
       const readerDetailFromClient = await demoApi.getReadingDetail(
         importedPersonalRecord.entry.id,

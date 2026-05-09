@@ -418,6 +418,61 @@ async function handleApiRequest(
       return true;
     }
 
+    const projectWritingMatch = pathname.match(/^\/api\/projects\/([^/]+)\/writing\/document$/);
+    if (projectWritingMatch && method === "GET") {
+      const actor = getActor(request);
+      const [, projectId] = projectWritingMatch;
+      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+
+      const document = await app.projectDocs.getWorkbenchDocument(projectId, actor.userId);
+
+      if (!document) {
+        sendJsonError(
+          response,
+          404,
+          `No Writer document exists for project ${projectId}.`,
+          method,
+        );
+        return true;
+      }
+
+      sendJson(response, 200, { document }, method);
+      return true;
+    }
+
+    if (projectWritingMatch && method === "POST") {
+      const actor = getActor(request);
+      const [, projectId] = projectWritingMatch;
+      const body = await readJsonBody<{
+        actorUserId?: string;
+        citations: Array<{
+          evidenceSpan?: string;
+          paperAssetId: string;
+        }>;
+        content: string;
+        title: string;
+      }>(request);
+      assertNoActorImpersonation(actor, body.actorUserId);
+
+      sendJson(
+        response,
+        200,
+        {
+          document: await app.projectDocs.saveWorkbenchDocument(
+            {
+              citations: body.citations,
+              content: body.content,
+              projectId,
+              title: body.title,
+            },
+            actor.userId,
+          ),
+        },
+        method,
+      );
+      return true;
+    }
+
     if (pathname === "/api/notebooks" && method === "POST") {
       const actor = getActor(request);
       const body = await readJsonBody<{

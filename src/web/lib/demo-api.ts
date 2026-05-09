@@ -121,8 +121,10 @@ export function createDemoApi(
       spaceId: string,
       projectId: string,
     ): Promise<WritingDocumentResponse> {
+      void spaceId;
+
       return requestJson<WritingDocumentResponse>(
-        resolvePath(`/api/writing/${spaceId}/projects/${projectId}/document`),
+        resolvePath(`/api/projects/${projectId}/writing/document`),
         { headers: actorHeaders() },
       );
     },
@@ -133,8 +135,10 @@ export function createDemoApi(
       spaceId: string;
       title: string;
     }): Promise<WritingDocumentResponse> {
+      void input.spaceId;
+
       return requestJson<WritingDocumentResponse>(
-        resolvePath(`/api/writing/${input.spaceId}/projects/${input.projectId}/document`),
+        resolvePath(`/api/projects/${input.projectId}/writing/document`),
         {
           body: JSON.stringify({
             citations: input.citations ?? [],

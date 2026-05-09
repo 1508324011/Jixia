@@ -4,6 +4,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/web/app';
 
+const projectFixture = {
+  membership: {
+    joinedAt: '2026-05-08T00:00:00.000Z',
+    projectId: 'project-alpha',
+    role: 'owner',
+    userId: 'user-alice',
+  },
+  project: {
+    createdAt: '2026-05-08T00:00:00.000Z',
+    createdByUserId: 'user-alice',
+    id: 'project-alpha',
+    name: 'Project Alpha',
+    spaceId: 'space-alpha',
+    status: 'active',
+    updatedAt: '2026-05-08T00:00:00.000Z',
+  },
+};
+
 function renderWorkbench(pathname = '/home') {
   window.history.replaceState({}, '', pathname);
   render(<App />);
@@ -114,6 +132,20 @@ describe('workbench navigation', () => {
               status: 200,
             },
           );
+        }
+
+        if (url.endsWith('/api/projects')) {
+          return new Response(JSON.stringify([projectFixture]), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        if (url.endsWith('/api/projects/project-alpha/members')) {
+          return new Response(JSON.stringify([projectFixture.membership]), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
         }
 
         if (url.endsWith('/api/settings/me') && init?.method === 'POST') {

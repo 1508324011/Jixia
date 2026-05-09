@@ -4,41 +4,13 @@ import { useParams } from "react-router-dom";
 import type { WritingDocumentView } from "@shared/contracts/writing";
 
 import { createDemoApi } from "../lib/demo-api";
+import { useProjectContext } from "../presenters/project-context";
 
 const demoApi = createDemoApi();
 
-function fallbackProjectLabel(projectId: string): string {
-  if (projectId === "project-recovery") {
-    return "Project-first Recovery";
-  }
-
-  if (projectId === "project-1") {
-    return "肿瘤标志物项目";
-  }
-
-  return projectId || "No project";
-}
-
-function fallbackSpaceId(spaceId: string | undefined, projectId: string): string {
-  if (spaceId) {
-    return spaceId;
-  }
-
-  if (projectId === "project-recovery") {
-    return "space-recovery";
-  }
-
-  return "personal-space-user-alice";
-}
-
 export function WritingPage() {
-  const {
-    spaceId: routeSpaceId,
-    projectId = "project-1",
-    docId = "doc-1",
-  } = useParams();
-  const spaceId = fallbackSpaceId(routeSpaceId, projectId);
-  const projectLabel = fallbackProjectLabel(projectId);
+  const { projectId = "", docId = "", spaceId: routeSpaceId } = useParams();
+  const { error: projectError, isLoading: projectIsLoading, project } = useProjectContext(projectId);
   const [document, setDocument] = useState<WritingDocumentView | null>(null);
   const [draftContent, setDraftContent] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -48,6 +20,31 @@ export function WritingPage() {
   const [isReloading, setIsReloading] = useState(false);
 
   useEffect(() => {
+    if (!projectId) {
+      setDocument(null);
+      setDraftContent("");
+      setLoadError("No project route was provided for Writer.");
+      setIsLoading(false);
+      return;
+    }
+
+    if (projectIsLoading) {
+      setIsLoading(true);
+      return;
+    }
+
+    if (projectError || !project) {
+      setDocument(null);
+      setDraftContent("");
+      setLoadError(projectError ?? `Project ${projectId} is not visible to the current actor.`);
+      setIsLoading(false);
+      return;
+    }
+
+    const resolvedProject = project;
+    const resolvedProjectId = resolvedProject.project.id;
+    const resolvedProjectSpaceId = resolvedProject.project.spaceId;
+
     let isCancelled = false;
 
     async function loadDocument(): Promise<void> {
@@ -55,7 +52,7 @@ export function WritingPage() {
       setLoadError(null);
 
       try {
-        const response = await demoApi.getWritingDocument(spaceId, projectId);
+        const response = await demoApi.getWritingDocument(resolvedProjectSpaceId, resolvedProjectId);
 
         if (!isCancelled) {
           setDocument(response.document);
@@ -81,10 +78,10 @@ export function WritingPage() {
     return () => {
       isCancelled = true;
     };
-  }, [projectId, spaceId]);
+  }, [project, projectError, projectId, projectIsLoading]);
 
   async function handleSave(): Promise<void> {
-    if (!document) {
+    if (!document || !project) {
       return;
     }
 
@@ -99,8 +96,8 @@ export function WritingPage() {
             paperAssetId: citation.paperAssetId,
           })) ?? [],
         content: draftContent,
-        projectId,
-        spaceId,
+        projectId: project.project.id,
+        spaceId: project.project.spaceId,
         title: document.title,
       });
 
@@ -117,11 +114,15 @@ export function WritingPage() {
   }
 
   async function handleReload(): Promise<void> {
+    if (!project) {
+      return;
+    }
+
     setIsReloading(true);
     setMutationError(null);
 
     try {
-      const response = await demoApi.getWritingDocument(spaceId, projectId);
+      const response = await demoApi.getWritingDocument(project.project.spaceId, project.project.id);
       setDocument(response.document);
       setDraftContent(response.document.latestSnapshot?.content ?? "");
       setLoadError(null);
@@ -135,6 +136,8 @@ export function WritingPage() {
   }
 
   const activeDocument = document;
+  const resolvedSpaceId = activeDocument?.spaceId ?? routeSpaceId ?? project?.project.spaceId ?? "No governance space";
+  const projectLabel = project?.project.name ?? (projectId ? projectId : "No project");
   const publishStateLabel = activeDocument?.publishState ?? "draft";
   const contextDocumentId = activeDocument?.documentId ?? docId;
 
@@ -153,7 +156,7 @@ export function WritingPage() {
       </header>
 
       <section aria-label="context bar" className="context-bar">
-        <span>Space context · {spaceId}</span>
+        <span>Space context · {resolvedSpaceId}</span>
         <span>Project context · {projectLabel} · {contextDocumentId}</span>
         <span className="status-badge">{publishStateLabel}</span>
         <span className="status-badge">
@@ -182,7 +185,7 @@ export function WritingPage() {
             <div className="stack-sm">
               <h2 className="panel-title">{activeDocument.title}</h2>
               <p className="quiet-copy">
-                Project context · {projectId || "No project"} · {contextDocumentId}
+                Project context · {activeDocument.projectId} · {contextDocumentId}
               </p>
               <p className="quiet-copy">
                 Latest snapshot · {activeDocument.latestSnapshot?.capturedAt ?? "Not saved yet"}
@@ -221,7 +224,7 @@ export function WritingPage() {
             <>
               <h2 className="panel-title">Draft canvas</h2>
               <p className="quiet-copy">
-                Project context · {projectId || "No project"} · {docId}
+                Project context · {projectLabel} · {docId || "No document"}
               </p>
               <p className="quiet-copy">Promote an insight from Reader to start this document.</p>
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}

@@ -31,6 +31,7 @@ import type {
   SpaceMembership,
   SpaceSummary,
 } from "@shared/contracts/spaces";
+import type { WritingDocumentResponse } from "@shared/contracts/writing";
 
 export class ApiError extends Error {
   constructor(
@@ -358,6 +359,33 @@ export const apiClient = {
   runJob(actorUserId: string, jobId: string): Promise<JobRecord> {
     return requestSessionJson(`/api/jobs/${jobId}/run`, {
       actorUserId,
+      method: "POST",
+    });
+  },
+  getProjectWritingDocument(
+    actorUserId: string,
+    projectId: string,
+  ): Promise<WritingDocumentResponse> {
+    return requestSessionJson(`/api/projects/${projectId}/writing/document`, {
+      actorUserId,
+    });
+  },
+  saveProjectWritingDocument(
+    actorUserId: string,
+    input: {
+      citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
+      content: string;
+      projectId: string;
+      title: string;
+    },
+  ): Promise<WritingDocumentResponse> {
+    return requestSessionJson(`/api/projects/${input.projectId}/writing/document`, {
+      actorUserId,
+      body: JSON.stringify({
+        citations: input.citations,
+        content: input.content,
+        title: input.title,
+      }),
       method: "POST",
     });
   },

@@ -213,6 +213,8 @@ async function lookupLivePubmed(locator: string, sourceType: 'doi' | 'pmid'): Pr
 }
 
 export function createPubmedConnector(): PubmedConnector {
+  const discoveryCache = new Map<string, PubmedDiscoveryRecord[]>();
+
   return {
     async lookup(
       locator: string,
@@ -231,12 +233,26 @@ export function createPubmedConnector(): PubmedConnector {
         return [];
       }
 
+      const cachedResults = discoveryCache.get(trimmedQuery);
+
+      if (cachedResults) {
+        return cachedResults.map((record) => ({ ...record }));
+      }
+
       try {
         const liveResults = await searchLivePubmed(trimmedQuery);
+        const resolvedResults = liveResults.length > 0
+          ? liveResults
+          : buildFallbackSearch(trimmedQuery);
 
-        return liveResults.length > 0 ? liveResults : buildFallbackSearch(trimmedQuery);
+        discoveryCache.set(trimmedQuery, resolvedResults);
+
+        return resolvedResults.map((record) => ({ ...record }));
       } catch {
-        return buildFallbackSearch(trimmedQuery);
+        const fallbackResults = buildFallbackSearch(trimmedQuery);
+        discoveryCache.set(trimmedQuery, fallbackResults);
+
+        return fallbackResults.map((record) => ({ ...record }));
       }
     },
   };
