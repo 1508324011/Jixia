@@ -7,6 +7,7 @@ import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import {
   createPrismaClient,
+  createCredentialsRepository,
   createJobRepository,
   createNotebookRepository,
   createProjectDocRepository,
@@ -16,8 +17,12 @@ import {
   createSessionRepository,
   initializeReadingPersistence,
   createSpaceRepository,
+  type BootstrapLegacyCredentialAuthorityInput,
   type BootstrapLegacyLibraryInput,
+  type CredentialsRepository,
   type JobRepository,
+  type LegacyCredentialBootstrapInput,
+  type LegacyWorkbenchSettingsBootstrapInput,
   type LibraryRepository,
   readDatabaseUrl,
 } from '../db';
@@ -79,11 +84,9 @@ import {
 } from './routes/spaces.routes';
 import {
   createCredentialsService,
-  type StoredCredential,
-  type WorkbenchSettingsRecord,
 } from './services/credentials.service';
 import { createSessionService } from './services/session.service';
-import { createSecretBox } from './security/secret-box';
+import { createSecretBox, hasSecretBoxKey } from './security/secret-box';
 import { createAuditService } from './services/audit.service';
 import { createImportService } from './services/import.service';
 import { createJobBus } from './jobs/job-bus';
@@ -106,6 +109,8 @@ import {
 } from './storage/storage-root';
 
 const APP_STATE_FILE = 'server-state.json';
+const CREDENTIAL_AUTHORITY_BOOTSTRAP_MARKER_FILE =
+  '.credential-authority-prisma-bootstrap-complete';
 const LIBRARY_BOOTSTRAP_MARKER_FILE = '.library-prisma-bootstrap-complete';
 
 interface LegacyReadingStateRecord {
@@ -129,32 +134,40 @@ export interface JixiaAppEnv extends StorageRootEnv {
 }
 
 export interface JixiaAppState {
-  credentials: StoredCredential[];
   legacyConversations: ConversationRecord[];
+  legacyCredentials: LegacyCredentialBootstrapInput[];
   legacyInsights: GeneratedInsightRecord[];
   legacyLibraryEntries: LegacyStoredLibraryEntry[];
   legacyNotes: NoteRecord[];
   legacyReadingStates: LegacyReadingStateRecord[];
   legacyPaperAssets: LegacyStoredPaperAsset[];
+  legacyWorkbenchSettings: LegacyWorkbenchSettingsBootstrapInput[];
   memberships: SpaceMembership[];
   nextSequence: number;
   spaces: StoredSpace[];
-  workbenchSettings: WorkbenchSettingsRecord[];
 }
 
 type SerializedJixiaAppState = Partial<
-  Omit<JixiaAppState, 'legacyLibraryEntries' | 'legacyPaperAssets'>
+  Omit<
+    JixiaAppState,
+    | 'legacyCredentials'
+    | 'legacyLibraryEntries'
+    | 'legacyPaperAssets'
+    | 'legacyWorkbenchSettings'
+  >
 > & {
   citationLinks?: unknown;
   docVersions?: unknown;
   libraryEntries?: LegacyStoredLibraryEntry[];
   conversations?: ConversationRecord[];
+  credentials?: LegacyCredentialBootstrapInput[];
   insights?: GeneratedInsightRecord[];
   notes?: NoteRecord[];
   readingStates?: LegacyReadingStateRecord[];
   paperAssets?: LegacyStoredPaperAsset[];
   projectMembers?: unknown;
   projects?: unknown;
+  workbenchSettings?: LegacyWorkbenchSettingsBootstrapInput[];
   writingDocs?: unknown;
 };
 
@@ -200,17 +213,17 @@ export interface JixiaApp {
 
 function createState(): JixiaAppState {
   return {
-    credentials: [],
     legacyConversations: [],
+    legacyCredentials: [],
     legacyInsights: [],
     legacyLibraryEntries: [],
     legacyNotes: [],
     legacyReadingStates: [],
     legacyPaperAssets: [],
+    legacyWorkbenchSettings: [],
     memberships: [],
     nextSequence: 0,
     spaces: [],
-    workbenchSettings: [],
   };
 }
 
@@ -229,6 +242,12 @@ function resolveLibraryBootstrapMarkerPath(
   env: StorageRootEnv = process.env,
 ): string {
   return join(resolveStorageRoot(env), LIBRARY_BOOTSTRAP_MARKER_FILE);
+}
+
+function resolveCredentialAuthorityBootstrapMarkerPath(
+  env: StorageRootEnv = process.env,
+): string {
+  return join(resolveStorageRoot(env), CREDENTIAL_AUTHORITY_BOOTSTRAP_MARKER_FILE);
 }
 
 function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
@@ -260,9 +279,10 @@ function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
     hadLegacyCollaborativeKeys,
     hadLegacyReadingKeys,
     state: {
-      credentials: parsed.credentials ?? initialState.credentials,
       legacyConversations:
         parsed.conversations ?? initialState.legacyConversations,
+      legacyCredentials:
+        parsed.credentials ?? initialState.legacyCredentials,
       legacyInsights: parsed.insights ?? initialState.legacyInsights,
       legacyLibraryEntries:
         parsed.libraryEntries ?? initialState.legacyLibraryEntries,
@@ -270,11 +290,11 @@ function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
       legacyReadingStates:
         parsed.readingStates ?? initialState.legacyReadingStates,
       legacyPaperAssets: parsed.paperAssets ?? initialState.legacyPaperAssets,
+      legacyWorkbenchSettings:
+        parsed.workbenchSettings ?? initialState.legacyWorkbenchSettings,
       memberships: parsed.memberships ?? initialState.memberships,
       nextSequence: parsed.nextSequence ?? initialState.nextSequence,
       spaces: parsed.spaces ?? initialState.spaces,
-      workbenchSettings:
-        parsed.workbenchSettings ?? initialState.workbenchSettings,
     },
   };
 }
@@ -289,7 +309,6 @@ function persistState(
 
   mkdirSync(rootDirectory, { recursive: true });
   const serializedState: SerializedJixiaAppState = {
-    credentials: state.credentials,
     conversations: state.legacyConversations,
     insights: state.legacyInsights,
     libraryEntries: state.legacyLibraryEntries,
@@ -299,7 +318,6 @@ function persistState(
     paperAssets: state.legacyPaperAssets,
     readingStates: state.legacyReadingStates,
     spaces,
-    workbenchSettings: state.workbenchSettings,
   };
 
   writeFileSync(resolveAppStatePath(env), JSON.stringify(serializedState, null, 2));
@@ -313,6 +331,18 @@ function markLibraryBootstrapComplete(
   mkdirSync(rootDirectory, { recursive: true });
   writeFileSync(
     resolveLibraryBootstrapMarkerPath(env),
+    JSON.stringify({ completedAt: new Date().toISOString() }, null, 2),
+  );
+}
+
+function markCredentialAuthorityBootstrapComplete(
+  env: StorageRootEnv = process.env,
+): void {
+  const rootDirectory = resolveStorageRoot(env);
+
+  mkdirSync(rootDirectory, { recursive: true });
+  writeFileSync(
+    resolveCredentialAuthorityBootstrapMarkerPath(env),
     JSON.stringify({ completedAt: new Date().toISOString() }, null, 2),
   );
 }
@@ -401,6 +431,45 @@ function clearLegacyReadingState(
   state.legacyInsights = [];
   state.legacyNotes = [];
   state.legacyReadingStates = [];
+
+  return true;
+}
+
+function hasLegacyCredentialBootstrapInput(
+  state: Pick<JixiaAppState, 'legacyCredentials' | 'legacyWorkbenchSettings'>,
+): boolean {
+  return state.legacyCredentials.length > 0 || state.legacyWorkbenchSettings.length > 0;
+}
+
+function resolveLegacyCredentialBootstrapInput(
+  state: Pick<JixiaAppState, 'legacyCredentials' | 'legacyWorkbenchSettings'>,
+  credentialAuthorityBootstrapMarkerExists: boolean,
+): BootstrapLegacyCredentialAuthorityInput {
+  if (
+    credentialAuthorityBootstrapMarkerExists ||
+    !hasLegacyCredentialBootstrapInput(state)
+  ) {
+    return {
+      credentials: [],
+      workbenchSettings: [],
+    };
+  }
+
+  return {
+    credentials: state.legacyCredentials,
+    workbenchSettings: state.legacyWorkbenchSettings,
+  };
+}
+
+function clearLegacyCredentialState(
+  state: Pick<JixiaAppState, 'legacyCredentials' | 'legacyWorkbenchSettings'>,
+): boolean {
+  if (!hasLegacyCredentialBootstrapInput(state)) {
+    return false;
+  }
+
+  state.legacyCredentials = [];
+  state.legacyWorkbenchSettings = [];
 
   return true;
 }
@@ -515,28 +584,12 @@ function createBootstrappedLibraryRepository(
   };
 }
 
-function createCredentialReferenceBootstrappedJobRepository(
+function createCredentialAuthorityBootstrappedJobRepository(
   repository: JobRepository,
-  credentials: StoredCredential[],
+  credentialsRepository: CredentialsRepository,
+  ensureBootstrapped: () => Promise<void>,
+  env: JixiaAppEnv | undefined,
 ): JobRepository {
-  let bootstrapped: Promise<void> | null = null;
-
-  async function ensureBootstrapped(): Promise<void> {
-    bootstrapped ??= Promise.all(
-      credentials.map((credential) =>
-        repository.createProviderCredentialReference({
-          createdAt: credential.createdAt,
-          credentialRef: credential.credentialRef,
-          provider: credential.provider,
-          secretRef: credential.credentialRef,
-          userId: credential.userId,
-        }),
-      ),
-    ).then(() => undefined);
-
-    await bootstrapped;
-  }
-
   return {
     async appendJobEvent(input) {
       await ensureBootstrapped();
@@ -566,7 +619,17 @@ function createCredentialReferenceBootstrappedJobRepository(
     async getProviderCredentialReference(credentialRef) {
       await ensureBootstrapped();
 
-      return repository.getProviderCredentialReference(credentialRef);
+      const credential = await repository.getProviderCredentialReference(credentialRef);
+
+      if (credential) {
+        await assertCredentialSecretUsable(
+          credentialsRepository,
+          credentialRef,
+          env,
+        );
+      }
+
+      return credential;
     },
     async listAuditRecordsByJob(jobId) {
       await ensureBootstrapped();
@@ -587,6 +650,84 @@ function createCredentialReferenceBootstrappedJobRepository(
       await ensureBootstrapped();
 
       return repository.updateJobStatus(jobId, status);
+    },
+  };
+}
+
+async function ensureCredentialAuthorityUsable(
+  repository: CredentialsRepository,
+  env: JixiaAppEnv | undefined,
+): Promise<void> {
+  if ((await repository.hasStoredCredentials()) && !hasSecretBoxKey(env)) {
+    throw new Error(
+      'Credential encryption key is missing from the storage root. Existing credential rows cannot be used until credentials.key is restored.',
+    );
+  }
+}
+
+async function assertCredentialSecretUsable(
+  repository: CredentialsRepository,
+  credentialRef: string,
+  env: JixiaAppEnv | undefined,
+): Promise<void> {
+  const credential = await repository.getCredentialByRef(credentialRef);
+
+  if (!credential) {
+    throw new Error(
+      `Credential ${credentialRef} is missing encrypted secret material.`,
+    );
+  }
+
+  createSecretBox(env, { allowKeyCreation: false }).decrypt(credential);
+}
+
+function createCredentialAuthorityBootstrappedCredentialsRepository(
+  repository: CredentialsRepository,
+  ensureBootstrapped: () => Promise<void>,
+): CredentialsRepository {
+  return {
+    async bootstrapLegacyAuthority(input) {
+      await repository.bootstrapLegacyAuthority(input);
+    },
+    async createCredential(input) {
+      await ensureBootstrapped();
+
+      return repository.createCredential(input);
+    },
+    async replaceCredentialSecret(input) {
+      await ensureBootstrapped();
+
+      return repository.replaceCredentialSecret(input);
+    },
+    async getCredentialByRef(credentialRef) {
+      await ensureBootstrapped();
+
+      return repository.getCredentialByRef(credentialRef);
+    },
+    async getCredentialForUser(query) {
+      await ensureBootstrapped();
+
+      return repository.getCredentialForUser(query);
+    },
+    async getWorkbenchSettings(userId) {
+      await ensureBootstrapped();
+
+      return repository.getWorkbenchSettings(userId);
+    },
+    async hasStoredCredentials() {
+      await ensureBootstrapped();
+
+      return repository.hasStoredCredentials();
+    },
+    async listCredentialsForUser(userId) {
+      await ensureBootstrapped();
+
+      return repository.listCredentialsForUser(userId);
+    },
+    async upsertWorkbenchSettings(input) {
+      await ensureBootstrapped();
+
+      return repository.upsertWorkbenchSettings(input);
     },
   };
 }
@@ -645,9 +786,49 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const projectRepository = createProjectRepository(prismaClient);
   const sessionRepository = createSessionRepository(prismaClient);
   const fileStore = createFileStore(options.env);
-  const jobRepository = createCredentialReferenceBootstrappedJobRepository(
+  const rawCredentialsRepository = createCredentialsRepository(prismaClient);
+  const credentialAuthorityBootstrapMarkerPath =
+    resolveCredentialAuthorityBootstrapMarkerPath(options.env);
+  const credentialAuthorityBootstrapMarkerExists = existsSync(
+    credentialAuthorityBootstrapMarkerPath,
+  );
+  const legacyCredentialBootstrapInput = resolveLegacyCredentialBootstrapInput(
+    state,
+    credentialAuthorityBootstrapMarkerExists,
+  );
+  const clearLegacyCredentialAuthority = (): void => {
+    markCredentialAuthorityBootstrapComplete(options.env);
+
+    if (clearLegacyCredentialState(state)) {
+      persist();
+    }
+  };
+
+  if (
+    credentialAuthorityBootstrapMarkerExists &&
+    clearLegacyCredentialState(state)
+  ) {
+    persist();
+  }
+  let credentialAuthorityBootstrap: Promise<void> | null = null;
+
+  async function ensureCredentialAuthorityBootstrap(): Promise<void> {
+    credentialAuthorityBootstrap ??= rawCredentialsRepository
+      .bootstrapLegacyAuthority(legacyCredentialBootstrapInput)
+      .then(clearLegacyCredentialAuthority);
+
+    await credentialAuthorityBootstrap;
+  }
+
+  const credentialsRepository = createCredentialAuthorityBootstrappedCredentialsRepository(
+    rawCredentialsRepository,
+    ensureCredentialAuthorityBootstrap,
+  );
+  const jobRepository = createCredentialAuthorityBootstrappedJobRepository(
     createJobRepository(prismaClient),
-    state.credentials,
+    credentialsRepository,
+    ensureCredentialAuthorityBootstrap,
+    options.env,
   );
   const libraryBootstrapMarkerPath = resolveLibraryBootstrapMarkerPath(options.env);
   const libraryBootstrapMarkerExists = existsSync(libraryBootstrapMarkerPath);
@@ -757,14 +938,15 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     },
   });
   const credentialsService = createCredentialsService({
-    credentials: state.credentials,
-    jobRepository,
     nextId(prefix: string): string {
-      return nextId(state, prefix);
+      return persistedNextId(prefix);
     },
-    persist,
-    secretBox: createSecretBox(options.env),
-    workbenchSettings: state.workbenchSettings,
+    repository: credentialsRepository,
+    async resolveSecretBox() {
+      await ensureCredentialAuthorityUsable(credentialsRepository, options.env);
+
+      return createSecretBox(options.env);
+    },
   });
   const sessionService = createSessionService({
     repository: sessionRepository,

@@ -435,7 +435,7 @@ export async function resolveHttpApi(
     );
 
     return {
-      payload: app.credentials.getWorkbenchSettings(actor.userId),
+      payload: await app.credentials.getWorkbenchSettings(actor.userId),
       statusCode: 200,
     };
   }

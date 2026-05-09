@@ -17,7 +17,12 @@ Use a user-owned local runtime path on the current host. One concrete example:
 - `JIXIA_HOST=127.0.0.1`
 - `JIXIA_PORT=3000`
 
-The current runtime persists its beta state to `server-state.json` under `JIXIA_STORAGE_ROOT`.
+The current runtime still persists legacy non-Prisma beta state to `server-state.json`
+under `JIXIA_STORAGE_ROOT`. Credential secret material and per-user workbench settings
+are Prisma/SQLite authority now; durable Settings API keys require the same
+`JIXIA_DATABASE_URL` plus the durable `JIXIA_STORAGE_ROOT/credentials.key` file.
+If that key is missing or replaced, existing encrypted credential rows fail closed
+instead of being exposed or silently recreated.
 
 ## Native startup on the current host
 
@@ -72,7 +77,8 @@ workbench entry -> settings ready -> PubMed search -> personal import -> Reader 
 ## What this beta currently proves
 
 - the workbench can start natively on the current host without Docker
-- settings persist without exposing raw API keys in browser payloads
+- settings persist through Prisma-backed workbench settings and encrypted credential
+  secret rows without exposing raw API keys in browser payloads
 - PubMed-backed discovery can import into Personal Library through the real server path
 - the paper workspace persists a private note separately from a project-visible comment
 - a governed insight can be promoted into Writer and reopened after reload and process restart

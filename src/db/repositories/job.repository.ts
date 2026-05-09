@@ -149,6 +149,33 @@ type TransactionClient = Prisma.TransactionClient;
 
 type JobClient = JixiaPrismaClient | TransactionClient;
 
+async function readTableColumns(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+): Promise<Set<string>> {
+  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
+    `PRAGMA table_info("${tableName}")`,
+  );
+
+  return new Set(columns.map((column) => column.name));
+}
+
+async function assertRequiredColumns(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+  requiredColumns: string[],
+): Promise<void> {
+  const availableColumns = await readTableColumns(prisma, tableName);
+
+  for (const requiredColumn of requiredColumns) {
+    if (!availableColumns.has(requiredColumn)) {
+      throw new Error(
+        `Job persistence requires ${tableName}.${requiredColumn}. Existing SQLite schema is too old and must be migrated before serving governed jobs.`,
+      );
+    }
+  }
+}
+
 function toIsoString(value: Date): string {
   return value.toISOString();
 }
@@ -330,6 +357,37 @@ export async function initializeJobPersistence(
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "AuditLog_spaceId_actorUserId_idx" ON "AuditLog"("spaceId", "actorUserId")
   `);
+
+  await assertRequiredColumns(prisma, 'ProviderCredential', [
+    'id',
+    'userId',
+    'provider',
+    'secretRef',
+  ]);
+  await assertRequiredColumns(prisma, 'Job', [
+    'id',
+    'spaceId',
+    'requestedByUserId',
+    'credentialRef',
+    'kind',
+    'status',
+    'payload',
+  ]);
+  await assertRequiredColumns(prisma, 'JobEvent', [
+    'id',
+    'jobId',
+    'status',
+    'message',
+    'recordedAt',
+  ]);
+  await assertRequiredColumns(prisma, 'AuditLog', [
+    'id',
+    'spaceId',
+    'actorUserId',
+    'action',
+    'detail',
+    'recordedAt',
+  ]);
 }
 
 export function createJobRepository(

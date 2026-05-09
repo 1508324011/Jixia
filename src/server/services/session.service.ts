@@ -201,7 +201,9 @@ export function createSessionService(
 
       const user = requestedUserId
         ? await store.repository.findUserById(requestedUserId)
-        : await store.repository.findUserByEmail(requestedEmail!);
+        : requestedEmail
+          ? await store.repository.findUserByEmail(requestedEmail)
+          : null;
 
       if (!user) {
         throw new Error("Session login failed for the requested user.");

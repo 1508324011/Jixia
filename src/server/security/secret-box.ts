@@ -20,14 +20,36 @@ export interface SecretBox {
   encrypt(rawSecret: string): EncryptedSecretPayload;
 }
 
-function resolveSecretBoxKey(env: StorageRootEnv): Buffer {
+export interface CreateSecretBoxOptions {
+  allowKeyCreation?: boolean;
+}
+
+function resolveSecretBoxKeyPath(env: StorageRootEnv): string {
+  return join(resolveStorageRoot(env), SECRET_BOX_KEY_FILE);
+}
+
+export function hasSecretBoxKey(env: StorageRootEnv = process.env): boolean {
+  return existsSync(resolveSecretBoxKeyPath(env));
+}
+
+function resolveSecretBoxKey(
+  env: StorageRootEnv,
+  options: CreateSecretBoxOptions = {},
+): Buffer {
   const rootDirectory = resolveStorageRoot(env);
-  const keyPath = join(rootDirectory, SECRET_BOX_KEY_FILE);
+  const keyPath = resolveSecretBoxKeyPath(env);
+  const allowKeyCreation = options.allowKeyCreation ?? true;
 
   mkdirSync(rootDirectory, { recursive: true });
 
   if (existsSync(keyPath)) {
     return Buffer.from(readFileSync(keyPath, 'utf8'), 'base64');
+  }
+
+  if (!allowKeyCreation) {
+    throw new Error(
+      'Credential encryption key is missing from the storage root. Existing credential rows cannot be used until credentials.key is restored.',
+    );
   }
 
   const key = randomBytes(32);
@@ -38,8 +60,9 @@ function resolveSecretBoxKey(env: StorageRootEnv): Buffer {
 
 export function createSecretBox(
   env: StorageRootEnv = process.env,
+  options: CreateSecretBoxOptions = {},
 ): SecretBox {
-  const key = resolveSecretBoxKey(env);
+  const key = resolveSecretBoxKey(env, options);
 
   return {
     decrypt(input: EncryptedSecretPayload): string {

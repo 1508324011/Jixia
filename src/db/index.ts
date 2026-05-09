@@ -7,6 +7,23 @@ export {
 } from './client';
 
 export {
+  createCredentialsRepository,
+  initializeCredentialPersistence,
+  type BootstrapLegacyCredentialAuthorityInput,
+  type CreatePersistedCredentialParams,
+  type CredentialSecretLookup,
+  type CredentialsRepository,
+  type LegacyCredentialBootstrapInput,
+  type LegacyWorkbenchSettingsBootstrapInput,
+  type PersistedCredentialRecord,
+  type PersistedCredentialWithSecretRecord,
+  type PersistedDefaultImportTarget,
+  type PersistedEncryptedSecretRecord,
+  type PersistedWorkbenchSettingsRecord,
+  type UpsertWorkbenchSettingsParams,
+} from './repositories/credentials.repository';
+
+export {
   createJobRepository,
   initializeJobPersistence,
   type AppendJobEventParams,
