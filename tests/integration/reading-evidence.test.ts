@@ -208,11 +208,14 @@ describe('reading evidence', () => {
         },
         env,
       });
-      const imported = await app.imports.importToPersonalLibrary({
-        requestedByUserId: 'user-alice',
-        sourceLocator: '654321',
-        sourceType: 'pmid',
-      });
+      const imported = await app.imports.importToPersonalLibrary(
+        {
+          requestedByUserId: 'user-alice',
+          sourceLocator: '654321',
+          sourceType: 'pmid',
+        },
+        'user-alice',
+      );
 
       await app.reading.createWorkbenchNote({
         authorUserId: 'user-alice',
@@ -240,7 +243,12 @@ describe('reading evidence', () => {
         title: 'Tumor board governed insight',
       });
 
-      const reopenedApp = createJixiaApp({ env });
+      const reopenedApp = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env,
+      });
       const reopenedDetail = await reopenedApp.reading.getWorkbenchDetail({
         actorUserId: 'user-alice',
         libraryEntryId: imported.entry.id,
@@ -286,11 +294,14 @@ describe('reading evidence', () => {
         },
         env,
       });
-      const imported = await seededApp.imports.importToPersonalLibrary({
-        requestedByUserId: 'user-alice',
-        sourceLocator: '777001',
-        sourceType: 'pmid',
-      });
+      const imported = await seededApp.imports.importToPersonalLibrary(
+        {
+          requestedByUserId: 'user-alice',
+          sourceLocator: '777001',
+          sourceType: 'pmid',
+        },
+        'user-alice',
+      );
 
       writeFileSync(
         statePath,
@@ -338,7 +349,12 @@ describe('reading evidence', () => {
         ),
       );
 
-      const restartedApp = createJixiaApp({ env });
+      const restartedApp = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env,
+      });
       const reopenedDetail = await restartedApp.reading.getWorkbenchDetail({
         actorUserId: 'user-alice',
         libraryEntryId: imported.entry.id,

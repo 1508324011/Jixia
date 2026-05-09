@@ -177,6 +177,9 @@ describe('prisma schema', () => {
 
   it('cuts targeted server flows over to repository-backed document authority', () => {
     const appWiring = readFileSync('src/server/app.ts', 'utf8');
+    const demoApi = readFileSync('src/web/lib/demo-api.ts', 'utf8');
+    const httpApi = readFileSync('src/server/http-api.ts', 'utf8');
+    const httpServer = readFileSync('src/server/http-server.ts', 'utf8');
     const importService = readFileSync('src/server/services/import.service.ts', 'utf8');
     const libraryService = readFileSync('src/server/services/library.service.ts', 'utf8');
     const readingService = readFileSync('src/server/services/reading.service.ts', 'utf8');
@@ -188,8 +191,17 @@ describe('prisma schema', () => {
 
     expect(appWiring).not.toContain('memberships: state.memberships');
     expect(appWiring).not.toContain('spaces: state.spaces');
+    expect(demoApi).toContain('createDemoApi(');
+    expect(demoApi).toContain('function actorHeaders()');
+    expect(demoApi).toContain("'x-jixia-actor': actorUserId");
+    expect(httpApi).toContain('requireActor(actor)');
+    expect(httpApi).not.toContain('requestedByUserId: DEFAULT_WORKBENCH_USER_ID');
+    expect(httpApi).not.toContain('userId: DEFAULT_WORKBENCH_USER_ID');
+    expect(httpServer).toContain('isProtectedWorkbenchHttpApiPath');
 
     expect(importService).toContain('libraryRepository.importScopedEntry');
+    expect(importService).toContain('scope: { id: actorUserId, type: "user" }');
+    expect(importService).not.toContain('scope: { id: input.requestedByUserId, type: "user" }');
     expect(importService).not.toContain('actorUserId ?? input.requestedByUserId');
     expect(importService).not.toContain('store.memberships.some');
     expect(importService).not.toContain('store.spaces.find');
@@ -349,5 +361,24 @@ describe('prisma schema', () => {
     expect(projectDocsService).toMatch(/listLibraryEntriesForAsset/);
     expect(projectDocsService).not.toContain('store.paperAssets');
     expect(projectDocsService).not.toContain('store.libraryEntries');
+  });
+
+  it('keeps credentials and settings ownership on the server-derived actor boundary', () => {
+    const credentialsService = readFileSync(
+      'src/server/services/credentials.service.ts',
+      'utf8',
+    );
+    const credentialsRoutes = readFileSync(
+      'src/server/routes/credentials.routes.ts',
+      'utf8',
+    );
+    const workbenchHttpApi = readFileSync('src/server/http-api.ts', 'utf8');
+
+    expect(credentialsService).not.toContain('actorUserId ?? input.userId');
+    expect(credentialsService).not.toContain('actorUserId ?? query.userId');
+    expect(credentialsRoutes).not.toContain('saveWorkbenchSettings(input)');
+    expect(workbenchHttpApi).not.toContain('userId: DEFAULT_WORKBENCH_USER_ID');
+    expect(workbenchHttpApi).toContain("requestUrl.searchParams.get('actorUserId')");
+    expect(workbenchHttpApi).toContain('payload.actorUserId');
   });
 });
