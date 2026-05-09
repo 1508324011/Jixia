@@ -6,9 +6,44 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import { createJixiaApp } from '../../src/server/app';
+import type { PubmedConnector } from '../../src/server/connectors/pubmed.connector';
 
 function createStorageRoot(): string {
   return mkdtempSync(join(tmpdir(), 'jixia-governance-hardening-'));
+}
+
+function createStubPubmedConnector(): PubmedConnector {
+  return {
+    async lookup(locator, sourceType) {
+      return {
+        abstractText: `Governance ${sourceType.toUpperCase()} abstract for ${locator}`,
+        canonicalId: `${sourceType}:${locator}`,
+        title: `Governance ${sourceType.toUpperCase()} paper ${locator}`,
+      };
+    },
+    async search(query) {
+      return [
+        {
+          abstractText: `Governance search result for ${query}`,
+          canonicalId: 'pmid:654321',
+          reason: 'Governance hardening local PubMed stub.',
+          sourceLabel: 'PubMed',
+          sourceLocator: '654321',
+          sourceType: 'pmid',
+          title: 'Governance hardening paper',
+        },
+      ];
+    },
+  };
+}
+
+function createGovernanceApp(storageRoot: string) {
+  return createJixiaApp({
+    connectors: {
+      pubmed: createStubPubmedConnector(),
+    },
+    env: { JIXIA_STORAGE_ROOT: storageRoot },
+  });
 }
 
 describe('server governance hardening', () => {
@@ -16,7 +51,7 @@ describe('server governance hardening', () => {
     const storageRoot = createStorageRoot();
 
     try {
-      const app = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
+      const app = createGovernanceApp(storageRoot);
       const aliceShared = await app.spaces.createSpace(
         { kind: 'shared', name: 'Alice Shared' },
         'user-alice',
@@ -95,7 +130,7 @@ describe('server governance hardening', () => {
     const storageRoot = createStorageRoot();
 
     try {
-      const app = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
+      const app = createGovernanceApp(storageRoot);
       const sharedSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Validated Shared' },
         'user-alice',
@@ -166,7 +201,7 @@ describe('server governance hardening', () => {
     const storageRoot = createStorageRoot();
 
     try {
-      const firstApp = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
+      const firstApp = createGovernanceApp(storageRoot);
       const sharedSpace = await firstApp.spaces.createSpace(
         { kind: 'shared', name: 'Persistent Governance' },
         'user-alice',
@@ -184,7 +219,7 @@ describe('server governance hardening', () => {
         spaceId: sharedSpace.id,
       }, 'user-alice');
 
-      const secondApp = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
+      const secondApp = createGovernanceApp(storageRoot);
       const completed = await secondApp.jobs.runJob({
         actorSpaceId: sharedSpace.id,
         actorUserId: 'user-alice',
@@ -225,7 +260,7 @@ describe('server governance hardening', () => {
     const storageRoot = createStorageRoot();
 
     try {
-      const app = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
+      const app = createGovernanceApp(storageRoot);
       const aliceShared = await app.spaces.createSpace(
         { kind: 'shared', name: 'Alice Jobs' },
         'user-alice',
@@ -284,7 +319,7 @@ describe('server governance hardening', () => {
     const storageRoot = createStorageRoot();
 
     try {
-      const app = createJixiaApp({ env: { JIXIA_STORAGE_ROOT: storageRoot } });
+      const app = createGovernanceApp(storageRoot);
       const sharedSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Payload Validation' },
         'user-alice',

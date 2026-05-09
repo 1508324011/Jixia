@@ -45,7 +45,12 @@ describe('library import', () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-import-'));
 
     try {
-      const app = createJixiaApp({ env: createLibraryEnv(storageRoot) });
+      const app = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env: createLibraryEnv(storageRoot),
+      });
       const sharedSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Shared Space' },
         'user-alice',
@@ -129,7 +134,7 @@ describe('library import', () => {
     } finally {
       rmSync(storageRoot, { recursive: true, force: true });
     }
-  }, 10_000);
+  }, 20_000);
 
   it('uses project membership instead of stale legacy space mirrors for project library reads', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-prisma-space-'));
@@ -395,7 +400,7 @@ describe('library import', () => {
     } finally {
       rmSync(storageRoot, { recursive: true, force: true });
     }
-  });
+  }, 10_000);
 
   it('bootstraps legacy paper/library json into Prisma once and then scrubs compatibility arrays', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-bootstrap-once-'));
@@ -598,6 +603,32 @@ describe('library import', () => {
     }
   });
 
+  it('rejects personal-library compatibility actor mismatches at the service boundary', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-library-actor-mismatch-'));
+
+    try {
+      const app = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env: { JIXIA_STORAGE_ROOT: storageRoot },
+      });
+
+      await expect(
+        app.imports.importToPersonalLibrary(
+          {
+            requestedByUserId: 'user-bob',
+            sourceLocator: '654321',
+            sourceType: 'pmid',
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/server-derived actor/i);
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
+
   it('supports one workbench discovery-to-personal-library slice', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-library-import-'));
 
@@ -619,11 +650,14 @@ describe('library import', () => {
         title: 'Tumor board biomarkers for rapid review',
       });
 
-      const imported = await app.imports.importToPersonalLibrary({
-        requestedByUserId: 'user-alice',
-        sourceLocator: discovered[0].sourceLocator,
-        sourceType: discovered[0].sourceType,
-      });
+      const imported = await app.imports.importToPersonalLibrary(
+        {
+          requestedByUserId: 'user-alice',
+          sourceLocator: discovered[0].sourceLocator,
+          sourceType: discovered[0].sourceType,
+        },
+        'user-alice',
+      );
 
       expect(imported.asset.canonicalId).toBe('pmid:654321');
       expect(imported.entry.visibility).toBe('private');

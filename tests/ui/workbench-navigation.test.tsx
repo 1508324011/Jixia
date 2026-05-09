@@ -239,6 +239,10 @@ describe('workbench navigation', () => {
           apiKey: 'sk-browser-secret',
           defaultImportTarget: 'project-workspace',
         }),
+        credentials: 'same-origin',
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json',
+        }),
         method: 'POST',
       }),
     );
