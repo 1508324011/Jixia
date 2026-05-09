@@ -269,15 +269,13 @@ export function ReaderPage() {
       <section className="reader-page" aria-label="reading layout">
         <article className="reader-document-surface">
           {isLoading ? (
-            <>
-              <h2 className="panel-title">Loading reading detail…</h2>
-              <p className="quiet-copy">Pulling the imported record and its evidence context.</p>
-            </>
+            <div className="workbench-row">
+              <p className="quiet-copy">Loading reading detail…</p>
+            </div>
           ) : loadError ? (
-            <>
-              <h2 className="panel-title">Reader unavailable</h2>
+            <div className="workbench-row">
               <p className="quiet-copy">{loadError}</p>
-            </>
+            </div>
           ) : detail ? (
               <>
                 <ReaderDocumentCanvas
@@ -287,10 +285,9 @@ export function ReaderPage() {
                 />
               </>
           ) : (
-            <>
-              <h2 className="panel-title">No reading record found</h2>
+            <div className="workbench-row">
               <p className="quiet-copy">This project entry does not have an imported paper asset yet.</p>
-            </>
+            </div>
           )}
         </article>
 
@@ -303,35 +300,31 @@ export function ReaderPage() {
               variant="docked"
             />
           ) : (
-            <section className="ai-workspace-shell ai-workspace-shell--docked stack-sm" aria-label="AI workspace shell">
-              <div className="stack-xs">
-                <h2 className="panel-title">AI Workspace</h2>
-                <p className="quiet-copy">
-                  {isLoading
-                    ? 'Loading the docked AI workspace…'
-                    : aiLoadError ??
-                      'No AI session is docked yet, but Reader still exits into the standalone workspace.'}
-                </p>
-              </div>
+            <section className="workbench-surface" aria-label="AI workspace shell">
+              <h2 className="panel-title">AI Workspace</h2>
+              <p className="quiet-copy">
+                {isLoading
+                  ? 'Loading the docked AI workspace…'
+                  : aiLoadError ??
+                    'No AI session is docked yet, but Reader still exits into the standalone workspace.'}
+              </p>
             </section>
           )}
 
           {detail ? (
             <>
-              <section className="reader-support-card stack-sm" aria-label="Reader supporting context">
-                <div className="stack-xs">
-                  <h2 className="panel-title">Reader supporting context</h2>
-                  <p className="quiet-copy">
-                    Notebook privacy and project ownership stay intact; Reader only mirrors the
-                    evidence you need while reading.
-                  </p>
-                </div>
+              <section className="workbench-surface--section" aria-label="Reader supporting context">
+                <h2 className="panel-title">Reader supporting context</h2>
+                <p className="quiet-copy">
+                  Notebook privacy and project ownership stay intact; Reader only mirrors the
+                  evidence you need while reading.
+                </p>
 
                 <div className="reader-support-grid">
-                  <section className="reader-support-section stack-xs" aria-label="private notes mirror">
+                  <section className="workbench-row--compact" aria-label="private notes mirror">
                     <h3 className="panel-title">Private notes</h3>
                     {privateNotes.length > 0 ? (
-                      <div className="reader-note-list stack-xs">
+                      <div className="reader-note-list">
                         {privateNotes.map((note) => (
                           <p key={note.id} className="reader-note-item">
                             {note.body}
@@ -343,10 +336,10 @@ export function ReaderPage() {
                     )}
                   </section>
 
-                  <section className="reader-support-section stack-xs" aria-label="shared comments mirror">
+                  <section className="workbench-row--compact" aria-label="shared comments mirror">
                     <h3 className="panel-title">Shared comments</h3>
                     {projectComments.length > 0 ? (
-                      <div className="reader-note-list stack-xs">
+                      <div className="reader-note-list">
                         {projectComments.map((note) => (
                           <p key={note.id} className="reader-note-item">
                             {note.body}
@@ -359,7 +352,7 @@ export function ReaderPage() {
                   </section>
                 </div>
 
-                <section className="reader-support-section stack-xs" aria-label="reading retrieval state">
+                <section className="workbench-row--compact" aria-label="reading retrieval state">
                   <h3 className="panel-title">Reading status</h3>
                   <div className="reader-status-row">
                     <span className="status-badge">{retrievalState.summary}</span>
@@ -371,10 +364,10 @@ export function ReaderPage() {
                 </section>
 
                 {detail.insights.length > 0 || governedJob ? (
-                  <section className="reader-support-section stack-xs" aria-label="governed insights mirror">
+                  <section className="workbench-row--compact" aria-label="governed insights mirror">
                     <h3 className="panel-title">Governed insights</h3>
                     {detail.insights.length > 0 ? (
-                      <div className="reader-note-list stack-xs">
+                      <div className="reader-note-list">
                         {detail.insights.map((insight) => (
                           <p key={insight.id} className="reader-note-item">
                             {insight.summary}
@@ -392,25 +385,23 @@ export function ReaderPage() {
                 ) : null}
               </section>
 
-              <div className="stack-sm">
-                <div className="button-row">
-                  <Link className="panel-link" to={notebookPath}>
-                    Open notebook
+              <div className="button-row">
+                <Link className="panel-link" to={notebookPath}>
+                  Open notebook
+                </Link>
+                <Link className="panel-link" to="/ai">
+                  Open AI workspace
+                </Link>
+                {projectPath ? (
+                  <Link className="panel-link" to={projectPath}>
+                    Open project overview
                   </Link>
-                  <Link className="panel-link" to="/ai">
-                    Open AI workspace
+                ) : null}
+                {resolvedProjectDocsPath ? (
+                  <Link className="panel-link" to={resolvedProjectDocsPath}>
+                    Open project docs
                   </Link>
-                  {projectPath ? (
-                    <Link className="panel-link" to={projectPath}>
-                      Open project overview
-                    </Link>
-                  ) : null}
-                  {resolvedProjectDocsPath ? (
-                    <Link className="panel-link" to={resolvedProjectDocsPath}>
-                      Open project docs
-                    </Link>
-                  ) : null}
-                </div>
+                ) : null}
               </div>
             </>
           ) : null}

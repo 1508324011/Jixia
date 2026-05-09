@@ -65,21 +65,20 @@ export function ProjectsPage() {
 
       <div className="panel-grid top-level-surface-grid">
         {isLoading ? (
-          <section className="projects-surface projects-surface--state" aria-live="polite">
-            <h2 className="panel-title">Loading project inventory…</h2>
-            <p className="quiet-copy">Gathering recent activity and notebook status from shared workspaces.</p>
-          </section>
+          <div className="workbench-row">
+            <p className="quiet-copy">Loading project inventory…</p>
+          </div>
         ) : null}
 
         {errorMessage ? (
-          <section className="projects-surface projects-surface--state" aria-live="polite">
-            <h2 className="panel-title">Project inventory unavailable</h2>
+          <div className="workbench-row">
             <p className="quiet-copy">{errorMessage}</p>
-          </section>
+          </div>
         ) : null}
 
         {summary?.recentProjects.map((project) => (
-          <section key={`${project.spaceId}-${project.projectId}`} className="projects-surface projects-surface--project">
+          <section key={`${project.spaceId}-${project.projectId}`} className="workbench-surface--section">
+            <p className="workbench-eyebrow">Project workspace</p>
             <h2 className="panel-title">{project.title}</h2>
             <p className="quiet-copy">{formatRecentActivity(project.recentActivity)}</p>
             <p className="quiet-copy">
@@ -105,10 +104,9 @@ export function ProjectsPage() {
         ))}
 
         {summary && summary.recentProjects.length === 0 ? (
-          <section className="projects-surface projects-surface--state">
-            <h2 className="panel-title">No shared projects yet</h2>
+          <div className="workbench-row">
             <p className="quiet-copy">Once a shared workspace accumulates library entries or project docs, it will appear here as a resumable project surface.</p>
-          </section>
+          </div>
         ) : null}
       </div>
     </main>

@@ -221,11 +221,11 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
 
       <section aria-label="library list" className="library-workbench">
         {!isPersonalMode ? (
-          <article className="library-import-surface stack-sm">
+          <div className="library-import-surface workbench-surface--section">
             <h2 className="panel-title">Import paper</h2>
             <p className="quiet-copy">{importLabel}</p>
             <form
-              className="stack-sm"
+              className="field-stack"
               onSubmit={(event) => {
                 event.preventDefault();
                 void handleImport();
@@ -265,7 +265,7 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
               </div>
             </form>
             {importError ? <p className="quiet-copy">{importError}</p> : null}
-          </article>
+          </div>
         ) : null}
 
         <article
@@ -274,11 +274,11 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
           data-layout-mode="inventory"
           data-testid="library-inventory-surface"
         >
-            <div className="library-inventory-panel__header">
-              <div className="stack-xs">
-                <span className="intake-source-board__eyebrow">Inventory surface</span>
-                <h2 className="panel-title">Library inventory</h2>
-              </div>
+          <div className="library-inventory-panel__header">
+            <div>
+              <span className="workbench-eyebrow">Inventory surface</span>
+              <h2 className="panel-title">Library inventory</h2>
+            </div>
             <LibraryFilters
               activeView={activeView}
               onQueryChange={setInventoryQuery}
@@ -288,47 +288,39 @@ export function LibraryPage({ mode = 'project' }: LibraryPageProps) {
           </div>
 
           {isLoadingEntries ? (
-            <article className="library-state-card">
-              <h2 className="panel-title">Loading library entries…</h2>
+            <div className="workbench-row">
               <p className="quiet-copy">
                 {isPersonalMode
                   ? 'Import metadata and reading readiness are loading from the server.'
                   : 'Reading availability, import metadata, and visibility are loading from the server.'}
               </p>
-            </article>
+            </div>
           ) : null}
 
           {libraryError ? (
-            <article className="library-state-card">
-              <h2 className="panel-title">Library unavailable</h2>
+            <div className="workbench-row">
               <p className="quiet-copy">{libraryError}</p>
-            </article>
+            </div>
           ) : null}
 
           {!isLoadingEntries && !libraryError && filteredEntries.length === 0 ? (
-            <article className="library-state-card">
-              <h2 className="panel-title">No imported literature yet</h2>
+            <div className="workbench-row">
               <p className="quiet-copy">
                 {isPersonalMode
                   ? 'Search PubMed or import a recommendation from Today to seed your personal shelf.'
                   : 'Import a DOI, PMID, arXiv preprint, or upload to seed the shared shelf.'}
               </p>
-            </article>
+            </div>
           ) : null}
 
           {!isLoadingEntries && !libraryError
             ? filteredEntries.map((entry) => (
                 <article className="library-entry-card" key={entry.entryId}>
-                  <div className="stack-xs">
-                    <span className="intake-source-board__eyebrow">
+                  <div>
+                    <span className="workbench-eyebrow">
                       {isPersonalMode ? 'Personal inventory row' : 'Project inventory row'}
                     </span>
-                    <h2 className="panel-title">{entry.title}</h2>
-                    <p className="quiet-copy">
-                      {isPersonalMode
-                        ? 'Inventory row for private evidence triage, notebook follow-up, and fast reader access.'
-                        : `Inventory row for ${activeSpace?.name ?? resolvedSpaceId} evidence triage, notebook follow-up, and project work.`}
-                    </p>
+                    <h3 className="panel-title">{entry.title}</h3>
                   </div>
 
                   <dl className="library-entry-card__details">

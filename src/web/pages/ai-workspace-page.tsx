@@ -53,15 +53,15 @@ export function AiWorkspacePage() {
       </header>
 
       {isLoading ? (
-        <section className="ai-workspace-state stack-sm" aria-label="ai workspace overview">
+        <div className="workbench-row">
           <p className="quiet-copy">
             Loading active sessions and their attached reading context.
           </p>
-        </section>
+        </div>
       ) : errorMessage ? (
-        <section className="ai-workspace-state stack-sm" aria-label="ai workspace overview">
+        <div className="workbench-row">
           <p className="quiet-copy">{errorMessage}</p>
-        </section>
+        </div>
       ) : workspace ? (
         <AiWorkspaceShell
           description="Keep governed conversations, reading follow-ups, and cross-paper synthesis in one independent workspace instead of burying them inside Reader or Notebook routes."
