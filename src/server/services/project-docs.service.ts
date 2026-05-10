@@ -339,6 +339,16 @@ async function normalizeAuthorizedCitations(
       actorSpaceId,
     );
 
+    if (
+      authorizedView.entry.id !== projectScopedView.entry.id ||
+      authorizedView.entry.scope.type !== 'project' ||
+      authorizedView.entry.scope.id !== projectId
+    ) {
+      throw new Error(
+        `Paper asset ${citation.paperAssetId} is not available in project ${projectId}.`,
+      );
+    }
+
     normalizedCitations.push({
       evidenceSpan: citation.evidenceSpan,
       paperAssetId: authorizedView.asset.id,

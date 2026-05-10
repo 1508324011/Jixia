@@ -251,6 +251,194 @@ describe('notebook and project document persistence', () => {
     }
   });
 
+  it('keeps project-doc citations bound to canonical project-scoped library entries', async () => {
+    const storageRoot = createStorageRoot('jixia-project-doc-scope-citations-');
+    const env = createWritingEnv(storageRoot);
+
+    try {
+      const app = createJixiaApp({ env });
+      const canonicalSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Canonical Citation Space' },
+        'user-alice',
+      );
+      const staleSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Stale Citation Space' },
+        'user-alice',
+      );
+      const canonicalProject = await app.projects.createProject(
+        { name: 'Canonical Citation Project', spaceId: canonicalSpace.id },
+        'user-alice',
+      );
+      const staleProject = await app.projects.createProject(
+        { name: 'Stale Citation Project', spaceId: staleSpace.id },
+        'user-alice',
+      );
+      const personalOnlyImport = await app.imports.importPaper(
+        {
+          projectId: staleProject.project.id,
+          requestedByUserId: 'user-alice',
+          scope: { id: 'user-alice', type: 'user' },
+          sourceLocator: '10.1000/personal-only-citation',
+          sourceType: 'doi',
+          spaceId: staleSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+      const canonicalProjectImport = await app.imports.importPaper(
+        {
+          projectId: staleProject.project.id,
+          requestedByUserId: 'user-alice',
+          scope: { id: canonicalProject.project.id, type: 'project' },
+          sourceLocator: '10.1000/canonical-project-citation',
+          sourceType: 'doi',
+          spaceId: canonicalSpace.id,
+          visibility: 'private',
+        },
+        'user-alice',
+      );
+      const projectDoc = await app.projectDocs.createDocument(
+        {
+          projectId: canonicalProject.project.id,
+          title: 'Canonical citation draft',
+        },
+        'user-alice',
+      );
+
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [{ paperAssetId: personalOnlyImport.asset.id }],
+            content: 'Personal-only citation must not enter project docs.',
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/not available in project/i);
+
+      const saved = await app.projectDocs.saveDocument(
+        {
+          citations: [{ paperAssetId: canonicalProjectImport.asset.id }],
+          content: 'Canonical project citation is accepted.',
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+
+      expect(canonicalProjectImport.entry).toMatchObject({
+        scope: { id: canonicalProject.project.id, type: 'project' },
+        spaceId: canonicalSpace.id,
+        visibility: 'published_to_project',
+      });
+      expect(saved.citations[0]?.paperAssetId).toBe(canonicalProjectImport.asset.id);
+      expect(saved.document.projectId).toBe(canonicalProject.project.id);
+
+      await app.close();
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects direct asset citations until the asset is adopted by the target project', async () => {
+    const storageRoot = createStorageRoot('jixia-project-doc-cross-project-asset-');
+    const env = createWritingEnv(storageRoot);
+
+    try {
+      const app = createJixiaApp({ env });
+      const targetSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Target Citation Space' },
+        'user-alice',
+      );
+      const targetProject = await app.projects.createProject(
+        { name: 'Target Citation Project', spaceId: targetSpace.id },
+        'user-alice',
+      );
+      const sourceProject = await app.projects.createProject(
+        { name: 'Source Citation Project', spaceId: targetSpace.id },
+        'user-alice',
+      );
+      const sourceProjectImport = await app.imports.importPaper(
+        {
+          scope: { id: sourceProject.project.id, type: 'project' },
+          sourceLocator: '10.1000/shared-cross-project-citation',
+          sourceType: 'doi',
+          spaceId: targetSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+      const personalImport = await app.imports.importPaper(
+        {
+          scope: { id: 'user-alice', type: 'user' },
+          sourceLocator: '10.1000/shared-cross-project-citation',
+          sourceType: 'doi',
+          spaceId: targetSpace.id,
+          visibility: 'private',
+        },
+        'user-alice',
+      );
+      const projectDoc = await app.projectDocs.createDocument(
+        {
+          projectId: targetProject.project.id,
+          title: 'Target citation draft',
+        },
+        'user-alice',
+      );
+
+      expect(personalImport.asset.id).toBe(sourceProjectImport.asset.id);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [{ paperAssetId: sourceProjectImport.asset.id }],
+            content: 'Shared asset is not target-project evidence yet.',
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/not available in project/i);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [{ paperAssetId: sourceProjectImport.entry.id }],
+            content: 'Source project entry cannot stand in for target adoption.',
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/not available in project/i);
+
+      const targetProjectImport = await app.imports.importPaper(
+        {
+          scope: { id: targetProject.project.id, type: 'project' },
+          sourceLocator: '10.1000/shared-cross-project-citation',
+          sourceType: 'doi',
+          spaceId: targetSpace.id,
+          visibility: 'private',
+        },
+        'user-alice',
+      );
+      const saved = await app.projectDocs.saveDocument(
+        {
+          citations: [{ paperAssetId: sourceProjectImport.asset.id }],
+          content: 'Target project adoption makes the shared asset valid evidence.',
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+
+      expect(targetProjectImport.asset.id).toBe(sourceProjectImport.asset.id);
+      expect(targetProjectImport.entry.scope).toEqual({
+        id: targetProject.project.id,
+        type: 'project',
+      });
+      expect(saved.citations[0]?.paperAssetId).toBe(sourceProjectImport.asset.id);
+
+      await app.close();
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('ignores legacy server-state writing arrays for new document authority', async () => {
     const storageRoot = createStorageRoot('jixia-legacy-writing-ignore-');
     const statePath = join(storageRoot, 'server-state.json');

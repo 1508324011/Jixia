@@ -68,32 +68,23 @@ export interface ImportService {
   ): Promise<ImportedLibraryRecord>;
 }
 
-function visibilityForScope(
+function compatibilityVisibilityForScope(
   scope: ScopeRef,
-  requestedVisibility: LibraryEntryVisibility,
 ): LibraryEntryVisibility {
-  if (scope.type === "user") {
-    return "private";
-  }
-
-  if (requestedVisibility === "private") {
-    return "published_to_project";
-  }
-
-  return requestedVisibility === "published_to_project"
-    ? requestedVisibility
-    : "published_to_project";
+  return scope.type === "user" ? "private" : "published_to_project";
 }
 
-function resolveRequestedScope(
+function normalizeCanonicalScope(
   input: {
     projectId?: string;
     scope?: ScopeRef;
-    visibility?: LibraryEntryVisibility;
   },
   actorUserId: string,
 ): ScopeRef {
   if (input.scope) {
+    // Canonical scope wins over deprecated projectId/visibility/space fields.
+    // Compatibility fields may be validated later, but they never choose
+    // ownership once scope is present.
     if (
       (input.scope.type !== "user" && input.scope.type !== "project") ||
       typeof input.scope.id !== "string" ||
@@ -116,18 +107,20 @@ function resolveRequestedScope(
   return { id: actorUserId, type: "user" };
 }
 
-async function assertCanImportToScope(
+async function resolveAuthorizedImportScopeContext(
   projectRepository: ProjectRepository,
   scope: ScopeRef,
   actorUserId: string,
-  legacySpaceId: string,
-): Promise<string> {
+  compatibilitySpaceId?: string,
+): Promise<{ compatibilitySpaceId?: string; scope: ScopeRef }> {
   if (scope.type === "user") {
+    // Personal scope is actor-owned. Deprecated spaceId is not an authority
+    // input and is intentionally not persisted as the response mirror.
     if (scope.id !== actorUserId) {
       throw new Error("Access denied for the requested personal library.");
     }
 
-    return legacySpaceId;
+    return { scope };
   }
 
   const project = await projectRepository.findProject(scope.id);
@@ -142,13 +135,18 @@ async function assertCanImportToScope(
     throw new Error("Access denied for the requested project library.");
   }
 
-  if (legacySpaceId && project.spaceId !== legacySpaceId) {
+  if (compatibilitySpaceId && project.spaceId !== compatibilitySpaceId) {
+    // Deprecated space context can fail closed, but it cannot replace the
+    // persisted Project.spaceId or bypass ProjectMember authority.
     throw new Error(
       "Request space context does not match the requested resource space.",
     );
   }
 
-  return project.spaceId;
+  return {
+    compatibilitySpaceId: project.spaceId,
+    scope,
+  };
 }
 
 function createPrismaOwnedAssetId(): string {
@@ -169,11 +167,20 @@ function mapAsset(asset: PersistedPaperAssetRecord): PaperAssetRecord {
   };
 }
 
+function compatibilitySpaceIdForEntry(
+  entry: PersistedLibraryEntryRecord,
+): string {
+  if (entry.scope.type === "user") {
+    return "";
+  }
+
+  return entry.legacySpaceId ?? "";
+}
+
 function mapEntry(
   entry: PersistedLibraryEntryRecord,
 ): LibraryEntryView["entry"] {
-  const visibility = entry.legacyVisibility ??
-    (entry.scope.type === "user" ? "private" : "published_to_project");
+  const visibility = compatibilityVisibilityForScope(entry.scope);
 
   return {
     addedAt: entry.createdAt,
@@ -184,7 +191,7 @@ function mapEntry(
     scope: entry.scope,
     scopeId: entry.scope.id,
     scopeType: entry.scope.type,
-    spaceId: entry.legacySpaceId ?? "",
+    spaceId: compatibilitySpaceIdForEntry(entry),
     visibility,
   };
 }
@@ -242,8 +249,8 @@ export function createImportService(store: ImportStore): ImportService {
         );
       }
 
-      const scope = resolveRequestedScope(input, actorUserId);
-      const legacySpaceId = await assertCanImportToScope(
+      const scope = normalizeCanonicalScope(input, actorUserId);
+      const scopeContext = await resolveAuthorizedImportScopeContext(
         store.projectRepository,
         scope,
         actorUserId,
@@ -256,7 +263,7 @@ export function createImportService(store: ImportStore): ImportService {
         createPaperPdfStorageKey(assetId),
         pdfBytes,
       );
-      const visibility = visibilityForScope(scope, input.visibility);
+      const visibility = compatibilityVisibilityForScope(scopeContext.scope);
 
       return mapPersistedLibraryEntryView(
         await store.libraryRepository.importScopedEntry({
@@ -272,9 +279,9 @@ export function createImportService(store: ImportStore): ImportService {
           },
           entry: {
             addedByUserId: actorUserId,
-            legacySpaceId,
+            legacySpaceId: scopeContext.compatibilitySpaceId,
             legacyVisibility: visibility,
-            scope,
+            scope: scopeContext.scope,
           },
         }),
       );
@@ -317,8 +324,8 @@ export function createImportService(store: ImportStore): ImportService {
         );
       }
 
-      const scope = resolveRequestedScope(input, actorUserId);
-      const legacySpaceId = await assertCanImportToScope(
+      const scope = normalizeCanonicalScope(input, actorUserId);
+      const scopeContext = await resolveAuthorizedImportScopeContext(
         store.projectRepository,
         scope,
         actorUserId,
@@ -326,7 +333,7 @@ export function createImportService(store: ImportStore): ImportService {
       );
 
       const metadata = await resolveImportedMetadata(store, input);
-      const visibility = visibilityForScope(scope, input.visibility);
+      const visibility = compatibilityVisibilityForScope(scopeContext.scope);
 
       return mapPersistedLibraryEntryView(
         await store.libraryRepository.importScopedEntry({
@@ -340,9 +347,9 @@ export function createImportService(store: ImportStore): ImportService {
           },
           entry: {
             addedByUserId: actorUserId,
-            legacySpaceId,
+            legacySpaceId: scopeContext.compatibilitySpaceId,
             legacyVisibility: visibility,
-            scope,
+            scope: scopeContext.scope,
           },
         }),
       );

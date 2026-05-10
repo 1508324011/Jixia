@@ -50,7 +50,7 @@ The shipped product surface includes:
 - browser-facing `/api/*` routes for spaces, credentials, jobs, library/import, reading, notebooks, project docs, and the workbench compatibility endpoints
 - preserved `/spaces/...` routes so deep-link regression tests still guard compatibility
 
-Personal-facing routes are workbench shorthand over server-side ownership and scope rules. `space` remains authoritative inside routing, contracts, permissions, and audit logic.
+Personal-facing routes are workbench shorthand over server-side ownership and scope rules. Space remains governance context for routing and audit compatibility, while library/import ownership and access control are authoritative through server-normalized `ScopeRef` plus `Project`/`ProjectMember` checks; legacy `spaceId` and `visibility` fields in those payloads are compatibility mirrors only.
 
 ## Truthful Runtime Notes
 

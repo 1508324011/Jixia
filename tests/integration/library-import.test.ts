@@ -456,6 +456,8 @@ describe('library import', () => {
             entry: expect.objectContaining({
               id: 'entry-legacy-bootstrap',
               scope: { id: 'user-alice', type: 'user' },
+              spaceId: '',
+              visibility: 'private',
             }),
           }),
         ]),
@@ -597,6 +599,167 @@ describe('library import', () => {
           },
           'user-alice',
         ),
+      ).rejects.toThrow(/space context/i);
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps personal scope authoritative over stale project-like compatibility fields', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-personal-scope-'));
+    const env = createLibraryEnv(storageRoot);
+
+    try {
+      const app = createJixiaApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Legacy Project-like Space' },
+        'user-alice',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Legacy Project-like Context', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+
+      const imported = await app.imports.importPaper(
+        {
+          projectId: project.project.id,
+          requestedByUserId: 'user-alice',
+          scope: { id: 'user-alice', type: 'user' },
+          sourceLocator: '10.1000/personal-scope-wins',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+
+      expect(imported.entry).toMatchObject({
+        scope: { id: 'user-alice', type: 'user' },
+        scopeId: 'user-alice',
+        scopeType: 'user',
+        spaceId: '',
+        visibility: 'private',
+      });
+
+      const personalEntriesWithStaleSpace = await app.library.listEntries({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        projectId: project.project.id,
+        scope: { id: 'user-alice', type: 'user' },
+        spaceId: sharedSpace.id,
+      });
+
+      expect(personalEntriesWithStaleSpace.map((entry) => entry.entry.id)).toContain(
+        imported.entry.id,
+      );
+
+      const projectEntries = await app.library.listEntries({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        scope: { id: project.project.id, type: 'project' },
+        spaceId: sharedSpace.id,
+      });
+
+      expect(projectEntries.map((entry) => entry.entry.id)).not.toContain(
+        imported.entry.id,
+      );
+      await expect(
+        app.library.getEntry({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-bob',
+          entryId: imported.entry.id,
+        }),
+      ).rejects.toThrow(/access denied/i);
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps project scope authoritative over stale visibility and projectId compatibility fields', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-project-scope-'));
+    const env = createLibraryEnv(storageRoot);
+
+    try {
+      const app = createJixiaApp({ env });
+      const firstSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Canonical Project Space' },
+        'user-alice',
+      );
+      const secondSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Stale Project Space' },
+        'user-alice',
+      );
+      const canonicalProject = await app.projects.createProject(
+        { name: 'Canonical Library Project', spaceId: firstSpace.id },
+        'user-alice',
+      );
+      const staleProject = await app.projects.createProject(
+        { name: 'Stale Compatibility Project', spaceId: secondSpace.id },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        canonicalProject.project.id,
+        { role: 'viewer', userId: 'user-bob' },
+        'user-alice',
+      );
+
+      const imported = await app.imports.importPaper(
+        {
+          projectId: staleProject.project.id,
+          requestedByUserId: 'user-alice',
+          scope: { id: canonicalProject.project.id, type: 'project' },
+          sourceLocator: '10.1000/project-scope-wins',
+          sourceType: 'doi',
+          spaceId: firstSpace.id,
+          visibility: 'private',
+        },
+        'user-alice',
+      );
+
+      expect(imported.entry).toMatchObject({
+        scope: { id: canonicalProject.project.id, type: 'project' },
+        scopeId: canonicalProject.project.id,
+        scopeType: 'project',
+        spaceId: firstSpace.id,
+        visibility: 'published_to_project',
+      });
+
+      const canonicalEntries = await app.library.listEntries({
+        actorSpaceId: firstSpace.id,
+        actorUserId: 'user-bob',
+        projectId: staleProject.project.id,
+        scope: { id: canonicalProject.project.id, type: 'project' },
+        spaceId: firstSpace.id,
+      });
+      const canonicalEntriesWithStaleSpaceMirror = await app.library.listEntries({
+        actorSpaceId: firstSpace.id,
+        actorUserId: 'user-bob',
+        projectId: staleProject.project.id,
+        scope: { id: canonicalProject.project.id, type: 'project' },
+        spaceId: secondSpace.id,
+      });
+      const staleProjectEntries = await app.library.listEntries({
+        actorSpaceId: secondSpace.id,
+        actorUserId: 'user-alice',
+        scope: { id: staleProject.project.id, type: 'project' },
+        spaceId: secondSpace.id,
+      });
+
+      expect(canonicalEntries.map((entry) => entry.entry.id)).toContain(
+        imported.entry.id,
+      );
+      expect(
+        canonicalEntriesWithStaleSpaceMirror.map((entry) => entry.entry.id),
+      ).toContain(imported.entry.id);
+      expect(staleProjectEntries.map((entry) => entry.entry.id)).not.toContain(
+        imported.entry.id,
+      );
+      await expect(
+        app.library.getEntry({
+          actorSpaceId: secondSpace.id,
+          actorUserId: 'user-bob',
+          entryId: imported.entry.id,
+        }),
       ).rejects.toThrow(/space context/i);
     } finally {
       rmSync(storageRoot, { recursive: true, force: true });

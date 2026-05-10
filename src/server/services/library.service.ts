@@ -7,7 +7,6 @@ import type { ScopeRef } from "@shared/contracts/projects";
 
 import type {
   LibraryRepository,
-  PersistedLibraryEntryRecord,
   PersistedLibraryEntryView,
   ProjectRepository,
 } from "../../db";
@@ -90,14 +89,36 @@ function resolveQueryScope(
   },
 ): ScopeRef {
   if (input.scope) {
+    // Canonical scope is the only authoritative listing namespace. Deprecated
+    // projectId/space fields are ignored once it is present.
+    if (
+      (input.scope.type !== "user" && input.scope.type !== "project") ||
+      typeof input.scope.id !== "string" ||
+      input.scope.id.trim() === ""
+    ) {
+      throw new Error("Library scope requires type user/project and a scope id.");
+    }
+
     return input.scope;
   }
 
-  if (input.scopeType && input.scopeId) {
+  if (input.scopeType || input.scopeId) {
+    if (
+      (input.scopeType !== "user" && input.scopeType !== "project") ||
+      typeof input.scopeId !== "string" ||
+      input.scopeId.trim() === ""
+    ) {
+      throw new Error("Library scope requires scopeType user/project and scopeId.");
+    }
+
     return { id: input.scopeId, type: input.scopeType };
   }
 
   if (input.projectId) {
+    if (input.projectId.trim() === "") {
+      throw new Error("Project library scope requires a project id.");
+    }
+
     return { id: input.projectId, type: "project" };
   }
 
@@ -108,13 +129,13 @@ async function assertCanAccessScope(
   projectRepository: ProjectRepository,
   scope: ScopeRef,
   actorUserId: string,
-): Promise<void> {
+): Promise<{ projectSpaceId?: string; scope: ScopeRef }> {
   if (scope.type === "user") {
     if (scope.id !== actorUserId) {
       throw new Error("Access denied for the requested personal library.");
     }
 
-    return;
+    return { scope };
   }
 
   const project = await projectRepository.findProject(scope.id);
@@ -128,38 +149,44 @@ async function assertCanAccessScope(
   if (!membership) {
     throw new Error("Access denied for the requested project library.");
   }
+
+  return {
+    projectSpaceId: project.spaceId,
+    scope,
+  };
 }
 
-async function assertSpaceContextMatches(
-  projectRepository: ProjectRepository,
-  entry: PersistedLibraryEntryRecord,
+function assertProjectSpaceContextMatches(
+  projectSpaceId: string | undefined,
   claimedSpaceId: string | undefined,
-): Promise<void> {
-  if (!claimedSpaceId) {
+): void {
+  if (!projectSpaceId || !claimedSpaceId) {
     return;
   }
 
-  if (entry.scope.type === "project") {
-    const project = await projectRepository.findProject(entry.scope.id);
-
-    if (!project) {
-      throw new Error(`Project ${entry.scope.id} does not exist.`);
-    }
-
-    if (project.spaceId !== claimedSpaceId) {
-      throw new Error(
-        "Request space context does not match the requested resource space.",
-      );
-    }
-
-    return;
-  }
-
-  if (entry.legacySpaceId && entry.legacySpaceId !== claimedSpaceId) {
+  if (projectSpaceId !== claimedSpaceId) {
     throw new Error(
       "Request space context does not match the requested resource space.",
     );
   }
+}
+
+function withCanonicalProjectCompatibilitySpace(
+  view: PersistedLibraryEntryView,
+  projectSpaceId: string | undefined,
+): PersistedLibraryEntryView {
+  if (view.entry.scope.type !== "project" || !projectSpaceId) {
+    return view;
+  }
+
+  return {
+    asset: view.asset,
+    entry: {
+      ...view.entry,
+      legacySpaceId: projectSpaceId,
+      legacyVisibility: "published_to_project",
+    },
+  };
 }
 
 export function createLibraryService(store: LibraryStore): LibraryService {
@@ -175,18 +202,20 @@ export function createLibraryService(store: LibraryStore): LibraryService {
         throw new Error(`Library entry ${entryId} does not exist.`);
       }
 
-      await assertCanAccessScope(
+      const scopeContext = await assertCanAccessScope(
         store.projectRepository,
         view.entry.scope,
         actorUserId,
       );
-      await assertSpaceContextMatches(
-        store.projectRepository,
-        view.entry,
+      assertProjectSpaceContextMatches(
+        scopeContext.projectSpaceId,
         actorSpaceId,
       );
 
-      return view;
+      return withCanonicalProjectCompatibilitySpace(
+        view,
+        scopeContext.projectSpaceId,
+      );
     },
     async assertCanAccessPaperAsset(
       paperAssetId: string,
@@ -199,18 +228,20 @@ export function createLibraryService(store: LibraryStore): LibraryService {
 
       for (const view of views) {
         try {
-          await assertCanAccessScope(
+          const scopeContext = await assertCanAccessScope(
             store.projectRepository,
             view.entry.scope,
             actorUserId,
           );
-          await assertSpaceContextMatches(
-            store.projectRepository,
-            view.entry,
+          assertProjectSpaceContextMatches(
+            scopeContext.projectSpaceId,
             actorSpaceId,
           );
 
-          return view;
+          return withCanonicalProjectCompatibilitySpace(
+            view,
+            scopeContext.projectSpaceId,
+          );
         } catch (error) {
           if (
             error instanceof Error &&
@@ -231,34 +262,31 @@ export function createLibraryService(store: LibraryStore): LibraryService {
     ): Promise<LibraryEntryView[]> {
       const scope = resolveQueryScope(input);
 
-      await assertCanAccessScope(
+      const scopeContext = await assertCanAccessScope(
         store.projectRepository,
         scope,
         input.actorUserId,
       );
 
-      if (input.actorSpaceId) {
-        if (scope.type === "user") {
-          throw new Error(
-            "Request space context does not match the requested resource space.",
-          );
-        }
-
-        const project = await store.projectRepository.findProject(scope.id);
-
-        if (!project) {
-          throw new Error(`Project ${scope.id} does not exist.`);
-        }
-
-        if (project.spaceId !== input.actorSpaceId) {
-          throw new Error(
-            "Request space context does not match the requested resource space.",
-          );
-        }
-      }
+      // The request field is a deprecated mirror. When canonical scope is
+      // present (or scopeType/scopeId has been normalized), only the
+      // server-derived actorSpaceId compatibility context may fail a project
+      // request closed; stale request spaceId never chooses or validates the
+      // listing namespace.
+      assertProjectSpaceContextMatches(
+        scopeContext.projectSpaceId,
+        input.actorSpaceId,
+      );
 
       return (await store.libraryRepository.listLibraryEntriesForScope(scope))
-        .map(mapPersistedLibraryEntryView);
+        .map((view) =>
+          mapPersistedLibraryEntryView(
+            withCanonicalProjectCompatibilitySpace(
+              view,
+              scopeContext.projectSpaceId,
+            ),
+          ),
+        );
     },
     async listPersonalEntries(actorUserId: string): Promise<LibraryEntryView[]> {
       return this.listEntries({
@@ -276,18 +304,19 @@ export function createLibraryService(store: LibraryStore): LibraryService {
         return null;
       }
 
-      await assertCanAccessScope(
+      const scopeContext = await assertCanAccessScope(
         store.projectRepository,
         view.entry.scope,
         input.actorUserId,
       );
-      await assertSpaceContextMatches(
-        store.projectRepository,
-        view.entry,
+      assertProjectSpaceContextMatches(
+        scopeContext.projectSpaceId,
         input.actorSpaceId,
       );
 
-      return mapPersistedLibraryEntryView(view);
+      return mapPersistedLibraryEntryView(
+        withCanonicalProjectCompatibilitySpace(view, scopeContext.projectSpaceId),
+      );
     },
     async getEntryFile(
       input: GetLibraryEntryRequest,
