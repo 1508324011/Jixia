@@ -154,9 +154,9 @@ describe('core contracts', () => {
       scope: { type: 'user', id: 'user_001' },
       scopeType: 'user',
       scopeId: 'user_001',
-      spaceId: 'space_001',
+      spaceId: '',
       paperAssetId: 'asset_001',
-      visibility: 'space_shared',
+      visibility: 'private',
       createdAt: '2026-03-21T00:00:00.000Z',
       addedAt: '2026-03-21T00:00:00.000Z',
     };
@@ -168,6 +168,8 @@ describe('core contracts', () => {
     expect(importRequest.sourceType).toBe('doi');
     expect(entryView.entry.paperAssetId).toBe('asset_001');
     expect(entryView.entry.scope).toEqual({ type: 'user', id: 'user_001' });
+    expect(entryView.entry.spaceId).toBe('');
+    expect(entryView.entry.visibility).toBe('private');
 
     const libraryEntryShape: {
       entry: LibraryEntryRecord;
