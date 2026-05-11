@@ -374,6 +374,67 @@ describe('job governance', () => {
     }
   });
 
+  it('keeps user-scoped jobs owner-only across list surfaces', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-job-user-scope-list-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-job-user-scope-list.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+
+    try {
+      const app = createJixiaApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'User Scope Listing' },
+        'user-alice',
+      );
+      await app.spaces.createSpace(
+        { kind: 'personal', name: 'Bob Personal Listing' },
+        'user-bob',
+      );
+      const credential = await app.credentials.createCredential(
+        {
+          provider: 'openai',
+          rawSecret: 'user-scope-list-credential',
+          userId: 'user-alice',
+        },
+        'user-alice',
+      );
+
+      const personalJob = await app.jobs.createJob(
+        {
+          credentialRef: credential.credentialRef,
+          kind: 'ai.summary',
+          payload: { prompt: 'Owner-only personal listing.' },
+          spaceId: sharedSpace.id,
+        },
+        'user-alice',
+      );
+
+      await expect(
+        app.jobs.listJobs({ actorUserId: 'user-alice' }),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          id: personalJob.id,
+          scope: { id: 'user-alice', type: 'user' },
+          scopeId: 'user-alice',
+          scopeType: 'user',
+        }),
+      ]);
+      await expect(
+        app.jobs.listJobs({ actorUserId: 'user-bob' }),
+      ).resolves.toEqual([]);
+      await expect(
+        app.jobs.listJobs({
+          actorUserId: 'user-bob',
+          scope: { id: 'user-alice', type: 'user' },
+        }),
+      ).rejects.toThrow(/access denied/i);
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('rejects missing and cross-owner credential references before job persistence', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-job-credential-owner-'));
     const databaseUrl = `file:${join(storageRoot, 'jixia-job-credential-owner.db')}`;
