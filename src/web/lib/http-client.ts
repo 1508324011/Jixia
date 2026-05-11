@@ -4,6 +4,7 @@ import type {
 } from "@shared/contracts/credentials";
 import type {
   CreateJobRequest,
+  JobAuditRecord,
   JobEventRecord,
   JobStatusQuery,
   JobRecord,
@@ -50,12 +51,14 @@ export class ApiError extends Error {
   }
 }
 
-export interface JobAccessContext {
-  actorSpaceId: string;
-}
-
 type CreateCredentialPayload = Omit<CreateCredentialRequest, "userId">;
-type CreateJobPayload = Omit<CreateJobRequest, "requestedByUserId">;
+type CreateJobPayload = Omit<CreateJobRequest, "requestedByUserId" | "scope"> & {
+  scope: ScopeRef;
+};
+type ListJobsInput = {
+  scope: ScopeRef;
+  spaceId?: string;
+};
 type CreateProjectDocPayload = Omit<CreateProjectDocRequest, "createdByUserId">;
 type CreateReadingNotePayload = Omit<
   CreateReadingNoteRequest,
@@ -290,10 +293,15 @@ export const apiClient = {
   listJobEvents(jobId: string): Promise<JobEventRecord[]> {
     return requestJson(`/api/jobs/${jobId}/events`);
   },
-  listJobs(spaceId?: string): Promise<JobRecord[]> {
+  listJobAudits(jobId: string): Promise<JobAuditRecord[]> {
+    return requestJson(`/api/jobs/${jobId}/audit`);
+  },
+  listJobs(input: ListJobsInput): Promise<JobRecord[]> {
     return requestJson("/api/jobs", {
       query: {
-        spaceId,
+        scopeId: input.scope.id,
+        scopeType: input.scope.type,
+        spaceId: input.spaceId,
       },
     });
   },

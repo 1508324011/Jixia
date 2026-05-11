@@ -1,22 +1,57 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { CredentialRecord } from "@shared/contracts/credentials";
-import type { JobEventRecord, JobRecord } from "@shared/contracts/jobs";
+import type {
+  JobAuditRecord,
+  JobEventRecord,
+  JobRecord,
+} from "@shared/contracts/jobs";
+import type { ProjectListItem, ScopeRef } from "@shared/contracts/projects";
 import type { SpaceSummary } from "@shared/contracts/spaces";
 
 import { apiClient } from "../lib/http-client";
-import { runtimeContext } from "./runtime-context";
+import { useSessionAuth } from "../lib/session-auth";
+
+export type JobsWorkbenchScope =
+  | {
+      type: "user";
+      id: string;
+      label: string;
+    }
+  | {
+      type: "project";
+      id: string;
+      spaceId: string;
+      label: string;
+      role?: string;
+    };
+
+type JobsSetupRequired = null | "credential" | "project" | "space";
 
 export interface JobsViewModel {
   activeJob: JobRecord | null;
-  actorSpaceId: string | null;
+  audits: JobAuditRecord[];
+  availableScopes: JobsWorkbenchScope[];
+  canCreateJob: boolean;
   credentials: CredentialRecord[];
   error: string | null;
   events: JobEventRecord[];
-  isRunningSample: boolean;
+  isLoading: boolean;
+  isRunningJob: boolean;
   jobs: JobRecord[];
+  projects: ProjectListItem[];
   refresh(): Promise<void>;
-  runSampleJob(): Promise<void>;
+  runSelectedJob(): Promise<void>;
+  selectedCredentialRef: string;
+  selectedJobId: string | null;
+  selectedScope: JobsWorkbenchScope | null;
+  selectedScopeKey: string;
+  selectedUserSpaceId: string;
+  setSelectedCredentialRef(credentialRef: string): void;
+  setSelectedJobId(jobId: string): void;
+  setSelectedScopeKey(scopeKey: string): void;
+  setSelectedUserSpaceId(spaceId: string): void;
+  setupRequired: JobsSetupRequired;
   spaces: SpaceSummary[];
 }
 
@@ -26,68 +61,431 @@ function sortJobs(jobs: JobRecord[]): JobRecord[] {
   );
 }
 
+function toScopeKey(scope: ScopeRef): string {
+  return `${scope.type}:${scope.id}`;
+}
+
+function createUserScope(
+  userId: string,
+  displayName: string,
+): JobsWorkbenchScope {
+  return {
+    id: userId,
+    label: `Personal · ${displayName}`,
+    type: "user",
+  };
+}
+
+function buildAvailableScopes(
+  userId: string,
+  displayName: string,
+  projects: ProjectListItem[],
+): JobsWorkbenchScope[] {
+  return [
+    createUserScope(userId, displayName),
+    ...projects.map((project) => ({
+      id: project.project.id,
+      label: `Project · ${project.project.name}`,
+      role: project.membership.role,
+      spaceId: project.project.spaceId,
+      type: "project" as const,
+    })),
+  ];
+}
+
+function resolveScopeKey(
+  requestedScopeKey: string,
+  scopes: JobsWorkbenchScope[],
+  userId: string,
+): string {
+  if (requestedScopeKey && scopes.some((scope) => toScopeKey(scope) === requestedScopeKey)) {
+    return requestedScopeKey;
+  }
+
+  if (requestedScopeKey.startsWith("project:")) {
+    return requestedScopeKey;
+  }
+
+  const personalScope = scopes.find((scope) =>
+    scope.type === "user" && scope.id === userId
+  );
+
+  return personalScope ? toScopeKey(personalScope) : toScopeKey(scopes[0] ?? { id: "", type: "user" });
+}
+
+function findScope(
+  scopes: JobsWorkbenchScope[],
+  selectedScopeKey: string,
+): JobsWorkbenchScope | null {
+  return scopes.find((scope) => toScopeKey(scope) === selectedScopeKey) ?? null;
+}
+
+function toListJobsInput(scope: JobsWorkbenchScope): {
+  scope: ScopeRef;
+  spaceId?: string;
+} {
+  if (scope.type === "project") {
+    return {
+      scope: { id: scope.id, type: scope.type },
+      spaceId: scope.spaceId,
+    };
+  }
+
+  return {
+    scope: { id: scope.id, type: scope.type },
+  };
+}
+
+function resolveSelectedJobId(
+  jobs: JobRecord[],
+  selectedJobId: string | null,
+): string | null {
+  if (selectedJobId && jobs.some((job) => job.id === selectedJobId)) {
+    return selectedJobId;
+  }
+
+  return jobs[0]?.id ?? null;
+}
+
+function resolveSelectedUserSpaceId(
+  selectedUserSpaceId: string,
+  spaces: SpaceSummary[],
+): string {
+  if (selectedUserSpaceId && spaces.some((space) => space.id === selectedUserSpaceId)) {
+    return selectedUserSpaceId;
+  }
+
+  return "";
+}
+
+function mergeJobEvents(
+  currentEvents: JobEventRecord[],
+  nextEvents: JobEventRecord[],
+): JobEventRecord[] {
+  const mergedEvents = new Map<string, JobEventRecord>();
+
+  currentEvents.forEach((event) => {
+    mergedEvents.set(event.id, event);
+  });
+  nextEvents.forEach((event) => {
+    mergedEvents.set(event.id, event);
+  });
+
+  return [...mergedEvents.values()].sort((left, right) =>
+    left.recordedAt.localeCompare(right.recordedAt),
+  );
+}
+
+function mergeJobAudits(
+  currentAudits: JobAuditRecord[],
+  nextAudits: JobAuditRecord[],
+): JobAuditRecord[] {
+  const mergedAudits = new Map<string, JobAuditRecord>();
+
+  currentAudits.forEach((audit) => {
+    mergedAudits.set(audit.id, audit);
+  });
+  nextAudits.forEach((audit) => {
+    mergedAudits.set(audit.id, audit);
+  });
+
+  return [...mergedAudits.values()].sort((left, right) =>
+    left.recordedAt.localeCompare(right.recordedAt),
+  );
+}
+
+function readRequestedScopeKey(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const searchParams = new URLSearchParams(window.location.search);
+  const scopeType = searchParams.get("scopeType");
+  const scopeId = searchParams.get("scopeId");
+
+  if ((scopeType === "user" || scopeType === "project") && scopeId) {
+    return `${scopeType}:${scopeId}`;
+  }
+
+  return "";
+}
+
+function persistSelectedScopeKey(scopeKey: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const nextUrl = new URL(window.location.href);
+  const [scopeType, scopeId] = scopeKey.split(":");
+
+  if ((scopeType === "user" || scopeType === "project") && scopeId) {
+    nextUrl.searchParams.set("scopeType", scopeType);
+    nextUrl.searchParams.set("scopeId", scopeId);
+  } else {
+    nextUrl.searchParams.delete("scopeType");
+    nextUrl.searchParams.delete("scopeId");
+  }
+
+  window.history.replaceState({}, "", `${nextUrl.pathname}${nextUrl.search}`);
+}
+
 export function useJobsPresenter(): JobsViewModel {
+  const { user } = useSessionAuth();
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
+  const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [credentials, setCredentials] = useState<CredentialRecord[]>([]);
   const [jobs, setJobs] = useState<JobRecord[]>([]);
+  const [audits, setAudits] = useState<JobAuditRecord[]>([]);
   const [events, setEvents] = useState<JobEventRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [isRunningSample, setIsRunningSample] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRunningJob, setIsRunningJob] = useState(false);
+  const [selectedScopeKey, setSelectedScopeKeyState] = useState(readRequestedScopeKey);
+  const [selectedCredentialRef, setSelectedCredentialRefState] = useState("");
+  const [selectedJobId, setSelectedJobIdState] = useState<string | null>(null);
+  const [selectedUserSpaceId, setSelectedUserSpaceIdState] = useState("");
   const subscriptionRef = useRef<{ close(): void } | null>(null);
+  const refreshGenerationRef = useRef(0);
+  const activityGenerationRef = useRef(0);
+  const runGenerationRef = useRef(0);
+  const selectedScopeKeyRef = useRef(selectedScopeKey);
 
-  const actorSpaceId = spaces[0]?.id ?? null;
-  const activeJob = jobs[0] ?? null;
+  const availableScopes = useMemo(() => {
+    if (!user?.id) {
+      return [];
+    }
 
-  const refresh = useCallback(async () => {
+    return buildAvailableScopes(
+      user.id,
+      user.displayName,
+      projects,
+    );
+  }, [projects, user?.displayName, user?.id]);
+
+  const resolvedSelectedScopeKey = useMemo(() => {
+    if (!user?.id || availableScopes.length === 0) {
+      return "";
+    }
+
+    return resolveScopeKey(selectedScopeKey, availableScopes, user.id);
+  }, [availableScopes, selectedScopeKey, user?.id]);
+
+  const selectedScope = useMemo(
+    () => findScope(availableScopes, resolvedSelectedScopeKey),
+    [availableScopes, resolvedSelectedScopeKey],
+  );
+
+  useEffect(() => {
+    selectedScopeKeyRef.current = resolvedSelectedScopeKey;
+  }, [resolvedSelectedScopeKey]);
+
+  const activeJob = useMemo(
+    () => jobs.find((job) => job.id === selectedJobId) ?? jobs[0] ?? null,
+    [jobs, selectedJobId],
+  );
+  const activeJobId = activeJob?.id ?? null;
+
+  const selectedCredential = useMemo(
+    () => credentials.find((credential) => credential.credentialRef === selectedCredentialRef) ?? null,
+    [credentials, selectedCredentialRef],
+  );
+
+  const setupRequired = useMemo<JobsSetupRequired>(() => {
+    if (
+      resolvedSelectedScopeKey.startsWith("project:") &&
+      selectedScope?.type !== "project"
+    ) {
+      return "project";
+    }
+
+    if (credentials.length === 0) {
+      return "credential";
+    }
+
+    if (selectedScope?.type === "user" && !selectedUserSpaceId) {
+      return "space";
+    }
+
+    return null;
+  }, [credentials.length, resolvedSelectedScopeKey, selectedScope, selectedUserSpaceId]);
+
+  const canCreateJob = Boolean(
+    selectedScope &&
+      selectedCredential &&
+      (selectedScope.type === "project" || selectedUserSpaceId),
+  );
+
+  const loadJobActivity = useCallback(async (jobId: string) => {
+    const generation = activityGenerationRef.current + 1;
+    activityGenerationRef.current = generation;
+
     try {
-      setError(null);
-      const nextSpaces = await apiClient.listSpaces();
-      const nextCredentials = await apiClient.listCredentials();
-      setSpaces(nextSpaces);
-      setCredentials(nextCredentials);
+      const [nextEvents, nextAudits] = await Promise.all([
+        apiClient.listJobEvents(jobId),
+        apiClient.listJobAudits(jobId),
+      ]);
 
-      if (!nextSpaces[0]) {
+      if (activityGenerationRef.current !== generation) {
+        return;
+      }
+
+      setError((currentError) =>
+        currentError === "Failed to load job activity." ? null : currentError,
+      );
+      setEvents((currentEvents) => mergeJobEvents(currentEvents, nextEvents));
+      setAudits((currentAudits) => mergeJobAudits(currentAudits, nextAudits));
+    } catch (presenterError) {
+      if (activityGenerationRef.current !== generation) {
+        return;
+      }
+
+      setEvents([]);
+      setAudits([]);
+      setError(
+        presenterError instanceof Error
+          ? presenterError.message
+          : "Failed to load job activity.",
+      );
+    }
+  }, []);
+
+  const refresh = useCallback(async (requestedScopeKey?: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const generation = refreshGenerationRef.current + 1;
+    refreshGenerationRef.current = generation;
+
+    try {
+      setIsLoading(true);
+      setError(null);
+      const [nextSpaces, nextProjects, nextCredentials] = await Promise.all([
+        apiClient.listSpaces(),
+        apiClient.listProjects(),
+        apiClient.listCredentials(),
+      ]);
+
+      if (refreshGenerationRef.current !== generation) {
+        return;
+      }
+
+      setSpaces(nextSpaces);
+      setProjects(nextProjects);
+      setCredentials(nextCredentials);
+      setSelectedUserSpaceIdState((currentSelectedUserSpaceId) =>
+        resolveSelectedUserSpaceId(currentSelectedUserSpaceId, nextSpaces)
+      );
+      setSelectedCredentialRefState((currentCredentialRef) => {
+        if (
+          currentCredentialRef &&
+          nextCredentials.some((credential) => credential.credentialRef === currentCredentialRef)
+        ) {
+          return currentCredentialRef;
+        }
+
+        return nextCredentials[0]?.credentialRef ?? "";
+      });
+
+      const nextAvailableScopes = buildAvailableScopes(
+        user.id,
+        user.displayName,
+        nextProjects,
+      );
+
+      const nextScopeKey = resolveScopeKey(
+        requestedScopeKey ?? selectedScopeKey,
+        nextAvailableScopes,
+        user.id,
+      );
+      const nextScope = findScope(nextAvailableScopes, nextScopeKey);
+      setSelectedScopeKeyState(nextScopeKey);
+      persistSelectedScopeKey(nextScopeKey);
+
+      if (!nextScope) {
         setJobs([]);
+        setSelectedJobIdState(null);
         setEvents([]);
+        setAudits([]);
         return;
       }
 
       const nextJobs = sortJobs(
-        await apiClient.listJobs(nextSpaces[0].id),
+        await apiClient.listJobs(toListJobsInput(nextScope)),
       );
-      setJobs(nextJobs);
 
-      if (!nextJobs[0]) {
-        setEvents([]);
+      if (refreshGenerationRef.current !== generation) {
         return;
       }
 
-      setEvents(
-        await apiClient.listJobEvents(nextJobs[0].id),
-      );
+      setJobs(nextJobs);
+
+      const nextSelectedJobId = resolveSelectedJobId(nextJobs, selectedJobId);
+      setSelectedJobIdState(nextSelectedJobId);
+
+      if (!nextSelectedJobId) {
+        activityGenerationRef.current += 1;
+        setEvents([]);
+        setAudits([]);
+        return;
+      }
     } catch (presenterError) {
+      if (refreshGenerationRef.current !== generation) {
+        return;
+      }
+
+      setJobs([]);
+      setSelectedJobIdState(null);
+      setEvents([]);
+      setAudits([]);
       setError(
         presenterError instanceof Error
           ? presenterError.message
           : "Failed to load jobs.",
       );
+    } finally {
+      if (refreshGenerationRef.current === generation) {
+        setIsLoading(false);
+      }
     }
-  }, []);
+  }, [selectedJobId, selectedScopeKey, user?.displayName, user?.id]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    subscriptionRef.current?.close();
-
-    if (!actorSpaceId || !activeJob) {
+    if (!user?.id) {
       return;
     }
 
+    void refresh();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (selectedScope?.type !== "user") {
+      return;
+    }
+
+    setSelectedUserSpaceIdState((currentSelectedUserSpaceId) =>
+      resolveSelectedUserSpaceId(currentSelectedUserSpaceId, spaces)
+    );
+  }, [selectedScope?.type, spaces]);
+
+  useEffect(() => {
+    subscriptionRef.current?.close();
+    subscriptionRef.current = null;
+
+    if (!activeJobId) {
+      activityGenerationRef.current += 1;
+      setEvents([]);
+      setAudits([]);
+      return;
+    }
+
+    setEvents([]);
+    setAudits([]);
+    void loadJobActivity(activeJobId);
+
     subscriptionRef.current = apiClient.subscribeToJobEvents(
       {
-        jobId: activeJob.id,
+        jobId: activeJobId,
       },
       (event) => {
         setEvents((currentEvents) => {
@@ -101,9 +499,21 @@ export function useJobsPresenter(): JobsViewModel {
         });
         setJobs((currentJobs) =>
           currentJobs.map((job) =>
-            job.id === event.jobId ? { ...job, status: event.status } : job,
+            job.id !== event.jobId
+              ? job
+              : job.status === event.status
+                ? job
+                : { ...job, status: event.status },
           ),
         );
+
+        if (
+          event.status === "succeeded" ||
+          event.status === "failed" ||
+          event.status === "cancelled"
+        ) {
+          void loadJobActivity(event.jobId);
+        }
       },
       () => {
         setError("Live job stream disconnected. Refresh to recover.");
@@ -114,90 +524,158 @@ export function useJobsPresenter(): JobsViewModel {
       subscriptionRef.current?.close();
       subscriptionRef.current = null;
     };
-  }, [activeJob, actorSpaceId]);
+  }, [activeJobId, loadJobActivity]);
 
-  const runSampleJob = useCallback(async () => {
+  const setSelectedScopeKey = useCallback((nextScopeKey: string) => {
+    setSelectedScopeKeyState(nextScopeKey);
+    persistSelectedScopeKey(nextScopeKey);
+    setSelectedJobIdState(null);
+    setEvents([]);
+    setAudits([]);
+    void refresh(nextScopeKey);
+  }, [refresh]);
+
+  const setSelectedJobId = useCallback((jobId: string) => {
+    setSelectedJobIdState(jobId);
+  }, []);
+
+  const setSelectedCredentialRef = useCallback((credentialRef: string) => {
+    setSelectedCredentialRefState(credentialRef);
+  }, []);
+
+  const setSelectedUserSpaceId = useCallback((spaceId: string) => {
+    setSelectedUserSpaceIdState(spaceId);
+  }, []);
+
+  const runSelectedJob = useCallback(async () => {
+    if (!selectedScope) {
+      setError("No job scope is available for this session.");
+      return;
+    }
+
+    if (!selectedCredentialRef) {
+      setError("Configure a credential in Settings before running a job.");
+      return;
+    }
+
+    const compatibilitySpaceId = selectedScope.type === "project"
+      ? selectedScope.spaceId
+      : selectedUserSpaceId;
+    const runScopeKey = resolvedSelectedScopeKey;
+    const runGeneration = runGenerationRef.current + 1;
+    runGenerationRef.current = runGeneration;
+
+    if (!compatibilitySpaceId) {
+      setError(
+        "Personal jobs require a visible governance space before they can be created.",
+      );
+      return;
+    }
+
     try {
-      setIsRunningSample(true);
+      setIsRunningJob(true);
       setError(null);
 
-      let nextSpaces = await apiClient.listSpaces();
-      if (nextSpaces.length === 0) {
-        await apiClient.createSpace({
-          kind: "shared",
-          name: runtimeContext.defaultSharedSpaceName,
-        });
-        nextSpaces = await apiClient.listSpaces();
-      }
-
-      const nextActorSpaceId = nextSpaces[0]?.id;
-      if (!nextActorSpaceId) {
-        throw new Error("No space is available for the sample job.");
-      }
-
-      let nextCredentials = await apiClient.listCredentials();
-      if (nextCredentials.length === 0) {
-        await apiClient.createCredential({
-          provider: "openai",
-          rawSecret: "local-demo-credential-placeholder",
-        });
-        nextCredentials = await apiClient.listCredentials();
-      }
-
-      const credential = nextCredentials[0];
-      if (!credential) {
-        throw new Error("No credential is available for the sample job.");
-      }
-
       const createdJob = await apiClient.createJob({
-        credentialRef: credential.credentialRef,
+        credentialRef: selectedCredentialRef,
         kind: "ai.summary",
-        payload: { prompt: "Summarize the current shared research lane." },
-        spaceId: nextActorSpaceId,
+        payload: {
+          prompt: selectedScope.type === "project"
+            ? `Summarize the latest work for ${selectedScope.label}.`
+            : "Summarize the latest work in the current personal lane.",
+        },
+        scope: { id: selectedScope.id, type: selectedScope.type },
+        spaceId: compatibilitySpaceId,
       });
 
-      setSpaces(nextSpaces);
-      setCredentials(nextCredentials);
-      setJobs((currentJobs) => sortJobs([createdJob, ...currentJobs]));
+      if (runGenerationRef.current !== runGeneration) {
+        return;
+      }
+
+      if (selectedScopeKeyRef.current !== runScopeKey) {
+        return;
+      }
+
+      setJobs((currentJobs) =>
+        sortJobs([createdJob, ...currentJobs.filter((job) => job.id !== createdJob.id)])
+      );
+      setSelectedJobIdState(createdJob.id);
       setEvents([]);
+      setAudits([]);
 
       await apiClient.runJob(createdJob.id);
 
-      await refresh();
+      if (runGenerationRef.current !== runGeneration) {
+        return;
+      }
+
+      if (selectedScopeKeyRef.current !== runScopeKey) {
+        return;
+      }
+
+      await refresh(runScopeKey);
     } catch (presenterError) {
       setError(
         presenterError instanceof Error
           ? presenterError.message
-          : "Failed to run sample job.",
+          : "Failed to run job.",
       );
     } finally {
-      setIsRunningSample(false);
+      setIsRunningJob(false);
     }
-  }, [refresh]);
+  }, [refresh, resolvedSelectedScopeKey, selectedCredentialRef, selectedScope, selectedUserSpaceId]);
 
   return useMemo(
     () => ({
       activeJob,
-      actorSpaceId,
+      audits,
+      availableScopes,
+      canCreateJob,
       credentials,
       error,
       events,
-      isRunningSample,
+      isLoading,
+      isRunningJob,
       jobs,
+      projects,
       refresh,
-      runSampleJob,
+      runSelectedJob,
+      selectedCredentialRef,
+      selectedJobId: activeJob?.id ?? selectedJobId,
+      selectedScope,
+      selectedScopeKey: resolvedSelectedScopeKey,
+      selectedUserSpaceId,
+      setSelectedCredentialRef,
+      setSelectedJobId,
+      setSelectedScopeKey,
+      setSelectedUserSpaceId,
+      setupRequired,
       spaces,
     }),
     [
       activeJob,
-      actorSpaceId,
+      audits,
+      availableScopes,
+      canCreateJob,
       credentials,
       error,
       events,
-      isRunningSample,
+      isLoading,
+      isRunningJob,
       jobs,
+      projects,
       refresh,
-      runSampleJob,
+      resolvedSelectedScopeKey,
+      runSelectedJob,
+      selectedCredentialRef,
+      selectedJobId,
+      selectedScope,
+      selectedUserSpaceId,
+      setSelectedCredentialRef,
+      setSelectedJobId,
+      setSelectedScopeKey,
+      setSelectedUserSpaceId,
+      setupRequired,
       spaces,
     ],
   );

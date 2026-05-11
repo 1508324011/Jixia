@@ -50,6 +50,7 @@ import type {
   ProjectDocSnapshot,
 } from '../../src/shared/contracts/project-docs';
 import type {
+  JobAuditRecord,
   JobEventRecord,
   JobRecord,
   JobStatus,
@@ -276,7 +277,7 @@ describe('core contracts', () => {
     >();
   });
 
-  it('exports job payloads for status queries and events', () => {
+  it('exports job payloads for status queries, events, and audits', () => {
     expect(jobs).toBeTruthy();
 
     const statusQuery: JobStatusQuery = { jobId: 'job_001' };
@@ -299,10 +300,22 @@ describe('core contracts', () => {
       message: 'Summarization started',
       recordedAt: '2026-03-21T00:00:00.000Z',
     };
+    const audit: JobAuditRecord = {
+      action: 'job.created',
+      actorUserId: 'user_001',
+      detail: 'Created reading_summary with credential cred_001.',
+      id: 'audit_001',
+      jobId: 'job_001',
+      recordedAt: '2026-03-21T00:00:00.000Z',
+      spaceId: 'space_001',
+    };
 
     expect(statusQuery.jobId).toBe('job_001');
     expect(job.status).toBe('running');
     expect(event.message).toContain('started');
+    expect(audit.action).toBe('job.created');
+    expect(audit.actorUserId).toBe('user_001');
+    expect(jobs.jobsContract).toBe('jixia-jobs-contract');
 
     expectTypeOf<JobStatus>().toEqualTypeOf<
       'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'

@@ -53,6 +53,7 @@ describe("http server phase 2 api", () => {
             credentialRef: credential.credentialRef,
             kind: "ai.summary",
             payload: { prompt: "Phase 2 over HTTP." },
+            scope: { id: 'user-alice', type: 'user' },
             spaceId: createdSpace.id,
           }),
           headers: withSessionCookie(aliceCookie, {
@@ -64,9 +65,12 @@ describe("http server phase 2 api", () => {
         );
         expect(createdJob.status).toBe("queued");
 
-        const jobs = await fetch(`${server.url}/api/jobs?spaceId=${createdSpace.id}`, {
+        const jobs = await fetch(
+          `${server.url}/api/jobs?scopeType=user&scopeId=user-alice&spaceId=${createdSpace.id}`,
+          {
           headers: withSessionCookie(aliceCookie),
-        }).then((response) => response.json() as Promise<Array<{ id: string }>>);
+          },
+        ).then((response) => response.json() as Promise<Array<{ id: string }>>);
         expect(jobs.map((job) => job.id)).toContain(createdJob.id);
 
         const completedJob = await fetch(`${server.url}/api/jobs/${createdJob.id}/run`, {

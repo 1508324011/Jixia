@@ -80,6 +80,16 @@ export interface JobEventRecord {
   recordedAt: string;
 }
 
+export interface JobAuditRecord {
+  action: string;
+  actorUserId: string;
+  detail: string;
+  id: string;
+  jobId?: string;
+  recordedAt: string;
+  spaceId: string;
+}
+
 export interface RunJobRequest extends JobAccessQuery {
   jobId: string;
 }
