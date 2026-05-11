@@ -324,12 +324,6 @@ export async function findAuthorizedJob(
       );
     }
 
-    if (operation === 'run' && input.actorUserId !== job.requestedByUserId) {
-      throw new Error(
-        'Access denied for the requested project job mutation.',
-      );
-    }
-
     return job;
   }
 

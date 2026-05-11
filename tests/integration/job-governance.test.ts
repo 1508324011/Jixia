@@ -520,7 +520,12 @@ describe('job governance', () => {
       );
       await app.projects.addProjectMember(
         project.project.id,
-        { role: 'viewer', userId: 'user-bob' },
+        { role: 'editor', userId: 'user-bob' },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        project.project.id,
+        { role: 'viewer', userId: 'user-dora' },
         'user-alice',
       );
       await spaceRepository.addMembership(sharedSpace.id, {
@@ -591,6 +596,13 @@ describe('job governance', () => {
         app.jobs.runJob({
           actorSpaceId: sharedSpace.id,
           actorUserId: 'user-bob',
+          jobId: projectJob.id,
+        }),
+      ).rejects.toThrow(/credentials may only be used by their owner/i);
+      await expect(
+        app.jobs.runJob({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-dora',
           jobId: projectJob.id,
         }),
       ).rejects.toThrow(/mutation/i);
