@@ -14,6 +14,7 @@ describe('prisma schema', () => {
     expect(schema).toContain('model PaperAsset');
     expect(schema).toContain('model LibraryEntry');
     expect(schema).toContain('model Note');
+    expect(schema).toContain('model ProjectReadingComment');
     expect(schema).toContain('model ReadingState');
     expect(schema).toContain('model Conversation');
     expect(schema).toContain('model NotebookDocument');
@@ -44,6 +45,11 @@ describe('prisma schema', () => {
       /model Membership[\s\S]*@@unique\(\[spaceId, userId\]\)/,
     );
     expect(schema).toMatch(/model Note[\s\S]*\n\s+libraryEntryId\s+String/);
+    expect(schema).toMatch(/model Note[\s\S]*@@index\(\[libraryEntryId, authorUserId\]\)/);
+    expect(schema).toMatch(/model ProjectReadingComment[\s\S]*\n\s+projectId\s+String/);
+    expect(schema).toMatch(
+      /model ProjectReadingComment[\s\S]*@@index\(\[libraryEntryId, projectId\]\)/,
+    );
     expect(schema).toMatch(
       /model Conversation[\s\S]*\n\s+libraryEntryId\s+String/,
     );
@@ -115,6 +121,7 @@ describe('prisma schema', () => {
     expect(existsSync('src/db/repositories/project-doc.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/job.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/credentials.repository.ts')).toBe(true);
+    expect(existsSync('src/db/repositories/reading.repository.ts')).toBe(true);
     expect(
       existsSync(
         'prisma/migrations/20260504000000_scoped_library_entries/migration.sql',
@@ -140,11 +147,18 @@ describe('prisma schema', () => {
         'prisma/migrations/20260510000000_job_scoperef_authority_cutover/migration.sql',
       ),
     ).toBe(true);
+    expect(
+      existsSync(
+        'prisma/migrations/20260511000000_reading_project_comments/migration.sql',
+      ),
+    ).toBe(true);
     expect(clientEntrypoint).toContain('PrismaClient');
     expect(clientEntrypoint).toContain('createPrismaClient');
     expect(dbIndex).toContain('createProjectRepository');
     expect(dbIndex).toContain('createSpaceRepository');
     expect(dbIndex).toContain('createLibraryRepository');
+    expect(dbIndex).toContain('createReadingRepository');
+    expect(dbIndex).toContain('PersistedProjectReadingCommentRecord');
     expect(dbIndex).toContain('createNotebookRepository');
     expect(dbIndex).toContain('createProjectDocRepository');
     expect(dbIndex).toContain('createJobRepository');
@@ -303,7 +317,8 @@ describe('prisma schema', () => {
     expect(libraryService).not.toContain('store.spaces.find');
 
     expect(readingService).toContain('libraryService.assertCanAccessEntry');
-    expect(readingService).toContain('readingRepository.listNotesForEntry');
+    expect(readingService).toContain('readingRepository.listPrivateNotesForEntry');
+    expect(readingService).toContain('readingRepository.listProjectCommentsForEntry');
     expect(readingService).toContain('readingRepository.saveGeneratedInsight');
     expect(readingService).not.toContain('actorUserId ?? input.authorUserId');
     expect(readingService).not.toContain('actorUserId ?? input.startedByUserId');
@@ -464,6 +479,53 @@ describe('prisma schema', () => {
     expect(libraryContract).not.toContain('storageKey?: string');
     expect(httpServer).toContain('const libraryEntryFileMatch = pathname.match');
     expect(httpServer).toContain('^\\/api\\/library\\/([^/]+)\\/file$');
+  });
+
+  it('keeps reading comments on explicit project authority instead of visibility-based sharing', () => {
+    const readingRepository = readFileSync(
+      'src/db/repositories/reading.repository.ts',
+      'utf8',
+    );
+    const readingService = readFileSync('src/server/services/reading.service.ts', 'utf8');
+    const httpClient = readFileSync('src/web/lib/http-client.ts', 'utf8');
+    const readerPresenter = readFileSync('src/web/presenters/reader-presenter.ts', 'utf8');
+    const readerPage = readFileSync('src/web/pages/reader-page.tsx', 'utf8');
+    const migration = readFileSync(
+      'prisma/migrations/20260511000000_reading_project_comments/migration.sql',
+      'utf8',
+    );
+    const repositoryRuntimeListBlock = readingRepository.slice(
+      readingRepository.indexOf('async listPrivateNotesForEntry'),
+      readingRepository.indexOf('async saveGeneratedInsight'),
+    );
+    const serviceDetailBlock = readingService.slice(
+      readingService.indexOf('const notes = await'),
+      readingService.indexOf('const insights = await'),
+    );
+
+    expect(readingRepository).toContain('ProjectReadingComment');
+    expect(readingRepository).toContain('createPrivateNote');
+    expect(readingRepository).toContain('createProjectComment');
+    expect(readingRepository).toContain('listPrivateNotesForEntry');
+    expect(readingRepository).toContain('listProjectCommentsForEntry');
+    expect(repositoryRuntimeListBlock).not.toContain('space_shared');
+    expect(repositoryRuntimeListBlock).not.toContain('visibility');
+
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "ProjectReadingComment"');
+    expect(migration).toContain('WHERE "Note"."visibility" = \'space_shared\'');
+    expect(migration).toContain('AND "LibraryEntry"."scopeType" = \'project\'');
+
+    expect(serviceDetailBlock).toContain('listPrivateNotesForEntry');
+    expect(serviceDetailBlock).toContain('listProjectCommentsForEntry');
+    expect(serviceDetailBlock).toContain('view.entry.scope.id');
+    expect(readingService).toContain('Project comments require a project-scoped library entry.');
+    expect(readingService).toContain('Project comments must use the project-comments endpoint instead of note visibility.');
+    expect(readingService).not.toContain('includeSharedNotes');
+
+    expect(httpClient).toContain('createProjectReadingComment');
+    expect(httpClient).not.toContain('visibility: "space_shared"');
+    expect(readerPresenter).not.toContain('NoteVisibility');
+    expect(readerPage).not.toContain('note.visibility');
   });
 
   it('keeps credentials and settings ownership on the server-derived actor boundary', () => {

@@ -59,7 +59,7 @@ Personal-facing routes are workbench shorthand over server-side ownership and sc
 - `GET /api/discovery/today` and `GET /api/discovery/search?query=...` serve the discovery slice.
 - `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings through Prisma-backed per-user workbench settings and encrypted provider credential secret rows without exposing raw API keys in responses or stored settings records.
 - `GET /api/library/personal` and `POST /api/library/personal/import` keep personal import ownership on the server.
-- `GET /api/reading/:entryId`, `POST /api/reading/:entryId/notes`, and `POST /api/reading/:entryId/insights` back the paper workspace.
+- `GET /api/reading/:entryId`, `POST /api/reading/notes`, `POST /api/reading/:entryId/project-comments`, and `POST /api/reading/:entryId/insights` back the paper workspace; private notes and project comments are separate server-authorized paths.
 - `GET /api/projects/:projectId/writing-document` lets the project workspace reopen the latest visible shared Writer draft, or truthfully report that the project has no shared draft yet.
 - `GET /api/project-docs/:documentId` returns the latest Project Doc snapshot; when a document exists but has not been saved yet, the server returns an empty snapshot with `versionNumber: 0` instead of browser-authored fallback content.
 - `GET /api/writing/:spaceId/projects/:projectId/document` and `POST /api/writing/:spaceId/projects/:projectId/document` remain compatibility-only workbench endpoints for preserved legacy deep links; Project Docs remain the authoritative project writing runtime.

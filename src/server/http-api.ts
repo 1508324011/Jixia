@@ -6,10 +6,10 @@ import type {
 import type { EvidenceSpanRecord } from '@shared/contracts/evidence';
 import type { LibraryListResponse } from '@shared/contracts/library';
 import type {
-  NoteVisibility,
   ReadingDetailView,
   ReadingInsightResponse,
   ReadingNoteResponse,
+  ReadingProjectCommentResponse,
 } from '@shared/contracts/reading';
 import type {
   DefaultImportTarget,
@@ -49,7 +49,14 @@ interface CreateReadingNoteRequestBody {
   actorSpaceId?: string;
   authorUserId?: string;
   body?: string;
-  visibility?: NoteVisibility;
+  visibility?: 'private' | 'space_shared';
+}
+
+interface CreateProjectReadingCommentRequestBody {
+  actorSpaceId?: string;
+  authorUserId?: string;
+  body?: string;
+  projectId?: string;
 }
 
 interface SaveReadingInsightRequestBody {
@@ -80,10 +87,6 @@ function isImportSourceType(
   value: unknown,
 ): value is ImportToPersonalLibraryRequestBody['sourceType'] {
   return value === 'doi' || value === 'pmid' || value === 'arxiv';
-}
-
-function isNoteVisibility(value: unknown): value is NoteVisibility {
-  return value === 'private' || value === 'space_shared';
 }
 
 function decodePathSegment(segment: string): string {
@@ -164,9 +167,10 @@ function parseImportToPersonalLibraryRequest(
 
 function parseCreateReadingNoteRequest(
   requestBody: unknown,
-): Required<Pick<CreateReadingNoteRequestBody, 'body' | 'visibility'>> & {
+): Required<Pick<CreateReadingNoteRequestBody, 'body'>> & {
   actorSpaceId?: string;
   authorUserId?: string;
+  visibility?: 'private';
 } {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Reading note payload must be a JSON object.');
@@ -189,8 +193,13 @@ function parseCreateReadingNoteRequest(
     throw new Error('body is required.');
   }
 
-  if (!isNoteVisibility(visibility)) {
-    throw new Error('visibility is required.');
+  if (
+    typeof visibility !== 'undefined' &&
+    visibility !== 'private'
+  ) {
+    throw new Error(
+      'Project comments must use the project-comments endpoint instead of note visibility.',
+    );
   }
 
   return {
@@ -198,6 +207,46 @@ function parseCreateReadingNoteRequest(
     authorUserId,
     body: body.trim(),
     visibility,
+  };
+}
+
+function parseCreateProjectReadingCommentRequest(
+  requestBody: unknown,
+): Required<Pick<CreateProjectReadingCommentRequestBody, 'body'>> & {
+  actorSpaceId?: string;
+  authorUserId?: string;
+  projectId?: string;
+} {
+  if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
+    throw new Error('Reading project comment payload must be a JSON object.');
+  }
+
+  const { actorSpaceId, authorUserId, body, projectId } = requestBody as Record<
+    string,
+    unknown
+  >;
+
+  if (typeof actorSpaceId !== 'undefined' && typeof actorSpaceId !== 'string') {
+    throw new Error('actorSpaceId must be a string when provided.');
+  }
+
+  if (typeof authorUserId !== 'undefined' && typeof authorUserId !== 'string') {
+    throw new Error('authorUserId must be a string when provided.');
+  }
+
+  if (typeof projectId !== 'undefined' && typeof projectId !== 'string') {
+    throw new Error('projectId must be a string when provided.');
+  }
+
+  if (typeof body !== 'string' || !body.trim()) {
+    throw new Error('body is required.');
+  }
+
+  return {
+    actorSpaceId,
+    authorUserId,
+    body: body.trim(),
+    projectId,
   };
 }
 
@@ -392,6 +441,12 @@ function toReadingInsightResponse(
   return { insight };
 }
 
+function toReadingProjectCommentResponse(
+  comment: Awaited<ReturnType<JixiaApp['reading']['createWorkbenchProjectComment']>>,
+): ReadingProjectCommentResponse {
+  return { comment };
+}
+
 
 export async function resolveHttpApi(
   app: JixiaApp,
@@ -546,6 +601,30 @@ export async function resolveHttpApi(
           body: payload.body,
           libraryEntryId: decodePathSegment(readingNoteMatch[1]),
           visibility: payload.visibility,
+        }),
+      ),
+      statusCode: 201,
+    };
+  }
+
+  const readingProjectCommentMatch = pathname.match(
+    /^\/api\/reading\/([^/]+)\/project-comments$/,
+  );
+
+  if (readingProjectCommentMatch && method === 'POST') {
+    const requiredActor = requireActor(actor);
+    const payload = parseCreateProjectReadingCommentRequest(requestBody);
+    assertNoActorImpersonation(requiredActor, payload.authorUserId);
+
+    return {
+      payload: toReadingProjectCommentResponse(
+        await app.reading.createProjectComment({
+          actorSpaceId: payload.actorSpaceId,
+          actorUserId: requiredActor.userId,
+          authorUserId: payload.authorUserId,
+          body: payload.body,
+          libraryEntryId: decodePathSegment(readingProjectCommentMatch[1]),
+          projectId: payload.projectId,
         }),
       ),
       statusCode: 201,

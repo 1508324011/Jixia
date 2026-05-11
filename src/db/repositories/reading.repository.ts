@@ -4,6 +4,7 @@ import {
   type GeneratedInsightEvidenceSpan,
   type Note,
   type Prisma,
+  type ProjectReadingComment,
   type ReadingState,
 } from '@prisma/client';
 
@@ -17,8 +18,20 @@ export interface PersistedNoteRecord {
   body: string;
   createdAt: string;
   id: string;
+  kind: 'private_note';
   libraryEntryId: string;
+  /** @deprecated Compatibility mirror only; never use for authority. */
   visibility: PersistedNoteVisibility;
+}
+
+export interface PersistedProjectReadingCommentRecord {
+  authorUserId: string;
+  body: string;
+  createdAt: string;
+  id: string;
+  kind: 'project_comment';
+  libraryEntryId: string;
+  projectId: string;
 }
 
 export interface PersistedConversationRecord {
@@ -60,7 +73,17 @@ export interface CreatePersistedNoteParams {
   createdAt?: string;
   id?: string;
   libraryEntryId: string;
+  /** @deprecated Compatibility mirror only. New writes default to private. */
   visibility: PersistedNoteVisibility;
+}
+
+export interface CreatePersistedProjectReadingCommentParams {
+  authorUserId: string;
+  body: string;
+  createdAt?: string;
+  id?: string;
+  libraryEntryId: string;
+  projectId: string;
 }
 
 export interface CreatePersistedConversationParams {
@@ -96,8 +119,12 @@ export interface TouchReadingStateParams {
 
 export interface ListEntryNotesQuery {
   actorUserId: string;
-  includeSharedNotes: boolean;
   libraryEntryId: string;
+}
+
+export interface ListProjectCommentsQuery {
+  libraryEntryId: string;
+  projectId: string;
 }
 
 export interface ReadingRepository {
@@ -105,6 +132,10 @@ export interface ReadingRepository {
     input: CreatePersistedConversationParams,
   ): Promise<PersistedConversationRecord>;
   createNote(input: CreatePersistedNoteParams): Promise<PersistedNoteRecord>;
+  createPrivateNote(input: Omit<CreatePersistedNoteParams, 'visibility'>): Promise<PersistedNoteRecord>;
+  createProjectComment(
+    input: CreatePersistedProjectReadingCommentParams,
+  ): Promise<PersistedProjectReadingCommentRecord>;
   getReadingState(
     libraryEntryId: string,
     userId: string,
@@ -113,6 +144,10 @@ export interface ReadingRepository {
     libraryEntryId: string,
   ): Promise<PersistedGeneratedInsightRecord[]>;
   listNotesForEntry(input: ListEntryNotesQuery): Promise<PersistedNoteRecord[]>;
+  listPrivateNotesForEntry(input: ListEntryNotesQuery): Promise<PersistedNoteRecord[]>;
+  listProjectCommentsForEntry(
+    input: ListProjectCommentsQuery,
+  ): Promise<PersistedProjectReadingCommentRecord[]>;
   saveGeneratedInsight(
     input: SavePersistedGeneratedInsightParams,
   ): Promise<PersistedGeneratedInsightRecord>;
@@ -148,8 +183,23 @@ function mapNote(note: Note): PersistedNoteRecord {
     body: note.body,
     createdAt: toIsoString(note.createdAt),
     id: note.id,
+    kind: 'private_note',
     libraryEntryId: note.libraryEntryId,
     visibility: note.visibility,
+  };
+}
+
+function mapProjectComment(
+  comment: ProjectReadingComment,
+): PersistedProjectReadingCommentRecord {
+  return {
+    authorUserId: comment.authorUserId,
+    body: comment.body,
+    createdAt: toIsoString(comment.createdAt),
+    id: comment.id,
+    kind: 'project_comment',
+    libraryEntryId: comment.libraryEntryId,
+    projectId: comment.projectId,
   };
 }
 
@@ -232,6 +282,9 @@ async function initializeReadingPersistenceTables(
     CREATE INDEX IF NOT EXISTS "Note_libraryEntryId_createdAt_idx" ON "Note"("libraryEntryId", "createdAt")
   `);
   await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "Note_libraryEntryId_authorUserId_idx" ON "Note"("libraryEntryId", "authorUserId")
+  `);
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "ReadingState" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "libraryEntryId" TEXT NOT NULL,
@@ -301,6 +354,49 @@ async function initializeReadingPersistenceTables(
   `);
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "GeneratedInsightEvidenceSpan_paperAssetId_idx" ON "GeneratedInsightEvidenceSpan"("paperAssetId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ProjectReadingComment" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "libraryEntryId" TEXT NOT NULL,
+      "projectId" TEXT NOT NULL,
+      "authorUserId" TEXT NOT NULL,
+      "body" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ProjectReadingComment_libraryEntryId_fkey" FOREIGN KEY ("libraryEntryId") REFERENCES "LibraryEntry" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "ProjectReadingComment_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "ProjectReadingComment_authorUserId_fkey" FOREIGN KEY ("authorUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProjectReadingComment_libraryEntryId_projectId_idx" ON "ProjectReadingComment"("libraryEntryId", "projectId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProjectReadingComment_projectId_createdAt_idx" ON "ProjectReadingComment"("projectId", "createdAt")
+  `);
+  await prisma.$executeRawUnsafe(`
+    INSERT OR IGNORE INTO "ProjectReadingComment" (
+      "id",
+      "libraryEntryId",
+      "projectId",
+      "authorUserId",
+      "body",
+      "createdAt",
+      "updatedAt"
+    )
+    SELECT
+      'project-comment-' || "Note"."id",
+      "Note"."libraryEntryId",
+      "LibraryEntry"."scopeId",
+      "Note"."authorUserId",
+      "Note"."body",
+      "Note"."createdAt",
+      "Note"."updatedAt"
+    FROM "Note"
+    JOIN "LibraryEntry" ON "LibraryEntry"."id" = "Note"."libraryEntryId"
+    WHERE "Note"."visibility" = 'space_shared'
+      AND "LibraryEntry"."scopeType" = 'project'
   `);
 }
 
@@ -392,6 +488,43 @@ export function createReadingRepository(
 
       return mapNote(note);
     },
+    async createPrivateNote(
+      input: Omit<CreatePersistedNoteParams, 'visibility'>,
+    ): Promise<PersistedNoteRecord> {
+      return this.createNote({
+        ...input,
+        visibility: 'private',
+      });
+    },
+    async createProjectComment(
+      input: CreatePersistedProjectReadingCommentParams,
+    ): Promise<PersistedProjectReadingCommentRecord> {
+      await ensureInitialized();
+      await ensureUser(prisma, input.authorUserId);
+
+      if (input.id) {
+        const existingComment = await prisma.projectReadingComment.findUnique({
+          where: { id: input.id },
+        });
+
+        if (existingComment) {
+          return mapProjectComment(existingComment);
+        }
+      }
+
+      const comment = await prisma.projectReadingComment.create({
+        data: {
+          authorUserId: input.authorUserId,
+          body: input.body,
+          createdAt: optionalDate(input.createdAt),
+          id: input.id,
+          libraryEntryId: input.libraryEntryId,
+          projectId: input.projectId,
+        },
+      });
+
+      return mapProjectComment(comment);
+    },
     async getReadingState(
       libraryEntryId: string,
       userId: string,
@@ -425,25 +558,35 @@ export function createReadingRepository(
       );
     },
     async listNotesForEntry(input: ListEntryNotesQuery): Promise<PersistedNoteRecord[]> {
+      return this.listPrivateNotesForEntry(input);
+    },
+    async listPrivateNotesForEntry(input: ListEntryNotesQuery): Promise<PersistedNoteRecord[]> {
       await ensureInitialized();
 
       const notes = await prisma.note.findMany({
         orderBy: { createdAt: 'asc' },
-        where: input.includeSharedNotes
-          ? {
-              libraryEntryId: input.libraryEntryId,
-              OR: [
-                { authorUserId: input.actorUserId },
-                { visibility: 'space_shared' },
-              ],
-            }
-          : {
-              authorUserId: input.actorUserId,
-              libraryEntryId: input.libraryEntryId,
-            },
+        where: {
+          authorUserId: input.actorUserId,
+          libraryEntryId: input.libraryEntryId,
+        },
       });
 
       return notes.map(mapNote);
+    },
+    async listProjectCommentsForEntry(
+      input: ListProjectCommentsQuery,
+    ): Promise<PersistedProjectReadingCommentRecord[]> {
+      await ensureInitialized();
+
+      const comments = await prisma.projectReadingComment.findMany({
+        orderBy: { createdAt: 'asc' },
+        where: {
+          libraryEntryId: input.libraryEntryId,
+          projectId: input.projectId,
+        },
+      });
+
+      return comments.map(mapProjectComment);
     },
     async saveGeneratedInsight(
       input: SavePersistedGeneratedInsightParams,

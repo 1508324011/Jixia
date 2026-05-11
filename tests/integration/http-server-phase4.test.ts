@@ -65,15 +65,33 @@ describe("http server phase 4 reader slice", () => {
               asset: { canonicalId: string };
               insights: unknown[];
               notes: unknown[];
+              projectComments: unknown[];
             }>,
         );
         expect(detail.asset.canonicalId).toBe("doi:10.1000/reading-demo");
         expect(detail.notes).toHaveLength(0);
+        expect(detail.projectComments).toHaveLength(0);
         expect(detail.insights).toHaveLength(0);
 
         const note = await fetch(`${server.url}/api/reading/notes`, {
           body: JSON.stringify({
-            body: "This paper matters for the shared review.",
+            body: "Private reader note for the shared review.",
+            libraryEntryId: importedRecord.entry.id,
+            visibility: "private",
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            "Content-Type": "application/json",
+          }),
+          method: "POST",
+        }).then(
+          (response) => response.json() as Promise<{ authorUserId: string; kind: string }>,
+        );
+        expect(note.kind).toBe("private_note");
+        expect(note.authorUserId).toBe("user-alice");
+
+        const rejectedSharedVisibility = await fetch(`${server.url}/api/reading/notes`, {
+          body: JSON.stringify({
+            body: "Rejected visibility-switched comment.",
             libraryEntryId: importedRecord.entry.id,
             visibility: "space_shared",
           }),
@@ -81,10 +99,26 @@ describe("http server phase 4 reader slice", () => {
             "Content-Type": "application/json",
           }),
           method: "POST",
-        }).then(
-          (response) => response.json() as Promise<{ id: string; visibility: string }>,
+        });
+        expect(rejectedSharedVisibility.status).toBe(400);
+
+        const comment = await fetch(
+          `${server.url}/api/reading/${importedRecord.entry.id}/project-comments`,
+          {
+            body: JSON.stringify({
+              body: "Project-visible evidence comment.",
+              projectId: project.project.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              "Content-Type": "application/json",
+            }),
+            method: "POST",
+          },
+        ).then(
+          (response) => response.json() as Promise<{ comment: { kind: string; projectId: string } }>,
         );
-        expect(note.visibility).toBe("space_shared");
+        expect(comment.comment.kind).toBe("project_comment");
+        expect(comment.comment.projectId).toBe(project.project.id);
 
         const insight = await fetch(`${server.url}/api/reading/insights`, {
           body: JSON.stringify({
@@ -109,9 +143,11 @@ describe("http server phase 4 reader slice", () => {
             response.json() as Promise<{
               insights: unknown[];
               notes: unknown[];
+              projectComments: unknown[];
             }>,
         );
         expect(updatedDetail.notes).toHaveLength(1);
+        expect(updatedDetail.projectComments).toHaveLength(1);
         expect(updatedDetail.insights).toHaveLength(1);
       } finally {
         await server.close();

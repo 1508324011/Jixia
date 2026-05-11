@@ -63,6 +63,7 @@ model User {
   memberships         Membership[]
   importedAssets      PaperAsset[]         @relation("PaperAssetImportedBy")
   notes               Note[]
+  projectReadingComments ProjectReadingComment[]
   readingStates       ReadingState[]
   conversations       Conversation[]
   generatedInsights   GeneratedInsight[]
@@ -119,6 +120,7 @@ model Project {
   createdBy       User            @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   members         ProjectMember[]
   projectDocs     ProjectDoc[]
+  readingComments ProjectReadingComment[]
 }
 
 model ProjectMember {
@@ -178,6 +180,7 @@ model LibraryEntry {
   paperAsset     PaperAsset             @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
   addedBy        User                   @relation("LibraryEntryAddedBy", fields: [addedByUserId], references: [id], onDelete: Restrict)
   notes          Note[]
+  projectReadingComments ProjectReadingComment[]
   conversations  Conversation[]
   generatedInsights GeneratedInsight[]
   readingStates  ReadingState[]
@@ -195,6 +198,24 @@ model Note {
   updatedAt      DateTime       @updatedAt
   libraryEntry   LibraryEntry    @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
   author         User            @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([libraryEntryId, authorUserId])
+}
+
+model ProjectReadingComment {
+  id             String       @id @default(cuid())
+  libraryEntryId String
+  projectId      String
+  authorUserId   String
+  body           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  libraryEntry   LibraryEntry @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author         User         @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([libraryEntryId, projectId])
+  @@index([projectId, createdAt])
 }
 
 model ReadingState {

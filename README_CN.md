@@ -59,7 +59,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 - `GET /api/discovery/today` 与 `GET /api/discovery/search?query=...` 提供当前 discovery 切片。
 - `GET /api/settings/me` 与 `POST /api/settings/me` 会通过 Prisma-backed per-user workbench settings 与加密后的 provider credential secret 行持久化浏览器可见的 settings 状态，同时不把原始 API key 暴露到响应体或 settings 记录中。
 - `GET /api/library/personal` 与 `POST /api/library/personal/import` 由服务端托管个人导入归属。
-- `GET /api/reading/:entryId`、`POST /api/reading/:entryId/notes`、`POST /api/reading/:entryId/insights` 支撑 paper workspace。
+- `GET /api/reading/:entryId`、`POST /api/reading/notes`、`POST /api/reading/:entryId/project-comments`、`POST /api/reading/:entryId/insights` 支撑 paper workspace；私人笔记与项目评论走分离的 server-authorized 写入路径。
 - `GET /api/projects/:projectId/writing/document` 与 `POST /api/projects/:projectId/writing/document` 是 project-first workbench 主流程下的 canonical 浏览器 Writer 端点。
 - `GET /api/writing/:spaceId/projects/:projectId/document` 与 `POST /api/writing/:spaceId/projects/:projectId/document` 只保留为 legacy deep link 的兼容 workbench 端点；Project Docs 仍然是项目写作的权威运行时。
 

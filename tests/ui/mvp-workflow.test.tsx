@@ -164,6 +164,7 @@ function installFetchMock() {
         ...importedEntryFixture,
         insights: readingInsights,
         notes: [],
+        projectComments: [],
       });
     }
 

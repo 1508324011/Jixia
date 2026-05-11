@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
-import type { ConversationRecord, NoteRecord } from '@shared/contracts/reading';
+import type {
+  ConversationRecord,
+  NoteRecord,
+} from '@shared/contracts/reading';
 import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import {
@@ -475,6 +478,7 @@ function clearLegacyCredentialState(
 }
 
 async function bootstrapLegacyReadingState(
+  libraryRepository: LibraryRepository,
   readingRepository: ReturnType<typeof createReadingRepository>,
   state: Pick<
     JixiaAppState,
@@ -496,13 +500,28 @@ async function bootstrapLegacyReadingState(
   }
 
   for (const note of state.legacyNotes) {
-    await readingRepository.createNote({
+    if (note.visibility === 'space_shared') {
+      const libraryEntry = await libraryRepository.getLibraryEntry(note.libraryEntryId);
+
+      if (libraryEntry?.entry.scope.type === 'project') {
+        await readingRepository.createProjectComment({
+          authorUserId: note.authorUserId,
+          body: note.body,
+          createdAt: note.createdAt,
+          id: `project-comment-${note.id}`,
+          libraryEntryId: note.libraryEntryId,
+          projectId: libraryEntry.entry.scope.id,
+        });
+        continue;
+      }
+    }
+
+    await readingRepository.createPrivateNote({
       authorUserId: note.authorUserId,
       body: note.body,
       createdAt: note.createdAt,
       id: note.id,
       libraryEntryId: note.libraryEntryId,
-      visibility: note.visibility,
     });
   }
 
@@ -876,7 +895,11 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       await libraryRepository.bootstrapLegacyLibrary({ assets: [], entries: [] });
       await initializeReadingPersistence(prismaClient);
 
-      const bootstrapped = await bootstrapLegacyReadingState(readingRepository, state);
+      const bootstrapped = await bootstrapLegacyReadingState(
+        libraryRepository,
+        readingRepository,
+        state,
+      );
 
       if (bootstrapped && clearLegacyReadingState(state)) {
         persist();
@@ -910,6 +933,16 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
 
         return readingRepository.createNote(input);
       },
+      async createPrivateNote(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.createPrivateNote(input);
+      },
+      async createProjectComment(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.createProjectComment(input);
+      },
       async getReadingState(libraryEntryId, userId) {
         await ensureReadingBootstrap();
 
@@ -924,6 +957,16 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
         await ensureReadingBootstrap();
 
         return readingRepository.listNotesForEntry(input);
+      },
+      async listPrivateNotesForEntry(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.listPrivateNotesForEntry(input);
+      },
+      async listProjectCommentsForEntry(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.listProjectCommentsForEntry(input);
       },
       async saveGeneratedInsight(input) {
         await ensureReadingBootstrap();

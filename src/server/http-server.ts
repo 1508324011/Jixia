@@ -217,6 +217,7 @@ function isWorkbenchHttpApiPath(pathname: string): boolean {
     pathname === "/api/library/personal/import" ||
     pathname === "/api/settings/me" ||
     /^\/api\/reading\/[^/]+\/notes$/.test(pathname) ||
+    /^\/api\/reading\/[^/]+\/project-comments$/.test(pathname) ||
     /^\/api\/reading\/[^/]+\/insights$/.test(pathname) ||
     /^\/api\/writing\/[^/]+\/projects\/[^/]+\/document$/.test(pathname)
   );
@@ -238,10 +239,18 @@ async function handleWorkbenchHttpApiRequest(
       allowLegacyTestOverride: false,
       sessionRoutes: app.session,
     };
-    const actor = requestUrl.pathname === "/api/discovery/today" ||
-        requestUrl.pathname === "/api/discovery/search"
+    const isDiscoveryPath = requestUrl.pathname === "/api/discovery/today" ||
+      requestUrl.pathname === "/api/discovery/search";
+    const actor = isDiscoveryPath
       ? await getOptionalActor(request, actorOptions)
       : await getActor(request, actorOptions);
+
+    if (!isDiscoveryPath && actor) {
+      assertNoActorImpersonation(
+        actor,
+        optionalQueryParam(requestUrl, "actorUserId"),
+      );
+    }
     const requestBody = method === "GET" || method === "HEAD"
       ? undefined
       : await readJsonBody<unknown>(request);
@@ -902,10 +911,15 @@ async function handleApiRequest(
         authorUserId?: string;
         body: string;
         libraryEntryId: string;
-        visibility: "private" | "space_shared";
+        visibility?: "private" | "space_shared";
       }>(request);
 
       assertNoActorImpersonation(actor, body.authorUserId);
+      if (body.visibility && body.visibility !== "private") {
+        throw new Error(
+          "Project comments must use the project-comments endpoint instead of note visibility.",
+        );
+      }
 
       sendJson(
         response,
@@ -918,6 +932,69 @@ async function handleApiRequest(
           libraryEntryId: body.libraryEntryId,
           visibility: body.visibility,
         }),
+        method,
+      );
+      return true;
+    }
+
+    if (pathname === "/api/reading/project-comments" && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      const body = await readJsonBody<{
+        actorSpaceId?: string;
+        authorUserId?: string;
+        body: string;
+        libraryEntryId: string;
+        projectId?: string;
+      }>(request);
+
+      assertNoActorImpersonation(actor, body.authorUserId);
+
+      sendJson(
+        response,
+        200,
+        {
+          comment: await app.reading.createProjectComment({
+            actorSpaceId: body.actorSpaceId,
+            actorUserId: actor.userId,
+            authorUserId: body.authorUserId,
+            body: body.body,
+            libraryEntryId: body.libraryEntryId,
+            projectId: body.projectId,
+          }),
+        },
+        method,
+      );
+      return true;
+    }
+
+    const readingProjectCommentMatch = pathname.match(
+      /^\/api\/reading\/([^/]+)\/project-comments$/,
+    );
+    if (readingProjectCommentMatch && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      const [, entryId] = readingProjectCommentMatch;
+      const body = await readJsonBody<{
+        actorSpaceId?: string;
+        authorUserId?: string;
+        body: string;
+        projectId?: string;
+      }>(request);
+
+      assertNoActorImpersonation(actor, body.authorUserId);
+
+      sendJson(
+        response,
+        201,
+        {
+          comment: await app.reading.createProjectComment({
+            actorSpaceId: body.actorSpaceId,
+            actorUserId: actor.userId,
+            authorUserId: body.authorUserId,
+            body: body.body,
+            libraryEntryId: entryId,
+            projectId: body.projectId,
+          }),
+        },
         method,
       );
       return true;

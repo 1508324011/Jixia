@@ -80,6 +80,21 @@ async function importPaper(
   return { ...imported, projectId: project.project.id };
 }
 
+async function importPersonalPaper(serverUrl: string, cookie: string) {
+  const response = await fetch(`${serverUrl}/api/library/personal/import`, {
+    body: JSON.stringify({
+      sourceLocator: '10.1000/personal-actor-boundary',
+      sourceType: 'doi',
+    }),
+    headers: withSessionCookie(cookie, {
+      'Content-Type': 'application/json',
+    }),
+    method: 'POST',
+  });
+
+  return (await response.json()) as { entry: { id: string } };
+}
+
 async function createNotebook(serverUrl: string, cookie: string, actorUserId: string) {
   const response = await fetch(`${serverUrl}/api/notebooks`, {
     body: JSON.stringify({ title: `${actorUserId} notebook` }),
@@ -150,6 +165,11 @@ describe('http server actor boundary cleanup', () => {
           fetch(`${server.url}/api/notebooks/notebook-1`),
           fetch(`${server.url}/api/project-docs/project-doc-1`),
           fetch(`${server.url}/api/reading/entry-1`),
+          fetch(`${server.url}/api/reading/project-comments`, {
+            body: JSON.stringify({ body: 'Unauthenticated project comment', libraryEntryId: 'entry-1' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/jobs`),
           fetch(`${server.url}/api/jobs/job-1/stream`),
         ]);
@@ -325,6 +345,7 @@ describe('http server actor boundary cleanup', () => {
           'user-alice',
           createdSpace.id,
         );
+        const personalImportedRecord = await importPersonalPaper(server.url, aliceCookie);
         const credential = await createCredential(server.url, aliceCookie, 'user-alice');
         const job = await createJob(
           server.url,
@@ -414,6 +435,18 @@ describe('http server actor boundary cleanup', () => {
             }),
             method: 'POST',
           }),
+          fetch(`${server.url}/api/reading/project-comments`, {
+            body: JSON.stringify({
+              authorUserId: 'user-bob',
+              body: 'Spoofed project comment',
+              libraryEntryId: importedRecord.entry.id,
+              projectId: importedRecord.projectId,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/reading/insights`, {
             body: JSON.stringify({
               evidenceSpans: [],
@@ -466,6 +499,45 @@ describe('http server actor boundary cleanup', () => {
         ]);
 
         for (const response of mismatchResponses) {
+          expect(response.status).toBe(400);
+        }
+
+        const invalidProjectCommentResponses = await Promise.all([
+          fetch(`${server.url}/api/reading/notes`, {
+            body: JSON.stringify({
+              body: 'Visibility must not create a project comment.',
+              libraryEntryId: importedRecord.entry.id,
+              visibility: 'space_shared',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/project-comments`, {
+            body: JSON.stringify({
+              body: 'Project mismatch comment.',
+              libraryEntryId: importedRecord.entry.id,
+              projectId: 'project-mismatch',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/project-comments`, {
+            body: JSON.stringify({
+              body: 'Personal entry comment.',
+              libraryEntryId: personalImportedRecord.entry.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+        ]);
+
+        for (const response of invalidProjectCommentResponses) {
           expect(response.status).toBe(400);
         }
 

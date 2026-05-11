@@ -4,8 +4,8 @@ import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type { LibraryEntryView } from "@shared/contracts/library";
 import type { ProjectListItem } from "@shared/contracts/projects";
 import type {
-  NoteRecord,
-  NoteVisibility,
+  PrivateReadingNoteRecord,
+  ProjectReadingCommentRecord,
   ReadingDetail,
 } from "@shared/contracts/reading";
 
@@ -19,11 +19,13 @@ export interface ReaderViewModel {
   insights: GeneratedInsightRecord[];
   isLoading: boolean;
   isMutating: boolean;
-  notes: NoteRecord[];
+  notes: PrivateReadingNoteRecord[];
+  projectComments: ProjectReadingCommentRecord[];
   project: ProjectListItem | null;
+  saveProjectComment(body: string): Promise<void>;
   refresh(): Promise<void>;
   saveGeneratedInsight(summary?: string, title?: string): Promise<void>;
-  saveNote(body: string, visibility: NoteVisibility): Promise<void>;
+  saveNote(body: string): Promise<void>;
 }
 
 export function useReaderPresenter(
@@ -80,7 +82,7 @@ export function useReaderPresenter(
   }, [refresh]);
 
   const saveNote = useCallback(
-    async (body: string, visibility: NoteVisibility) => {
+    async (body: string) => {
       if (!projectContext.project || !detail) {
         setError("No visible project is available for note storage.");
         return;
@@ -92,7 +94,6 @@ export function useReaderPresenter(
         await apiClient.createReadingNote({
           body,
           libraryEntryId: entryId,
-          visibility,
         });
         await refresh();
       } catch (presenterError) {
@@ -100,6 +101,35 @@ export function useReaderPresenter(
           presenterError instanceof Error
             ? presenterError.message
             : "Failed to save note.",
+        );
+      } finally {
+        setIsMutating(false);
+      }
+    },
+    [detail, entryId, projectContext.project, refresh],
+  );
+
+  const saveProjectComment = useCallback(
+    async (body: string) => {
+      if (!projectContext.project || !detail) {
+        setError("No visible project is available for project comment storage.");
+        return;
+      }
+
+      try {
+        setIsMutating(true);
+        setError(null);
+        await apiClient.createProjectReadingComment({
+          body,
+          libraryEntryId: entryId,
+          projectId: projectContext.project.project.id,
+        });
+        await refresh();
+      } catch (presenterError) {
+        setError(
+          presenterError instanceof Error
+            ? presenterError.message
+            : "Failed to save project comment.",
         );
       } finally {
         setIsMutating(false);
@@ -155,10 +185,12 @@ export function useReaderPresenter(
       isLoading: isLoading || projectContext.isLoading,
       isMutating,
       notes: detail?.notes ?? [],
+      projectComments: detail?.projectComments ?? [],
       project: projectContext.project,
       refresh,
       saveGeneratedInsight,
       saveNote,
+      saveProjectComment,
     }),
     [
       detail,
@@ -169,6 +201,7 @@ export function useReaderPresenter(
       refresh,
       saveGeneratedInsight,
       saveNote,
+      saveProjectComment,
     ],
   );
 }

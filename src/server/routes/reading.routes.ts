@@ -1,16 +1,25 @@
 import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
-import type { NoteRecord, ReadingDetail } from "@shared/contracts/reading";
+import type {
+  PrivateReadingNoteRecord,
+  ProjectReadingCommentRecord,
+  ReadingDetail,
+} from "@shared/contracts/reading";
 
 import type {
   CreateNoteRequest,
+  CreateProjectCommentRequest,
   GetReadingDetailRequest,
   ReadingService,
   SaveGeneratedInsightRequest,
 } from "../services/reading.service";
 
 export interface ReadingRoutes {
-  createNote(input: CreateNoteRequest): Promise<NoteRecord>;
+  createNote(input: CreateNoteRequest): Promise<PrivateReadingNoteRecord>;
+  createProjectComment(
+    input: CreateProjectCommentRequest,
+  ): Promise<ProjectReadingCommentRecord>;
   createWorkbenchNote: ReadingService["createWorkbenchNote"];
+  createWorkbenchProjectComment: ReadingService["createWorkbenchProjectComment"];
   getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
   getWorkbenchDetail: ReadingService["getWorkbenchDetail"];
   saveGeneratedInsight(
@@ -21,11 +30,19 @@ export interface ReadingRoutes {
 
 export function createReadingRoutes(service: ReadingService): ReadingRoutes {
   return {
-    createNote(input: CreateNoteRequest): Promise<NoteRecord> {
+    createNote(input: CreateNoteRequest): Promise<PrivateReadingNoteRecord> {
       return service.createNote(input);
+    },
+    createProjectComment(
+      input: CreateProjectCommentRequest,
+    ): Promise<ProjectReadingCommentRecord> {
+      return service.createProjectComment(input);
     },
     createWorkbenchNote(input) {
       return service.createWorkbenchNote(input);
+    },
+    createWorkbenchProjectComment(input) {
+      return service.createWorkbenchProjectComment(input);
     },
     getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null> {
       return service.getDetail(input);

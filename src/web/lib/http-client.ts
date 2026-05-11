@@ -26,9 +26,9 @@ import type {
   ProjectDocSnapshot,
 } from "@shared/contracts/project-docs";
 import type {
-  CreateReadingNoteRequest,
   GetReadingDetailQuery,
-  NoteRecord,
+  PrivateReadingNoteRecord,
+  ProjectReadingCommentRecord,
   ReadingDetail,
   SaveReadingInsightRequest,
 } from "@shared/contracts/reading";
@@ -60,10 +60,15 @@ type ListJobsInput = {
   spaceId?: string;
 };
 type CreateProjectDocPayload = Omit<CreateProjectDocRequest, "createdByUserId">;
-type CreateReadingNotePayload = Omit<
-  CreateReadingNoteRequest,
-  "actorSpaceId" | "authorUserId"
->;
+type CreateReadingNotePayload = {
+  body: string;
+  libraryEntryId: string;
+};
+type CreateProjectReadingCommentPayload = {
+  body: string;
+  libraryEntryId: string;
+  projectId?: string;
+};
 type ImportPaperPayload = Omit<ImportLibraryEntryRequest, "requestedByUserId">;
 type ReadingDetailRequest = Omit<GetReadingDetailQuery, "actorUserId" | "actorSpaceId">;
 type SaveReadingInsightPayload = Omit<
@@ -261,11 +266,25 @@ export const apiClient = {
   },
   createReadingNote(
     input: CreateReadingNotePayload,
-  ): Promise<NoteRecord> {
-    return requestJson("/api/reading/notes", {
+  ): Promise<PrivateReadingNoteRecord> {
+    return requestJson<PrivateReadingNoteRecord>("/api/reading/notes", {
       body: JSON.stringify(input),
       method: "POST",
     });
+  },
+  createProjectReadingComment(
+    input: CreateProjectReadingCommentPayload,
+  ): Promise<ProjectReadingCommentRecord> {
+    return requestJson<{ comment: ProjectReadingCommentRecord }>(
+      `/api/reading/${input.libraryEntryId}/project-comments`,
+      {
+        body: JSON.stringify({
+          body: input.body,
+          projectId: input.projectId,
+        }),
+        method: "POST",
+      },
+    ).then((response) => response.comment);
   },
   createSpace(
     input: CreateSpaceRequest,

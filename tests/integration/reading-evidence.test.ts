@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
-import { createPrismaClient, createSpaceRepository } from '../../src/db';
+import {
+  createPrismaClient,
+  createProjectRepository,
+  createSpaceRepository,
+} from '../../src/db';
 import type { PubmedConnector } from '../../src/server/connectors/pubmed.connector';
 import { createJixiaApp } from '../../src/server/app';
 
@@ -74,26 +78,27 @@ describe('reading evidence', () => {
       expect(detail?.asset.canonicalId).toBe('doi:10.1000/reading-demo');
 
       await expect(
-        app.reading.createNote({
+        app.reading.createProjectComment({
           actorUserId: 'user-bob',
           actorSpaceId: bobPersonal.id,
           authorUserId: 'user-bob',
           body: 'This should not be visible here.',
           libraryEntryId: imported.entry.id,
-          visibility: 'space_shared',
+          projectId: project.project.id,
         }),
       ).rejects.toThrow(/access denied/i);
 
-      const note = await app.reading.createNote({
+      const comment = await app.reading.createProjectComment({
         actorUserId: 'user-alice',
         actorSpaceId: aliceShared.id,
         authorUserId: 'user-alice',
         body: 'This paper matters for the shared review.',
         libraryEntryId: imported.entry.id,
-        visibility: 'space_shared',
+        projectId: project.project.id,
       });
 
-      expect(note.libraryEntryId).toBe(imported.entry.id);
+      expect(comment.libraryEntryId).toBe(imported.entry.id);
+      expect(comment.projectId).toBe(project.project.id);
 
       const insight = await app.reading.saveGeneratedInsight({
         actorUserId: 'user-alice',
@@ -118,7 +123,8 @@ describe('reading evidence', () => {
         actorUserId: 'user-alice',
         libraryEntryId: imported.entry.id,
       });
-      expect(updatedDetail?.notes).toHaveLength(1);
+      expect(updatedDetail?.notes).toHaveLength(0);
+      expect(updatedDetail?.projectComments).toHaveLength(1);
       expect(updatedDetail?.insights).toHaveLength(1);
       expect(updatedDetail?.insights[0].summary).toContain('shared review');
     } finally {
@@ -133,8 +139,9 @@ describe('reading evidence', () => {
       JIXIA_DATABASE_URL: databaseUrl,
       JIXIA_STORAGE_ROOT: storageRoot,
     };
-    const prisma = createPrismaClient({ url: databaseUrl });
-    const repository = createSpaceRepository(prisma);
+      const prisma = createPrismaClient({ url: databaseUrl });
+      const repository = createSpaceRepository(prisma);
+      createProjectRepository(prisma);
 
     try {
       const persistedSpace = await repository.createSpace(
@@ -176,10 +183,10 @@ describe('reading evidence', () => {
         actorUserId: 'user-alice',
         body: 'Repository-backed access works.',
         libraryEntryId: imported.entry.id,
-        visibility: 'space_shared',
       });
 
       expect(note.authorUserId).toBe('user-alice');
+      expect(note.kind).toBe('private_note');
 
       await expect(
         app.reading.getDetail({
@@ -208,11 +215,22 @@ describe('reading evidence', () => {
         },
         env,
       });
-      const imported = await app.imports.importToPersonalLibrary(
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Workbench Reopen Space' },
+        'user-alice',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Workbench Reopen Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      const imported = await app.imports.importPaper(
         {
+          scope: { id: project.project.id, type: 'project' },
           requestedByUserId: 'user-alice',
           sourceLocator: '654321',
           sourceType: 'pmid',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
         },
         'user-alice',
       );
@@ -223,11 +241,12 @@ describe('reading evidence', () => {
         libraryEntryId: imported.entry.id,
         visibility: 'private',
       });
-      await app.reading.createWorkbenchNote({
+      await app.reading.createWorkbenchProjectComment({
+        actorSpaceId: sharedSpace.id,
         authorUserId: 'user-alice',
         body: 'Project-visible comment for the tumor board.',
         libraryEntryId: imported.entry.id,
-        visibility: 'space_shared',
+        projectId: project.project.id,
       });
       await app.reading.saveWorkbenchGeneratedInsight({
         evidenceSpans: [
@@ -258,11 +277,16 @@ describe('reading evidence', () => {
         expect.arrayContaining([
           expect.objectContaining({
             body: 'Private note for later synthesis.',
-            visibility: 'private',
+            kind: 'private_note',
           }),
+        ]),
+      );
+      expect(reopenedDetail?.projectComments).toEqual(
+        expect.arrayContaining([
           expect.objectContaining({
             body: 'Project-visible comment for the tumor board.',
-            visibility: 'space_shared',
+            kind: 'project_comment',
+            projectId: project.project.id,
           }),
         ]),
       );
@@ -384,6 +408,121 @@ describe('reading evidence', () => {
       expect(scrubbedState.conversations ?? []).toEqual([]);
       expect(scrubbedState.insights ?? []).toEqual([]);
       expect(scrubbedState.notes ?? []).toEqual([]);
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('keeps private notes owner-only while sharing project comments with project members', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-reading-authority-split-'));
+    const env = {
+      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-reading-authority-split.db')}`,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+
+    try {
+      const app = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env,
+      });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Authority Split Space' },
+        'user-alice',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Authority Split Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+
+      await app.projects.addProjectMember(
+        project.project.id,
+        { role: 'viewer', userId: 'user-bob' },
+        'user-alice',
+      );
+      const imported = await app.imports.importPaper(
+        {
+          scope: { id: project.project.id, type: 'project' },
+          requestedByUserId: 'user-alice',
+          sourceLocator: '10.1000/authority-split',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+      const personal = await app.imports.importToPersonalLibrary(
+        {
+          requestedByUserId: 'user-alice',
+          sourceLocator: '10.1000/personal-comment-denied',
+          sourceType: 'doi',
+        },
+        'user-alice',
+      );
+
+      await app.reading.createNote({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        body: 'Alice private note on project entry.',
+        libraryEntryId: imported.entry.id,
+      });
+      await app.reading.createProjectComment({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        body: 'Project comment visible to members.',
+        libraryEntryId: imported.entry.id,
+        projectId: project.project.id,
+      });
+
+      const aliceDetail = await app.reading.getDetail({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        libraryEntryId: imported.entry.id,
+      });
+      const bobDetail = await app.reading.getDetail({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-bob',
+        libraryEntryId: imported.entry.id,
+      });
+
+      expect(aliceDetail?.notes.map((note) => note.body)).toContain(
+        'Alice private note on project entry.',
+      );
+      expect(aliceDetail?.projectComments.map((comment) => comment.body)).toContain(
+        'Project comment visible to members.',
+      );
+      expect(bobDetail?.notes.map((note) => note.body)).not.toContain(
+        'Alice private note on project entry.',
+      );
+      expect(bobDetail?.projectComments.map((comment) => comment.body)).toContain(
+        'Project comment visible to members.',
+      );
+
+      await expect(
+        app.reading.createProjectComment({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          body: 'Wrong project assertion.',
+          libraryEntryId: imported.entry.id,
+          projectId: 'project-wrong',
+        }),
+      ).rejects.toThrow(/project context/i);
+      await expect(
+        app.reading.createProjectComment({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          body: 'No project comment on personal entries.',
+          libraryEntryId: personal.entry.id,
+        }),
+      ).rejects.toThrow(/project-scoped library entry/i);
+      await expect(
+        app.reading.getDetail({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-charlie',
+          libraryEntryId: imported.entry.id,
+        }),
+      ).rejects.toThrow(/access denied/i);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
