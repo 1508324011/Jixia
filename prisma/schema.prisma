@@ -366,23 +366,26 @@ model WorkbenchSettings {
 }
 
 model Job {
-  id                String        @id @default(cuid())
-  spaceId           String
-  requestedByUserId String
-  credentialRef     String
-  kind              String
-  status            JobStatus
-  payload           String
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  space             Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  requestedBy       User          @relation("JobRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Cascade)
+  id                 String             @id @default(cuid())
+  spaceId            String
+  scopeType          String
+  scopeId            String
+  requestedByUserId  String
+  credentialRef      String
+  kind               String
+  status             JobStatus
+  payload            String
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  space              Space              @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  requestedBy        User               @relation("JobRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Cascade)
   providerCredential ProviderCredential @relation(fields: [credentialRef], references: [id], onDelete: Restrict)
-  events            JobEvent[]
-  auditLogs         AuditLog[]
+  events             JobEvent[]
+  auditLogs          AuditLog[]
 
   @@index([spaceId, requestedByUserId])
   @@index([requestedByUserId])
+  @@index([scopeType, scopeId])
 }
 
 model JobEvent {

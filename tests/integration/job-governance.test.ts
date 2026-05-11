@@ -424,8 +424,137 @@ describe('job governance', () => {
         ),
       ).rejects.toThrow(/credentials may only be used by their owner/i);
 
-      expect(await jobRepository.listJobsForActor({ actorUserId: 'user-alice' })).toEqual([]);
-      expect(await jobRepository.listJobsForActor({ actorUserId: 'user-bob' })).toEqual([]);
+      expect(await jobRepository.listJobsForScope({ scope: { id: 'user-alice', type: 'user' } })).toEqual([]);
+      expect(await jobRepository.listJobsForScope({ scope: { id: 'user-bob', type: 'user' } })).toEqual([]);
+    } finally {
+      await prisma.$disconnect();
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+
+  it('authorizes project-scoped jobs through project membership while keeping compatibility space checks fail-closed', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-job-project-scope-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-job-project-scope.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    const prisma = createPrismaClient({ url: databaseUrl });
+    const spaceRepository = createSpaceRepository(prisma);
+
+    try {
+      const app = createJixiaApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Project Scoped Jobs' },
+        'user-alice',
+      );
+      const bobPersonal = await app.spaces.createSpace(
+        { kind: 'personal', name: 'Bob Personal Scope' },
+        'user-bob',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Project Job Surface', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        project.project.id,
+        { role: 'viewer', userId: 'user-bob' },
+        'user-alice',
+      );
+      await spaceRepository.addMembership(sharedSpace.id, {
+        role: 'viewer',
+        userId: 'user-charlie',
+      });
+      const credential = await app.credentials.createCredential(
+        {
+          provider: 'openai',
+          rawSecret: 'project-scope-job-credential',
+          userId: 'user-alice',
+        },
+        'user-alice',
+      );
+
+      const projectJob = await app.jobs.createJob(
+        {
+          credentialRef: credential.credentialRef,
+          kind: 'ai.summary',
+          payload: { prompt: 'Project scoped execution context.' },
+          scope: { id: project.project.id, type: 'project' },
+          spaceId: sharedSpace.id,
+        },
+        'user-alice',
+      );
+
+      expect(projectJob).toMatchObject({
+        scope: { id: project.project.id, type: 'project' },
+        scopeId: project.project.id,
+        scopeType: 'project',
+        spaceId: sharedSpace.id,
+      });
+
+      const bobVisibleJobs = await app.jobs.listJobs({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-bob',
+        scope: { id: project.project.id, type: 'project' },
+        spaceId: sharedSpace.id,
+      });
+      expect(bobVisibleJobs.map((job) => job.id)).toContain(projectJob.id);
+
+      await expect(
+        app.jobs.getJob({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-bob',
+          jobId: projectJob.id,
+        }),
+      ).resolves.toMatchObject({
+        id: projectJob.id,
+        scope: { id: project.project.id, type: 'project' },
+      });
+      await expect(
+        app.jobs.listAuditRecords({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-bob',
+          jobId: projectJob.id,
+        }),
+      ).resolves.toHaveLength(1);
+      await expect(
+        app.jobStream.listEvents({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-bob',
+          jobId: projectJob.id,
+        }),
+      ).resolves.toHaveLength(1);
+
+      await expect(
+        app.jobs.runJob({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-bob',
+          jobId: projectJob.id,
+        }),
+      ).rejects.toThrow(/mutation/i);
+      await expect(
+        app.jobs.getJob({
+          actorSpaceId: bobPersonal.id,
+          actorUserId: 'user-bob',
+          jobId: projectJob.id,
+        }),
+      ).rejects.toThrow(/space context/i);
+      await expect(
+        app.jobs.listJobs({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-bob',
+          scope: { id: project.project.id, type: 'project' },
+          spaceId: bobPersonal.id,
+        }),
+      ).rejects.toThrow(/space context/i);
+      await expect(
+        app.jobs.getJob({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-charlie',
+          jobId: projectJob.id,
+        }),
+      ).rejects.toThrow(/access denied/i);
     } finally {
       await prisma.$disconnect();
       rmSync(storageRoot, { force: true, recursive: true });

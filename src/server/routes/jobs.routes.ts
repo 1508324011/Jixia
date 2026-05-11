@@ -1,39 +1,29 @@
-import type { JobRepository, PersistedJobRecord, SpaceRepository } from "../../db";
+import type {
+  CreateJobRequest,
+  JobRecord,
+  ListJobsQuery,
+} from '@shared/contracts/jobs';
 
-import type { JobRecord } from "@shared/contracts/jobs";
+import type {
+  JobRepository,
+  PersistedJobRecord,
+  ProjectRepository,
+  SpaceRepository,
+} from '../../db';
 
 import {
   assertSafeJobPayload,
   findAuthorizedJob,
+  resolveAuthorizedCreateJobScopeContext,
+  resolveAuthorizedListJobScopeContext,
   type JobAccessRequest,
-} from "../jobs/job-governance";
-import type { JobRunner } from "../jobs/job-runner";
-import type { JobBus } from "../jobs/job-bus";
-import type { AuditLogRecord, AuditService } from "../services/audit.service";
+} from '../jobs/job-governance';
+import type { JobBus } from '../jobs/job-bus';
+import type { JobRunner } from '../jobs/job-runner';
+import type { AuditLogRecord, AuditService } from '../services/audit.service';
 
-export interface CreateJobRequest {
-  credentialRef: string;
-  kind: string;
-  payload: Record<string, unknown>;
-  requestedByUserId?: string;
-  spaceId: string;
-}
-
-export interface ListJobsRequest {
-  actorSpaceId?: string;
+export interface ListJobsRequest extends ListJobsQuery {
   actorUserId: string;
-  spaceId?: string;
-}
-
-function assertSpaceContext(
-  resourceSpaceId: string | undefined,
-  actorSpaceId: string | undefined,
-): void {
-  if (actorSpaceId && actorSpaceId !== resourceSpaceId) {
-    throw new Error(
-      'Request space context does not match the requested resource space.',
-    );
-  }
 }
 
 export interface JobsRoutes {
@@ -50,6 +40,7 @@ export interface JobsRouteStore {
   jobRepository: JobRepository;
   jobRunner: JobRunner;
   nextId(prefix: string): string;
+  projectRepository: ProjectRepository;
   spaceRepository: SpaceRepository;
 }
 
@@ -59,6 +50,10 @@ function toJobRecord(job: PersistedJobRecord): JobRecord {
     credentialRef: job.credentialRef,
     id: job.id,
     kind: job.kind,
+    scope: job.scope,
+    scopeId: job.scope.id,
+    scopeType: job.scope.type,
+    spaceId: job.spaceId,
     status: job.status,
   };
 }
@@ -71,17 +66,15 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
     ): Promise<JobRecord> {
       if (input.requestedByUserId && input.requestedByUserId !== actorUserId) {
         throw new Error(
-          "Request body actor does not match the server-derived actor.",
+          'Request body actor does not match the server-derived actor.',
         );
       }
 
-      const space = await store.spaceRepository.findSpace(input.spaceId);
-
-      if (!space) {
-        throw new Error(`Space ${input.spaceId} does not exist.`);
-      }
-
-      await store.spaceRepository.denyNonMember(input.spaceId, actorUserId);
+      const scopeContext = await resolveAuthorizedCreateJobScopeContext(store, {
+        actorUserId,
+        scope: input.scope,
+        spaceId: input.spaceId,
+      });
 
       const credential = await store.jobRepository.getProviderCredentialReference(
         input.credentialRef,
@@ -92,18 +85,18 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
       }
 
       if (credential.userId !== actorUserId) {
-        throw new Error("Credentials may only be used by their owner.");
+        throw new Error('Credentials may only be used by their owner.');
       }
 
       assertSafeJobPayload(input.payload);
 
-      const jobId = store.nextId("job");
-      const queuedEventId = store.nextId("job-event");
-      const createdAuditId = store.nextId("audit");
+      const jobId = store.nextId('job');
+      const queuedEventId = store.nextId('job-event');
+      const createdAuditId = store.nextId('audit');
 
       const persisted = await store.jobRepository.createQueuedJobWithAudit({
         audit: {
-          action: "job.created",
+          action: 'job.created',
           actorUserId,
           detail: `Created ${input.kind} with credential ${credential.credentialRef}.`,
           id: createdAuditId,
@@ -113,7 +106,7 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
           id: queuedEventId,
           message: `${input.kind} queued for execution.`,
           recordedAt: new Date().toISOString(),
-          status: "queued",
+          status: 'queued',
         },
         job: {
           credentialRef: input.credentialRef,
@@ -121,7 +114,8 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
           kind: input.kind,
           payload: JSON.stringify(input.payload),
           requestedByUserId: actorUserId,
-          spaceId: input.spaceId,
+          scope: scopeContext.scope,
+          spaceId: scopeContext.spaceId,
         },
       });
       store.jobBus.publish(persisted.event);
@@ -134,33 +128,11 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
       return toJobRecord(job);
     },
     async listJobs(input: ListJobsRequest): Promise<JobRecord[]> {
-      const targetSpaceId = input.spaceId;
-
-      assertSpaceContext(input.spaceId, input.actorSpaceId);
-
-      if (targetSpaceId) {
-        await store.spaceRepository.denyNonMember(targetSpaceId, input.actorUserId);
-      }
-
-      const jobs = await store.jobRepository.listJobsForActor({
-        actorUserId: input.actorUserId,
-        spaceId: targetSpaceId,
+      const listingContext = await resolveAuthorizedListJobScopeContext(store, input);
+      const jobs = await store.jobRepository.listJobsForScope({
+        scope: listingContext.scope,
+        spaceId: listingContext.spaceIdFilter,
       });
-
-      if (!targetSpaceId) {
-        const allowedJobs: PersistedJobRecord[] = [];
-
-        for (const job of jobs) {
-          try {
-            await store.spaceRepository.denyNonMember(job.spaceId, input.actorUserId);
-            allowedJobs.push(job);
-          } catch {
-            // Ignore spaces where the actor has no persisted membership.
-          }
-        }
-
-        return allowedJobs.map(toJobRecord);
-      }
 
       return jobs.map(toJobRecord);
     },
@@ -170,9 +142,9 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
       return store.auditService.listByJob(job.id);
     },
     async runJob(input: JobAccessRequest): Promise<JobRecord> {
-      const job = await findAuthorizedJob(store, input);
+      const job = await findAuthorizedJob(store, input, 'run');
 
-      return store.jobRunner.run(job.id);
+      return store.jobRunner.run({ actorUserId: input.actorUserId, jobId: job.id });
     },
   };
 }

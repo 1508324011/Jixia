@@ -288,28 +288,28 @@ describe('server governance hardening', () => {
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).rejects.toThrow(/space context/i);
+      ).rejects.toThrow(/access denied/i);
       await expect(
         app.jobs.listAuditRecords({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).rejects.toThrow(/space context/i);
+      ).rejects.toThrow(/access denied/i);
       await expect(
         app.jobStream.listEvents({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).rejects.toThrow(/space context/i);
+      ).rejects.toThrow(/access denied/i);
       await expect(
         app.jobStream.toSse({
           actorSpaceId: bobPersonal.id,
           actorUserId: 'user-bob',
           jobId: job.id,
         }),
-      ).rejects.toThrow(/space context/i);
+      ).rejects.toThrow(/access denied/i);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }

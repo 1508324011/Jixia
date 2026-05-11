@@ -5,6 +5,11 @@ import type { JobRepository } from '../../db';
 import type { JobBus } from './job-bus';
 import type { AuditService } from '../services/audit.service';
 
+export interface RunJobRequest {
+  actorUserId: string;
+  jobId: string;
+}
+
 export interface JobRunnerStore {
   auditService: AuditService;
   jobBus: JobBus;
@@ -13,16 +18,16 @@ export interface JobRunnerStore {
 }
 
 export interface JobRunner {
-  run(jobId: string): Promise<JobRecord>;
+  run(input: RunJobRequest): Promise<JobRecord>;
 }
 
 export function createJobRunner(store: JobRunnerStore): JobRunner {
   return {
-    async run(jobId: string): Promise<JobRecord> {
-      const job = await store.jobRepository.getJob({ jobId });
+    async run(input: RunJobRequest): Promise<JobRecord> {
+      const job = await store.jobRepository.getJob({ jobId: input.jobId });
 
       if (!job) {
-        throw new Error(`Job ${jobId} does not exist.`);
+        throw new Error(`Job ${input.jobId} does not exist.`);
       }
 
       const credential = await store.jobRepository.getProviderCredentialReference(
@@ -31,6 +36,10 @@ export function createJobRunner(store: JobRunnerStore): JobRunner {
 
       if (!credential) {
         throw new Error(`Credential ${job.credentialRef} does not exist.`);
+      }
+
+      if (credential.userId !== input.actorUserId) {
+        throw new Error('Credentials may only be used by their owner.');
       }
 
       const runningEventId = store.nextId('job-event');
@@ -61,7 +70,7 @@ export function createJobRunner(store: JobRunnerStore): JobRunner {
       store.jobBus.publish(completedEvent);
       await store.auditService.createRecord({
         action: 'job.completed',
-        actorUserId: job.requestedByUserId,
+        actorUserId: input.actorUserId,
         detail: `Completed ${job.kind} with credential ${job.credentialRef}.`,
         id: completedAuditId,
         jobId: job.id,
@@ -73,6 +82,10 @@ export function createJobRunner(store: JobRunnerStore): JobRunner {
         credentialRef: job.credentialRef,
         id: job.id,
         kind: job.kind,
+        scope: job.scope,
+        scopeId: job.scope.id,
+        scopeType: job.scope.type,
+        spaceId: job.spaceId,
         status: completedJob.status,
       };
     },
