@@ -92,6 +92,9 @@ describe('prisma schema', () => {
     expect(schema).toMatch(
       /model Job[\s\S]*@@index\(\[spaceId, requestedByUserId\]\)/,
     );
+    expect(schema).toMatch(
+      /model Job[\s\S]*@@index\(\[scopeType, scopeId\]\)/,
+    );
     expect(schema).toMatch(/model JobEvent[\s\S]*@@index\(\[jobId\]\)/);
     expect(schema).toMatch(/model AuditLog[\s\S]*@@index\(\[jobId\]\)/);
   });
@@ -130,6 +133,11 @@ describe('prisma schema', () => {
     expect(
       existsSync(
         'prisma/migrations/20260509000000_credentials_workbench_settings_authority/migration.sql',
+      ),
+    ).toBe(true);
+    expect(
+      existsSync(
+        'prisma/migrations/20260510000000_job_scoperef_authority_cutover/migration.sql',
       ),
     ).toBe(true);
     expect(clientEntrypoint).toContain('PrismaClient');
@@ -313,9 +321,9 @@ describe('prisma schema', () => {
     expect(projectDocsService).not.toContain('SpaceMembership');
     expect(projectDocsService).not.toContain('store.projectMembers.some');
 
-    expect(jobsRoutes).toContain('spaceRepository.denyNonMember');
+    expect(jobsRoutes).toContain('resolveAuthorizedCreateJobScopeContext');
     expect(jobsRoutes).toContain('jobRepository.createQueuedJobWithAudit');
-    expect(jobsRoutes).toContain('jobRepository.listJobsForActor');
+    expect(jobsRoutes).toContain('jobRepository.listJobsForScope');
     expect(jobsRoutes).not.toContain('actorUserId ?? input.requestedByUserId');
     expect(jobsRoutes).not.toContain('store.memberships.some');
     expect(jobsRoutes).not.toContain('store.spaces.find');
@@ -332,7 +340,8 @@ describe('prisma schema', () => {
 
     expect(jobStreamRoutes).toContain('await findAuthorizedJob');
     expect(jobStreamRoutes).toContain('jobRepository.listJobEvents');
-    expect(jobGovernance).toContain('spaceRepository.denyNonMember');
+    expect(jobGovernance).toContain('projectRepository.getProjectMember');
+    expect(jobGovernance).toContain("job.scope.type === 'project'");
     expect(jobGovernance).toContain('jobRepository.getJob');
     expect(jobGovernance).not.toContain('store.memberships.some');
     expect(jobGovernance).not.toContain('store.spaces.find');
@@ -352,6 +361,9 @@ describe('prisma schema', () => {
     const auditService = readFileSync('src/server/services/audit.service.ts', 'utf8');
 
     expect(jobRepository).toContain('createQueuedJobWithAudit');
+    expect(jobRepository).toContain('scopeType');
+    expect(jobRepository).toContain('scopeId');
+    expect(jobRepository).toContain('listJobsForScope');
     expect(jobRepository).toContain('providerCredential.findUnique');
     expect(jobRepository).toContain('providerCredential.create');
     expect(jobRepository).toContain('providerCredential.update');

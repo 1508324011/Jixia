@@ -641,10 +641,10 @@ function createCredentialAuthorityBootstrappedJobRepository(
 
       return repository.listJobEvents(jobId);
     },
-    async listJobsForActor(query) {
+    async listJobsForScope(query) {
       await ensureBootstrapped();
 
-      return repository.listJobsForActor(query);
+      return repository.listJobsForScope(query);
     },
     async updateJobStatus(jobId, status) {
       await ensureBootstrapped();
@@ -968,6 +968,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     jobRepository,
     jobRunner,
     nextId: persistedNextId,
+    projectRepository,
     spaceRepository,
   });
   let closePromise: Promise<void> | null = null;
@@ -984,6 +985,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     jobStream: createJobStreamRoutes({
       jobBus,
       jobRepository,
+      projectRepository,
       spaceRepository,
     }),
     library: createLibraryRoutes(libraryService),

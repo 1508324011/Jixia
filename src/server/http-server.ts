@@ -297,6 +297,25 @@ function parseLibraryScope(requestUrl: URL):
   return projectId ? { id: projectId, type: "project" } : undefined;
 }
 
+
+function parseJobScope(requestUrl: URL):
+  | { type: "project"; id: string }
+  | { type: "user"; id: string }
+  | undefined {
+  const scopeType = optionalQueryParam(requestUrl, "scopeType");
+  const scopeId = optionalQueryParam(requestUrl, "scopeId");
+
+  if (scopeType || scopeId) {
+    if ((scopeType !== "user" && scopeType !== "project") || !scopeId) {
+      throw new Error("Job scope requires scopeType user/project and scopeId.");
+    }
+
+    return { id: scopeId, type: scopeType };
+  }
+
+  return undefined;
+}
+
 async function handleApiRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -986,14 +1005,25 @@ async function handleApiRequest(
 
     if (pathname === "/api/jobs" && method === "GET") {
       const actor = await getActor(request, actorOptions);
+      const requestedScope = parseJobScope(requestUrl);
+      const spaceId = optionalQueryParam(requestUrl, "spaceId");
       assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      if (spaceId && !requestedScope) {
+        assertNoSpaceContextMismatch(
+          spaceId,
+          optionalQueryParam(requestUrl, "actorSpaceId"),
+        );
+      }
       sendJson(
         response,
         200,
         await app.jobs.listJobs({
-          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
+          actorSpaceId: requestedScope?.type === "project"
+            ? optionalQueryParam(requestUrl, "actorSpaceId") ?? spaceId
+            : optionalQueryParam(requestUrl, "actorSpaceId"),
           actorUserId: actor.userId,
-          spaceId: optionalQueryParam(requestUrl, "spaceId"),
+          scope: requestedScope,
+          spaceId,
         }),
         method,
       );
@@ -1007,6 +1037,7 @@ async function handleApiRequest(
         kind: string;
         payload: Record<string, unknown>;
         requestedByUserId?: string;
+        scope?: { type: "project"; id: string } | { type: "user"; id: string };
         spaceId: string;
       }>(request);
       assertNoActorImpersonation(actor, body.requestedByUserId);

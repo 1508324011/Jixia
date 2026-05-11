@@ -17,6 +17,13 @@ export type PersistedJobStatus =
   | 'failed'
   | 'cancelled';
 
+export type PersistedJobScopeType = 'user' | 'project';
+
+export interface PersistedJobScopeRef {
+  id: string;
+  type: PersistedJobScopeType;
+}
+
 export interface JobLookup {
   jobId: string;
 }
@@ -39,12 +46,12 @@ export interface PersistedProviderCredentialReferenceRecord {
 }
 
 export interface CreateJobParams {
-  createdEventId?: string;
   credentialRef: string;
   id?: string;
   kind: string;
   payload: string;
   requestedByUserId: string;
+  scope: PersistedJobScopeRef;
   spaceId: string;
 }
 
@@ -83,6 +90,7 @@ export interface PersistedJobRecord {
   kind: string;
   payload: string;
   requestedByUserId: string;
+  scope: PersistedJobScopeRef;
   spaceId: string;
   status: PersistedJobStatus;
   updatedAt: string;
@@ -112,8 +120,8 @@ export interface PersistedQueuedJobWithAudit {
   job: PersistedJobRecord;
 }
 
-export interface ListJobsForActorQuery {
-  actorUserId: string;
+export interface ListJobsForScopeQuery {
+  scope: PersistedJobScopeRef;
   spaceId?: string;
 }
 
@@ -136,8 +144,8 @@ export interface JobRepository {
   ): Promise<PersistedProviderCredentialReferenceRecord | null>;
   listAuditRecordsByJob(jobId: string): Promise<PersistedAuditLogRecord[]>;
   listJobEvents(jobId: string): Promise<PersistedJobEventRecord[]>;
-  listJobsForActor(
-    query: ListJobsForActorQuery,
+  listJobsForScope(
+    query: ListJobsForScopeQuery,
   ): Promise<PersistedJobRecord[]>;
   updateJobStatus(
     jobId: string,
@@ -176,12 +184,65 @@ async function assertRequiredColumns(
   }
 }
 
+async function ensureColumnIfMissing(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+  columnName: string,
+  columnDefinition: string,
+): Promise<void> {
+  const availableColumns = await readTableColumns(prisma, tableName);
+
+  if (!availableColumns.has(columnName)) {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${columnDefinition}`,
+    );
+  }
+}
+
+async function ensureJobScopeColumns(
+  prisma: JixiaPrismaClient,
+): Promise<void> {
+  await ensureColumnIfMissing(
+    prisma,
+    'Job',
+    'scopeType',
+    "TEXT NOT NULL DEFAULT 'user'",
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'Job',
+    'scopeId',
+    "TEXT NOT NULL DEFAULT ''",
+  );
+  await prisma.$executeRawUnsafe(`
+    UPDATE "Job"
+    SET
+      "scopeType" = COALESCE(NULLIF("scopeType", ''), 'user'),
+      "scopeId" = COALESCE(NULLIF("scopeId", ''), "requestedByUserId")
+    WHERE
+      "scopeType" IS NULL OR
+      "scopeType" = '' OR
+      "scopeId" IS NULL OR
+      "scopeId" = ''
+  `);
+}
+
 function toIsoString(value: Date): string {
   return value.toISOString();
 }
 
 function optionalDate(value: string | undefined): Date | undefined {
   return value ? new Date(value) : undefined;
+}
+
+function normalizeScopeType(rawScopeType: string): PersistedJobScopeType {
+  if (rawScopeType === 'user' || rawScopeType === 'project') {
+    return rawScopeType;
+  }
+
+  throw new Error(
+    `Persisted job scope type ${rawScopeType} is not supported. Jobs must be migrated to canonical user/project scope before serving requests.`,
+  );
 }
 
 function mapJob(job: Job): PersistedJobRecord {
@@ -192,6 +253,10 @@ function mapJob(job: Job): PersistedJobRecord {
     kind: job.kind,
     payload: job.payload,
     requestedByUserId: job.requestedByUserId,
+    scope: {
+      id: job.scopeId,
+      type: normalizeScopeType(job.scopeType),
+    },
     spaceId: job.spaceId,
     status: job.status,
     updatedAt: toIsoString(job.updatedAt),
@@ -306,6 +371,8 @@ export async function initializeJobPersistence(
     CREATE TABLE IF NOT EXISTS "Job" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "spaceId" TEXT NOT NULL,
+      "scopeType" TEXT NOT NULL DEFAULT 'user',
+      "scopeId" TEXT NOT NULL,
       "requestedByUserId" TEXT NOT NULL,
       "credentialRef" TEXT NOT NULL,
       "kind" TEXT NOT NULL,
@@ -318,11 +385,15 @@ export async function initializeJobPersistence(
       CONSTRAINT "Job_credentialRef_fkey" FOREIGN KEY ("credentialRef") REFERENCES "ProviderCredential" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
     )
   `);
+  await ensureJobScopeColumns(prisma);
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "Job_spaceId_requestedByUserId_idx" ON "Job"("spaceId", "requestedByUserId")
   `);
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "Job_requestedByUserId_idx" ON "Job"("requestedByUserId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "Job_scopeType_scopeId_idx" ON "Job"("scopeType", "scopeId")
   `);
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "JobEvent" (
@@ -367,6 +438,8 @@ export async function initializeJobPersistence(
   await assertRequiredColumns(prisma, 'Job', [
     'id',
     'spaceId',
+    'scopeType',
+    'scopeId',
     'requestedByUserId',
     'credentialRef',
     'kind',
@@ -468,6 +541,8 @@ export function createJobRepository(
             kind: input.job.kind,
             payload: input.job.payload,
             requestedByUserId: input.job.requestedByUserId,
+            scopeId: input.job.scope.id,
+            scopeType: input.job.scope.type,
             spaceId: input.job.spaceId,
             status: 'queued',
           },
@@ -530,15 +605,16 @@ export function createJobRepository(
 
       return events.map(mapJobEvent);
     },
-    async listJobsForActor(
-      query: ListJobsForActorQuery,
+    async listJobsForScope(
+      query: ListJobsForScopeQuery,
     ): Promise<PersistedJobRecord[]> {
       await ensureInitialized();
 
       const jobs = await prisma.job.findMany({
         orderBy: { createdAt: 'asc' },
         where: {
-          requestedByUserId: query.actorUserId,
+          scopeId: query.scope.id,
+          scopeType: query.scope.type,
           ...(query.spaceId ? { spaceId: query.spaceId } : {}),
         },
       });

@@ -287,6 +287,10 @@ describe('core contracts', () => {
       status,
       credentialRef: 'cred_001',
       createdAt: '2026-03-21T00:00:00.000Z',
+      scope: { id: 'user_001', type: 'user' },
+      scopeType: 'user',
+      scopeId: 'user_001',
+      spaceId: 'space_001',
     };
     const event: JobEventRecord = {
       id: 'event_001',
