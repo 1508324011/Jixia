@@ -119,6 +119,41 @@ export function assertNoActorImpersonation(
   }
 }
 
+export function assertNoClientActorIdentityField(
+  actor: ActorContext,
+  claimedUserId: unknown,
+  fieldName = "actor identity",
+): void {
+  if (typeof claimedUserId === "undefined") {
+    return;
+  }
+
+  if (typeof claimedUserId !== "string") {
+    throw new Error(`${fieldName} must be a string when provided.`);
+  }
+
+  if (claimedUserId && claimedUserId !== actor.userId) {
+    throw new Error("Request body actor does not match the server-derived actor.");
+  }
+
+  throw new Error(
+    `Client-supplied ${fieldName} is not accepted for protected routes.`,
+  );
+}
+
+export function assertNoClientActorContextField(
+  claimedValue: unknown,
+  fieldName = "actor context",
+): void {
+  if (typeof claimedValue === "undefined") {
+    return;
+  }
+
+  throw new Error(
+    `Client-supplied ${fieldName} is not accepted for protected routes.`,
+  );
+}
+
 export function assertNoSpaceContextMismatch(
   expectedSpaceId: string,
   claimedSpaceId: string | undefined,

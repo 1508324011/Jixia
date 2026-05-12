@@ -482,6 +482,8 @@ describe('prisma schema', () => {
     expect(credentialsRoutes).not.toContain('saveWorkbenchSettings(input)');
     expect(workbenchHttpApi).not.toContain('userId: DEFAULT_WORKBENCH_USER_ID');
     expect(workbenchHttpApi).toContain("requestUrl.searchParams.get('actorUserId')");
-    expect(workbenchHttpApi).toContain('payload.actorUserId');
+    expect(workbenchHttpApi).toContain('rejectLegacyIdentityBodyFields(requiredActor, requestBody)');
+    expect(workbenchHttpApi).not.toContain('payload.actorUserId');
+    expect(workbenchHttpApi).not.toContain('payload.userId');
   });
 });
