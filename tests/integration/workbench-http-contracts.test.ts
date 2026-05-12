@@ -572,6 +572,11 @@ describe('workbench http contracts', () => {
   it('documents the new workbench surfaces in the README and handoff notes', () => {
     const readme = readFileSync(join(process.cwd(), 'README.md'), 'utf8');
     const readmeCn = readFileSync(join(process.cwd(), 'README_CN.md'), 'utf8');
+    const loginPage = readFileSync(join(process.cwd(), 'src/web/pages/login-page.tsx'), 'utf8');
+    const sessionContract = readFileSync(
+      join(process.cwd(), 'src/shared/contracts/session.ts'),
+      'utf8',
+    );
     const handoffNotes = readFileSync(
       join(
         process.cwd(),
@@ -583,9 +588,18 @@ describe('workbench http contracts', () => {
     expect(readme).toContain('个人工作台首页');
     expect(readme).toContain('今日推荐');
     expect(readme).toContain('Projects');
+    expect(readme).toContain('loginProfileKey');
+    expect(readme).toContain('raw identity fields such as `userId`, `email`, `actorUserId`');
     expect(readmeCn).toContain('个人工作台首页');
     expect(readmeCn).toContain('共享评论');
     expect(readmeCn).toContain('/login` 是真实的 session 入口页');
+    expect(readmeCn).toContain('loginProfileKey');
+    expect(readmeCn).toContain('`userId`、`email`、`actorUserId`');
+    expect(sessionContract).toContain('loginProfileKey: LoginProfileKey');
+    expect(sessionContract).not.toContain('userId?: string');
+    expect(sessionContract).not.toContain('email?: string');
+    expect(loginPage).toContain('loginProfileKey');
+    expect(loginPage).not.toContain('await login({ userId:');
     expect(handoffNotes).toContain('Personal vs Project 上下文');
     expect(handoffNotes).toContain('Writer 文档区');
     expect(

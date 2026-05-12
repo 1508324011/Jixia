@@ -56,6 +56,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 
 - `/login` 是真实的 session 入口页；根路由仍然会先跳到 `/home`，而未登录浏览器会由受保护路由边界再重定向到 `/login?redirect=...`。
 - `POST /api/session/login`、`GET /api/session/me` 与 `POST /api/session/logout` 负责管理浏览器使用的服务端 `jixia_session` cookie。
+- `POST /api/session/login` 只接受受限的 `{ loginProfileKey }` 选择器来映射预置的实验室 / demo 用户；`userId`、`email`、`actorUserId` 等调用方自带身份字段如果出现在 query 或 body 中，会被拒绝，而不会拿来铸造登录权限。
 - `GET /api/discovery/today` 与 `GET /api/discovery/search?query=...` 提供当前 discovery 切片。
 - `GET /api/settings/me` 与 `POST /api/settings/me` 会通过 Prisma-backed per-user workbench settings 与加密后的 provider credential secret 行持久化浏览器可见的 settings 状态，同时不把原始 API key 暴露到响应体或 settings 记录中。
 - `GET /api/library/personal` 与 `POST /api/library/personal/import` 由服务端托管个人导入归属。

@@ -133,6 +133,123 @@ async function createJob(
 }
 
 describe('http server actor boundary cleanup', () => {
+  it('allows supported login selectors and rejects legacy login identity fields', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-login-authority-'));
+
+    try {
+      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
+
+      try {
+        const loginResponse = await fetch(`${server.url}/api/session/login`, {
+          body: JSON.stringify({ loginProfileKey: 'alice' }),
+          headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+        });
+
+        expect(loginResponse.status).toBe(200);
+        await expect(loginResponse.json()).resolves.toMatchObject({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+
+        const sessionCookie = loginResponse.headers.get('set-cookie');
+        expect(sessionCookie).toContain('jixia_session=');
+
+        const currentUserResponse = await fetch(`${server.url}/api/session/me`, {
+          headers: { Cookie: sessionCookie?.split(';')[0] ?? '' },
+        });
+        expect(currentUserResponse.status).toBe(200);
+        await expect(currentUserResponse.json()).resolves.toMatchObject({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+
+        const rejectedRequests = await Promise.all([
+          fetch(`${server.url}/api/session/login`, {
+            body: JSON.stringify({ userId: 'user-alice' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/session/login`, {
+            body: JSON.stringify({ email: 'alice@example.test' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/session/login`, {
+            body: JSON.stringify({ actorUserId: 'user-alice', loginProfileKey: 'alice' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/session/login`, {
+            body: JSON.stringify({ actorId: 'user-alice', loginProfileKey: 'alice' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/session/login`, {
+            body: JSON.stringify({ user: 'user-alice', loginProfileKey: 'alice' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/session/login`, {
+            body: JSON.stringify({ actor: 'user-alice', loginProfileKey: 'alice' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/session/login?userId=user-alice`, {
+            body: JSON.stringify({ loginProfileKey: 'alice' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/session/login`, {
+            body: JSON.stringify({ loginProfileKey: 'unknown' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
+        ]);
+
+        for (const response of rejectedRequests) {
+          expect(response.status).toBe(400);
+          expect(response.headers.get('set-cookie')).toBeNull();
+        }
+
+        await expect(rejectedRequests[0]?.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/userId is not accepted for session login/i),
+        });
+        await expect(rejectedRequests[1]?.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/email is not accepted for session login/i),
+        });
+        await expect(rejectedRequests[2]?.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/actorUserId is not accepted for session login/i),
+        });
+        await expect(rejectedRequests[3]?.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/actorId is not accepted for session login/i),
+        });
+        await expect(rejectedRequests[4]?.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/user is not accepted for session login/i),
+        });
+        await expect(rejectedRequests[5]?.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/actor is not accepted for session login/i),
+        });
+        await expect(rejectedRequests[6]?.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/userId is not accepted for session login/i),
+        });
+        await expect(rejectedRequests[7]?.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/supported login profile|requested login profile/i),
+        });
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('returns 401 when protected routes have no server-derived actor', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-actor-401-'));
 
@@ -886,6 +1003,9 @@ describe('http server actor boundary cleanup', () => {
     const actorSource = readFileSync('src/server/auth/actor.ts', 'utf8');
     const httpClient = readFileSync('src/web/lib/http-client.ts', 'utf8');
     const demoApi = readFileSync('src/web/lib/demo-api.ts', 'utf8');
+    const httpServer = readFileSync('src/server/http-server.ts', 'utf8');
+    const loginPage = readFileSync('src/web/pages/login-page.tsx', 'utf8');
+    const sessionContract = readFileSync('src/shared/contracts/session.ts', 'utf8');
     const runtimeContext = readFileSync('src/web/presenters/runtime-context.ts', 'utf8');
     const sessionSchema = readFileSync('prisma/schema.prisma', 'utf8');
 
@@ -897,6 +1017,12 @@ describe('http server actor boundary cleanup', () => {
     expect(actorSource).not.toContain('return normalizedDevHeaderActor ?? bearerActor');
     expect(httpClient).not.toContain('x-jixia-actor');
     expect(demoApi).not.toContain("x-jixia-actor");
+    expect(httpServer).toContain('assertNoLegacyLoginAuthorityFields');
+    expect(loginPage).toContain('loginProfileKey');
+    expect(loginPage).not.toContain('await login({ userId:');
+    expect(sessionContract).toContain('loginProfileKey: LoginProfileKey');
+    expect(sessionContract).not.toContain('userId?: string');
+    expect(sessionContract).not.toContain('email?: string');
     expect(runtimeContext).not.toContain('actorUserId');
     expect(runtimeContext).not.toContain('user-alice');
   });

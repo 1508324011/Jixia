@@ -245,6 +245,13 @@ Acceptance criteria:
 - The server derives the actor from a session or equivalent server-controlled mechanism.
 - A request body cannot impersonate another user.
 
+Current implementation note (2026-05-12): browser session login now accepts only
+the bounded seeded `{ loginProfileKey }` selector (`alice`, `bob`, `charlie`).
+Legacy login identity fields such as `userId`, `email`, `actorUserId`, `actorId`,
+`user`, and `actor` are rejected from the login query/body before the server
+issues `jixia_session`; protected browser APIs continue deriving actor identity
+from the server-owned session cookie rather than caller-supplied payload fields.
+
 ### Phase 2: Project-first schema and contracts
 
 Goal: make project collaboration a first-class server concept.
