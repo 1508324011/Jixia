@@ -1,16 +1,13 @@
+import type { CredentialRecord } from "@shared/contracts/credentials";
 import type {
-  CreateCredentialRequest,
-  CredentialRecord,
-} from "@shared/contracts/credentials";
-import type {
-  CreateJobRequest,
   JobAuditRecord,
   JobEventRecord,
   JobStatusQuery,
   JobRecord,
 } from "@shared/contracts/jobs";
 import type {
-  ImportLibraryEntryRequest,
+  ImportSourceType,
+  LibraryEntryVisibility,
   LibraryEntryView,
 } from "@shared/contracts/library";
 import type {
@@ -21,16 +18,13 @@ import type {
   ScopeRef,
 } from "@shared/contracts/projects";
 import type {
-  CreateProjectDocRequest,
   ProjectDocRecord,
   ProjectDocSnapshot,
 } from "@shared/contracts/project-docs";
 import type {
-  CreateReadingNoteRequest,
-  GetReadingDetailQuery,
+  NoteVisibility,
   NoteRecord,
   ReadingDetail,
-  SaveReadingInsightRequest,
 } from "@shared/contracts/reading";
 import type {
   CreateSpaceRequest,
@@ -51,25 +45,49 @@ export class ApiError extends Error {
   }
 }
 
-type CreateCredentialPayload = Omit<CreateCredentialRequest, "userId">;
-type CreateJobPayload = Omit<CreateJobRequest, "requestedByUserId" | "scope"> & {
+type CreateCredentialPayload = {
+  provider: string;
+  rawSecret: string;
+};
+type CreateJobPayload = {
+  credentialRef: string;
+  kind: string;
+  payload: Record<string, unknown>;
   scope: ScopeRef;
+  spaceId: string;
 };
 type ListJobsInput = {
   scope: ScopeRef;
   spaceId?: string;
 };
-type CreateProjectDocPayload = Omit<CreateProjectDocRequest, "createdByUserId">;
-type CreateReadingNotePayload = Omit<
-  CreateReadingNoteRequest,
-  "actorSpaceId" | "authorUserId"
->;
-type ImportPaperPayload = Omit<ImportLibraryEntryRequest, "requestedByUserId">;
-type ReadingDetailRequest = Omit<GetReadingDetailQuery, "actorUserId" | "actorSpaceId">;
-type SaveReadingInsightPayload = Omit<
-  SaveReadingInsightRequest,
-  "actorSpaceId" | "startedByUserId"
->;
+type CreateProjectDocPayload = {
+  projectId: string;
+  publishState?: PublishState;
+  title: string;
+};
+type CreateReadingNotePayload = {
+  body: string;
+  libraryEntryId: string;
+  visibility: NoteVisibility;
+};
+type ImportPaperPayload = {
+  projectId?: string;
+  scope?: ScopeRef;
+  sourceLocator: string;
+  sourceType: Exclude<ImportSourceType, "upload">;
+  spaceId: string;
+  visibility: LibraryEntryVisibility;
+};
+type SaveReadingInsightPayload = {
+  evidenceSpans: Array<{
+    endOffset: number;
+    quote: string;
+    startOffset: number;
+  }>;
+  libraryEntryId: string;
+  summary: string;
+  title: string;
+};
 type SaveProjectDocVersionPayload = {
   citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
   content: string;
@@ -340,7 +358,6 @@ export const apiClient = {
   },
   getReadingDetail(
     entryId: string,
-    _input?: ReadingDetailRequest,
   ): Promise<ReadingDetail | null> {
     return requestJson(`/api/reading/${entryId}`);
   },

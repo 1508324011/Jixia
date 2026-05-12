@@ -77,6 +77,26 @@ describe('workbench http contracts', () => {
       );
       expect(searchResponse.status).toBe(200);
 
+      const unauthenticatedDiscoveryActorQueryResponse = await fetch(
+        `${baseUrl}/api/discovery/today?actorUserId=user-alice`,
+      );
+      expect(unauthenticatedDiscoveryActorQueryResponse.status).toBe(400);
+      await expect(
+        unauthenticatedDiscoveryActorQueryResponse.json(),
+      ).resolves.toMatchObject({
+        error: expect.stringMatching(/not accepted for protected routes/i),
+      });
+
+      const unauthenticatedDiscoveryLegacyIdentityResponse = await fetch(
+        `${baseUrl}/api/discovery/search?query=tumor&requestedByUserId=user-alice`,
+      );
+      expect(unauthenticatedDiscoveryLegacyIdentityResponse.status).toBe(400);
+      await expect(
+        unauthenticatedDiscoveryLegacyIdentityResponse.json(),
+      ).resolves.toMatchObject({
+        error: expect.stringMatching(/not accepted for protected routes/i),
+      });
+
       const search = await searchResponse.json();
       expect(search.query).toBe('tumor board');
       expect(search.items.length).toBeGreaterThan(0);
@@ -356,6 +376,198 @@ describe('workbench http contracts', () => {
       rmSync(storageRoot, { force: true, recursive: true });
     }
   }, 15_000);
+
+  it('rejects matching legacy identity fields on workbench compatibility APIs', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-identity-'));
+    const httpServer = createHttpServer({
+      env: {
+        JIXIA_HOST: '127.0.0.1',
+        JIXIA_STORAGE_ROOT: storageRoot,
+      },
+    });
+
+    try {
+      const baseUrl = await listenOnEphemeralPort(httpServer.server);
+      const aliceCookie = await loginAs(baseUrl, 'user-alice');
+
+      const rejectionResponses = await Promise.all([
+        fetch(`${baseUrl}/api/discovery/today?actorUserId=user-alice`, {
+          headers: withSessionCookie(aliceCookie),
+        }),
+        fetch(`${baseUrl}/api/discovery/search?query=tumor&userId=user-alice`, {
+          headers: withSessionCookie(aliceCookie),
+        }),
+        fetch(`${baseUrl}/api/library/personal?actorUserId=user-alice`, {
+          headers: withSessionCookie(aliceCookie),
+        }),
+        fetch(`${baseUrl}/api/library/personal/import?actorUserId=user-alice`, {
+          body: JSON.stringify({
+            sourceLocator: '10.1000/workbench-query-import',
+            sourceType: 'doi',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/library/personal/import?requestedByUserId=user-alice`, {
+          body: JSON.stringify({
+            sourceLocator: '10.1000/workbench-requested-query-import',
+            sourceType: 'doi',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/library/personal/import`, {
+          body: JSON.stringify({
+            requestedByUserId: 'user-alice',
+            sourceLocator: '10.1000/workbench-matching-import',
+            sourceType: 'doi',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/settings/me?userId=user-alice`, {
+          headers: withSessionCookie(aliceCookie),
+        }),
+        fetch(`${baseUrl}/api/settings/me?actorUserId=user-alice`, {
+          body: JSON.stringify({
+            defaultImportTarget: 'personal-library',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/settings/me`, {
+          body: JSON.stringify({
+            defaultImportTarget: 'personal-library',
+            userId: 'user-alice',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/notes?actorUserId=user-alice`, {
+          body: JSON.stringify({
+            body: 'Legacy query actor should be rejected.',
+            visibility: 'private',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/notes?authorUserId=user-alice`, {
+          body: JSON.stringify({
+            body: 'Legacy query author should be rejected.',
+            visibility: 'private',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/notes`, {
+          body: JSON.stringify({
+            authorUserId: 'user-alice',
+            body: 'Legacy matching author should be rejected.',
+            visibility: 'private',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/notes`, {
+          body: JSON.stringify({
+            actorSpaceId: 'space-alpha',
+            body: 'Legacy actor space should be rejected.',
+            visibility: 'private',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/insights?userId=user-alice`, {
+          body: JSON.stringify({
+            evidenceSpans: [],
+            summary: 'Legacy query insight actor should be rejected.',
+            title: 'Legacy Query Insight',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/insights?startedByUserId=user-alice`, {
+          body: JSON.stringify({
+            evidenceSpans: [],
+            summary: 'Legacy query insight starter should be rejected.',
+            title: 'Legacy Query Insight Starter',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/insights`, {
+          body: JSON.stringify({
+            evidenceSpans: [],
+            startedByUserId: 'user-alice',
+            summary: 'Legacy matching insight starter should be rejected.',
+            title: 'Legacy Insight',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/writing/space-alpha/projects/project-alpha/document?actorUserId=user-alice`, {
+          headers: withSessionCookie(aliceCookie),
+        }),
+        fetch(`${baseUrl}/api/writing/space-alpha/projects/project-alpha/document?userId=user-alice`, {
+          body: JSON.stringify({
+            citations: [],
+            content: 'Legacy query writer actor should be rejected.',
+            title: 'Legacy Query Writer',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/writing/space-alpha/projects/project-alpha/document`, {
+          body: JSON.stringify({
+            actorUserId: 'user-alice',
+            citations: [],
+            content: 'Legacy matching writer actor should be rejected.',
+            title: 'Legacy Writer',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+      ]);
+
+      for (const response of rejectionResponses) {
+        const payload = (await response.json()) as { error: string };
+
+        expect(response.status).toBe(400);
+        expect(payload.error).toMatch(/not accepted for protected routes/i);
+      }
+    } finally {
+      await closeServer(httpServer.server);
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 10_000);
 
   it('documents the new workbench surfaces in the README and handoff notes', () => {
     const readme = readFileSync(join(process.cwd(), 'README.md'), 'utf8');

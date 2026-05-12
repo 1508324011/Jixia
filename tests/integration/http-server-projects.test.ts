@@ -34,7 +34,6 @@ describe('http server project api', () => {
 
         const createdProject = await fetch(`${server.url}/api/projects`, {
           body: JSON.stringify({
-            actorUserId: 'user-alice',
             name: 'HTTP Project-first Recovery',
             spaceId: createdSpace.id,
           }),
@@ -125,6 +124,77 @@ describe('http server project api', () => {
 
         expect(response.status).toBe(400);
         expect(payload.error).toMatch(/actor does not match/i);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects matching legacy actor fields on project routes', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-projects-'));
+
+    try {
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-projects.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'HTTP Matching Actor' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const createdProject = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({
+            name: 'Matching Actor Project',
+            spaceId: createdSpace.id,
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+
+        const matchingResponses = await Promise.all([
+          fetch(`${server.url}/api/projects`, {
+            body: JSON.stringify({
+              actorUserId: 'user-alice',
+              name: 'Matching Actor Rejected Project',
+              spaceId: createdSpace.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/projects?actorUserId=user-alice`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(
+            `${server.url}/api/projects/${createdProject.project.id}?actorUserId=user-alice`,
+            { headers: withSessionCookie(aliceCookie) },
+          ),
+          fetch(
+            `${server.url}/api/projects/${createdProject.project.id}/members?actorUserId=user-alice`,
+            { headers: withSessionCookie(aliceCookie) },
+          ),
+        ]);
+
+        for (const response of matchingResponses) {
+          const payload = (await response.json()) as { error: string };
+
+          expect(response.status).toBe(400);
+          expect(payload.error).toMatch(/not accepted for protected routes/i);
+        }
       } finally {
         await server.close();
       }

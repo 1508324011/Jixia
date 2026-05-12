@@ -11,7 +11,8 @@ import { fileURLToPath } from "node:url";
 import { createJixiaApp, type CreateJixiaAppOptions } from "./app";
 import { resolveHttpApi } from "./http-api";
 import {
-  assertNoActorImpersonation,
+  assertNoClientActorContextField,
+  assertNoClientActorIdentityField,
   assertNoSpaceContextMismatch,
   getActor,
   getOptionalActor,
@@ -278,6 +279,77 @@ function optionalQueryParam(requestUrl: URL, key: string): string | undefined {
   return requestUrl.searchParams.get(key) ?? undefined;
 }
 
+function rejectLegacyIdentityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "actorUserId"),
+    "actorUserId",
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "requestedByUserId"),
+    "requestedByUserId",
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "userId"),
+    "userId",
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "authorUserId"),
+    "authorUserId",
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "startedByUserId"),
+    "startedByUserId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "actorSpaceId"),
+    "actorSpaceId",
+  );
+}
+
+function rejectLegacyIdentityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.actorUserId, "actorUserId");
+  assertNoClientActorIdentityField(actor, body.requestedByUserId, "requestedByUserId");
+  assertNoClientActorIdentityField(actor, body.userId, "userId");
+  assertNoClientActorIdentityField(actor, body.authorUserId, "authorUserId");
+  assertNoClientActorIdentityField(actor, body.startedByUserId, "startedByUserId");
+  assertNoClientActorContextField(body.actorSpaceId, "actorSpaceId");
+}
+
+function rejectLegacyActorSpaceContextField(requestUrl: URL): void {
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "actorSpaceId"),
+    "actorSpaceId",
+  );
+}
+
+function rejectLegacyActorSpaceContextBodyField(requestBody: unknown): void {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  assertNoClientActorContextField(
+    (requestBody as Record<string, unknown>).actorSpaceId,
+    "actorSpaceId",
+  );
+}
+
 function parseLibraryScope(requestUrl: URL):
   | { type: "project"; id: string }
   | { type: "user"; id: string }
@@ -409,7 +481,7 @@ async function handleApiRequest(
 
     if (pathname === "/api/spaces" && method === "GET") {
       const actor = await getActor(request, actorOptions);
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       sendJson(
         response,
         200,
@@ -421,14 +493,14 @@ async function handleApiRequest(
 
     if (pathname === "/api/spaces" && method === "POST") {
       const actor = await getActor(request, actorOptions);
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         description?: string;
         kind: "personal" | "shared";
         name: string;
       }>(request);
-      assertNoActorImpersonation(actor, body.actorUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
 
       sendJson(
         response,
@@ -450,7 +522,8 @@ async function handleApiRequest(
       const actor = await getActor(request, actorOptions);
       const requestedScope = parseLibraryScope(requestUrl);
       const spaceId = optionalQueryParam(requestUrl, "spaceId") ?? "";
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectLegacyActorSpaceContextField(requestUrl);
       if (spaceId && !requestedScope) {
         assertNoSpaceContextMismatch(
           spaceId,
@@ -462,9 +535,9 @@ async function handleApiRequest(
         response,
         200,
         await app.library.listEntries({
-          actorSpaceId: requestedScope?.type === "project"
-            ? optionalQueryParam(requestUrl, "actorSpaceId") ?? spaceId
-            : optionalQueryParam(requestUrl, "actorSpaceId"),
+          actorSpaceId: requestedScope?.type === "project" && spaceId
+            ? spaceId
+            : undefined,
           actorUserId: actor.userId,
           scope: requestedScope,
           spaceId,
@@ -476,13 +549,14 @@ async function handleApiRequest(
 
     if (pathname === "/api/projects" && method === "GET") {
       const actor = await getActor(request, actorOptions);
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       sendJson(response, 200, await app.projects.listProjects(actor.userId), method);
       return true;
     }
 
     if (pathname === "/api/projects" && method === "POST") {
       const actor = await getActor(request, actorOptions);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         description?: string;
@@ -490,7 +564,7 @@ async function handleApiRequest(
         spaceId: string;
         status?: "active" | "archived";
       }>(request);
-      assertNoActorImpersonation(actor, body.actorUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
 
       sendJson(
         response,
@@ -515,7 +589,7 @@ async function handleApiRequest(
     if (projectMembersMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, projectId] = projectMembersMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       sendJson(
         response,
         200,
@@ -528,12 +602,13 @@ async function handleApiRequest(
     if (projectMembersMatch && method === "POST") {
       const actor = await getActor(request, actorOptions);
       const [, projectId] = projectMembersMatch;
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         role: "owner" | "editor" | "viewer";
         userId: string;
       }>(request);
-      assertNoActorImpersonation(actor, body.actorUserId);
+      assertNoClientActorIdentityField(actor, body.actorUserId, "actorUserId");
 
       sendJson(
         response,
@@ -552,7 +627,7 @@ async function handleApiRequest(
     if (projectMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, projectId] = projectMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       sendJson(
         response,
         200,
@@ -568,7 +643,7 @@ async function handleApiRequest(
     if (latestProjectDocumentMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, projectId] = latestProjectDocumentMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       sendJson(
         response,
         200,
@@ -582,7 +657,7 @@ async function handleApiRequest(
     if (projectWritingMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, projectId] = projectWritingMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
 
       const document = await app.projectDocs.getWorkbenchDocument(projectId, actor.userId);
 
@@ -603,6 +678,7 @@ async function handleApiRequest(
     if (projectWritingMatch && method === "POST") {
       const actor = await getActor(request, actorOptions);
       const [, projectId] = projectWritingMatch;
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         citations: Array<{
@@ -612,7 +688,7 @@ async function handleApiRequest(
         content: string;
         title: string;
       }>(request);
-      assertNoActorImpersonation(actor, body.actorUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
 
       sendJson(
         response,
@@ -635,20 +711,20 @@ async function handleApiRequest(
 
     if (pathname === "/api/notebooks" && method === "POST") {
       const actor = await getActor(request, actorOptions);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         ownerId?: string;
         title: string;
       }>(request);
-      assertNoActorImpersonation(actor, body.actorUserId);
-      assertNoActorImpersonation(actor, body.ownerId);
+      rejectLegacyIdentityBodyFields(actor, body);
+      assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
 
       sendJson(
         response,
         200,
         await app.notebooks.createDocument(
           {
-            ownerId: body.ownerId,
             title: body.title,
           },
           actor.userId,
@@ -662,7 +738,7 @@ async function handleApiRequest(
     if (notebookMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = notebookMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
 
       sendJson(
         response,
@@ -679,6 +755,7 @@ async function handleApiRequest(
     if (notebookVersionsMatch && method === "POST") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = notebookVersionsMatch;
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         citations: Array<{
@@ -687,7 +764,7 @@ async function handleApiRequest(
         }>;
         content: string;
       }>(request);
-      assertNoActorImpersonation(actor, body.actorUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
 
       sendJson(
         response,
@@ -707,6 +784,7 @@ async function handleApiRequest(
 
     if (pathname === "/api/project-docs" && method === "POST") {
       const actor = await getActor(request, actorOptions);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         createdByUserId?: string;
@@ -714,15 +792,14 @@ async function handleApiRequest(
         publishState?: "draft" | "review" | "published";
         title: string;
       }>(request);
-      assertNoActorImpersonation(actor, body.actorUserId);
-      assertNoActorImpersonation(actor, body.createdByUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
+      assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
 
       sendJson(
         response,
         200,
         await app.projectDocs.createDocument(
           {
-            createdByUserId: body.createdByUserId,
             projectId: body.projectId,
             publishState: body.publishState,
             title: body.title,
@@ -738,7 +815,7 @@ async function handleApiRequest(
     if (projectDocMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
 
       sendJson(
         response,
@@ -755,6 +832,7 @@ async function handleApiRequest(
     if (projectDocVersionsMatch && method === "POST") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocVersionsMatch;
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         citations: Array<{
@@ -763,7 +841,7 @@ async function handleApiRequest(
         }>;
         content: string;
       }>(request);
-      assertNoActorImpersonation(actor, body.actorUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
 
       sendJson(
         response,
@@ -787,11 +865,12 @@ async function handleApiRequest(
     if (projectDocPublishStateMatch && method === "POST") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocPublishStateMatch;
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         publishState: "draft" | "review" | "published";
       }>(request);
-      assertNoActorImpersonation(actor, body.actorUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
 
       sendJson(
         response,
@@ -813,10 +892,10 @@ async function handleApiRequest(
     if (libraryEntryFileMatch && (method === "GET" || method === "HEAD")) {
       const actor = await getActor(request, actorOptions);
       const [, entryId] = libraryEntryFileMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectLegacyActorSpaceContextField(requestUrl);
 
       const file = await app.library.getEntryFile({
-        actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
         actorUserId: actor.userId,
         entryId,
       });
@@ -838,13 +917,13 @@ async function handleApiRequest(
     if (libraryEntryMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, entryId] = libraryEntryMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectLegacyActorSpaceContextField(requestUrl);
 
       sendJson(
         response,
         200,
         await app.library.getEntry({
-          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
           actorUserId: actor.userId,
           entryId,
         }),
@@ -855,6 +934,7 @@ async function handleApiRequest(
 
     if (pathname === "/api/import/paper" && method === "POST") {
       const actor = await getActor(request, actorOptions);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         projectId?: string;
         requestedByUserId?: string;
@@ -865,12 +945,22 @@ async function handleApiRequest(
         visibility: "private" | "space_shared" | "published_to_project";
       }>(request);
 
-      assertNoActorImpersonation(actor, body.requestedByUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
 
       sendJson(
         response,
         200,
-        await app.imports.importPaper(body, actor.userId),
+        await app.imports.importPaper(
+          {
+            projectId: body.projectId,
+            scope: body.scope,
+            sourceLocator: body.sourceLocator,
+            sourceType: body.sourceType,
+            spaceId: body.spaceId,
+            visibility: body.visibility,
+          },
+          actor.userId,
+        ),
         method,
       );
       return true;
@@ -880,13 +970,13 @@ async function handleApiRequest(
     if (readingDetailMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, entryId] = readingDetailMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectLegacyActorSpaceContextField(requestUrl);
 
       sendJson(
         response,
         200,
         await app.reading.getDetail({
-          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
           actorUserId: actor.userId,
           libraryEntryId: entryId,
         }),
@@ -897,6 +987,7 @@ async function handleApiRequest(
 
     if (pathname === "/api/reading/notes" && method === "POST") {
       const actor = await getActor(request, actorOptions);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorSpaceId?: string;
         authorUserId?: string;
@@ -905,15 +996,14 @@ async function handleApiRequest(
         visibility: "private" | "space_shared";
       }>(request);
 
-      assertNoActorImpersonation(actor, body.authorUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
+      rejectLegacyActorSpaceContextBodyField(body);
 
       sendJson(
         response,
         200,
         await app.reading.createNote({
-          actorSpaceId: body.actorSpaceId,
           actorUserId: actor.userId,
-          authorUserId: body.authorUserId,
           body: body.body,
           libraryEntryId: body.libraryEntryId,
           visibility: body.visibility,
@@ -925,6 +1015,7 @@ async function handleApiRequest(
 
     if (pathname === "/api/reading/insights" && method === "POST") {
       const actor = await getActor(request, actorOptions);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorSpaceId?: string;
         evidenceSpans: Array<{
@@ -938,17 +1029,16 @@ async function handleApiRequest(
         title: string;
       }>(request);
 
-      assertNoActorImpersonation(actor, body.startedByUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
+      rejectLegacyActorSpaceContextBodyField(body);
 
       sendJson(
         response,
         200,
         await app.reading.saveGeneratedInsight({
-          actorSpaceId: body.actorSpaceId,
           actorUserId: actor.userId,
           evidenceSpans: body.evidenceSpans,
           libraryEntryId: body.libraryEntryId,
-          startedByUserId: body.startedByUserId,
           summary: body.summary,
           title: body.title,
         }),
@@ -963,7 +1053,7 @@ async function handleApiRequest(
     if (membershipsMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, spaceId] = membershipsMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       sendJson(
         response,
         200,
@@ -975,12 +1065,11 @@ async function handleApiRequest(
 
     if (pathname === "/api/credentials" && method === "GET") {
       const actor = await getActor(request, actorOptions);
-      const userId = optionalQueryParam(requestUrl, "userId");
-      assertNoActorImpersonation(actor, userId);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       sendJson(
         response,
         200,
-        await app.credentials.listCredentials({ userId }, actor.userId),
+        await app.credentials.listCredentials({}, actor.userId),
         method,
       );
       return true;
@@ -988,16 +1077,23 @@ async function handleApiRequest(
 
     if (pathname === "/api/credentials" && method === "POST") {
       const actor = await getActor(request, actorOptions);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         provider: string;
         rawSecret: string;
         userId?: string;
       }>(request);
-      assertNoActorImpersonation(actor, body.userId);
+      rejectLegacyIdentityBodyFields(actor, body);
       sendJson(
         response,
         200,
-        await app.credentials.createCredential(body, actor.userId),
+        await app.credentials.createCredential(
+          {
+            provider: body.provider,
+            rawSecret: body.rawSecret,
+          },
+          actor.userId,
+        ),
         method,
       );
       return true;
@@ -1007,7 +1103,8 @@ async function handleApiRequest(
       const actor = await getActor(request, actorOptions);
       const requestedScope = parseJobScope(requestUrl);
       const spaceId = optionalQueryParam(requestUrl, "spaceId");
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectLegacyActorSpaceContextField(requestUrl);
       if (spaceId && !requestedScope) {
         assertNoSpaceContextMismatch(
           spaceId,
@@ -1018,9 +1115,6 @@ async function handleApiRequest(
         response,
         200,
         await app.jobs.listJobs({
-          actorSpaceId: requestedScope?.type === "project"
-            ? optionalQueryParam(requestUrl, "actorSpaceId") ?? spaceId
-            : optionalQueryParam(requestUrl, "actorSpaceId"),
           actorUserId: actor.userId,
           scope: requestedScope,
           spaceId,
@@ -1032,6 +1126,7 @@ async function handleApiRequest(
 
     if (pathname === "/api/jobs" && method === "POST") {
       const actor = await getActor(request, actorOptions);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         credentialRef: string;
         kind: string;
@@ -1040,11 +1135,20 @@ async function handleApiRequest(
         scope?: { type: "project"; id: string } | { type: "user"; id: string };
         spaceId: string;
       }>(request);
-      assertNoActorImpersonation(actor, body.requestedByUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
       sendJson(
         response,
         200,
-        await app.jobs.createJob(body, actor.userId),
+        await app.jobs.createJob(
+          {
+            credentialRef: body.credentialRef,
+            kind: body.kind,
+            payload: body.payload,
+            scope: body.scope,
+            spaceId: body.spaceId,
+          },
+          actor.userId,
+        ),
         method,
       );
       return true;
@@ -1054,16 +1158,17 @@ async function handleApiRequest(
     if (jobRunMatch && method === "POST") {
       const actor = await getActor(request, actorOptions);
       const [, jobId] = jobRunMatch;
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorSpaceId?: string;
         actorUserId?: string;
       }>(request);
-      assertNoActorImpersonation(actor, body.actorUserId);
+      rejectLegacyIdentityBodyFields(actor, body);
+      rejectLegacyActorSpaceContextBodyField(body);
       sendJson(
         response,
         200,
         await app.jobs.runJob({
-          actorSpaceId: body.actorSpaceId,
           actorUserId: actor.userId,
           jobId,
         }),
@@ -1076,12 +1181,12 @@ async function handleApiRequest(
     if (jobEventsMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, jobId] = jobEventsMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectLegacyActorSpaceContextField(requestUrl);
       sendJson(
         response,
         200,
         await app.jobStream.listEvents({
-          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
           actorUserId: actor.userId,
           jobId,
         }),
@@ -1094,9 +1199,9 @@ async function handleApiRequest(
     if (jobStreamMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, jobId] = jobStreamMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectLegacyActorSpaceContextField(requestUrl);
       const accessQuery = {
-        actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
         actorUserId: actor.userId,
         jobId,
       };
@@ -1128,12 +1233,12 @@ async function handleApiRequest(
     if (jobAuditMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, jobId] = jobAuditMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectLegacyActorSpaceContextField(requestUrl);
       sendJson(
         response,
         200,
         await app.jobs.listAuditRecords({
-          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
           actorUserId: actor.userId,
           jobId,
         }),
@@ -1146,12 +1251,12 @@ async function handleApiRequest(
     if (jobMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, jobId] = jobMatch;
-      assertNoActorImpersonation(actor, optionalQueryParam(requestUrl, "actorUserId"));
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectLegacyActorSpaceContextField(requestUrl);
       sendJson(
         response,
         200,
         await app.jobs.getJob({
-          actorSpaceId: optionalQueryParam(requestUrl, "actorSpaceId"),
           actorUserId: actor.userId,
           jobId,
         }),

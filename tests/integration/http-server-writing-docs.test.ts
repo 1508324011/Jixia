@@ -35,7 +35,7 @@ describe('http server notebook and project-doc api', () => {
         const bobCookie = await loginAs(server.url, 'user-bob');
 
         const createResponse = await fetch(`${server.url}/api/notebooks`, {
-          body: JSON.stringify({ ownerId: 'user-alice', title: 'HTTP Notebook' }),
+          body: JSON.stringify({ title: 'HTTP Notebook' }),
           headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
           }),
@@ -62,6 +62,16 @@ describe('http server notebook and project-doc api', () => {
         expect(ownerRead.status).toBe(200);
         expect(nonOwnerRead.status).toBe(403);
         expect(actorMismatch.status).toBe(400);
+
+        const matchingOwner = await fetch(`${server.url}/api/notebooks`, {
+          body: JSON.stringify({ ownerId: 'user-alice', title: 'Matching Owner Notebook' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+
+        expect(matchingOwner.status).toBe(400);
       } finally {
         await server.close();
       }
