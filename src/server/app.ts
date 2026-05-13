@@ -910,6 +910,11 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
 
         return readingRepository.createNote(input);
       },
+      async createProjectComment(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.createProjectComment(input);
+      },
       async getReadingState(libraryEntryId, userId) {
         await ensureReadingBootstrap();
 
@@ -924,6 +929,11 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
         await ensureReadingBootstrap();
 
         return readingRepository.listNotesForEntry(input);
+      },
+      async listProjectCommentsForEntry(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.listProjectCommentsForEntry(input);
       },
       async saveGeneratedInsight(input) {
         await ensureReadingBootstrap();

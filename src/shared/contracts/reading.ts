@@ -7,7 +7,17 @@ export interface NoteRecord {
   id: string;
   libraryEntryId: string;
   authorUserId: string;
+  /** @deprecated Notes are private reader records; visibility is a compatibility mirror. */
   visibility: NoteVisibility;
+  body: string;
+  createdAt: string;
+}
+
+export interface ProjectReadingCommentRecord {
+  id: string;
+  libraryEntryId: string;
+  projectId: string;
+  authorUserId: string;
   body: string;
   createdAt: string;
 }
@@ -32,6 +42,7 @@ export interface ReadingDetailView {
   entry: LibraryEntryRecord;
   insights: GeneratedInsightRecord[];
   notes: NoteRecord[];
+  projectComments: ProjectReadingCommentRecord[];
 }
 
 export type ReadingDetail = ReadingDetailView;
@@ -44,13 +55,24 @@ export interface GetReadingDetailQuery {
 }
 
 export interface CreateReadingNoteRequest {
+  body: string;
+  libraryEntryId: string;
+}
+
+export interface LegacyCreateReadingNoteRequest extends CreateReadingNoteRequest {
   /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
   actorSpaceId?: string;
   /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
   authorUserId?: string;
+  /** @deprecated Reader sharing uses the project-comments endpoint, not note visibility. */
+  visibility?: NoteVisibility;
+}
+
+export interface CreateProjectReadingCommentRequest {
   body: string;
   libraryEntryId: string;
-  visibility: NoteVisibility;
+  /** Compatibility assertion only; the authoritative project id is derived from LibraryEntry.scope. */
+  projectId?: string;
 }
 
 export interface SaveReadingInsightRequest {
@@ -66,6 +88,10 @@ export interface SaveReadingInsightRequest {
 
 export interface ReadingNoteResponse {
   note: NoteRecord;
+}
+
+export interface ProjectReadingCommentResponse {
+  comment: ProjectReadingCommentRecord;
 }
 
 export interface ReadingInsightResponse {

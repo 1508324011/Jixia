@@ -524,7 +524,6 @@ describe('http server actor boundary cleanup', () => {
               authorUserId: 'user-bob',
               body: 'Spoofed note',
               libraryEntryId: importedRecord.entry.id,
-              visibility: 'private',
             }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
@@ -769,7 +768,6 @@ describe('http server actor boundary cleanup', () => {
               authorUserId: 'user-alice',
               body: 'Matching note should be rejected.',
               libraryEntryId: importedRecord.entry.id,
-              visibility: 'private',
             }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
@@ -781,7 +779,6 @@ describe('http server actor boundary cleanup', () => {
               actorSpaceId: createdSpace.id,
               body: 'Matching note actor space should be rejected.',
               libraryEntryId: importedRecord.entry.id,
-              visibility: 'private',
             }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
@@ -792,7 +789,6 @@ describe('http server actor boundary cleanup', () => {
             body: JSON.stringify({
               body: 'Matching query note should be rejected.',
               libraryEntryId: importedRecord.entry.id,
-              visibility: 'private',
             }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
@@ -803,7 +799,6 @@ describe('http server actor boundary cleanup', () => {
             body: JSON.stringify({
               body: 'Matching query note author should be rejected.',
               libraryEntryId: importedRecord.entry.id,
-              visibility: 'private',
             }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',

@@ -4,7 +4,6 @@ import { Link } from "react-router-dom";
 import type { TodayRecommendation } from "@shared/contracts/discovery";
 import type {
   ImportSourceType,
-  LibraryEntryVisibility,
 } from "@shared/contracts/library";
 
 import { createDemoApi } from "../lib/demo-api";
@@ -28,8 +27,6 @@ export function SearchPage() {
   const [sourceLocator, setSourceLocator] = useState("10.1000/jixia-demo");
   const [sourceType, setSourceType] =
     useState<Exclude<ImportSourceType, "upload">>("doi");
-  const [visibility, setVisibility] =
-    useState<LibraryEntryVisibility>("space_shared");
   const [query, setQuery] = useState("tumor board");
   const [results, setResults] = useState<TodayRecommendation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -200,20 +197,6 @@ export function SearchPage() {
             value={sourceLocator}
             onChange={(event) => setSourceLocator(event.target.value)}
           />
-          <label className="quiet-copy" htmlFor="search-visibility">
-            Visibility
-          </label>
-          <select
-            id="search-visibility"
-            value={visibility}
-            onChange={(event) =>
-              setVisibility(event.target.value as LibraryEntryVisibility)
-            }
-          >
-            <option value="private">private</option>
-            <option value="space_shared">space_shared</option>
-            <option value="published_to_project">published_to_project</option>
-          </select>
           <button
             className="panel-link"
             type="button"
@@ -222,7 +205,6 @@ export function SearchPage() {
               void importPaper({
                 sourceLocator: sourceLocator.trim(),
                 sourceType,
-                visibility,
               })
             }
           >

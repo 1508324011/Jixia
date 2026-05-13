@@ -65,13 +65,29 @@ describe("http server phase 4 reader slice", () => {
               asset: { canonicalId: string };
               insights: unknown[];
               notes: unknown[];
+              projectComments: unknown[];
             }>,
         );
         expect(detail.asset.canonicalId).toBe("doi:10.1000/reading-demo");
         expect(detail.notes).toHaveLength(0);
+        expect(detail.projectComments).toHaveLength(0);
         expect(detail.insights).toHaveLength(0);
 
         const note = await fetch(`${server.url}/api/reading/notes`, {
+          body: JSON.stringify({
+            body: "Private note for later synthesis.",
+            libraryEntryId: importedRecord.entry.id,
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            "Content-Type": "application/json",
+          }),
+          method: "POST",
+        }).then(
+          (response) => response.json() as Promise<{ id: string; visibility: string }>,
+        );
+        expect(note.visibility).toBe("private");
+
+        const rejectedSharedNote = await fetch(`${server.url}/api/reading/notes`, {
           body: JSON.stringify({
             body: "This paper matters for the shared review.",
             libraryEntryId: importedRecord.entry.id,
@@ -81,10 +97,32 @@ describe("http server phase 4 reader slice", () => {
             "Content-Type": "application/json",
           }),
           method: "POST",
-        }).then(
-          (response) => response.json() as Promise<{ id: string; visibility: string }>,
+        });
+        expect(rejectedSharedNote.status).toBe(400);
+        await expect(rejectedSharedNote.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/project-comments endpoint/i),
+        });
+
+        const comment = await fetch(
+          `${server.url}/api/reading/${importedRecord.entry.id}/project-comments`,
+          {
+            body: JSON.stringify({
+              body: "This paper matters for the shared review.",
+              projectId: project.project.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              "Content-Type": "application/json",
+            }),
+            method: "POST",
+          },
+        ).then(
+          (response) =>
+            response.json() as Promise<{ comment: { body: string; projectId: string } }>,
         );
-        expect(note.visibility).toBe("space_shared");
+        expect(comment.comment).toMatchObject({
+          body: "This paper matters for the shared review.",
+          projectId: project.project.id,
+        });
 
         const insight = await fetch(`${server.url}/api/reading/insights`, {
           body: JSON.stringify({
@@ -109,9 +147,11 @@ describe("http server phase 4 reader slice", () => {
             response.json() as Promise<{
               insights: unknown[];
               notes: unknown[];
+              projectComments: unknown[];
             }>,
         );
         expect(updatedDetail.notes).toHaveLength(1);
+        expect(updatedDetail.projectComments).toHaveLength(1);
         expect(updatedDetail.insights).toHaveLength(1);
       } finally {
         await server.close();

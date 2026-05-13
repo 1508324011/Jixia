@@ -3,21 +3,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   ImportSourceType,
   LibraryEntryView,
-  LibraryEntryVisibility,
 } from "@shared/contracts/library";
 import type { ProjectListItem } from "@shared/contracts/projects";
 import type { SpaceSummary } from "@shared/contracts/spaces";
 
 import { apiClient } from "../lib/http-client";
 import { useSessionAuth } from "../lib/session-auth";
-import { runtimeContext } from "./runtime-context";
 
 export interface SearchViewModel {
   error: string | null;
   importPaper(input: {
     sourceLocator: string;
     sourceType: Exclude<ImportSourceType, "upload">;
-    visibility: LibraryEntryVisibility;
   }): Promise<void>;
   importedRecord: LibraryEntryView | null;
   isImporting: boolean;
@@ -71,10 +68,6 @@ export function useSearchPresenter(): SearchViewModel {
         }
         if (nextProjects.length > 0) {
           setProjects(nextProjects);
-          setSelectedProjectId(nextProjects[0].project.id);
-          setSelectedSpaceId((currentSpaceId) =>
-            currentSpaceId || nextProjects[0].project.spaceId,
-          );
         }
       } catch (presenterError) {
         setSpaces([]);
@@ -94,7 +87,6 @@ export function useSearchPresenter(): SearchViewModel {
     async (input: {
       sourceLocator: string;
       sourceType: Exclude<ImportSourceType, "upload">;
-      visibility: LibraryEntryVisibility;
     }) => {
       try {
         setIsImporting(true);
@@ -106,26 +98,17 @@ export function useSearchPresenter(): SearchViewModel {
           );
         }
 
-        let nextSpaceId = selectedProject?.project.spaceId ?? selectedSpaceId;
-        if (!nextSpaceId) {
-          const createdSpace = await apiClient.createSpace({
-            kind: "shared",
-            name: runtimeContext.defaultSharedSpaceName,
-          });
-          nextSpaceId = createdSpace.id;
-          setSpaces((currentSpaces) => [createdSpace, ...currentSpaces]);
-          setSelectedSpaceId(createdSpace.id);
-        }
-
         const personalScopeId = user?.id ?? "";
+        const scope = selectedProjectId
+          ? { id: selectedProjectId, type: "project" as const }
+          : { id: personalScopeId, type: "user" as const };
+        const nextSpaceId = selectedProject?.project.spaceId ?? selectedSpaceId;
         const nextRecord = await apiClient.importPaper({
-          ...(selectedProjectId
-            ? { scope: { id: selectedProjectId, type: "project" as const } }
-            : { scope: { id: personalScopeId, type: "user" as const } }),
+          scope,
           sourceLocator: input.sourceLocator,
           sourceType: input.sourceType,
           spaceId: nextSpaceId,
-          visibility: input.visibility,
+          visibility: scope.type === "project" ? "published_to_project" : "private",
         });
 
         setImportedRecord(nextRecord);

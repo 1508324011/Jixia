@@ -87,6 +87,14 @@ describe('paper workspace', () => {
         libraryEntryId: string;
         visibility: 'private' | 'space_shared';
       }>,
+      projectComments: [] as Array<{
+        authorUserId: string;
+        body: string;
+        createdAt: string;
+        id: string;
+        libraryEntryId: string;
+        projectId: string;
+      }>,
     };
     let promotedDraft = '';
 
@@ -125,19 +133,47 @@ describe('paper workspace', () => {
         if (requestUrl.endsWith('/api/reading/notes') && init?.method === 'POST') {
           const body = JSON.parse(String(init.body)) as {
             body: string;
-            visibility: 'private' | 'space_shared';
+            libraryEntryId: string;
           };
+          expect(body).toEqual({
+            body: expect.any(String),
+            libraryEntryId: 'entry-1',
+          });
           const note = {
             authorUserId: 'user-alice',
             body: body.body,
             createdAt: '2026-03-23T00:10:00.000Z',
             id: `note-${readingDetail.notes.length + 1}`,
             libraryEntryId: 'entry-1',
-            visibility: body.visibility,
+            visibility: 'private' as const,
           };
           readingDetail.notes.push(note);
 
           return jsonResponse({ note }, 200);
+        }
+
+        if (requestUrl.endsWith('/api/reading/project-comments') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            body: string;
+            libraryEntryId: string;
+            projectId?: string;
+          };
+          expect(body).toEqual({
+            body: expect.any(String),
+            libraryEntryId: 'entry-1',
+            projectId: 'project-alpha',
+          });
+          const comment = {
+            authorUserId: 'user-alice',
+            body: body.body,
+            createdAt: '2026-03-23T00:10:00.000Z',
+            id: `comment-${readingDetail.projectComments.length + 1}`,
+            libraryEntryId: 'entry-1',
+            projectId: 'project-alpha',
+          };
+          readingDetail.projectComments.push(comment);
+
+          return jsonResponse({ comment }, 200);
         }
 
         if (requestUrl.endsWith('/api/reading/insights') && init?.method === 'POST') {
@@ -192,9 +228,9 @@ describe('paper workspace', () => {
     expect(screen.getByRole('tab', { name: '共享评论' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '关键信息' })).toBeInTheDocument();
 
-    await user.clear(screen.getByRole('textbox', { name: 'Shared note draft' }));
-    await user.type(screen.getByRole('textbox', { name: 'Shared note draft' }), 'Shared note for later synthesis.');
-    await user.click(screen.getByRole('button', { name: 'Save note' }));
+    await user.clear(screen.getByRole('textbox', { name: 'Project comment draft' }));
+    await user.type(screen.getByRole('textbox', { name: 'Project comment draft' }), 'Shared note for later synthesis.');
+    await user.click(screen.getByRole('button', { name: 'Save project comment' }));
     expect(
       await screen.findByText('Shared note for later synthesis.', { selector: 'p' }),
     ).toBeInTheDocument();

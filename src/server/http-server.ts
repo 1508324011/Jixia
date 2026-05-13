@@ -221,6 +221,7 @@ function isWorkbenchHttpApiPath(pathname: string): boolean {
     pathname === "/api/library/personal/import" ||
     pathname === "/api/settings/me" ||
     /^\/api\/reading\/[^/]+\/notes$/.test(pathname) ||
+    /^\/api\/reading\/[^/]+\/project-comments$/.test(pathname) ||
     /^\/api\/reading\/[^/]+\/insights$/.test(pathname) ||
     /^\/api\/writing\/[^/]+\/projects\/[^/]+\/document$/.test(pathname)
   );
@@ -1000,7 +1001,7 @@ async function handleApiRequest(
         authorUserId?: string;
         body: string;
         libraryEntryId: string;
-        visibility: "private" | "space_shared";
+        visibility?: "private" | "space_shared";
       }>(request);
 
       rejectLegacyIdentityBodyFields(actor, body);
@@ -1015,6 +1016,36 @@ async function handleApiRequest(
           libraryEntryId: body.libraryEntryId,
           visibility: body.visibility,
         }),
+        method,
+      );
+      return true;
+    }
+
+    if (pathname === "/api/reading/project-comments" && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      const body = await readJsonBody<{
+        actorSpaceId?: string;
+        authorUserId?: string;
+        body: string;
+        libraryEntryId: string;
+        projectId?: string;
+      }>(request);
+
+      rejectLegacyIdentityBodyFields(actor, body);
+      rejectLegacyActorSpaceContextBodyField(body);
+
+      sendJson(
+        response,
+        201,
+        {
+          comment: await app.reading.createProjectComment({
+            actorUserId: actor.userId,
+            body: body.body,
+            libraryEntryId: body.libraryEntryId,
+            projectId: body.projectId,
+          }),
+        },
         method,
       );
       return true;
