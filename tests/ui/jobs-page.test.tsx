@@ -20,8 +20,12 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 function createDeferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error?: unknown) => void;
+  let resolve: (value: T) => void = () => {
+    throw new Error('Deferred resolver was called before initialization.');
+  };
+  let reject: (error?: unknown) => void = () => {
+    throw new Error('Deferred rejecter was called before initialization.');
+  };
 
   const promise = new Promise<T>((nextResolve, nextReject) => {
     resolve = nextResolve;
@@ -971,6 +975,107 @@ describe('jobs page', () => {
     });
 
     expect(screen.queryByText('job-project-1')).not.toBeInTheDocument();
+  });
+
+  it('ignores a stale scoped job run failure after the user switches scope', async () => {
+    const user = userEvent.setup();
+    const pendingCreateResponse = createDeferred<Response>();
+
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const requestUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return Promise.resolve(jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        }));
+      }
+
+      if (requestUrl.endsWith('/api/spaces')) {
+        return Promise.resolve(jsonResponse([
+          {
+            createdAt: '2026-05-11T00:00:00.000Z',
+            id: 'space-personal-alice',
+            kind: 'personal',
+            name: 'Alice Personal Space',
+          },
+        ]));
+      }
+
+      if (requestUrl.endsWith('/api/projects')) {
+        return Promise.resolve(jsonResponse([
+          {
+            membership: {
+              joinedAt: '2026-05-11T00:00:00.000Z',
+              projectId: 'project-alpha',
+              role: 'editor',
+              userId: 'user-alice',
+            },
+            project: {
+              createdAt: '2026-05-11T00:00:00.000Z',
+              createdByUserId: 'user-alice',
+              id: 'project-alpha',
+              name: 'Project Alpha',
+              spaceId: 'space-project-alpha',
+              status: 'active',
+              updatedAt: '2026-05-11T00:00:00.000Z',
+            },
+          },
+        ]));
+      }
+
+      if (requestUrl.endsWith('/api/credentials')) {
+        return Promise.resolve(jsonResponse([
+          {
+            createdAt: '2026-05-11T00:00:00.000Z',
+            credentialRef: 'cred-alice',
+            provider: 'openai',
+            userId: 'user-alice',
+          },
+        ]));
+      }
+
+      if (requestUrl.includes('/api/jobs?')) {
+        return Promise.resolve(jsonResponse([]));
+      }
+
+      if (requestUrl.endsWith('/api/jobs') && init?.method === 'POST') {
+        return pendingCreateResponse.promise;
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench('/jobs');
+
+    expect(await screen.findByRole('heading', { name: 'Jobs' })).toBeInTheDocument();
+    await screen.findByRole('option', { name: 'Project · Project Alpha' });
+
+    await user.selectOptions(screen.getByLabelText('Jobs scope'), 'project:project-alpha');
+    await user.click(screen.getByRole('button', { name: 'Create and run scoped job' }));
+    await user.selectOptions(screen.getByLabelText('Jobs scope'), 'user:user-alice');
+
+    pendingCreateResponse.resolve(jsonResponse(
+      { error: 'Project scope mutation was denied.' },
+      403,
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Jobs scope')).toHaveValue('user:user-alice');
+    });
+
+    expect(screen.queryByRole('heading', { name: 'Runtime error' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Project scope mutation was denied.')).not.toBeInTheDocument();
   });
 
   it('shows an explicit unavailable project state when the requested project scope is not visible', async () => {

@@ -120,6 +120,8 @@ npm run start:server
 
 After startup, the server serves the built workbench shell from `dist/`, responds on `/health`, and exposes the current beta browser/API surface under `/api/`.
 
+Use `http://127.0.0.1:3000/health` as the first runtime sanity check. A healthy Task 11 process returns `{"service":"jixia-server","status":"ok"}`.
+
 ### Docker Compose startup path
 
 ```bash
@@ -128,3 +130,5 @@ docker compose up --build
 ```
 
 The included `docker-compose.yml` maps the runtime port, pins `JIXIA_STORAGE_ROOT` to the mounted `/var/lib/jixia/storage` path, points `JIXIA_DATABASE_URL` at the mounted `/var/lib/jixia/data` path for Prisma-backed collaboration, persists legacy beta state at `/var/lib/jixia/storage/server-state.json`, and keeps credential encryption key material under the same durable storage root.
+
+The Docker image also encodes the same `/health` runtime contract with a container health check against the in-container Node server, so `docker compose ps` can report when the packaged runtime is actually ready instead of only when the process has started.

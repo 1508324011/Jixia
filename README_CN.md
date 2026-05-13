@@ -118,6 +118,8 @@ npm run start:server
 
 启动后，服务会从 `dist/` 提供构建后的 workbench shell，响应 `/health`，并在 `/api/` 下暴露当前 beta 需要的浏览器接口。
 
+推荐把 `http://127.0.0.1:3000/health` 作为第一步运行时自检；健康的 Task 11 进程会返回 `{"service":"jixia-server","status":"ok"}`。
+
 ### Docker Compose 启动路径
 
 ```bash
@@ -126,3 +128,5 @@ docker compose up --build
 ```
 
 仓库内置的 `docker-compose.yml` 会映射运行端口，把 `JIXIA_STORAGE_ROOT` 固定到挂载后的 `/var/lib/jixia/storage`，并把 `JIXIA_DATABASE_URL` 指向挂载后的 `/var/lib/jixia/data`，用于 Prisma-backed Project 协作数据，同时继续将 legacy beta 状态文件持久化到 `/var/lib/jixia/storage/server-state.json`，并把 credential encryption key material 放在同一个持久 storage root 下。
+
+Docker 镜像也把同一个 `/health` 运行时约定编码为容器 health check，因此 `docker compose ps` 看到的健康状态代表的是应用已经真正可响应，而不只是 Node 进程被拉起。
