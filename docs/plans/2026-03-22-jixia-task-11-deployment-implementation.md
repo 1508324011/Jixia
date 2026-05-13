@@ -2,22 +2,23 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Turn the verified Task 10 scholarly web shell into a reproducibly runnable lab-server package with a minimal server startup path, Docker-first scaffolding, and bilingual operator documentation.
+**Goal:** Keep Jixia reproducibly runnable as a lab-server package with a minimal server startup path, Docker-first scaffolding, an explicit `/health` readiness contract, and bilingual operator documentation that matches the real integrated workbench runtime.
 
-**Architecture:** Task 11 should stay narrow. Do not refactor the domain model or start wiring full browser-side live data. Instead, add the thinnest truthful runtime that can start Jixia on Node 22, expose a health endpoint, serve the built Task 10 shell, and document persistent storage/database locations for operators. Docker and compose should encode that runtime, while smoke tests lock the operator contract so Task 12 can focus on migration checkpoints rather than startup confusion.
+**Architecture:** Task 11 should stay narrow. Do not refactor the domain model or invent a second deployment story. Instead, keep the thinnest truthful runtime that can start Jixia on Node 22, expose `/health`, serve the built integrated workbench shell, and document persistent storage/database/key locations for operators. Docker and compose should encode that same runtime, while smoke tests lock the operator contract so later work can focus on migration checkpoints rather than startup confusion.
 
 **Tech Stack:** Node.js 22, TypeScript, Vite, Vitest, native `node:http`, Docker, Docker Compose, existing `createJixiaApp()` server state helpers.
 
 ---
 
-## Current starting point
+## Current deployment baseline
 
-- Branch: `task10-layered-ui`
-- Verified branch state before this plan: `npm run test`, `npm run typecheck`, and `npm run build` pass.
-- `src/server/index.ts` exports `createJixiaApp`, but there is no real HTTP listener or operator startup command yet.
-- `.env.example` already exists, but it only contains placeholder variable lines.
-- `README.md` and `README_CN.md` mention Task 11 direction, but they do not yet provide a concrete operator runbook.
-- `Dockerfile`, `docker-compose.yml`, `.dockerignore`, and `tests/smoke/deploy-docs.test.ts` do not exist yet.
+- Branch: `main`
+- Current verification baseline: `npm test`, `npm run typecheck`, and `npm run build` pass.
+- `src/server/http-server.ts` is the real Node HTTP listener behind `npm run start:server`.
+- `src/server/runtime-config.ts` is the runtime source of truth for `JIXIA_STORAGE_ROOT`, `JIXIA_DATABASE_URL`, `JIXIA_HOST`, and `JIXIA_PORT`.
+- `.env.example` remains placeholder-only, with `YOUR_...` values plus operator guidance comments.
+- `README.md`, `README_CN.md`, and `docs/runbooks/native-demo-showcase.md` now function as the active operator/current-host runbooks.
+- `Dockerfile`, `docker-compose.yml`, `.dockerignore`, and `tests/smoke/deploy-docs.test.ts` already exist and define the current packaged runtime path.
 
 ## Non-goals
 
@@ -50,10 +51,11 @@ flowchart LR
 
 ## Implementation notes before execution
 
-1. Keep the current `task10-layered-ui` visual shell intact. Task 11 is about making it runnable and operable, not redesigning pages.
-2. The server runtime must stay aligned with the server-first boundary. Add only the minimal Node HTTP layer needed to expose health and serve the built shell.
+1. Keep the integrated workbench shell intact. Task 11 is about keeping it runnable and operable, not redesigning pages.
+2. The server runtime must stay aligned with the server-first boundary. Keep only the minimal Node HTTP layer needed to expose health and serve the built shell.
 3. Because server code currently imports `@shared/*` aliases, prefer a dedicated server Vite build config over a plain `tsc` emit path that would leave unresolved aliases in runtime output.
 4. `.env.example` must stay secret-safe and continue satisfying `tests/smoke/guardrails.test.ts`, which currently expects `YOUR_` placeholders to remain present.
+5. Docker health/readiness must follow the same `/health` contract described in the READMEs and current-host runbook.
 
 ### Task 1: Lock the Task 11 deployment contract in smoke tests
 
@@ -252,10 +254,12 @@ Create a Docker-first path that matches the current branch shape:
   - install dependencies from lockfile
   - run `npm run build`
   - copy only the runtime assets needed for the server process and web shell
+  - encode a container health check against `http://127.0.0.1:${JIXIA_PORT}/health`
   - expose the chosen server port
   - start with `npm run start:server`
 - `.dockerignore`
   - exclude `node_modules`, `dist`, `dist-server`, coverage output, git metadata, and local storage/database files
+  - exclude local key material and local developer/task tooling state so Docker build context stays secret-safe
 - `docker-compose.yml`
   - define one `jixia` service
   - load values from `.env`
@@ -373,7 +377,7 @@ Update `README.md` with a dedicated Task 11 operator section that includes:
 - local build/start path
 - Docker Compose startup path
 - what files and directories must be persisted on a lab server
-- a short note that the current runtime serves the Task 10 shell and health endpoint, but does not yet imply full browser-side live data integration
+- a short note that the current runtime serves the integrated workbench shell and health endpoint, but does not by itself guarantee every future live browser-side integration
 
 **Step 4: Run test to verify it passes**
 
@@ -486,7 +490,7 @@ Task 11 is complete only when all of the following are true:
 1. The repository exposes a real server startup path, not just `createJixiaApp()` exports.
 2. `Dockerfile`, `.dockerignore`, and `docker-compose.yml` exist and reflect the current server-first storage model.
 3. `.env.example` is still secret-safe but now explains persistent paths and startup expectations.
-4. `README.md` and `README_CN.md` both function as operator runbooks.
+4. `README.md`, `README_CN.md`, and `docs/runbooks/native-demo-showcase.md` all describe the same `/health`-based readiness contract.
 5. CI runs `npm run build` so the new runtime path cannot silently regress.
 6. Full repository verification and Docker verification both pass.
 

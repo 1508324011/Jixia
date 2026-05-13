@@ -4,9 +4,15 @@ dist-server/
 coverage/
 .git/
 .gitignore
+.trellis/
+.claude/
+.cursor/
 .env
 .env.*
 !.env.example
 .jixia-storage/
 *.db
 *.sqlite
+*.pem
+*.key
+credentials.key

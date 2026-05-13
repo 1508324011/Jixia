@@ -39,6 +39,10 @@ The root route redirects to `/home`, and unauthenticated browsers are sent to
 `/login?redirect=/home`. The current beta path now starts with a real
 session-backed login.
 
+Before walking the full browser flow, confirm `http://127.0.0.1:3000/health`
+returns `{"service":"jixia-server","status":"ok"}` so you know the
+Node runtime is up before validating workbench behavior.
+
 ## Truthful beta acceptance flow
 
 The required flow is:
