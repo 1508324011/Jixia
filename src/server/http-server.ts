@@ -8,6 +8,8 @@ import {
 import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { LoginSessionRequest } from "@shared/contracts/session";
+
 import { createJixiaApp, type CreateJixiaAppOptions } from "./app";
 import { resolveHttpApi } from "./http-api";
 import {
@@ -18,6 +20,7 @@ import {
   getOptionalActor,
 } from "./auth/actor";
 import {
+  assertNoLegacyLoginAuthorityFields,
   createClearedSessionCookieHeader,
   createSessionCookieHeader,
   readSessionTokenFromCookieHeader,
@@ -410,7 +413,11 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/session/login" && method === "POST") {
-      const body = await readJsonBody<{ email?: string; userId?: string }>(request);
+      const body = await readJsonBody<LoginSessionRequest & Record<string, unknown>>(request);
+      assertNoLegacyLoginAuthorityFields(
+        Object.fromEntries(requestUrl.searchParams),
+      );
+      assertNoLegacyLoginAuthorityFields(body);
       const login = await app.session.createLoginSession(body, {
         userAgent: readSingleHeader(request.headers["user-agent"]) ?? undefined,
       });

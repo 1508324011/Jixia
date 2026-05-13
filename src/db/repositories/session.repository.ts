@@ -47,7 +47,6 @@ export interface SessionRepository {
   findSessionByTokenHash(
     tokenHash: string,
   ): Promise<PersistedUserSessionWithUserRecord | null>;
-  findUserByEmail(email: string): Promise<PersistedSessionUserRecord | null>;
   findUserById(userId: string): Promise<PersistedSessionUserRecord | null>;
   revokeSessionByTokenHash(tokenHash: string, revokedAt?: string): Promise<void>;
   seedUsers(users: SeedUserParams[]): Promise<void>;
@@ -165,13 +164,6 @@ export function createSessionRepository(
         session: mapSession(session),
         user: mapUser(session.user),
       };
-    },
-    async findUserByEmail(email: string): Promise<PersistedSessionUserRecord | null> {
-      await ensureInitialized();
-
-      const user = await prisma.user.findUnique({ where: { email } });
-
-      return user ? mapUser(user) : null;
     },
     async findUserById(userId: string): Promise<PersistedSessionUserRecord | null> {
       await ensureInitialized();

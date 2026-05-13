@@ -1,19 +1,23 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
+import type { LoginProfileKey } from "@shared/contracts/session";
+
 import { useSessionAuth } from "../lib/session-auth";
 
 const LAB_USERS = [
-  { id: "user-alice", label: "Alice · alice@example.test" },
-  { id: "user-bob", label: "Bob · bob@example.test" },
-  { id: "user-charlie", label: "Charlie · charlie@example.test" },
+  { label: "Alice · alice@example.test", loginProfileKey: "alice" },
+  { label: "Bob · bob@example.test", loginProfileKey: "bob" },
+  { label: "Charlie · charlie@example.test", loginProfileKey: "charlie" },
 ] as const;
 
 export function LoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { error, isAuthenticated, isLoading, login } = useSessionAuth();
-  const [selectedUserId, setSelectedUserId] = useState<string>(LAB_USERS[0].id);
+  const [selectedLoginProfileKey, setSelectedLoginProfileKey] = useState<LoginProfileKey>(
+    LAB_USERS[0].loginProfileKey,
+  );
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const redirectTarget = useMemo(() => {
@@ -30,7 +34,7 @@ export function LoginPage() {
     setSubmitError(null);
 
     try {
-      await login({ userId: selectedUserId });
+      await login({ loginProfileKey: selectedLoginProfileKey });
       navigate(redirectTarget, { replace: true });
     } catch (loginError) {
       setSubmitError(
@@ -54,11 +58,11 @@ export function LoginPage() {
           <span className="field-label">选择实验室用户</span>
           <select
             aria-label="选择实验室用户"
-            value={selectedUserId}
-            onChange={(event) => setSelectedUserId(event.target.value)}
+            value={selectedLoginProfileKey}
+            onChange={(event) => setSelectedLoginProfileKey(event.target.value as LoginProfileKey)}
           >
             {LAB_USERS.map((user) => (
-              <option key={user.id} value={user.id}>
+              <option key={user.loginProfileKey} value={user.loginProfileKey}>
                 {user.label}
               </option>
             ))}

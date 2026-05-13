@@ -4,9 +4,10 @@ export interface SessionUser {
   id: string;
 }
 
+export type LoginProfileKey = "alice" | "bob" | "charlie";
+
 export interface LoginSessionRequest {
-  email?: string;
-  userId?: string;
+  loginProfileKey: LoginProfileKey;
 }
 
 export interface SessionResponse {

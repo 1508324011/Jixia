@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import type {
+  LoginProfileKey,
   LoginSessionRequest,
   LogoutSessionResponse,
   SessionResponse,
@@ -16,10 +17,38 @@ export const SESSION_COOKIE_NAME = "jixia_session";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 const SESSION_LAST_SEEN_TOUCH_INTERVAL_MS = 60 * 1000;
 
-const DEFAULT_LAB_USERS = [
-  { displayName: "Alice", email: "alice@example.test", id: "user-alice" },
-  { displayName: "Bob", email: "bob@example.test", id: "user-bob" },
-  { displayName: "Charlie", email: "charlie@example.test", id: "user-charlie" },
+const DEFAULT_LAB_LOGIN_PROFILES = [
+  {
+    displayName: "Alice",
+    email: "alice@example.test",
+    id: "user-alice",
+    loginProfileKey: "alice",
+  },
+  {
+    displayName: "Bob",
+    email: "bob@example.test",
+    id: "user-bob",
+    loginProfileKey: "bob",
+  },
+  {
+    displayName: "Charlie",
+    email: "charlie@example.test",
+    id: "user-charlie",
+    loginProfileKey: "charlie",
+  },
+] as const;
+
+const DEFAULT_LAB_LOGIN_PROFILE_MAP = new Map(
+  DEFAULT_LAB_LOGIN_PROFILES.map((profile) => [profile.loginProfileKey, profile]),
+);
+
+const LEGACY_LOGIN_AUTHORITY_FIELD_NAMES = [
+  "userId",
+  "email",
+  "actorUserId",
+  "actorId",
+  "user",
+  "actor",
 ] as const;
 
 export interface SessionServiceEnv {
@@ -93,22 +122,44 @@ function shouldTouchSession(
   return now.getTime() - lastSeenAtDate.getTime() >= SESSION_LAST_SEEN_TOUCH_INTERVAL_MS;
 }
 
-function resolveLookupUserId(input: LoginSessionRequest): string | null {
-  const userId = input.userId?.trim();
-  if (userId) {
-    return userId;
+export function assertNoLegacyLoginAuthorityFields(input: unknown): void {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return;
   }
 
-  return null;
+  const record = input as Record<string, unknown>;
+
+  for (const fieldName of LEGACY_LOGIN_AUTHORITY_FIELD_NAMES) {
+    if (typeof record[fieldName] !== "undefined") {
+      throw new Error(
+        `Client-supplied ${fieldName} is not accepted for session login.`,
+      );
+    }
+  }
 }
 
-function resolveLookupEmail(input: LoginSessionRequest): string | null {
-  const email = input.email?.trim().toLowerCase();
-  if (email) {
-    return email;
+function resolveRequestedLoginProfile(
+  input: LoginSessionRequest,
+): (typeof DEFAULT_LAB_LOGIN_PROFILES)[number] | null {
+  const request = input as unknown;
+
+  if (!request || typeof request !== "object" || Array.isArray(request)) {
+    return null;
   }
 
-  return null;
+  const rawRequestedKey = (request as Record<string, unknown>).loginProfileKey;
+
+  if (typeof rawRequestedKey !== "string") {
+    return null;
+  }
+
+  const requestedKey = rawRequestedKey.trim() as LoginProfileKey;
+
+  if (!requestedKey) {
+    return null;
+  }
+
+  return DEFAULT_LAB_LOGIN_PROFILE_MAP.get(requestedKey) ?? null;
 }
 
 function serializeCookieParts(name: string, value: string, parts: string[]): string {
@@ -181,7 +232,13 @@ export function createSessionService(
   let seededUsers: Promise<void> | null = null;
 
   async function ensureSeededUsers(): Promise<void> {
-    seededUsers ??= store.repository.seedUsers([...DEFAULT_LAB_USERS]);
+    seededUsers ??= store.repository.seedUsers(
+      DEFAULT_LAB_LOGIN_PROFILES.map(({ displayName, email, id }) => ({
+        displayName,
+        email,
+        id,
+      })),
+    );
     await seededUsers;
   }
 
@@ -190,23 +247,20 @@ export function createSessionService(
       input: LoginSessionRequest,
       context?: SessionLookupContext,
     ): Promise<SessionLoginResult> {
-      await ensureSeededUsers();
+      assertNoLegacyLoginAuthorityFields(input);
 
-      const requestedUserId = resolveLookupUserId(input);
-      const requestedEmail = resolveLookupEmail(input);
+      const requestedProfile = resolveRequestedLoginProfile(input);
 
-      if (!requestedUserId && !requestedEmail) {
-        throw new Error("Session login requires a known user id or email.");
+      if (!requestedProfile) {
+        throw new Error("Session login requires a supported login profile.");
       }
 
-      const user = requestedUserId
-        ? await store.repository.findUserById(requestedUserId)
-        : requestedEmail
-          ? await store.repository.findUserByEmail(requestedEmail)
-          : null;
+      await ensureSeededUsers();
+
+      const user = await store.repository.findUserById(requestedProfile.id);
 
       if (!user) {
-        throw new Error("Session login failed for the requested user.");
+        throw new Error("Session login failed for the requested login profile.");
       }
 
       const sessionToken = generateSessionToken();
@@ -274,4 +328,17 @@ export function createSessionService(
       return { ok: true };
     },
   };
+}
+
+export function resolveDefaultLoginProfileKeyForUserId(
+  userId: string,
+): LoginProfileKey {
+  const resolved = DEFAULT_LAB_LOGIN_PROFILES.find((profile) => profile.id === userId)
+    ?.loginProfileKey;
+
+  if (!resolved) {
+    throw new Error(`Unsupported seeded login user: ${userId}`);
+  }
+
+  return resolved;
 }

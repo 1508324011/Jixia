@@ -2,6 +2,7 @@ import { once } from "node:events";
 
 import type { RuntimeConfigEnv } from "../../src/server/runtime-config";
 import { createHttpServer } from "../../src/server/http-server";
+import { resolveDefaultLoginProfileKeyForUserId } from "../../src/server/services/session.service";
 
 export async function startTestServer(
   env: RuntimeConfigEnv,
@@ -31,8 +32,9 @@ export async function loginAs(
   serverUrl: string,
   userId: string,
 ): Promise<string> {
+  const loginProfileKey = resolveDefaultLoginProfileKeyForUserId(userId);
   const response = await fetch(`${serverUrl}/api/session/login`, {
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ loginProfileKey }),
     headers: { "Content-Type": "application/json" },
     method: "POST",
   });
@@ -40,7 +42,7 @@ export async function loginAs(
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(
-      `Login failed for ${userId} with status ${response.status}: ${errorText}`,
+      `Login failed for ${userId} (${loginProfileKey}) with status ${response.status}: ${errorText}`,
     );
   }
 

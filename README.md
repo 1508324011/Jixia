@@ -56,6 +56,7 @@ Personal-facing routes are workbench shorthand over server-side ownership and sc
 
 - `/login` is the real session entry page; the root route still redirects to `/home`, and unauthenticated browsers are redirected back to `/login?redirect=...` by the protected route boundary.
 - `POST /api/session/login`, `GET /api/session/me`, and `POST /api/session/logout` manage the server-owned `jixia_session` cookie used by browser auth.
+- `POST /api/session/login` accepts only a supported bounded `{ loginProfileKey }` selector for the seeded lab/demo personas; raw identity fields such as `userId`, `email`, `actorUserId`, and similar caller-supplied actor selectors are rejected from the login body/query instead of minting authority.
 - `GET /api/discovery/today` and `GET /api/discovery/search?query=...` serve the discovery slice.
 - `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings through Prisma-backed per-user workbench settings and encrypted provider credential secret rows without exposing raw API keys in responses or stored settings records.
 - `GET /api/library/personal` and `POST /api/library/personal/import` keep personal import ownership on the server.
