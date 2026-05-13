@@ -10,7 +10,6 @@ import type {
 } from '@shared';
 import type { EvidenceSpanRecord } from '@shared/contracts/evidence';
 import type { ImportSourceType, LibraryListResponse } from '@shared/contracts/library';
-import type { NoteVisibility } from '@shared/contracts/reading';
 
 import { requestJson } from './http-client';
 
@@ -76,14 +75,29 @@ export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
     createReadingNote(input: {
       body: string;
       entryId: string;
-      visibility: NoteVisibility;
     }): Promise<ReadingNoteResponse> {
       return requestJson<ReadingNoteResponse>(
         resolvePath(`/api/reading/${input.entryId}/notes`),
         {
           body: JSON.stringify({
             body: input.body,
-            visibility: input.visibility,
+          }),
+          headers: requestHeaders(),
+          method: 'POST',
+        },
+      );
+    },
+    createProjectReadingComment(input: {
+      body: string;
+      entryId: string;
+      projectId?: string;
+    }): Promise<import('@shared').ProjectReadingCommentResponse> {
+      return requestJson<import('@shared').ProjectReadingCommentResponse>(
+        resolvePath(`/api/reading/${input.entryId}/project-comments`),
+        {
+          body: JSON.stringify({
+            body: input.body,
+            projectId: input.projectId,
           }),
           headers: requestHeaders(),
           method: 'POST',

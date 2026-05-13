@@ -74,26 +74,23 @@ describe('reading evidence', () => {
       expect(detail?.asset.canonicalId).toBe('doi:10.1000/reading-demo');
 
       await expect(
-        app.reading.createNote({
+        app.reading.createProjectComment({
           actorUserId: 'user-bob',
           actorSpaceId: bobPersonal.id,
-          authorUserId: 'user-bob',
           body: 'This should not be visible here.',
           libraryEntryId: imported.entry.id,
-          visibility: 'space_shared',
         }),
       ).rejects.toThrow(/access denied/i);
 
-      const note = await app.reading.createNote({
+      const comment = await app.reading.createProjectComment({
         actorUserId: 'user-alice',
         actorSpaceId: aliceShared.id,
-        authorUserId: 'user-alice',
         body: 'This paper matters for the shared review.',
         libraryEntryId: imported.entry.id,
-        visibility: 'space_shared',
       });
 
-      expect(note.libraryEntryId).toBe(imported.entry.id);
+      expect(comment.libraryEntryId).toBe(imported.entry.id);
+      expect(comment.projectId).toBe(project.project.id);
 
       const insight = await app.reading.saveGeneratedInsight({
         actorUserId: 'user-alice',
@@ -118,7 +115,8 @@ describe('reading evidence', () => {
         actorUserId: 'user-alice',
         libraryEntryId: imported.entry.id,
       });
-      expect(updatedDetail?.notes).toHaveLength(1);
+      expect(updatedDetail?.notes).toHaveLength(0);
+      expect(updatedDetail?.projectComments).toHaveLength(1);
       expect(updatedDetail?.insights).toHaveLength(1);
       expect(updatedDetail?.insights[0].summary).toContain('shared review');
     } finally {
@@ -176,7 +174,6 @@ describe('reading evidence', () => {
         actorUserId: 'user-alice',
         body: 'Repository-backed access works.',
         libraryEntryId: imported.entry.id,
-        visibility: 'space_shared',
       });
 
       expect(note.authorUserId).toBe('user-alice');
@@ -194,7 +191,7 @@ describe('reading evidence', () => {
     }
   });
 
-  it('reopens private notes, shared comments, and governed insights for the workbench reader', async () => {
+  it('reopens private notes and governed insights for the personal workbench reader', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-reading-reopen-'));
     const env = {
       JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-reading-reopen.db')}`,
@@ -221,13 +218,6 @@ describe('reading evidence', () => {
         authorUserId: 'user-alice',
         body: 'Private note for later synthesis.',
         libraryEntryId: imported.entry.id,
-        visibility: 'private',
-      });
-      await app.reading.createWorkbenchNote({
-        authorUserId: 'user-alice',
-        body: 'Project-visible comment for the tumor board.',
-        libraryEntryId: imported.entry.id,
-        visibility: 'space_shared',
       });
       await app.reading.saveWorkbenchGeneratedInsight({
         evidenceSpans: [
@@ -260,12 +250,9 @@ describe('reading evidence', () => {
             body: 'Private note for later synthesis.',
             visibility: 'private',
           }),
-          expect.objectContaining({
-            body: 'Project-visible comment for the tumor board.',
-            visibility: 'space_shared',
-          }),
         ]),
       );
+      expect(reopenedDetail?.projectComments).toEqual([]);
       expect(reopenedDetail?.insights).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

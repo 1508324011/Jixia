@@ -52,6 +52,14 @@ interface NoteResponse {
   visibility: 'private' | 'space_shared';
 }
 
+interface ProjectReadingCommentResponse {
+  authorUserId: string;
+  body: string;
+  id: string;
+  libraryEntryId: string;
+  projectId: string;
+}
+
 interface ReadingDetailResponse extends LibraryEntryViewResponse {
   insights: Array<{
     evidenceSpans: Array<{
@@ -63,6 +71,7 @@ interface ReadingDetailResponse extends LibraryEntryViewResponse {
     summary: string;
   }>;
   notes: NoteResponse[];
+  projectComments: ProjectReadingCommentResponse[];
 }
 
 interface NotebookDocumentResponse {
@@ -292,18 +301,17 @@ describe('minimal recovery loop server truth smoke', () => {
             body: JSON.stringify({
               body: 'Alice private synthesis before project handoff.',
               libraryEntryId: importedProjectEntry.entry.id,
-              visibility: 'private',
             }),
             headers: jsonHeaders(aliceCookie),
             method: 'POST',
           }),
         );
-        const sharedNote = await expectJson<NoteResponse>(
-          await fetch(`${firstServer.url}/api/reading/notes`, {
+        const sharedCommentResponse = await expectJson<{ comment: ProjectReadingCommentResponse }>(
+          await fetch(`${firstServer.url}/api/reading/project-comments`, {
             body: JSON.stringify({
               body: 'Project-visible evidence comment.',
               libraryEntryId: importedProjectEntry.entry.id,
-              visibility: 'space_shared',
+              projectId: project.project.id,
             }),
             headers: jsonHeaders(aliceCookie),
             method: 'POST',
@@ -314,9 +322,9 @@ describe('minimal recovery loop server truth smoke', () => {
           authorUserId: 'user-alice',
           visibility: 'private',
         });
-        expect(sharedNote).toMatchObject({
+        expect(sharedCommentResponse.comment).toMatchObject({
           authorUserId: 'user-alice',
-          visibility: 'space_shared',
+          projectId: project.project.id,
         });
 
         const insight = await expectJson<{
@@ -349,7 +357,7 @@ describe('minimal recovery loop server truth smoke', () => {
             headers: withSessionCookie(bobCookie),
           }),
         );
-        expect(bobReading.notes.map((note) => note.body)).toContain(
+        expect(bobReading.projectComments.map((comment) => comment.body)).toContain(
           'Project-visible evidence comment.',
         );
         expect(bobReading.notes.map((note) => note.body)).not.toContain(
@@ -641,11 +649,11 @@ describe('minimal recovery loop server truth smoke', () => {
             headers: withSessionCookie(aliceCookie),
           }),
         );
-        expect(restartedAliceReading.notes.map((note) => note.body)).toEqual(
-          expect.arrayContaining([
-            'Alice private synthesis before project handoff.',
-            'Project-visible evidence comment.',
-          ]),
+        expect(restartedAliceReading.notes.map((note) => note.body)).toContain(
+          'Alice private synthesis before project handoff.',
+        );
+        expect(restartedAliceReading.projectComments.map((comment) => comment.body)).toContain(
+          'Project-visible evidence comment.',
         );
         expect(restartedAliceReading.insights.map((item) => item.summary)).toContain(
           'The imported paper supports the minimal recovery loop.',
@@ -656,7 +664,7 @@ describe('minimal recovery loop server truth smoke', () => {
             headers: withSessionCookie(bobCookie),
           }),
         );
-        expect(restartedBobReading.notes.map((note) => note.body)).toContain(
+        expect(restartedBobReading.projectComments.map((comment) => comment.body)).toContain(
           'Project-visible evidence comment.',
         );
         expect(restartedBobReading.notes.map((note) => note.body)).not.toContain(

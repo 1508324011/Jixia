@@ -1,8 +1,13 @@
 import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
-import type { NoteRecord, ReadingDetail } from "@shared/contracts/reading";
+import type {
+  NoteRecord,
+  ProjectReadingCommentRecord,
+  ReadingDetail,
+} from "@shared/contracts/reading";
 
 import type {
   CreateNoteRequest,
+  CreateProjectCommentRequest,
   GetReadingDetailRequest,
   ReadingService,
   SaveGeneratedInsightRequest,
@@ -10,7 +15,11 @@ import type {
 
 export interface ReadingRoutes {
   createNote(input: CreateNoteRequest): Promise<NoteRecord>;
+  createProjectComment(
+    input: CreateProjectCommentRequest,
+  ): Promise<ProjectReadingCommentRecord>;
   createWorkbenchNote: ReadingService["createWorkbenchNote"];
+  createWorkbenchProjectComment: ReadingService["createWorkbenchProjectComment"];
   getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
   getWorkbenchDetail: ReadingService["getWorkbenchDetail"];
   saveGeneratedInsight(
@@ -24,8 +33,16 @@ export function createReadingRoutes(service: ReadingService): ReadingRoutes {
     createNote(input: CreateNoteRequest): Promise<NoteRecord> {
       return service.createNote(input);
     },
+    createProjectComment(
+      input: CreateProjectCommentRequest,
+    ): Promise<ProjectReadingCommentRecord> {
+      return service.createProjectComment(input);
+    },
     createWorkbenchNote(input) {
       return service.createWorkbenchNote(input);
+    },
+    createWorkbenchProjectComment(input) {
+      return service.createWorkbenchProjectComment(input);
     },
     getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null> {
       return service.getDetail(input);

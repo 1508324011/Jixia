@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
-import type { NoteVisibility, ReadingDetailView } from "@shared/contracts/reading";
+import type { ReadingDetailView } from "@shared/contracts/reading";
 
 import { PaperWorkspaceTabs } from "../components/paper-workspace-tabs";
 import { createDemoApi } from "../lib/demo-api";
@@ -85,11 +85,11 @@ export function ReaderPage() {
   }, [entryId, hasLegacySpaceContext, isPersonalReaderRoute]);
 
   const privateNotes = useMemo(
-    () => detail?.notes.filter((note) => note.visibility === "private") ?? [],
+    () => detail?.notes ?? [],
     [detail],
   );
   const projectComments = useMemo(
-    () => detail?.notes.filter((note) => note.visibility === "space_shared") ?? [],
+    () => detail?.projectComments ?? [],
     [detail],
   );
   const latestInsight = detail?.insights.at(-1) ?? null;
@@ -147,10 +147,10 @@ export function ReaderPage() {
           </article>
           <aside className="panel paper-workspace">
             <h2 className="panel-title">Workbench</h2>
-            <p className="quiet-copy">
-              <span className="status-badge">space_shared note</span> · quoted evidence ·
-              governed AI summary
-            </p>
+              <p className="quiet-copy">
+                <span className="status-badge">compatibility reader route</span> · quoted evidence ·
+                governed AI summary
+              </p>
             <p className="quiet-copy">Governed action source · queued → running → succeeded</p>
             <PaperWorkspaceTabs />
             <p className="quiet-copy">
@@ -165,7 +165,6 @@ export function ReaderPage() {
 
   async function handleSaveNote(
     body: string,
-    visibility: NoteVisibility,
     setSaving: (value: boolean) => void,
     resetBody: () => void,
   ): Promise<void> {
@@ -181,7 +180,6 @@ export function ReaderPage() {
       const response = await demoApi.createReadingNote({
         body: body.trim(),
         entryId,
-        visibility,
       });
 
       setDetail((current) =>
@@ -200,6 +198,12 @@ export function ReaderPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handlePersonalProjectCommentAttempt(): Promise<void> {
+    setMutationError(
+      "Open a real project workspace before saving project comments.",
+    );
   }
 
   async function handleSaveInsight(): Promise<void> {
@@ -254,10 +258,12 @@ export function ReaderPage() {
       isLoading,
       isMutating,
       notes,
+      projectComments: projectReaderComments,
       project,
       refresh,
       saveGeneratedInsight,
       saveNote,
+      saveProjectComment,
     } = projectReader;
     const resolvedSpaceId = project?.project.spaceId ?? "No governance space";
     const projectLabel = project?.project.name ?? (projectId || "No project");
@@ -346,8 +352,24 @@ export function ReaderPage() {
             </p>
             <p className="quiet-copy">Governed action source · queued → running → succeeded</p>
             <PaperWorkspaceTabs />
+            <label className="quiet-copy" htmlFor="reader-private-note-input">
+              Private note draft
+            </label>
+            <textarea
+              id="reader-private-note-input"
+              value={privateNoteBody}
+              onChange={(event) => setPrivateNoteBody(event.target.value)}
+            />
+            <button
+              className="panel-link"
+              type="button"
+              disabled={isMutating || privateNoteBody.trim().length === 0}
+              onClick={() => void saveNote(privateNoteBody.trim())}
+            >
+              {isMutating ? "Saving…" : "Save private note"}
+            </button>
             <label className="quiet-copy" htmlFor="reader-note-input">
-              Shared note draft
+              Project comment draft
             </label>
             <textarea
               id="reader-note-input"
@@ -358,9 +380,9 @@ export function ReaderPage() {
               className="panel-link"
               type="button"
               disabled={isMutating || noteBody.trim().length === 0}
-              onClick={() => void saveNote(noteBody.trim(), "space_shared")}
+              onClick={() => void saveProjectComment(noteBody.trim())}
             >
-              {isMutating ? "Saving…" : "Save note"}
+              {isMutating ? "Saving…" : "Save project comment"}
             </button>
             <button
               className="panel-link"
@@ -397,8 +419,14 @@ export function ReaderPage() {
             <div className="shell-grid">
               {notes.map((note) => (
                 <div key={note.id} className="hero-card">
-                  <h3 className="panel-title">Note · {note.visibility}</h3>
+                  <h3 className="panel-title">Private note</h3>
                   <p className="quiet-copy">{note.body}</p>
+                </div>
+              ))}
+              {projectReaderComments.map((comment) => (
+                <div key={comment.id} className="hero-card">
+                  <h3 className="panel-title">Project comment</h3>
+                  <p className="quiet-copy">{comment.body}</p>
                 </div>
               ))}
               {insights.map((insight) => (
@@ -486,7 +514,7 @@ export function ReaderPage() {
                 className="action-button"
                 disabled={isSavingPrivateNote || isSavingProjectComment || isSavingInsight || isPromoting}
                 onClick={() =>
-                  void handleSaveNote(privateNoteBody, "private", setIsSavingPrivateNote, () =>
+                  void handleSaveNote(privateNoteBody, setIsSavingPrivateNote, () =>
                     setPrivateNoteBody(""),
                   )
                 }
@@ -508,11 +536,7 @@ export function ReaderPage() {
                 type="button"
                 className="action-button"
                 disabled={isSavingPrivateNote || isSavingProjectComment || isSavingInsight || isPromoting}
-                onClick={() =>
-                  void handleSaveNote(projectCommentBody, "space_shared", setIsSavingProjectComment, () =>
-                    setProjectCommentBody(""),
-                  )
-                }
+                onClick={() => void handlePersonalProjectCommentAttempt()}
               >
                 {isSavingProjectComment ? "Saving project comment…" : "Save project comment"}
               </button>

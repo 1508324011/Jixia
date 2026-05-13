@@ -61,6 +61,14 @@ describe('personal reader route', () => {
         libraryEntryId: string;
         visibility: 'private' | 'space_shared';
       }>,
+      projectComments: [] as Array<{
+        authorUserId: string;
+        body: string;
+        createdAt: string;
+        id: string;
+        libraryEntryId: string;
+        projectId: string;
+      }>,
     };
 
     vi.stubGlobal(
@@ -90,15 +98,15 @@ describe('personal reader route', () => {
         if (requestUrl.endsWith('/api/reading/entry-1/notes') && init?.method === 'POST') {
           const body = JSON.parse(String(init.body)) as {
             body: string;
-            visibility: 'private' | 'space_shared';
           };
+          expect(body).toEqual({ body: expect.any(String) });
           const note = {
             authorUserId: 'user-alice',
             body: body.body,
             createdAt: '2026-03-23T00:10:00.000Z',
             id: `note-${readingDetail.notes.length + 1}`,
             libraryEntryId: 'entry-1',
-            visibility: body.visibility,
+            visibility: 'private' as const,
           };
           readingDetail.notes.push(note);
 
@@ -154,6 +162,13 @@ describe('personal reader route', () => {
       screen.getByText(
         'Personal reader does not invent a project. Open a real project workspace before Writer promotion.',
       ),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: 'Project comment' }), 'Should not post');
+    await user.click(screen.getByRole('button', { name: 'Save project comment' }));
+
+    expect(
+      await screen.findByText('Open a real project workspace before saving project comments.'),
     ).toBeInTheDocument();
   });
 });

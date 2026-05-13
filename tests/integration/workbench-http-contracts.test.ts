@@ -456,7 +456,6 @@ describe('workbench http contracts', () => {
         fetch(`${baseUrl}/api/reading/entry-matching/notes?actorUserId=user-alice`, {
           body: JSON.stringify({
             body: 'Legacy query actor should be rejected.',
-            visibility: 'private',
           }),
           headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
@@ -466,7 +465,6 @@ describe('workbench http contracts', () => {
         fetch(`${baseUrl}/api/reading/entry-matching/notes?authorUserId=user-alice`, {
           body: JSON.stringify({
             body: 'Legacy query author should be rejected.',
-            visibility: 'private',
           }),
           headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
@@ -477,7 +475,6 @@ describe('workbench http contracts', () => {
           body: JSON.stringify({
             authorUserId: 'user-alice',
             body: 'Legacy matching author should be rejected.',
-            visibility: 'private',
           }),
           headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
@@ -488,7 +485,6 @@ describe('workbench http contracts', () => {
           body: JSON.stringify({
             actorSpaceId: 'space-alpha',
             body: 'Legacy actor space should be rejected.',
-            visibility: 'private',
           }),
           headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',

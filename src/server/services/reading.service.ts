@@ -3,6 +3,7 @@ import type {
   CreateReadingNoteRequest,
   GetReadingDetailQuery,
   NoteRecord,
+  ProjectReadingCommentRecord,
   ReadingDetail,
   SaveReadingInsightRequest,
   NoteVisibility,
@@ -21,6 +22,16 @@ export interface CreateNoteRequest
   actorSpaceId?: string;
   actorUserId: string;
   authorUserId?: string;
+  visibility?: NoteVisibility;
+}
+
+export interface CreateProjectCommentRequest {
+  actorSpaceId?: string;
+  actorUserId: string;
+  authorUserId?: string;
+  body: string;
+  libraryEntryId: string;
+  projectId?: string;
 }
 
 export interface SaveGeneratedInsightRequest
@@ -43,12 +54,21 @@ export interface ReadingStore {
 
 export interface ReadingService {
   createNote(input: CreateNoteRequest): Promise<NoteRecord>;
+  createProjectComment(
+    input: CreateProjectCommentRequest,
+  ): Promise<ProjectReadingCommentRecord>;
   createWorkbenchNote(input: {
     authorUserId: string;
     body: string;
     libraryEntryId: string;
-    visibility: NoteVisibility;
+    visibility?: NoteVisibility;
   }): Promise<NoteRecord>;
+  createWorkbenchProjectComment(input: {
+    authorUserId: string;
+    body: string;
+    libraryEntryId: string;
+    projectId?: string;
+  }): Promise<ProjectReadingCommentRecord>;
   getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
   getWorkbenchDetail(input: {
     actorUserId: string;
@@ -81,17 +101,6 @@ async function getAuthorizedLibraryContext(
   );
 }
 
-function canReadNote(
-  note: NoteRecord,
-  actorUserId: string,
-): boolean {
-  if (note.visibility === "private") {
-    return note.authorUserId === actorUserId;
-  }
-
-  return true;
-}
-
 export function createReadingService(store: ReadingStore): ReadingService {
   return {
     async getDetail(
@@ -122,9 +131,15 @@ export function createReadingService(store: ReadingStore): ReadingService {
       const mappedView = mapPersistedLibraryEntryView(view);
       const notes = await store.readingRepository.listNotesForEntry({
         actorUserId: input.actorUserId,
-        includeSharedNotes: view.entry.scope.type === "project",
+        includeSharedNotes: false,
         libraryEntryId: input.libraryEntryId,
       });
+      const projectComments = view.entry.scope.type === "project"
+        ? await store.readingRepository.listProjectCommentsForEntry({
+            libraryEntryId: input.libraryEntryId,
+            projectId: view.entry.scope.id,
+          })
+        : [];
       const insights = await store.readingRepository.listGeneratedInsightsForEntry(
         input.libraryEntryId,
       );
@@ -133,7 +148,8 @@ export function createReadingService(store: ReadingStore): ReadingService {
         asset: mappedView.asset,
         entry: mappedView.entry,
         insights,
-        notes: notes.filter((note) => canReadNote(note, input.actorUserId)),
+        notes,
+        projectComments,
       };
     },
     async getWorkbenchDetail(input: {
@@ -149,20 +165,56 @@ export function createReadingService(store: ReadingStore): ReadingService {
         );
       }
 
+      if (input.visibility && input.visibility !== "private") {
+        throw new Error(
+          "Reader shared discussion must use the project-comments endpoint.",
+        );
+      }
+
       await getAuthorizedLibraryContext(store, input);
 
       return store.readingRepository.createNote({
         authorUserId: input.actorUserId,
         body: input.body,
         libraryEntryId: input.libraryEntryId,
-        visibility: input.visibility,
+        visibility: "private",
+      });
+    },
+    async createProjectComment(
+      input: CreateProjectCommentRequest,
+    ): Promise<ProjectReadingCommentRecord> {
+      if (input.authorUserId && input.authorUserId !== input.actorUserId) {
+        throw new Error(
+          "Request body actor does not match the server-derived actor.",
+        );
+      }
+
+      const view = await getAuthorizedLibraryContext(store, input);
+
+      if (view.entry.scope.type !== "project") {
+        throw new Error(
+          "Project comments require a project-scoped library entry.",
+        );
+      }
+
+      if (input.projectId && input.projectId !== view.entry.scope.id) {
+        throw new Error(
+          "Request project context does not match the requested library entry.",
+        );
+      }
+
+      return store.readingRepository.createProjectComment({
+        authorUserId: input.actorUserId,
+        body: input.body,
+        libraryEntryId: input.libraryEntryId,
+        projectId: view.entry.scope.id,
       });
     },
     async createWorkbenchNote(input: {
       authorUserId: string;
       body: string;
       libraryEntryId: string;
-      visibility: NoteVisibility;
+      visibility?: NoteVisibility;
     }): Promise<NoteRecord> {
       return this.createNote({
         actorUserId: input.authorUserId,
@@ -170,6 +222,20 @@ export function createReadingService(store: ReadingStore): ReadingService {
         body: input.body,
         libraryEntryId: input.libraryEntryId,
         visibility: input.visibility,
+      });
+    },
+    async createWorkbenchProjectComment(input: {
+      authorUserId: string;
+      body: string;
+      libraryEntryId: string;
+      projectId?: string;
+    }): Promise<ProjectReadingCommentRecord> {
+      return this.createProjectComment({
+        actorUserId: input.authorUserId,
+        authorUserId: input.authorUserId,
+        body: input.body,
+        libraryEntryId: input.libraryEntryId,
+        projectId: input.projectId,
       });
     },
     async saveGeneratedInsight(

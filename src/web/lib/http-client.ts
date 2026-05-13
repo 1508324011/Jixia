@@ -22,8 +22,8 @@ import type {
   ProjectDocSnapshot,
 } from "@shared/contracts/project-docs";
 import type {
-  NoteVisibility,
   NoteRecord,
+  ProjectReadingCommentRecord,
   ReadingDetail,
 } from "@shared/contracts/reading";
 import type {
@@ -68,7 +68,11 @@ type CreateProjectDocPayload = {
 type CreateReadingNotePayload = {
   body: string;
   libraryEntryId: string;
-  visibility: NoteVisibility;
+};
+type CreateProjectReadingCommentPayload = {
+  body: string;
+  libraryEntryId: string;
+  projectId?: string;
 };
 type ImportPaperPayload = {
   projectId?: string;
@@ -284,6 +288,17 @@ export const apiClient = {
       body: JSON.stringify(input),
       method: "POST",
     });
+  },
+  createProjectReadingComment(
+    input: CreateProjectReadingCommentPayload,
+  ): Promise<ProjectReadingCommentRecord> {
+    return requestJson<{ comment: ProjectReadingCommentRecord }>(
+      "/api/reading/project-comments",
+      {
+        body: JSON.stringify(input),
+        method: "POST",
+      },
+    ).then((response) => response.comment);
   },
   createSpace(
     input: CreateSpaceRequest,

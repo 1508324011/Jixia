@@ -63,6 +63,7 @@ model User {
   memberships         Membership[]
   importedAssets      PaperAsset[]         @relation("PaperAssetImportedBy")
   notes               Note[]
+  projectReadingComments ProjectReadingComment[]
   readingStates       ReadingState[]
   conversations       Conversation[]
   generatedInsights   GeneratedInsight[]
@@ -178,6 +179,7 @@ model LibraryEntry {
   paperAsset     PaperAsset             @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
   addedBy        User                   @relation("LibraryEntryAddedBy", fields: [addedByUserId], references: [id], onDelete: Restrict)
   notes          Note[]
+  projectReadingComments ProjectReadingComment[]
   conversations  Conversation[]
   generatedInsights GeneratedInsight[]
   readingStates  ReadingState[]
@@ -195,6 +197,20 @@ model Note {
   updatedAt      DateTime       @updatedAt
   libraryEntry   LibraryEntry    @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
   author         User            @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+}
+
+model ProjectReadingComment {
+  id             String       @id @default(cuid())
+  libraryEntryId String
+  projectId      String
+  authorUserId   String
+  body           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  libraryEntry   LibraryEntry @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
+  author         User         @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([libraryEntryId, projectId])
 }
 
 model ReadingState {

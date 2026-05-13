@@ -33,7 +33,11 @@ import type {
 } from '../../src/shared/contracts/projects';
 import type {
   ConversationRecord,
+  CreateProjectReadingCommentRequest,
+  CreateReadingNoteRequest,
   NoteRecord,
+  ProjectReadingCommentRecord,
+  ReadingDetailView,
   ReadingStateRecord,
 } from '../../src/shared/contracts/reading';
 import type {
@@ -180,7 +184,7 @@ describe('core contracts', () => {
     expect(libraryEntryShape.asset.id).toBe('asset_001');
   });
 
-  it('exports reading payloads for notes and conversations', () => {
+  it('exports reading payloads for private notes, project comments, and conversations', () => {
     expect(reading).toBeTruthy();
 
     const note: NoteRecord = {
@@ -189,6 +193,14 @@ describe('core contracts', () => {
       authorUserId: 'user_001',
       visibility: 'private',
       body: 'Key finding with evidence link',
+      createdAt: '2026-03-21T00:00:00.000Z',
+    };
+    const projectComment: ProjectReadingCommentRecord = {
+      id: 'comment_001',
+      libraryEntryId: 'entry_001',
+      projectId: 'project_001',
+      authorUserId: 'user_001',
+      body: 'Project-visible interpretation for collaborators',
       createdAt: '2026-03-21T00:00:00.000Z',
     };
     const conversation: ConversationRecord = {
@@ -204,8 +216,45 @@ describe('core contracts', () => {
       progressPercent: 40,
       lastReadAt: '2026-03-21T00:00:00.000Z',
     };
+    const createNoteRequest: CreateReadingNoteRequest = {
+      body: 'Private note body',
+      libraryEntryId: 'entry_001',
+    };
+    const createProjectCommentRequest: CreateProjectReadingCommentRequest = {
+      body: 'Project comment body',
+      libraryEntryId: 'entry_001',
+      projectId: 'project_001',
+    };
+    const readingDetail: ReadingDetailView = {
+      asset: {
+        id: 'asset_001',
+        canonicalId: 'doi:10.1000/j.jixia.2026.01',
+        title: 'Jixia as a server-first research platform',
+        createdAt: '2026-03-21T00:00:00.000Z',
+      },
+      entry: {
+        addedAt: '2026-03-21T00:00:00.000Z',
+        addedByUserId: 'user_001',
+        createdAt: '2026-03-21T00:00:00.000Z',
+        id: 'entry_001',
+        paperAssetId: 'asset_001',
+        scope: { id: 'project_001', type: 'project' },
+        scopeId: 'project_001',
+        scopeType: 'project',
+        spaceId: 'space_001',
+        visibility: 'published_to_project',
+      },
+      insights: [],
+      notes: [note],
+      projectComments: [projectComment],
+    };
 
     expect(note.visibility).toBe('private');
+    expect(projectComment.projectId).toBe('project_001');
+    expect(createNoteRequest).not.toHaveProperty('visibility');
+    expect(createProjectCommentRequest.projectId).toBe('project_001');
+    expect(readingDetail.notes).toHaveLength(1);
+    expect(readingDetail.projectComments).toHaveLength(1);
     expect(conversation.title).toContain('Summarize');
     expect(readingState.progressPercent).toBe(40);
   });

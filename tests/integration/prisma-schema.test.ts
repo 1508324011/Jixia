@@ -14,6 +14,7 @@ describe('prisma schema', () => {
     expect(schema).toContain('model PaperAsset');
     expect(schema).toContain('model LibraryEntry');
     expect(schema).toContain('model Note');
+    expect(schema).toContain('model ProjectReadingComment');
     expect(schema).toContain('model ReadingState');
     expect(schema).toContain('model Conversation');
     expect(schema).toContain('model NotebookDocument');
@@ -44,6 +45,15 @@ describe('prisma schema', () => {
       /model Membership[\s\S]*@@unique\(\[spaceId, userId\]\)/,
     );
     expect(schema).toMatch(/model Note[\s\S]*\n\s+libraryEntryId\s+String/);
+    expect(schema).toMatch(
+      /model ProjectReadingComment[\s\S]*\n\s+libraryEntryId\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ProjectReadingComment[\s\S]*\n\s+projectId\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ProjectReadingComment[\s\S]*@@index\(\[libraryEntryId, projectId\]\)/,
+    );
     expect(schema).toMatch(
       /model Conversation[\s\S]*\n\s+libraryEntryId\s+String/,
     );
@@ -138,6 +148,11 @@ describe('prisma schema', () => {
     expect(
       existsSync(
         'prisma/migrations/20260510000000_job_scoperef_authority_cutover/migration.sql',
+      ),
+    ).toBe(true);
+    expect(
+      existsSync(
+        'prisma/migrations/20260511000000_reading_project_comments/migration.sql',
       ),
     ).toBe(true);
     expect(clientEntrypoint).toContain('PrismaClient');
@@ -304,6 +319,8 @@ describe('prisma schema', () => {
 
     expect(readingService).toContain('libraryService.assertCanAccessEntry');
     expect(readingService).toContain('readingRepository.listNotesForEntry');
+    expect(readingService).toContain('readingRepository.listProjectCommentsForEntry');
+    expect(readingService).toContain('readingRepository.createProjectComment');
     expect(readingService).toContain('readingRepository.saveGeneratedInsight');
     expect(readingService).not.toContain('actorUserId ?? input.authorUserId');
     expect(readingService).not.toContain('actorUserId ?? input.startedByUserId');
@@ -443,6 +460,8 @@ describe('prisma schema', () => {
     expect(libraryService).not.toContain('store.libraryEntries');
 
     expect(readingService).toContain('libraryService.assertCanAccessEntry');
+    expect(readingService).toContain('readingRepository.listProjectCommentsForEntry');
+    expect(readingService).toContain('readingRepository.createProjectComment');
     expect(appWiring).toContain('createReadingRepository(prismaClient)');
     expect(appWiring).toContain('initializeReadingPersistence(prismaClient)');
     expect(appWiring).toContain('legacyConversations');

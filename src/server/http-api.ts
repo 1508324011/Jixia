@@ -6,7 +6,7 @@ import type {
 import type { EvidenceSpanRecord } from '@shared/contracts/evidence';
 import type { LibraryListResponse } from '@shared/contracts/library';
 import type {
-  NoteVisibility,
+  ProjectReadingCommentResponse,
   ReadingDetailView,
   ReadingInsightResponse,
   ReadingNoteResponse,
@@ -47,7 +47,13 @@ interface ImportToPersonalLibraryRequestBody {
 
 interface CreateReadingNoteRequestBody {
   body?: string;
-  visibility?: NoteVisibility;
+  visibility?: 'private' | 'space_shared';
+}
+
+interface CreateProjectReadingCommentRequestBody {
+  body?: string;
+  libraryEntryId?: string;
+  projectId?: string;
 }
 
 interface SaveReadingInsightRequestBody {
@@ -75,10 +81,6 @@ function isImportSourceType(
   value: unknown,
 ): value is ImportToPersonalLibraryRequestBody['sourceType'] {
   return value === 'doi' || value === 'pmid' || value === 'arxiv';
-}
-
-function isNoteVisibility(value: unknown): value is NoteVisibility {
-  return value === 'private' || value === 'space_shared';
 }
 
 function decodePathSegment(segment: string): string {
@@ -139,7 +141,9 @@ function parseImportToPersonalLibraryRequest(
 
 function parseCreateReadingNoteRequest(
   requestBody: unknown,
-): Required<Pick<CreateReadingNoteRequestBody, 'body' | 'visibility'>> {
+): Required<Pick<CreateReadingNoteRequestBody, 'body'>> & {
+  visibility?: CreateReadingNoteRequestBody['visibility'];
+} {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Reading note payload must be a JSON object.');
   }
@@ -153,13 +157,48 @@ function parseCreateReadingNoteRequest(
     throw new Error('body is required.');
   }
 
-  if (!isNoteVisibility(visibility)) {
-    throw new Error('visibility is required.');
+  if (
+    typeof visibility !== 'undefined' &&
+    visibility !== 'private' &&
+    visibility !== 'space_shared'
+  ) {
+    throw new Error('visibility must be private or space_shared when provided.');
   }
 
   return {
     body: body.trim(),
     visibility,
+  };
+}
+
+function parseCreateProjectReadingCommentRequest(
+  requestBody: unknown,
+): Required<Pick<CreateProjectReadingCommentRequestBody, 'body'>> & {
+  libraryEntryId?: string;
+  projectId?: string;
+} {
+  if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
+    throw new Error('Project reading comment payload must be a JSON object.');
+  }
+
+  const { body, libraryEntryId, projectId } = requestBody as Record<string, unknown>;
+
+  if (typeof body !== 'string' || !body.trim()) {
+    throw new Error('body is required.');
+  }
+
+  if (typeof projectId !== 'undefined' && typeof projectId !== 'string') {
+    throw new Error('projectId must be a string when provided.');
+  }
+
+  if (typeof libraryEntryId !== 'undefined' && typeof libraryEntryId !== 'string') {
+    throw new Error('libraryEntryId must be a string when provided.');
+  }
+
+  return {
+    body: body.trim(),
+    libraryEntryId: libraryEntryId?.trim() || undefined,
+    projectId: projectId?.trim() || undefined,
   };
 }
 
@@ -405,6 +444,12 @@ function toReadingNoteResponse(
   return { note };
 }
 
+function toProjectReadingCommentResponse(
+  comment: Awaited<ReturnType<JixiaApp['reading']['createWorkbenchProjectComment']>>,
+): ProjectReadingCommentResponse {
+  return { comment };
+}
+
 function toReadingInsightResponse(
   insight: Awaited<ReturnType<JixiaApp['reading']['saveWorkbenchGeneratedInsight']>>,
 ): ReadingInsightResponse {
@@ -564,6 +609,52 @@ export async function resolveHttpApi(
           body: payload.body,
           libraryEntryId: decodePathSegment(readingNoteMatch[1]),
           visibility: payload.visibility,
+        }),
+      ),
+      statusCode: 201,
+    };
+  }
+
+  const projectReadingCommentMatch = pathname.match(
+    /^\/api\/reading\/([^/]+)\/project-comments$/,
+  );
+
+  if (projectReadingCommentMatch && method === 'POST') {
+    const requiredActor = requireActor(actor);
+    rejectLegacyIdentityQueryFields(requiredActor, requestUrl);
+    rejectLegacyIdentityBodyFields(requiredActor, requestBody);
+    const payload = parseCreateProjectReadingCommentRequest(requestBody);
+
+    return {
+      payload: toProjectReadingCommentResponse(
+        await app.reading.createProjectComment({
+          actorUserId: requiredActor.userId,
+          body: payload.body,
+          libraryEntryId: decodePathSegment(projectReadingCommentMatch[1]),
+          projectId: payload.projectId,
+        }),
+      ),
+      statusCode: 201,
+    };
+  }
+
+  if (pathname === '/api/reading/project-comments' && method === 'POST') {
+    const requiredActor = requireActor(actor);
+    rejectLegacyIdentityQueryFields(requiredActor, requestUrl);
+    rejectLegacyIdentityBodyFields(requiredActor, requestBody);
+    const payload = parseCreateProjectReadingCommentRequest(requestBody);
+
+    if (!payload.libraryEntryId) {
+      throw new Error('libraryEntryId is required.');
+    }
+
+    return {
+      payload: toProjectReadingCommentResponse(
+        await app.reading.createProjectComment({
+          actorUserId: requiredActor.userId,
+          body: payload.body,
+          libraryEntryId: payload.libraryEntryId,
+          projectId: payload.projectId,
         }),
       ),
       statusCode: 201,
