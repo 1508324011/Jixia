@@ -68,7 +68,7 @@ describe("http server phase 2 api", () => {
         const jobs = await fetch(
           `${server.url}/api/jobs?scopeType=user&scopeId=user-alice&spaceId=${createdSpace.id}`,
           {
-          headers: withSessionCookie(aliceCookie),
+            headers: withSessionCookie(aliceCookie),
           },
         ).then((response) => response.json() as Promise<Array<{ id: string }>>);
         expect(jobs.map((job) => job.id)).toContain(createdJob.id);
@@ -88,6 +88,37 @@ describe("http server phase 2 api", () => {
           "queued",
           "running",
           "succeeded",
+        ]);
+
+        const cancellableJob = await fetch(`${server.url}/api/jobs`, {
+          body: JSON.stringify({
+            credentialRef: credential.credentialRef,
+            kind: "ai.summary",
+            payload: { prompt: "Phase 2 cancellation over HTTP." },
+            scope: { id: "user-alice", type: "user" },
+            spaceId: createdSpace.id,
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            "Content-Type": "application/json",
+          }),
+          method: "POST",
+        }).then(
+          (response) => response.json() as Promise<{ id: string; status: string }>,
+        );
+        const cancelledJob = await fetch(`${server.url}/api/jobs/${cancellableJob.id}/cancel`, {
+          headers: withSessionCookie(aliceCookie),
+          method: "POST",
+        }).then((response) => response.json() as Promise<{ status: string }>);
+        expect(cancelledJob.status).toBe("cancelled");
+
+        const cancelledEvents = await fetch(`${server.url}/api/jobs/${cancellableJob.id}/events`, {
+          headers: withSessionCookie(aliceCookie),
+        }).then(
+          (response) => response.json() as Promise<Array<{ status: string }>>,
+        );
+        expect(cancelledEvents.map((event) => event.status)).toEqual([
+          "queued",
+          "cancelled",
         ]);
       } finally {
         await server.close();

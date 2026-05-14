@@ -402,8 +402,12 @@ describe('prisma schema', () => {
     expect(jobsRoutes).not.toContain('store.jobs.filter');
     expect(jobsRoutes).not.toContain('store.persist');
 
-    expect(jobRunner).toContain('jobRepository.updateJobStatus');
-    expect(jobRunner).toContain('jobRepository.appendJobEvent');
+    expect(jobRunner).toContain('jobRepository.recordJobLifecycleTransition');
+    expect(jobRunner).not.toContain('jobRepository.updateJobStatus');
+    expect(jobRunner).not.toContain('jobRepository.appendJobEvent');
+    expect(jobRepository).toContain('insertJobEvent');
+    expect(jobRepository).toContain('assertJobStatusTransition');
+    expect(jobRepository).toContain('recordJobLifecycleTransition');
     expect(jobRunner).not.toContain('store.jobs.find');
     expect(jobRunner).not.toContain('store.persist');
 

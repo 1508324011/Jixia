@@ -1215,6 +1215,29 @@ async function handleApiRequest(
       return true;
     }
 
+    const jobCancelMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/cancel$/);
+    if (jobCancelMatch && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      const [, jobId] = jobCancelMatch;
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      const body = await readJsonBody<{
+        actorSpaceId?: string;
+        actorUserId?: string;
+      }>(request);
+      rejectLegacyIdentityBodyFields(actor, body);
+      rejectLegacyActorSpaceContextBodyField(body);
+      sendJson(
+        response,
+        200,
+        await app.jobs.cancelJob({
+          actorUserId: actor.userId,
+          jobId,
+        }),
+        method,
+      );
+      return true;
+    }
+
     const jobEventsMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/events$/);
     if (jobEventsMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);

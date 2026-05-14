@@ -8,14 +8,13 @@ import {
 } from '@prisma/client';
 
 import type { JixiaPrismaClient } from '../client';
+import {
+  assertJobStatusTransition,
+  type GuardedJobStatus,
+} from './job-status-transitions';
 import { initializeSpacePersistence } from './space.repository';
 
-export type PersistedJobStatus =
-  | 'queued'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled';
+export type PersistedJobStatus = GuardedJobStatus;
 
 export type PersistedJobScopeType = 'user' | 'project';
 
@@ -83,6 +82,17 @@ export interface CreateQueuedJobWithAuditParams {
   job: CreateJobParams;
 }
 
+export interface RecordJobLifecycleTransitionParams {
+  audit: Omit<CreateAuditRecordParams, 'jobId' | 'spaceId'> & {
+    id?: string;
+  };
+  event: Omit<AppendJobEventParams, 'jobId' | 'status'> & {
+    id?: string;
+  };
+  jobId: string;
+  status: PersistedJobStatus;
+}
+
 export interface PersistedJobRecord {
   createdAt: string;
   credentialRef: string;
@@ -120,6 +130,13 @@ export interface PersistedQueuedJobWithAudit {
   job: PersistedJobRecord;
 }
 
+export interface PersistedJobLifecycleTransition {
+  audit: PersistedAuditLogRecord;
+  event: PersistedJobEventRecord;
+  job: PersistedJobRecord;
+  previousStatus: PersistedJobStatus;
+}
+
 export interface ListJobsForScopeQuery {
   scope: PersistedJobScopeRef;
   spaceId?: string;
@@ -147,6 +164,9 @@ export interface JobRepository {
   listJobsForScope(
     query: ListJobsForScopeQuery,
   ): Promise<PersistedJobRecord[]>;
+  recordJobLifecycleTransition(
+    input: RecordJobLifecycleTransitionParams,
+  ): Promise<PersistedJobLifecycleTransition>;
   updateJobStatus(
     jobId: string,
     status: PersistedJobStatus,
@@ -296,6 +316,34 @@ function mapProviderCredential(
     updatedAt: toIsoString(credential.updatedAt),
     userId: credential.userId,
   };
+}
+
+function expectedLifecycleAction(status: PersistedJobStatus): string {
+  switch (status) {
+    case 'cancelled':
+      return 'job.cancelled';
+    case 'failed':
+      return 'job.failed';
+    case 'running':
+      return 'job.started';
+    case 'succeeded':
+      return 'job.completed';
+    case 'queued':
+      return 'job.created';
+  }
+}
+
+function assertLifecycleActionMatchesStatus(
+  action: string,
+  status: PersistedJobStatus,
+): void {
+  const expectedAction = expectedLifecycleAction(status);
+
+  if (action !== expectedAction) {
+    throw new Error(
+      `Job lifecycle action ${action} does not match status ${status}; expected ${expectedAction}.`,
+    );
+  }
 }
 
 async function ensureUser(prisma: JobClient, userId: string): Promise<void> {
@@ -621,18 +669,110 @@ export function createJobRepository(
 
       return jobs.map(mapJob);
     },
+    async recordJobLifecycleTransition(
+      input: RecordJobLifecycleTransitionParams,
+    ): Promise<PersistedJobLifecycleTransition> {
+      await ensureInitialized();
+      assertLifecycleActionMatchesStatus(input.audit.action, input.status);
+
+      return prisma.$transaction(async (transaction) => {
+        const currentJob = await transaction.job.findUnique({
+          where: { id: input.jobId },
+        });
+
+        if (!currentJob) {
+          throw new Error(`Job ${input.jobId} does not exist.`);
+        }
+
+        assertJobStatusTransition(currentJob.status, input.status);
+
+        const updateResult = await transaction.job.updateMany({
+          data: {
+            status: input.status as JobStatus,
+            updatedAt: new Date(),
+          },
+          where: {
+            id: input.jobId,
+            status: currentJob.status,
+          },
+        });
+
+        if (updateResult.count !== 1) {
+          throw new Error(
+            `Job ${input.jobId} changed status during lifecycle transition. Retry with the latest job state.`,
+          );
+        }
+
+        const job = await transaction.job.findUnique({
+          where: { id: input.jobId },
+        });
+
+        if (!job) {
+          throw new Error(`Job ${input.jobId} does not exist.`);
+        }
+
+        const event = await insertJobEvent(transaction, {
+          ...input.event,
+          jobId: job.id,
+          status: input.status,
+        });
+        const audit = await insertAuditRecord(transaction, {
+          ...input.audit,
+          jobId: job.id,
+          spaceId: job.spaceId,
+        });
+
+        return {
+          audit,
+          event,
+          job: mapJob(job),
+          previousStatus: currentJob.status,
+        };
+      });
+    },
     async updateJobStatus(
       jobId: string,
       status: PersistedJobStatus,
     ): Promise<PersistedJobRecord> {
       await ensureInitialized();
 
-      const job = await prisma.job.update({
-        data: {
-          status: status as JobStatus,
-          updatedAt: new Date(),
-        },
-        where: { id: jobId },
+      const job = await prisma.$transaction(async (transaction) => {
+        const currentJob = await transaction.job.findUnique({
+          where: { id: jobId },
+        });
+
+        if (!currentJob) {
+          throw new Error(`Job ${jobId} does not exist.`);
+        }
+
+        assertJobStatusTransition(currentJob.status, status);
+
+        const updateResult = await transaction.job.updateMany({
+          data: {
+            status: status as JobStatus,
+            updatedAt: new Date(),
+          },
+          where: {
+            id: jobId,
+            status: currentJob.status,
+          },
+        });
+
+        if (updateResult.count !== 1) {
+          throw new Error(
+            `Job ${jobId} changed status during lifecycle transition. Retry with the latest job state.`,
+          );
+        }
+
+        const updatedJob = await transaction.job.findUnique({
+          where: { id: jobId },
+        });
+
+        if (!updatedJob) {
+          throw new Error(`Job ${jobId} does not exist.`);
+        }
+
+        return updatedJob;
       });
 
       return mapJob(job);

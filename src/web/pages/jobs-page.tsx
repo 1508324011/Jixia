@@ -5,7 +5,9 @@ export function JobsPage() {
     activeJob,
     audits,
     availableScopes,
+    cancelActiveJob,
     canCreateJob,
+    canCancelActiveJob,
     credentials,
     error,
     events,
@@ -134,6 +136,14 @@ export function JobsPage() {
           {isRunningJob
             ? "Running scoped job…"
             : "Create and run scoped job"}
+        </button>
+        <button
+          className="panel-link"
+          type="button"
+          onClick={() => void cancelActiveJob()}
+          disabled={isRunningJob || isLoading || !canCancelActiveJob}
+        >
+          Cancel active job
         </button>
         <button
           className="panel-link"
