@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import * as jobs from '../../src/shared/contracts/jobs';
 import * as library from '../../src/shared/contracts/library';
+import * as documentSnapshot from '../../src/shared/contracts/document-snapshot';
 import * as notebook from '../../src/shared/contracts/notebook';
 import * as projects from '../../src/shared/contracts/projects';
 import * as projectDocs from '../../src/shared/contracts/project-docs';
@@ -43,6 +44,10 @@ import type {
 import type {
   PublishState,
 } from '../../src/shared/contracts/writing';
+import type {
+  DocumentCitationRecordBase,
+  DocumentSnapshot,
+} from '../../src/shared/contracts/document-snapshot';
 import type {
   NotebookCitationRecord,
   NotebookDocumentRecord,
@@ -260,6 +265,7 @@ describe('core contracts', () => {
   });
 
   it('exports explicit notebook and project-doc writing payloads', () => {
+    expect(documentSnapshot).toBeTruthy();
     expect(writing).toBeTruthy();
     expect(notebook).toBeTruthy();
     expect(projectDocs).toBeTruthy();
@@ -320,9 +326,20 @@ describe('core contracts', () => {
     );
     expect(notebook.notebookContract).toBe('jixia-notebook-contract');
     expect(projectDocs.projectDocsContract).toBe('jixia-project-docs-contract');
+    expect(documentSnapshot.documentSnapshotContract).toBe(
+      'jixia-document-snapshot-contract',
+    );
 
     expectTypeOf<PublishState>().toEqualTypeOf<
       'draft' | 'review' | 'published'
+    >();
+    expectTypeOf<NotebookCitationRecord>().toMatchTypeOf<DocumentCitationRecordBase>();
+    expectTypeOf<ProjectDocCitationRecord>().toMatchTypeOf<DocumentCitationRecordBase>();
+    expectTypeOf<NotebookDocumentSnapshot>().toEqualTypeOf<
+      DocumentSnapshot<NotebookDocumentRecord, NotebookCitationRecord>
+    >();
+    expectTypeOf<ProjectDocSnapshot>().toEqualTypeOf<
+      DocumentSnapshot<ProjectDocRecord, ProjectDocCitationRecord>
     >();
   });
 
