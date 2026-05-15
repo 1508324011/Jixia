@@ -318,6 +318,22 @@ function rejectLegacyIdentityQueryFields(
   );
 }
 
+function rejectNotebookAuthorityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "spaceId"),
+    "spaceId",
+  );
+}
+
 function rejectLegacyIdentityBodyFields(
   actor: { userId: string },
   requestBody: unknown,
@@ -334,6 +350,84 @@ function rejectLegacyIdentityBodyFields(
   assertNoClientActorIdentityField(actor, body.authorUserId, "authorUserId");
   assertNoClientActorIdentityField(actor, body.startedByUserId, "startedByUserId");
   assertNoClientActorContextField(body.actorSpaceId, "actorSpaceId");
+}
+
+function assertStringField(
+  value: unknown,
+  fieldName: string,
+): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${fieldName} is required.`);
+  }
+
+  return value.trim();
+}
+
+function assertOptionalStringField(
+  value: unknown,
+  fieldName: string,
+): string | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`${fieldName} must be a string when provided.`);
+  }
+
+  return value.trim() || undefined;
+}
+
+function parseNotebookCaptureBody(requestBody: unknown): {
+  notebookDocumentId?: string;
+  notebookTitle?: string;
+  ownerId?: string;
+  spaceId?: string;
+  source: {
+    generatedInsightId: string;
+    libraryEntryId: string;
+    note?: string;
+    type: "generatedInsight";
+  };
+} {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Notebook evidence capture payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  const source = body.source;
+
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    throw new Error("Notebook evidence capture source must be a JSON object.");
+  }
+
+  const sourceRecord = source as Record<string, unknown>;
+
+  if (sourceRecord.type !== "generatedInsight") {
+    throw new Error("Notebook evidence capture source type must be generatedInsight.");
+  }
+
+  return {
+    notebookDocumentId: assertOptionalStringField(
+      body.notebookDocumentId,
+      "notebookDocumentId",
+    ),
+    notebookTitle: assertOptionalStringField(body.notebookTitle, "notebookTitle"),
+    ownerId: assertOptionalStringField(body.ownerId, "ownerId"),
+    spaceId: assertOptionalStringField(body.spaceId, "spaceId"),
+    source: {
+      generatedInsightId: assertStringField(
+        sourceRecord.generatedInsightId,
+        "source.generatedInsightId",
+      ),
+      libraryEntryId: assertStringField(
+        sourceRecord.libraryEntryId,
+        "source.libraryEntryId",
+      ),
+      note: assertOptionalStringField(sourceRecord.note, "source.note"),
+      type: "generatedInsight",
+    },
+  };
 }
 
 function rejectLegacyActorSpaceContextField(requestUrl: URL): void {
@@ -717,16 +811,31 @@ async function handleApiRequest(
       return true;
     }
 
+    if (pathname === "/api/notebooks" && method === "GET") {
+      const actor = await getActor(request, actorOptions);
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.notebooks.listDocuments(actor.userId),
+        method,
+      );
+      return true;
+    }
+
     if (pathname === "/api/notebooks" && method === "POST") {
       const actor = await getActor(request, actorOptions);
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         ownerId?: string;
+        spaceId?: string;
         title: string;
       }>(request);
       rejectLegacyIdentityBodyFields(actor, body);
       assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+      assertNoClientActorContextField(body.spaceId, "spaceId");
 
       sendJson(
         response,
@@ -742,16 +851,59 @@ async function handleApiRequest(
       return true;
     }
 
+    if (pathname === "/api/notebooks/capture" && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      const body = parseNotebookCaptureBody(requestBody);
+      rejectLegacyIdentityBodyFields(actor, requestBody);
+      rejectLegacyActorSpaceContextBodyField(requestBody);
+      assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+      assertNoClientActorContextField(body.spaceId, "spaceId");
+
+      sendJson(
+        response,
+        200,
+        await app.notebooks.captureEvidence(
+          {
+            notebookDocumentId: body.notebookDocumentId,
+            notebookTitle: body.notebookTitle,
+            source: body.source,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
     const notebookMatch = pathname.match(/^\/api\/notebooks\/([^/]+)$/);
     if (notebookMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = notebookMatch;
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
 
       sendJson(
         response,
         200,
         await app.notebooks.getDocument({ documentId }, actor.userId),
+        method,
+      );
+      return true;
+    }
+
+    const notebookSnapshotMatch = pathname.match(
+      /^\/api\/notebooks\/([^/]+)\/snapshot$/,
+    );
+    if (notebookSnapshotMatch && method === "GET") {
+      const actor = await getActor(request, actorOptions);
+      const [, documentId] = notebookSnapshotMatch;
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.notebooks.getLatestSnapshot({ documentId }, actor.userId),
         method,
       );
       return true;
@@ -763,16 +915,22 @@ async function handleApiRequest(
     if (notebookVersionsMatch && method === "POST") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = notebookVersionsMatch;
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
+        actorSpaceId?: string;
         citations: Array<{
           evidenceSpan?: string;
           paperAssetId: string;
         }>;
         content: string;
+        ownerId?: string;
+        spaceId?: string;
       }>(request);
       rejectLegacyIdentityBodyFields(actor, body);
+      rejectLegacyActorSpaceContextBodyField(body);
+      assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+      assertNoClientActorContextField(body.spaceId, "spaceId");
 
       sendJson(
         response,

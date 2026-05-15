@@ -127,6 +127,12 @@ export interface ReadingRepository {
   createProjectComment(
     input: CreatePersistedProjectReadingCommentParams,
   ): Promise<PersistedProjectReadingCommentRecord>;
+  getGeneratedInsight(
+    query: {
+      generatedInsightId: string;
+      libraryEntryId: string;
+    },
+  ): Promise<PersistedGeneratedInsightRecord | null>;
   getReadingState(
     libraryEntryId: string,
     userId: string,
@@ -544,6 +550,24 @@ export function createReadingRepository(
       });
 
       return mapProjectReadingComment(comment);
+    },
+    async getGeneratedInsight(query: {
+      generatedInsightId: string;
+      libraryEntryId: string;
+    }): Promise<PersistedGeneratedInsightRecord | null> {
+      await ensureInitialized();
+
+      const insight = await prisma.generatedInsight.findFirst({
+        include: { evidenceSpans: true },
+        where: {
+          id: query.generatedInsightId,
+          libraryEntryId: query.libraryEntryId,
+        },
+      });
+
+      return insight
+        ? mapGeneratedInsight(insight as GeneratedInsightWithEvidence)
+        : null;
     },
     async getReadingState(
       libraryEntryId: string,

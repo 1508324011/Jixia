@@ -31,16 +31,19 @@ export function ReaderPage() {
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [promotedDocumentId, setPromotedDocumentId] = useState<string | null>(null);
+  const [capturedNotebookId, setCapturedNotebookId] = useState<string | null>(null);
   const [isSavingPrivateNote, setIsSavingPrivateNote] = useState(false);
   const [isSavingProjectComment, setIsSavingProjectComment] = useState(false);
   const [isSavingInsight, setIsSavingInsight] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
+  const [isCapturingNotebook, setIsCapturingNotebook] = useState(false);
   const [noteBody, setNoteBody] = useState(
     "This paper matters for the shared review.",
   );
 
   useEffect(() => {
     setPromotedDocumentId(null);
+    setCapturedNotebookId(null);
     setSuccessMessage(null);
     setMutationError(null);
   }, [entryId, projectId]);
@@ -249,6 +252,37 @@ export function ReaderPage() {
     );
   }
 
+  async function handleCapturePersonalInsightToNotebook(): Promise<void> {
+    if (!latestInsight) {
+      return;
+    }
+
+    setIsCapturingNotebook(true);
+    setMutationError(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await demoApi.captureNotebookEvidence({
+        notebookTitle: "Reader evidence notebook",
+        source: {
+          generatedInsightId: latestInsight.id,
+          libraryEntryId: latestInsight.libraryEntryId,
+          note: "Captured from personal Reader.",
+          type: "generatedInsight",
+        },
+      });
+
+      setCapturedNotebookId(response.document.id);
+      setSuccessMessage(`Sent latest insight to private Notebook ${response.document.title}.`);
+    } catch (error) {
+      setMutationError(
+        error instanceof Error ? error.message : "Failed to send evidence to Notebook.",
+      );
+    } finally {
+      setIsCapturingNotebook(false);
+    }
+  }
+
   if (hasProjectRouteContext) {
     const {
       asset,
@@ -295,6 +329,37 @@ export function ReaderPage() {
         );
       } finally {
         setIsPromoting(false);
+      }
+    }
+
+    async function handleProjectCaptureInsightToNotebook(): Promise<void> {
+      if (!latestProjectInsight) {
+        return;
+      }
+
+      setIsCapturingNotebook(true);
+      setMutationError(null);
+      setSuccessMessage(null);
+
+      try {
+        const response = await apiClient.captureNotebookEvidence({
+          notebookTitle: "Reader evidence notebook",
+          source: {
+            generatedInsightId: latestProjectInsight.id,
+            libraryEntryId: latestProjectInsight.libraryEntryId,
+            note: `Captured from project Reader ${projectLabel}.`,
+            type: "generatedInsight",
+          },
+        });
+
+        setCapturedNotebookId(response.document.id);
+        setSuccessMessage(`Sent latest insight to private Notebook ${response.document.title}.`);
+      } catch (error) {
+        setMutationError(
+          error instanceof Error ? error.message : "Failed to send evidence to Notebook.",
+        );
+      } finally {
+        setIsCapturingNotebook(false);
       }
     }
 
@@ -400,13 +465,26 @@ export function ReaderPage() {
             <button
               className="panel-link"
               type="button"
-              disabled={!latestProjectInsight || isMutating || isPromoting}
+              disabled={!latestProjectInsight || isMutating || isPromoting || isCapturingNotebook}
               onClick={() => void handleProjectPromoteLatestInsight()}
             >
               {isPromoting ? "Promoting…" : "Promote latest insight to Writer"}
             </button>
+            <button
+              className="panel-link"
+              type="button"
+              disabled={!latestProjectInsight || isMutating || isPromoting || isCapturingNotebook}
+              onClick={() => void handleProjectCaptureInsightToNotebook()}
+            >
+              {isCapturingNotebook ? "Sending to Notebook…" : "Send latest insight to Notebook"}
+            </button>
             {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
             {successMessage ? <p className="quiet-copy">{successMessage}</p> : null}
+            {capturedNotebookId ? (
+              <Link className="panel-link" to="/notebook">
+                Open Notebook
+              </Link>
+            ) : null}
             {projectWritingPath ? (
               <Link className="panel-link" to={projectWritingPath}>
                 Open writing
@@ -512,7 +590,13 @@ export function ReaderPage() {
               <button
                 type="button"
                 className="action-button"
-                disabled={isSavingPrivateNote || isSavingProjectComment || isSavingInsight || isPromoting}
+                disabled={
+                  isSavingPrivateNote ||
+                  isSavingProjectComment ||
+                  isSavingInsight ||
+                  isPromoting ||
+                  isCapturingNotebook
+                }
                 onClick={() =>
                   void handleSaveNote(privateNoteBody, setIsSavingPrivateNote, () =>
                     setPrivateNoteBody(""),
@@ -535,7 +619,13 @@ export function ReaderPage() {
               <button
                 type="button"
                 className="action-button"
-                disabled={isSavingPrivateNote || isSavingProjectComment || isSavingInsight || isPromoting}
+                disabled={
+                  isSavingPrivateNote ||
+                  isSavingProjectComment ||
+                  isSavingInsight ||
+                  isPromoting ||
+                  isCapturingNotebook
+                }
                 onClick={() => void handlePersonalProjectCommentAttempt()}
               >
                 {isSavingProjectComment ? "Saving project comment…" : "Save project comment"}
@@ -554,7 +644,13 @@ export function ReaderPage() {
               <button
                 type="button"
                 className="action-button"
-                disabled={isSavingPrivateNote || isSavingProjectComment || isSavingInsight || isPromoting}
+                disabled={
+                  isSavingPrivateNote ||
+                  isSavingProjectComment ||
+                  isSavingInsight ||
+                  isPromoting ||
+                  isCapturingNotebook
+                }
                 onClick={() => void handleSaveInsight()}
               >
                 {isSavingInsight ? "Saving insight…" : "Save insight"}
@@ -568,15 +664,37 @@ export function ReaderPage() {
                   isSavingPrivateNote ||
                   isSavingProjectComment ||
                   isSavingInsight ||
-                  isPromoting
+                  isPromoting ||
+                  isCapturingNotebook
                 }
                 onClick={() => void handlePromoteLatestInsight()}
               >
                 {isPromoting ? "Promoting latest insight…" : "Promote latest insight to Writer"}
               </button>
 
+              <button
+                type="button"
+                className="action-button action-button-secondary"
+                disabled={
+                  !latestInsight ||
+                  isSavingPrivateNote ||
+                  isSavingProjectComment ||
+                  isSavingInsight ||
+                  isPromoting ||
+                  isCapturingNotebook
+                }
+                onClick={() => void handleCapturePersonalInsightToNotebook()}
+              >
+                {isCapturingNotebook ? "Sending to Notebook…" : "Send latest insight to Notebook"}
+              </button>
+
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
               {successMessage ? <p className="quiet-copy">{successMessage}</p> : null}
+              {capturedNotebookId ? (
+                <Link className="panel-link" to="/notebook">
+                  Open Notebook
+                </Link>
+              ) : null}
               <p className="quiet-copy">
                 Personal reader does not invent a project. Open a real project workspace before Writer promotion.
               </p>

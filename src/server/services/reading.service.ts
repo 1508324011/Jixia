@@ -70,6 +70,11 @@ export interface ReadingService {
     projectId?: string;
   }): Promise<ProjectReadingCommentRecord>;
   getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
+  getGeneratedInsightSource(input: {
+    actorUserId: string;
+    generatedInsightId: string;
+    libraryEntryId: string;
+  }): Promise<GeneratedInsightRecord>;
   getWorkbenchDetail(input: {
     actorUserId: string;
     libraryEntryId: string;
@@ -157,6 +162,26 @@ export function createReadingService(store: ReadingStore): ReadingService {
       libraryEntryId: string;
     }): Promise<ReadingDetail | null> {
       return this.getDetail(input);
+    },
+    async getGeneratedInsightSource(input: {
+      actorUserId: string;
+      generatedInsightId: string;
+      libraryEntryId: string;
+    }): Promise<GeneratedInsightRecord> {
+      await getAuthorizedLibraryContext(store, input);
+
+      const insight = await store.readingRepository.getGeneratedInsight({
+        generatedInsightId: input.generatedInsightId,
+        libraryEntryId: input.libraryEntryId,
+      });
+
+      if (!insight) {
+        throw new Error(
+          `Generated insight ${input.generatedInsightId} does not exist for library entry ${input.libraryEntryId}.`,
+        );
+      }
+
+      return insight;
     },
     async createNote(input: CreateNoteRequest): Promise<NoteRecord> {
       if (input.authorUserId && input.authorUserId !== input.actorUserId) {

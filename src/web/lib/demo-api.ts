@@ -1,4 +1,6 @@
 import type {
+  CaptureNotebookEvidenceRequest,
+  CaptureNotebookEvidenceResponse,
   DiscoverySearchResponse,
   DiscoveryTodayResponse,
   ReadingDetailView,
@@ -124,6 +126,18 @@ export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
             summary: input.summary,
             title: input.title ?? 'Tumor board governed insight',
           }),
+          headers: requestHeaders(),
+          method: 'POST',
+        },
+      );
+    },
+    captureNotebookEvidence(
+      input: CaptureNotebookEvidenceRequest,
+    ): Promise<CaptureNotebookEvidenceResponse> {
+      return requestJson<CaptureNotebookEvidenceResponse>(
+        resolvePath('/api/notebooks/capture'),
+        {
+          body: JSON.stringify(input),
           headers: requestHeaders(),
           method: 'POST',
         },

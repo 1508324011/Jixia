@@ -11,6 +11,13 @@ import type {
   LibraryEntryView,
 } from "@shared/contracts/library";
 import type {
+  CaptureNotebookEvidenceRequest,
+  CaptureNotebookEvidenceResponse,
+  ListNotebookDocumentsResponse,
+  NotebookDocumentRecord,
+  NotebookDocumentSnapshot,
+} from "@shared/contracts/notebook";
+import type {
   AddProjectMemberRequest,
   CreateProjectRequest,
   ProjectListItem,
@@ -65,6 +72,9 @@ type CreateProjectDocPayload = {
   publishState?: PublishState;
   title: string;
 };
+type CreateNotebookPayload = {
+  title: string;
+};
 type CreateReadingNotePayload = {
   body: string;
   libraryEntryId: string;
@@ -93,6 +103,10 @@ type SaveReadingInsightPayload = {
   title: string;
 };
 type SaveProjectDocVersionPayload = {
+  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
+  content: string;
+};
+type SaveNotebookVersionPayload = {
   citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
   content: string;
 };
@@ -281,6 +295,14 @@ export const apiClient = {
       method: "POST",
     });
   },
+  createNotebook(
+    input: CreateNotebookPayload,
+  ): Promise<NotebookDocumentRecord> {
+    return requestJson("/api/notebooks", {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
   createReadingNote(
     input: CreateReadingNotePayload,
   ): Promise<NoteRecord> {
@@ -338,6 +360,9 @@ export const apiClient = {
       },
     });
   },
+  listNotebooks(): Promise<ListNotebookDocumentsResponse> {
+    return requestJson("/api/notebooks");
+  },
   listProjectMembers(
     projectId: string,
   ): Promise<ProjectMemberRecord[]> {
@@ -367,6 +392,12 @@ export const apiClient = {
   },
   getProjectDoc(documentId: string): Promise<ProjectDocSnapshot> {
     return requestJson(`/api/project-docs/${documentId}`);
+  },
+  getNotebook(documentId: string): Promise<NotebookDocumentRecord> {
+    return requestJson(`/api/notebooks/${documentId}`);
+  },
+  getNotebookSnapshot(documentId: string): Promise<NotebookDocumentSnapshot> {
+    return requestJson(`/api/notebooks/${documentId}/snapshot`);
   },
   getLatestProjectDoc(projectId: string): Promise<ProjectDocRecord | null> {
     return requestJson(`/api/projects/${projectId}/writing-document`);
@@ -416,6 +447,23 @@ export const apiClient = {
     input: SaveProjectDocVersionPayload,
   ): Promise<ProjectDocSnapshot> {
     return requestJson(`/api/project-docs/${documentId}/versions`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  saveNotebookVersion(
+    documentId: string,
+    input: SaveNotebookVersionPayload,
+  ): Promise<NotebookDocumentSnapshot> {
+    return requestJson(`/api/notebooks/${documentId}/versions`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  captureNotebookEvidence(
+    input: CaptureNotebookEvidenceRequest,
+  ): Promise<CaptureNotebookEvidenceResponse> {
+    return requestJson("/api/notebooks/capture", {
       body: JSON.stringify(input),
       method: "POST",
     });
