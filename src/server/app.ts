@@ -552,6 +552,11 @@ function createBootstrappedLibraryRepository(
   }
 
   return {
+    async adoptExistingPaperAsset(input) {
+      await ensureBootstrapped();
+
+      return repository.adoptExistingPaperAsset(input);
+    },
     async bootstrapLegacyLibrary(input: BootstrapLegacyLibraryInput): Promise<void> {
       await ensureBootstrapped();
       await repository.bootstrapLegacyLibrary(input);

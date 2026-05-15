@@ -113,6 +113,15 @@ export interface LibraryEntryView {
   asset: PaperAssetRecord;
 }
 
+export interface AdoptProjectLibraryEntryRequest {
+  sourceLibraryEntryId: string;
+}
+
+export interface AdoptProjectLibraryEntryResponse {
+  entry: LibraryEntryView;
+  reused: boolean;
+}
+
 export interface ListLibraryEntriesQuery {
   /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
   actorSpaceId?: string;

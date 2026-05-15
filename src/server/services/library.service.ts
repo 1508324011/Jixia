@@ -1,4 +1,5 @@
 import type {
+  AdoptProjectLibraryEntryResponse,
   LibraryEntryView,
   ListLibraryEntriesQuery,
 } from "@shared/contracts/library";
@@ -40,7 +41,16 @@ export interface ListLibraryEntriesRequest
   actorUserId: string;
 }
 
+export interface AdoptProjectLibraryEntryServiceRequest {
+  actorUserId: string;
+  projectId: string;
+  sourceLibraryEntryId: string;
+}
+
 export interface LibraryService {
+  adoptProjectLibraryEntry(
+    input: AdoptProjectLibraryEntryServiceRequest,
+  ): Promise<AdoptProjectLibraryEntryResponse>;
   assertCanAccessEntry(
     entryId: string,
     actorUserId: string,
@@ -191,6 +201,55 @@ function withCanonicalProjectCompatibilitySpace(
 
 export function createLibraryService(store: LibraryStore): LibraryService {
   return {
+    async adoptProjectLibraryEntry(
+      input: AdoptProjectLibraryEntryServiceRequest,
+    ): Promise<AdoptProjectLibraryEntryResponse> {
+      if (!input.projectId.trim()) {
+        throw new Error("Project library adoption requires a project id.");
+      }
+
+      if (!input.sourceLibraryEntryId.trim()) {
+        throw new Error("sourceLibraryEntryId is required.");
+      }
+
+      const sourceView = await this.assertCanAccessEntry(
+        input.sourceLibraryEntryId,
+        input.actorUserId,
+      );
+      const project = await store.projectRepository.findProject(input.projectId);
+
+      if (!project) {
+        throw new Error(`Project ${input.projectId} does not exist.`);
+      }
+
+      const membership = await store.projectRepository.getProjectMember(
+        input.projectId,
+        input.actorUserId,
+      );
+
+      if (!membership) {
+        throw new Error("Access denied for the requested project library.");
+      }
+
+      if (membership.role !== "owner" && membership.role !== "editor") {
+        throw new Error("Access denied for the requested project library mutation.");
+      }
+
+      const adoption = await store.libraryRepository.adoptExistingPaperAsset({
+        addedByUserId: input.actorUserId,
+        legacySpaceId: project.spaceId,
+        legacyVisibility: "published_to_project",
+        paperAssetId: sourceView.asset.id,
+        scope: { id: input.projectId, type: "project" },
+      });
+
+      return {
+        entry: mapPersistedLibraryEntryView(
+          withCanonicalProjectCompatibilitySpace(adoption.view, project.spaceId),
+        ),
+        reused: adoption.reused,
+      };
+    },
     async assertCanAccessEntry(
       entryId: string,
       actorUserId: string,
