@@ -48,6 +48,19 @@ export interface ImportScopedLibraryEntryParams {
   entry: Omit<UpsertLibraryEntryParams, 'paperAssetId'>;
 }
 
+export interface AdoptExistingLibraryEntryParams {
+  addedByUserId: string;
+  legacySpaceId?: string;
+  legacyVisibility?: PersistedLibraryEntryVisibility;
+  paperAssetId: string;
+  scope: PersistedLibraryScopeRef;
+}
+
+export interface AdoptExistingLibraryEntryResult {
+  view: PersistedLibraryEntryView;
+  reused: boolean;
+}
+
 export interface LegacyLibraryAssetInput {
   abstractText?: string;
   canonicalId: string;
@@ -103,6 +116,9 @@ export interface PersistedLibraryEntryView {
 }
 
 export interface LibraryRepository {
+  adoptExistingPaperAsset(
+    input: AdoptExistingLibraryEntryParams,
+  ): Promise<AdoptExistingLibraryEntryResult>;
   bootstrapLegacyLibrary(input: BootstrapLegacyLibraryInput): Promise<void>;
   findPaperAsset(assetId: string): Promise<PersistedPaperAssetRecord | null>;
   getLibraryEntry(entryId: string): Promise<PersistedLibraryEntryView | null>;
@@ -177,6 +193,15 @@ function mapLibraryEntryView(
     asset: mapPaperAsset(entry.paperAsset),
     entry: mapLibraryEntry(entry),
   };
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }
 
 async function ensureUser(
@@ -349,6 +374,80 @@ export function createLibraryRepository(
   }
 
   return {
+    async adoptExistingPaperAsset(
+      input: AdoptExistingLibraryEntryParams,
+    ): Promise<AdoptExistingLibraryEntryResult> {
+      await ensureInitialized();
+
+      const scopedAssetWhere = {
+        LibraryEntry_scope_asset_unique: {
+          paperAssetId: input.paperAssetId,
+          scopeId: input.scope.id,
+          scopeType: input.scope.type,
+        },
+      };
+
+      try {
+        return await prisma.$transaction(async (transaction) => {
+          const paperAsset = await transaction.paperAsset.findUnique({
+            where: { id: input.paperAssetId },
+          });
+
+          if (!paperAsset) {
+            throw new Error(`Paper asset ${input.paperAssetId} does not exist.`);
+          }
+
+          const existingEntry = await transaction.libraryEntry.findUnique({
+            include: LIBRARY_ENTRY_WITH_ASSET,
+            where: scopedAssetWhere,
+          });
+
+          if (existingEntry) {
+            return {
+              reused: true,
+              view: mapLibraryEntryView(existingEntry),
+            };
+          }
+
+          await ensureUser(transaction, input.addedByUserId);
+
+          const createdEntry = await transaction.libraryEntry.create({
+            data: {
+              addedByUserId: input.addedByUserId,
+              legacySpaceId: input.legacySpaceId,
+              legacyVisibility: input.legacyVisibility,
+              paperAssetId: input.paperAssetId,
+              scopeId: input.scope.id,
+              scopeType: input.scope.type,
+            },
+            include: LIBRARY_ENTRY_WITH_ASSET,
+          });
+
+          return {
+            reused: false,
+            view: mapLibraryEntryView(createdEntry),
+          };
+        });
+      } catch (error) {
+        if (!isUniqueConstraintError(error)) {
+          throw error;
+        }
+
+        const existingEntry = await prisma.libraryEntry.findUnique({
+          include: LIBRARY_ENTRY_WITH_ASSET,
+          where: scopedAssetWhere,
+        });
+
+        if (!existingEntry) {
+          throw error;
+        }
+
+        return {
+          reused: true,
+          view: mapLibraryEntryView(existingEntry),
+        };
+      }
+    },
     async bootstrapLegacyLibrary(
       input: BootstrapLegacyLibraryInput,
     ): Promise<void> {

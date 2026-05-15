@@ -9,6 +9,7 @@ import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { LoginSessionRequest } from "@shared/contracts/session";
+import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
 
 import { createJixiaApp, type CreateJixiaAppOptions } from "./app";
 import { resolveHttpApi } from "./http-api";
@@ -334,6 +335,42 @@ function rejectNotebookAuthorityQueryFields(
   );
 }
 
+function rejectProjectLibraryAdoptionAuthorityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "spaceId"),
+    "spaceId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeType"),
+    "scopeType",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeId"),
+    "scopeId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scope"),
+    "scope",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "visibility"),
+    "visibility",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "projectId"),
+    "projectId",
+  );
+}
+
 function rejectLegacyIdentityBodyFields(
   actor: { userId: string },
   requestBody: unknown,
@@ -350,6 +387,27 @@ function rejectLegacyIdentityBodyFields(
   assertNoClientActorIdentityField(actor, body.authorUserId, "authorUserId");
   assertNoClientActorIdentityField(actor, body.startedByUserId, "startedByUserId");
   assertNoClientActorContextField(body.actorSpaceId, "actorSpaceId");
+}
+
+function rejectProjectLibraryAdoptionAuthorityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+  assertNoClientActorContextField(body.spaceId, "spaceId");
+  assertNoClientActorContextField(body.scopeType, "scopeType");
+  assertNoClientActorContextField(body.scopeId, "scopeId");
+  assertNoClientActorContextField(body.scope, "scope");
+  assertNoClientActorContextField(body.visibility, "visibility");
+  assertNoClientActorContextField(body.projectId, "projectId");
 }
 
 function assertStringField(
@@ -427,6 +485,23 @@ function parseNotebookCaptureBody(requestBody: unknown): {
       note: assertOptionalStringField(sourceRecord.note, "source.note"),
       type: "generatedInsight",
     },
+  };
+}
+
+function parseAdoptProjectLibraryEntryBody(
+  requestBody: unknown,
+): AdoptProjectLibraryEntryRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Project library adoption payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  return {
+    sourceLibraryEntryId: assertStringField(
+      body.sourceLibraryEntryId,
+      "sourceLibraryEntryId",
+    ),
   };
 }
 
@@ -734,6 +809,30 @@ async function handleApiRequest(
         response,
         200,
         await app.projects.getProject({ projectId }, actor.userId),
+        method,
+      );
+      return true;
+    }
+
+    const projectLibraryAdoptionsMatch = pathname.match(
+      /^\/api\/projects\/([^/]+)\/library\/adoptions$/,
+    );
+    if (projectLibraryAdoptionsMatch && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      const [, projectId] = projectLibraryAdoptionsMatch;
+      rejectProjectLibraryAdoptionAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectProjectLibraryAdoptionAuthorityBodyFields(actor, requestBody);
+      const body = parseAdoptProjectLibraryEntryBody(requestBody);
+
+      sendJson(
+        response,
+        200,
+        await app.library.adoptProjectLibraryEntry({
+          actorUserId: actor.userId,
+          projectId,
+          sourceLibraryEntryId: body.sourceLibraryEntryId,
+        }),
         method,
       );
       return true;

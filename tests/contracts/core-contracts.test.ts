@@ -18,6 +18,8 @@ import type {
   SpaceSummary,
 } from '../../src/shared/contracts/spaces';
 import type {
+  AdoptProjectLibraryEntryRequest,
+  AdoptProjectLibraryEntryResponse,
   ImportPaperAssetRequest,
   LibraryEntryRecord,
   LibraryEntryView,
@@ -178,12 +180,22 @@ describe('core contracts', () => {
       entry,
       asset,
     };
+    const adoptionRequest: AdoptProjectLibraryEntryRequest = {
+      sourceLibraryEntryId: entry.id,
+    };
+    const adoptionResponse: AdoptProjectLibraryEntryResponse = {
+      entry: entryView,
+      reused: false,
+    };
 
     expect(importRequest.sourceType).toBe('doi');
     expect(entryView.entry.paperAssetId).toBe('asset_001');
     expect(entryView.entry.scope).toEqual({ type: 'user', id: 'user_001' });
     expect(entryView.entry.spaceId).toBe('');
     expect(entryView.entry.visibility).toBe('private');
+    expect(adoptionRequest.sourceLibraryEntryId).toBe('entry_001');
+    expect(adoptionResponse.entry).toBe(entryView);
+    expect(adoptionResponse.reused).toBe(false);
 
     const libraryEntryShape: {
       entry: LibraryEntryRecord;

@@ -407,16 +407,11 @@ describe('notebook and project document persistence', () => {
         ),
       ).rejects.toThrow(/not available in project/i);
 
-      const targetProjectImport = await app.imports.importPaper(
-        {
-          scope: { id: targetProject.project.id, type: 'project' },
-          sourceLocator: '10.1000/shared-cross-project-citation',
-          sourceType: 'doi',
-          spaceId: targetSpace.id,
-          visibility: 'private',
-        },
-        'user-alice',
-      );
+      const targetProjectAdoption = await app.library.adoptProjectLibraryEntry({
+        actorUserId: 'user-alice',
+        projectId: targetProject.project.id,
+        sourceLibraryEntryId: personalImport.entry.id,
+      });
       const saved = await app.projectDocs.saveDocument(
         {
           citations: [{ paperAssetId: sourceProjectImport.asset.id }],
@@ -426,13 +421,91 @@ describe('notebook and project document persistence', () => {
         'user-alice',
       );
 
-      expect(targetProjectImport.asset.id).toBe(sourceProjectImport.asset.id);
-      expect(targetProjectImport.entry.scope).toEqual({
+      expect(targetProjectAdoption.entry.asset.id).toBe(sourceProjectImport.asset.id);
+      expect(targetProjectAdoption.entry.entry.scope).toEqual({
         id: targetProject.project.id,
         type: 'project',
       });
+      expect(targetProjectAdoption.reused).toBe(false);
       expect(saved.citations[0]?.paperAssetId).toBe(sourceProjectImport.asset.id);
 
+      await app.close();
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('accepts project-doc citations after explicit project library adoption', async () => {
+    const storageRoot = createStorageRoot('jixia-project-doc-adoption-citation-');
+    const env = createWritingEnv(storageRoot);
+
+    try {
+      const app = createJixiaApp({ env });
+      const targetSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Adopted Citation Space' },
+        'user-alice',
+      );
+      const targetProject = await app.projects.createProject(
+        { name: 'Adopted Citation Project', spaceId: targetSpace.id },
+        'user-alice',
+      );
+      const personalSource = await app.imports.importPaper(
+        {
+          scope: { id: 'user-alice', type: 'user' },
+          sourceLocator: '10.1000/adopted-project-doc-citation',
+          sourceType: 'doi',
+          spaceId: targetSpace.id,
+          visibility: 'private',
+        },
+        'user-alice',
+      );
+      const projectDoc = await app.projectDocs.createDocument(
+        {
+          projectId: targetProject.project.id,
+          title: 'Adopted citation draft',
+        },
+        'user-alice',
+      );
+
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [{ paperAssetId: personalSource.asset.id }],
+            content: 'Personal-only citation should fail before adoption.',
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/not available in project/i);
+
+      const adoption = await app.library.adoptProjectLibraryEntry({
+        actorUserId: 'user-alice',
+        projectId: targetProject.project.id,
+        sourceLibraryEntryId: personalSource.entry.id,
+      });
+      const savedWithAssetId = await app.projectDocs.saveDocument(
+        {
+          citations: [{ paperAssetId: personalSource.asset.id }],
+          content: 'Asset id citation succeeds after project adoption.',
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+      const savedWithProjectEntryId = await app.projectDocs.saveDocument(
+        {
+          citations: [{ paperAssetId: adoption.entry.entry.id }],
+          content: 'Project entry id citation also succeeds after adoption.',
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+
+      expect(adoption.entry.entry.scope).toEqual({
+        id: targetProject.project.id,
+        type: 'project',
+      });
+      expect(savedWithAssetId.citations[0]?.paperAssetId).toBe(personalSource.asset.id);
+      expect(savedWithProjectEntryId.citations[0]?.paperAssetId).toBe(personalSource.asset.id);
       await app.close();
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });

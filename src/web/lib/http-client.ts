@@ -6,6 +6,8 @@ import type {
   JobRecord,
 } from "@shared/contracts/jobs";
 import type {
+  AdoptProjectLibraryEntryRequest,
+  AdoptProjectLibraryEntryResponse,
   ImportSourceType,
   LibraryEntryVisibility,
   LibraryEntryView,
@@ -256,6 +258,15 @@ function subscribeToJobEvents(
 }
 
 export const apiClient = {
+  adoptProjectLibraryEntry(
+    projectId: string,
+    input: AdoptProjectLibraryEntryRequest,
+  ): Promise<AdoptProjectLibraryEntryResponse> {
+    return requestJson(`/api/projects/${projectId}/library/adoptions`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
   addProjectMember(
     projectId: string,
     input: AddProjectMemberRequest,
