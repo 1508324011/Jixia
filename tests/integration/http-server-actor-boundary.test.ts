@@ -498,6 +498,26 @@ describe('http server actor boundary cleanup', () => {
             }),
             method: 'POST',
           }),
+          fetch(`${server.url}/api/notebooks?ownerId=user-bob`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/notebooks/${notebook.id}/snapshot?spaceId=${createdSpace.id}`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/notebooks/capture`, {
+            body: JSON.stringify({
+              ownerId: 'user-bob',
+              source: {
+                generatedInsightId: 'insight-spoofed',
+                libraryEntryId: importedRecord.entry.id,
+                type: 'generatedInsight',
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/project-docs`, {
             body: JSON.stringify({ createdByUserId: 'user-bob', projectId: importedRecord.projectId, title: 'Spoofed project doc' }),
             headers: withSessionCookie(aliceCookie, {
@@ -727,6 +747,36 @@ describe('http server actor boundary cleanup', () => {
           }),
           fetch(`${server.url}/api/notebooks/${notebook.id}/versions?userId=user-alice`, {
             body: JSON.stringify({ citations: [], content: 'Matching query notebook save' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/notebooks?ownerId=user-alice`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/notebooks?spaceId=${createdSpace.id}`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/notebooks/${notebook.id}/snapshot?ownerId=user-alice`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/notebooks/${notebook.id}/versions`, {
+            body: JSON.stringify({ citations: [], content: 'Matching owner field', ownerId: 'user-alice' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/notebooks/capture`, {
+            body: JSON.stringify({
+              ownerId: 'user-alice',
+              source: {
+                generatedInsightId: 'insight-matching',
+                libraryEntryId: importedRecord.entry.id,
+                type: 'generatedInsight',
+              },
+            }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
             }),

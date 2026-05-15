@@ -63,6 +63,77 @@ describe('http server notebook and project-doc api', () => {
         expect(nonOwnerRead.status).toBe(403);
         expect(actorMismatch.status).toBe(400);
 
+        const notebookList = await fetch(`${server.url}/api/notebooks`, {
+          headers: withSessionCookie(aliceCookie),
+        });
+        const notebookListPayload = await notebookList.json() as {
+          documents: Array<{ id: string; ownerId: string; title: string }>;
+        };
+        const emptySnapshot = await fetch(
+          `${server.url}/api/notebooks/${notebook.id}/snapshot`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const emptySnapshotPayload = await emptySnapshot.json() as {
+          content: string;
+          document: { id: string; ownerId: string };
+          versionNumber: number;
+        };
+        const saveResponse = await fetch(`${server.url}/api/notebooks/${notebook.id}/versions`, {
+          body: JSON.stringify({ citations: [], content: 'Alice private notebook content' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const savedSnapshotPayload = await saveResponse.json() as {
+          content: string;
+          document: { id: string; ownerId: string };
+          versionNumber: number;
+        };
+        const reloadedSnapshot = await fetch(
+          `${server.url}/api/notebooks/${notebook.id}/snapshot`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const reloadedSnapshotPayload = await reloadedSnapshot.json() as {
+          content: string;
+          document: { id: string; ownerId: string };
+          versionNumber: number;
+        };
+        const bobSnapshotRead = await fetch(
+          `${server.url}/api/notebooks/${notebook.id}/snapshot`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+
+        expect(notebookList.status).toBe(200);
+        expect(notebookListPayload.documents).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: notebook.id,
+              ownerId: 'user-alice',
+              title: 'HTTP Notebook',
+            }),
+          ]),
+        );
+        expect(emptySnapshot.status).toBe(200);
+        expect(emptySnapshotPayload).toMatchObject({
+          content: '',
+          document: { id: notebook.id, ownerId: 'user-alice' },
+          versionNumber: 0,
+        });
+        expect(saveResponse.status).toBe(200);
+        expect(savedSnapshotPayload).toMatchObject({
+          content: 'Alice private notebook content',
+          document: { id: notebook.id, ownerId: 'user-alice' },
+          versionNumber: 1,
+        });
+        expect(reloadedSnapshot.status).toBe(200);
+        expect(reloadedSnapshotPayload).toMatchObject({
+          content: 'Alice private notebook content',
+          document: { id: notebook.id, ownerId: 'user-alice' },
+          versionNumber: 1,
+        });
+        expect(bobSnapshotRead.status).toBe(403);
+
         const matchingOwner = await fetch(`${server.url}/api/notebooks`, {
           body: JSON.stringify({ ownerId: 'user-alice', title: 'Matching Owner Notebook' }),
           headers: withSessionCookie(aliceCookie, {

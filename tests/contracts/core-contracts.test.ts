@@ -49,9 +49,13 @@ import type {
   DocumentSnapshot,
 } from '../../src/shared/contracts/document-snapshot';
 import type {
+  CaptureNotebookEvidenceRequest,
+  CaptureNotebookEvidenceResponse,
+  ListNotebookDocumentsResponse,
   NotebookCitationRecord,
   NotebookDocumentRecord,
   NotebookDocumentSnapshot,
+  NotebookSourceExcerptBlock,
 } from '../../src/shared/contracts/notebook';
 import type {
   ProjectDocCitationRecord,
@@ -292,6 +296,33 @@ describe('core contracts', () => {
       versionId: 'notebook_version_001',
       versionNumber: 1,
     };
+    const notebookList: ListNotebookDocumentsResponse = {
+      documents: [notebookDoc],
+    };
+    const sourceExcerpt: NotebookSourceExcerptBlock = {
+      capturedAt: '2026-03-21T00:00:00.000Z',
+      evidenceSpanId: 'span_001',
+      libraryEntryId: 'entry_001',
+      locator: 'offsets 0-12',
+      note: 'Private interpretation stays editable outside the quote.',
+      paperAssetId: 'asset_001',
+      quote: 'source-backed quote',
+      title: 'Jixia as a server-first research platform',
+      type: 'sourceExcerpt',
+    };
+    const captureRequest: CaptureNotebookEvidenceRequest = {
+      notebookDocumentId: notebookDoc.id,
+      source: {
+        generatedInsightId: 'insight_001',
+        libraryEntryId: 'entry_001',
+        note: 'Capture this for private synthesis.',
+        type: 'generatedInsight',
+      },
+    };
+    const captureResponse: CaptureNotebookEvidenceResponse = {
+      document: notebookDoc,
+      snapshot: notebookSnapshot,
+    };
 
     const projectDoc: ProjectDocRecord = {
       createdAt: '2026-03-21T00:00:00.000Z',
@@ -320,6 +351,10 @@ describe('core contracts', () => {
 
     expect(notebookSnapshot.document.ownerId).toBe('user_001');
     expect(notebookSnapshot.citations[0]?.evidenceSpan).toBe('p. 4');
+    expect(notebookList.documents).toHaveLength(1);
+    expect(sourceExcerpt.type).toBe('sourceExcerpt');
+    expect(captureRequest.source.type).toBe('generatedInsight');
+    expect(captureResponse.snapshot.document.id).toBe(notebookDoc.id);
     expect(projectDocSnapshot.document.publishState).toBe('draft');
     expect(projectDocSnapshot.citations[0]?.projectDocVersionId).toBe(
       'project_doc_version_001',
