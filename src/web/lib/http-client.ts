@@ -9,6 +9,7 @@ import type {
   AdoptProjectLibraryEntryRequest,
   AdoptProjectLibraryEntryResponse,
   ImportSourceType,
+  LibraryListResponse,
   LibraryEntryVisibility,
   LibraryEntryView,
 } from "@shared/contracts/library";
@@ -343,6 +344,9 @@ export const apiClient = {
   },
   listCredentials(): Promise<CredentialRecord[]> {
     return requestJson("/api/credentials");
+  },
+  listPersonalLibraryEntries(): Promise<LibraryListResponse> {
+    return requestJson("/api/library/personal");
   },
   listLibraryEntries(
     scope: ScopeRef,
