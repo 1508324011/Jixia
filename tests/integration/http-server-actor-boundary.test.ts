@@ -263,6 +263,11 @@ describe('http server actor boundary cleanup', () => {
           fetch(`${server.url}/api/settings/me`),
           fetch(`${server.url}/api/library/personal`),
           fetch(`${server.url}/api/library/entry-1/file`),
+          fetch(`${server.url}/api/projects/project-1/library/adoptions`, {
+            body: JSON.stringify({ sourceLibraryEntryId: 'entry-1' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/projects`),
           fetch(`${server.url}/api/notebooks/notebook-1`),
           fetch(`${server.url}/api/project-docs/project-doc-1`),
@@ -499,6 +504,26 @@ describe('http server actor boundary cleanup', () => {
             }),
             method: 'POST',
           }),
+          fetch(`${server.url}/api/notebooks?ownerId=user-bob`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/notebooks/${notebook.id}/snapshot?spaceId=${createdSpace.id}`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/notebooks/capture`, {
+            body: JSON.stringify({
+              ownerId: 'user-bob',
+              source: {
+                generatedInsightId: 'insight-spoofed',
+                libraryEntryId: importedRecord.entry.id,
+                type: 'generatedInsight',
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/project-docs`, {
             body: JSON.stringify({ createdByUserId: 'user-bob', projectId: importedRecord.projectId, title: 'Spoofed project doc' }),
             headers: withSessionCookie(aliceCookie, {
@@ -515,6 +540,25 @@ describe('http server actor boundary cleanup', () => {
           }),
           fetch(`${server.url}/api/project-docs/${projectDoc.id}/publish-state`, {
             body: JSON.stringify({ actorUserId: 'user-bob', publishState: 'review' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/projects/${importedRecord.projectId}/library/adoptions`, {
+            body: JSON.stringify({
+              actorUserId: 'user-bob',
+              sourceLibraryEntryId: importedRecord.entry.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/projects/${importedRecord.projectId}/library/adoptions?projectId=project-override`, {
+            body: JSON.stringify({
+              sourceLibraryEntryId: importedRecord.entry.id,
+            }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
             }),
@@ -740,6 +784,36 @@ describe('http server actor boundary cleanup', () => {
             }),
             method: 'POST',
           }),
+          fetch(`${server.url}/api/notebooks?ownerId=user-alice`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/notebooks?spaceId=${createdSpace.id}`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/notebooks/${notebook.id}/snapshot?ownerId=user-alice`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/notebooks/${notebook.id}/versions`, {
+            body: JSON.stringify({ citations: [], content: 'Matching owner field', ownerId: 'user-alice' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/notebooks/capture`, {
+            body: JSON.stringify({
+              ownerId: 'user-alice',
+              source: {
+                generatedInsightId: 'insight-matching',
+                libraryEntryId: importedRecord.entry.id,
+                type: 'generatedInsight',
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/project-docs`, {
             body: JSON.stringify({ createdByUserId: 'user-alice', projectId: importedRecord.projectId, title: 'Matching project doc' }),
             headers: withSessionCookie(aliceCookie, {
@@ -763,6 +837,54 @@ describe('http server actor boundary cleanup', () => {
           }),
           fetch(`${server.url}/api/project-docs/${projectDoc.id}/versions?userId=user-alice`, {
             body: JSON.stringify({ citations: [], content: 'Matching query project-doc save' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/projects/${importedRecord.projectId}/library/adoptions?ownerId=user-alice`, {
+            body: JSON.stringify({
+              sourceLibraryEntryId: importedRecord.entry.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/projects/${importedRecord.projectId}/library/adoptions?scope=${encodeURIComponent(`project:${importedRecord.projectId}`)}`, {
+            body: JSON.stringify({
+              sourceLibraryEntryId: importedRecord.entry.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/projects/${importedRecord.projectId}/library/adoptions`, {
+            body: JSON.stringify({
+              sourceLibraryEntryId: importedRecord.entry.id,
+              spaceId: createdSpace.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/projects/${importedRecord.projectId}/library/adoptions`, {
+            body: JSON.stringify({
+              scopeType: 'project',
+              sourceLibraryEntryId: importedRecord.entry.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/projects/${importedRecord.projectId}/library/adoptions`, {
+            body: JSON.stringify({
+              sourceLibraryEntryId: importedRecord.entry.id,
+              visibility: 'published_to_project',
+            }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
             }),
@@ -952,6 +1074,141 @@ describe('http server actor boundary cleanup', () => {
           expect(response.status).toBe(400);
           expect(payload.error).toMatch(/not accepted for protected routes/i);
         }
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 30_000);
+
+  it('adopts project library entries through the session-protected canonical route', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-library-adoption-'));
+
+    try {
+      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+        const charlieCookie = await loginAs(server.url, 'user-charlie');
+        const createdSpace = await createSharedSpace(server.url, aliceCookie, 'user-alice');
+        const project = await createProject(
+          server.url,
+          aliceCookie,
+          'user-alice',
+          createdSpace.id,
+        );
+        const viewerMembership = await fetch(
+          `${server.url}/api/projects/${project.project.id}/members`,
+          {
+            body: JSON.stringify({ role: 'viewer', userId: 'user-charlie' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const sourceResponse = await fetch(`${server.url}/api/import/paper`, {
+          body: JSON.stringify({
+            scope: { id: 'user-alice', type: 'user' },
+            sourceLocator: '10.1000/http-adopt-source',
+            sourceType: 'doi',
+            spaceId: createdSpace.id,
+            visibility: 'private',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const source = await sourceResponse.json() as {
+          asset: { id: string };
+          entry: { id: string };
+        };
+
+        const firstAdoption = await fetch(
+          `${server.url}/api/projects/${project.project.id}/library/adoptions`,
+          {
+            body: JSON.stringify({ sourceLibraryEntryId: source.entry.id }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const firstAdoptionBody = await firstAdoption.json() as {
+          entry: {
+            asset: { id: string; storageKey?: string };
+            entry: { id: string; paperAssetId: string; scope: { id: string; type: string } };
+          };
+          reused: boolean;
+        };
+        const repeatedAdoption = await fetch(
+          `${server.url}/api/projects/${project.project.id}/library/adoptions`,
+          {
+            body: JSON.stringify({ sourceLibraryEntryId: source.entry.id }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const repeatedAdoptionBody = await repeatedAdoption.json() as {
+          entry: { entry: { id: string } };
+          reused: boolean;
+        };
+        const emptyBodyResponse = await fetch(
+          `${server.url}/api/projects/${project.project.id}/library/adoptions`,
+          {
+            body: JSON.stringify({ sourceLibraryEntryId: ' ' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const viewerDeniedResponse = await fetch(
+          `${server.url}/api/projects/${project.project.id}/library/adoptions`,
+          {
+            body: JSON.stringify({ sourceLibraryEntryId: firstAdoptionBody.entry.entry.id }),
+            headers: withSessionCookie(charlieCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const unreadableSourceResponse = await fetch(
+          `${server.url}/api/projects/${project.project.id}/library/adoptions`,
+          {
+            body: JSON.stringify({ sourceLibraryEntryId: source.entry.id }),
+            headers: withSessionCookie(bobCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+
+        expect(sourceResponse.status).toBe(200);
+        expect(viewerMembership.status).toBe(200);
+        expect(firstAdoption.status).toBe(200);
+        expect(firstAdoptionBody).toMatchObject({
+          entry: {
+            asset: { id: source.asset.id },
+            entry: {
+              paperAssetId: source.asset.id,
+              scope: { id: project.project.id, type: 'project' },
+            },
+          },
+          reused: false,
+        });
+        expect(firstAdoptionBody.entry.asset).not.toHaveProperty('storageKey');
+        expect(repeatedAdoption.status).toBe(200);
+        expect(repeatedAdoptionBody.reused).toBe(true);
+        expect(repeatedAdoptionBody.entry.entry.id).toBe(firstAdoptionBody.entry.entry.id);
+        expect(emptyBodyResponse.status).toBe(400);
+        expect(viewerDeniedResponse.status).toBe(403);
+        expect(unreadableSourceResponse.status).toBe(403);
       } finally {
         await server.close();
       }

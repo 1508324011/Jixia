@@ -63,6 +63,99 @@ describe('http server notebook and project-doc api', () => {
         expect(nonOwnerRead.status).toBe(403);
         expect(actorMismatch.status).toBe(400);
 
+        const notebookList = await fetch(`${server.url}/api/notebooks`, {
+          headers: withSessionCookie(aliceCookie),
+        });
+        const notebookListPayload = await notebookList.json() as {
+          documents: Array<{ id: string; ownerId: string; title: string }>;
+        };
+        const emptySnapshot = await fetch(
+          `${server.url}/api/notebooks/${notebook.id}/snapshot`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const emptySnapshotPayload = await emptySnapshot.json() as {
+          content: string;
+          document: { id: string; ownerId: string };
+          documentContent?: { blocks: unknown[]; schemaVersion: 1 };
+          versionNumber: number;
+        };
+        const saveResponse = await fetch(`${server.url}/api/notebooks/${notebook.id}/versions`, {
+          body: JSON.stringify({ citations: [], content: 'Alice private notebook content' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const savedSnapshotPayload = await saveResponse.json() as {
+          content: string;
+          document: { id: string; ownerId: string };
+          documentContent?: { blocks: unknown[]; schemaVersion: 1 };
+          versionNumber: number;
+        };
+        const reloadedSnapshot = await fetch(
+          `${server.url}/api/notebooks/${notebook.id}/snapshot`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const reloadedSnapshotPayload = await reloadedSnapshot.json() as {
+          content: string;
+          document: { id: string; ownerId: string };
+          documentContent?: { blocks: unknown[]; schemaVersion: 1 };
+          versionNumber: number;
+        };
+        const bobSnapshotRead = await fetch(
+          `${server.url}/api/notebooks/${notebook.id}/snapshot`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+
+        expect(notebookList.status).toBe(200);
+        expect(notebookListPayload.documents).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: notebook.id,
+              ownerId: 'user-alice',
+              title: 'HTTP Notebook',
+            }),
+          ]),
+        );
+        expect(emptySnapshot.status).toBe(200);
+        expect(emptySnapshotPayload).toMatchObject({
+          content: '',
+          document: { id: notebook.id, ownerId: 'user-alice' },
+          documentContent: { blocks: [], schemaVersion: 1 },
+          versionNumber: 0,
+        });
+        expect(saveResponse.status).toBe(200);
+        expect(savedSnapshotPayload).toMatchObject({
+          content: 'Alice private notebook content',
+          document: { id: notebook.id, ownerId: 'user-alice' },
+          documentContent: {
+            blocks: [
+              {
+                text: 'Alice private notebook content',
+                type: 'paragraph',
+              },
+            ],
+            schemaVersion: 1,
+          },
+          versionNumber: 1,
+        });
+        expect(reloadedSnapshot.status).toBe(200);
+        expect(reloadedSnapshotPayload).toMatchObject({
+          content: 'Alice private notebook content',
+          document: { id: notebook.id, ownerId: 'user-alice' },
+          documentContent: {
+            blocks: [
+              {
+                text: 'Alice private notebook content',
+                type: 'paragraph',
+              },
+            ],
+            schemaVersion: 1,
+          },
+          versionNumber: 1,
+        });
+        expect(bobSnapshotRead.status).toBe(403);
+
         const matchingOwner = await fetch(`${server.url}/api/notebooks`, {
           body: JSON.stringify({ ownerId: 'user-alice', title: 'Matching Owner Notebook' }),
           headers: withSessionCookie(aliceCookie, {
@@ -172,6 +265,7 @@ describe('http server notebook and project-doc api', () => {
         const ownerSnapshot = await ownerRead.json() as {
           content: string;
           document: { id: string; projectId: string };
+          documentContent?: { blocks: unknown[]; schemaVersion: 1 };
           versionNumber: number;
         };
         const latestDocument = await latestProjectDocument.json() as {
@@ -190,11 +284,211 @@ describe('http server notebook and project-doc api', () => {
           id: projectDoc.id,
           projectId: project.project.id,
         });
+        expect(ownerSnapshot.documentContent).toEqual({
+          blocks: [
+            {
+              text: 'Owner saved draft',
+              type: 'paragraph',
+            },
+          ],
+          schemaVersion: 1,
+        });
         expect(ownerSnapshot.versionNumber).toBe(1);
         expect(latestProjectDocument.status).toBe(200);
         expect(latestDocument).toMatchObject({
           id: projectDoc.id,
           projectId: project.project.id,
+        });
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('round-trips structured notebook and project-doc payloads over HTTP', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-structured-docs-'));
+
+    try {
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-structured-docs.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const sharedSpace = await createSpace(server.url, aliceCookie, 'user-alice');
+        const project = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({ name: 'HTTP Structured Project', spaceId: sharedSpace.id }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+
+        const notebook = await fetch(`${server.url}/api/notebooks`, {
+          body: JSON.stringify({ title: 'HTTP Structured Notebook' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const projectDoc = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({ projectId: project.project.id, title: 'HTTP Structured Project Doc' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+
+        const notebookDocumentContent = {
+          blocks: [
+            {
+              level: 2,
+              text: 'HTTP notebook heading',
+              type: 'heading',
+            },
+            {
+              text: 'HTTP notebook paragraph',
+              type: 'paragraph',
+            },
+          ],
+          schemaVersion: 1,
+        };
+        const projectDocumentContent = {
+          blocks: [
+            {
+              level: 1,
+              text: 'HTTP project heading',
+              type: 'heading',
+            },
+            {
+              checked: false,
+              text: 'Coordinate structured document migration',
+              type: 'todo',
+            },
+          ],
+          schemaVersion: 1,
+        };
+
+        const badNotebookSave = await fetch(
+          `${server.url}/api/notebooks/${notebook.id}/versions`,
+          {
+            body: JSON.stringify({
+              citations: [],
+              documentContent: {
+                blocks: [{ text: 'bad', type: 'unknown' }],
+                schemaVersion: 1,
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const notebookSave = await fetch(
+          `${server.url}/api/notebooks/${notebook.id}/versions`,
+          {
+            body: JSON.stringify({
+              citations: [],
+              documentContent: notebookDocumentContent,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const notebookShadowedSave = await fetch(
+          `${server.url}/api/notebooks/${notebook.id}/versions`,
+          {
+            body: JSON.stringify({
+              citations: [],
+              content: 'Legacy body should be shadowed by structured notebook content',
+              documentContent: notebookDocumentContent,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const projectDocSave = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/versions`,
+          {
+            body: JSON.stringify({
+              citations: [],
+              documentContent: projectDocumentContent,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const projectDocShadowedSave = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/versions`,
+          {
+            body: JSON.stringify({
+              citations: [],
+              content: 'Legacy body should be shadowed by structured project content',
+              documentContent: projectDocumentContent,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const notebookPayload = await notebookSave.json() as {
+          content: string;
+          documentContent?: unknown;
+          versionNumber: number;
+        };
+        const notebookShadowedPayload = await notebookShadowedSave.json() as {
+          content: string;
+          documentContent?: unknown;
+          versionNumber: number;
+        };
+        const projectDocPayload = await projectDocSave.json() as {
+          content: string;
+          documentContent?: unknown;
+          versionNumber: number;
+        };
+        const projectDocShadowedPayload = await projectDocShadowedSave.json() as {
+          content: string;
+          documentContent?: unknown;
+          versionNumber: number;
+        };
+
+        expect(badNotebookSave.status).toBe(400);
+        expect(notebookSave.status).toBe(200);
+        expect(notebookPayload).toMatchObject({
+          content: '## HTTP notebook heading\n\nHTTP notebook paragraph',
+          documentContent: notebookDocumentContent,
+          versionNumber: 1,
+        });
+        expect(notebookShadowedSave.status).toBe(200);
+        expect(notebookShadowedPayload).toMatchObject({
+          content: '## HTTP notebook heading\n\nHTTP notebook paragraph',
+          documentContent: notebookDocumentContent,
+          versionNumber: 2,
+        });
+        expect(projectDocSave.status).toBe(200);
+        expect(projectDocPayload).toMatchObject({
+          content: '# HTTP project heading\n\n- [ ] Coordinate structured document migration',
+          documentContent: projectDocumentContent,
+          versionNumber: 1,
+        });
+        expect(projectDocShadowedSave.status).toBe(200);
+        expect(projectDocShadowedPayload).toMatchObject({
+          content: '# HTTP project heading\n\n- [ ] Coordinate structured document migration',
+          documentContent: projectDocumentContent,
+          versionNumber: 2,
         });
       } finally {
         await server.close();

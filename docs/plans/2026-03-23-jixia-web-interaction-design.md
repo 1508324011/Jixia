@@ -275,7 +275,9 @@ flowchart TB
 
 1. 登录形态一期采用何种账号系统
 2. 今日推荐的一期优先级：偏个人兴趣、偏项目推进、还是混合排序
-3. Writer 的内部编辑模型：Markdown first、block-based、还是混合结构
+3. Writer 的可视编辑体验仍需冻结：当前服务器/公共传输层已有 Jixia 自有
+   `documentContent` 结构化文档底座并继续返回 legacy `content` 文本投影，
+   但前台编辑器是 Markdown first、block-based，还是混合结构，仍需后续设计决定。
 4. 外部搜索一期优先接哪些来源：PubMed、arXiv、DOI、URL、PDF
 5. 最近打开列表的容量、排序规则与跨设备同步策略
 

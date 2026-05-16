@@ -402,6 +402,191 @@ describe('library import', () => {
     }
   }, 10_000);
 
+  it('adopts a readable source into a project library idempotently without copying private state', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-adoption-service-'));
+    const env = createLibraryEnv(storageRoot);
+
+    try {
+      const app = createJixiaApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Adoption Space' },
+        'user-alice',
+      );
+      const targetProject = await app.projects.createProject(
+        { name: 'Target Adoption Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      const otherProject = await app.projects.createProject(
+        { name: 'Other Adoption Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      const concurrentProject = await app.projects.createProject(
+        { name: 'Concurrent Adoption Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        targetProject.project.id,
+        { role: 'editor', userId: 'user-bob' },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        targetProject.project.id,
+        { role: 'viewer', userId: 'user-charlie' },
+        'user-alice',
+      );
+
+      const personalImport = await app.imports.importPaper(
+        {
+          scope: { id: 'user-alice', type: 'user' },
+          sourceLocator: '10.1000/adopt-personal-source',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'private',
+        },
+        'user-alice',
+      );
+      const privateNote = await app.reading.createNote({
+        actorUserId: 'user-alice',
+        body: 'Private reading state must stay on the source entry.',
+        libraryEntryId: personalImport.entry.id,
+      });
+      await app.reading.saveGeneratedInsight({
+        actorUserId: 'user-alice',
+        evidenceSpans: [
+          {
+            endOffset: 12,
+            quote: 'Private insight quote',
+            startOffset: 0,
+          },
+        ],
+        libraryEntryId: personalImport.entry.id,
+        summary: 'Private generated insight must stay on the source entry.',
+        title: 'Private adoption source insight',
+      });
+
+      const firstAdoption = await app.library.adoptProjectLibraryEntry({
+        actorUserId: 'user-alice',
+        projectId: targetProject.project.id,
+        sourceLibraryEntryId: personalImport.entry.id,
+      });
+      const repeatedAdoption = await app.library.adoptProjectLibraryEntry({
+        actorUserId: 'user-alice',
+        projectId: targetProject.project.id,
+        sourceLibraryEntryId: personalImport.entry.id,
+      });
+      const otherProjectAdoption = await app.library.adoptProjectLibraryEntry({
+        actorUserId: 'user-alice',
+        projectId: otherProject.project.id,
+        sourceLibraryEntryId: personalImport.entry.id,
+      });
+      const concurrentAdoptions = await Promise.all([
+        app.library.adoptProjectLibraryEntry({
+          actorUserId: 'user-alice',
+          projectId: concurrentProject.project.id,
+          sourceLibraryEntryId: personalImport.entry.id,
+        }),
+        app.library.adoptProjectLibraryEntry({
+          actorUserId: 'user-alice',
+          projectId: concurrentProject.project.id,
+          sourceLibraryEntryId: personalImport.entry.id,
+        }),
+      ]);
+
+      expect(firstAdoption).toMatchObject({
+        entry: {
+          asset: {
+            canonicalId: 'doi:10.1000/adopt-personal-source',
+            id: personalImport.asset.id,
+          },
+          entry: {
+            paperAssetId: personalImport.asset.id,
+            scope: { id: targetProject.project.id, type: 'project' },
+            scopeId: targetProject.project.id,
+            scopeType: 'project',
+            spaceId: sharedSpace.id,
+            visibility: 'published_to_project',
+          },
+        },
+        reused: false,
+      });
+      expect(firstAdoption.entry.asset).not.toHaveProperty('storageKey');
+      expect(repeatedAdoption.reused).toBe(true);
+      expect(repeatedAdoption.entry.entry.id).toBe(firstAdoption.entry.entry.id);
+      expect(otherProjectAdoption.entry.entry.id).not.toBe(firstAdoption.entry.entry.id);
+      expect(otherProjectAdoption.entry.entry.paperAssetId).toBe(personalImport.asset.id);
+      expect(concurrentAdoptions[1]?.entry.entry.id).toBe(
+        concurrentAdoptions[0]?.entry.entry.id,
+      );
+      expect(concurrentAdoptions.map((adoption) => adoption.reused).sort()).toEqual([
+        false,
+        true,
+      ]);
+
+      const sourceDetail = await app.reading.getDetail(
+        {
+          actorUserId: 'user-alice',
+          libraryEntryId: personalImport.entry.id,
+        },
+      );
+      const adoptedDetail = await app.reading.getDetail(
+        {
+          actorUserId: 'user-bob',
+          libraryEntryId: firstAdoption.entry.entry.id,
+        },
+      );
+
+      expect(sourceDetail?.notes.map((note) => note.id)).toContain(privateNote.id);
+      expect(sourceDetail?.insights).toHaveLength(1);
+      expect(adoptedDetail?.notes).toEqual([]);
+      expect(adoptedDetail?.insights).toEqual([]);
+      expect(adoptedDetail?.projectComments).toEqual([]);
+
+      await expect(
+        app.library.adoptProjectLibraryEntry({
+          actorUserId: 'user-charlie',
+          projectId: targetProject.project.id,
+          sourceLibraryEntryId: firstAdoption.entry.entry.id,
+        }),
+      ).rejects.toThrow(/mutation|access denied/i);
+      await expect(
+        app.library.adoptProjectLibraryEntry({
+          actorUserId: 'user-dana',
+          projectId: targetProject.project.id,
+          sourceLibraryEntryId: personalImport.entry.id,
+        }),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.library.adoptProjectLibraryEntry({
+          actorUserId: 'user-bob',
+          projectId: targetProject.project.id,
+          sourceLibraryEntryId: personalImport.entry.id,
+        }),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.library.adoptProjectLibraryEntry({
+          actorUserId: 'user-alice',
+          projectId: 'project-missing-adoption-target',
+          sourceLibraryEntryId: personalImport.entry.id,
+        }),
+      ).rejects.toThrow(/does not exist/i);
+
+      await app.close();
+
+      const restartedApp = createJixiaApp({ env });
+      const restartedAdoption = await restartedApp.library.adoptProjectLibraryEntry({
+        actorUserId: 'user-alice',
+        projectId: targetProject.project.id,
+        sourceLibraryEntryId: personalImport.entry.id,
+      });
+
+      expect(restartedAdoption.reused).toBe(true);
+      expect(restartedAdoption.entry.entry.id).toBe(firstAdoption.entry.entry.id);
+      await restartedApp.close();
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it('bootstraps legacy paper/library json into Prisma once and then scrubs compatibility arrays', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-bootstrap-once-'));
     const env = createLibraryEnv(storageRoot);

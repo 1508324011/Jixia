@@ -2,6 +2,8 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import * as jobs from '../../src/shared/contracts/jobs';
 import * as library from '../../src/shared/contracts/library';
+import * as documentContent from '../../src/shared/contracts/document-content';
+import * as documentSnapshot from '../../src/shared/contracts/document-snapshot';
 import * as notebook from '../../src/shared/contracts/notebook';
 import * as projects from '../../src/shared/contracts/projects';
 import * as projectDocs from '../../src/shared/contracts/project-docs';
@@ -17,6 +19,8 @@ import type {
   SpaceSummary,
 } from '../../src/shared/contracts/spaces';
 import type {
+  AdoptProjectLibraryEntryRequest,
+  AdoptProjectLibraryEntryResponse,
   ImportPaperAssetRequest,
   LibraryEntryRecord,
   LibraryEntryView,
@@ -44,9 +48,22 @@ import type {
   PublishState,
 } from '../../src/shared/contracts/writing';
 import type {
+  DocumentCitationRecordBase,
+  DocumentSnapshot,
+} from '../../src/shared/contracts/document-snapshot';
+import type {
+  DocumentBlockDocument,
+  DocumentContentPayload,
+  DocumentSourceExcerptBlock,
+} from '../../src/shared/contracts/document-content';
+import type {
+  CaptureNotebookEvidenceRequest,
+  CaptureNotebookEvidenceResponse,
+  ListNotebookDocumentsResponse,
   NotebookCitationRecord,
   NotebookDocumentRecord,
   NotebookDocumentSnapshot,
+  NotebookSourceExcerptBlock,
 } from '../../src/shared/contracts/notebook';
 import type {
   ProjectDocCitationRecord,
@@ -171,12 +188,22 @@ describe('core contracts', () => {
       entry,
       asset,
     };
+    const adoptionRequest: AdoptProjectLibraryEntryRequest = {
+      sourceLibraryEntryId: entry.id,
+    };
+    const adoptionResponse: AdoptProjectLibraryEntryResponse = {
+      entry: entryView,
+      reused: false,
+    };
 
     expect(importRequest.sourceType).toBe('doi');
     expect(entryView.entry.paperAssetId).toBe('asset_001');
     expect(entryView.entry.scope).toEqual({ type: 'user', id: 'user_001' });
     expect(entryView.entry.spaceId).toBe('');
     expect(entryView.entry.visibility).toBe('private');
+    expect(adoptionRequest.sourceLibraryEntryId).toBe('entry_001');
+    expect(adoptionResponse.entry).toBe(entryView);
+    expect(adoptionResponse.reused).toBe(false);
 
     const libraryEntryShape: {
       entry: LibraryEntryRecord;
@@ -261,7 +288,222 @@ describe('core contracts', () => {
     expect(readingState.progressPercent).toBe(40);
   });
 
+  it('exports versioned document content payloads and legacy projection helpers', () => {
+    expect(documentContent.documentContentContract).toBe(
+      'jixia-document-content-contract',
+    );
+    expect(documentContent.DOCUMENT_BLOCK_SCHEMA_VERSION).toBe(1);
+    expect(documentContent.DOCUMENT_BLOCK_SNAPSHOT_FORMAT).toBe(
+      'jixia-document-blocks-v1',
+    );
+
+    const legacyDocument = documentContent.legacyTextToDocumentBlockDocument(
+      'Legacy textarea content',
+    );
+    const emptyLegacyDocument = documentContent.legacyTextToDocumentBlockDocument('');
+
+    expect(legacyDocument).toEqual({
+      blocks: [
+        {
+          text: 'Legacy textarea content',
+          type: 'paragraph',
+        },
+      ],
+      schemaVersion: 1,
+    });
+    expect(emptyLegacyDocument).toEqual({ blocks: [], schemaVersion: 1 });
+    expect(documentContent.documentBlockDocumentToLegacyText(legacyDocument)).toBe(
+      'Legacy textarea content',
+    );
+    expect(
+      documentContent.documentBlockDocumentToLegacyText(emptyLegacyDocument),
+    ).toBe('');
+
+    const sourceExcerpt: DocumentSourceExcerptBlock = {
+      locator: 'p. 4',
+      note: 'Use this as supporting evidence.',
+      paperAssetId: 'asset_001',
+      quote: 'source-backed quote',
+      title: 'Jixia as a server-first research platform',
+      type: 'sourceExcerpt',
+    };
+    const structuredDocument: DocumentContentPayload = {
+      blocks: [
+        {
+          level: 2,
+          text: 'Findings',
+          type: 'heading',
+        },
+        {
+          label: 'Smith 2026',
+          locator: 'p. 4',
+          paperAssetId: 'asset_001',
+          type: 'citation',
+        },
+        sourceExcerpt,
+      ],
+      schemaVersion: 1,
+    };
+    const normalizedStructuredDocument =
+      documentContent.normalizeDocumentBlockDocument(structuredDocument);
+    const serializedStructuredDocument =
+      documentContent.serializeDocumentBlockSnapshotPayload(structuredDocument);
+
+    expect(
+      documentContent.documentBlockDocumentToLegacyText(structuredDocument),
+    ).toBe(
+      [
+        '## Findings',
+        '[Citation: Smith 2026 — p. 4]',
+        '> source-backed quote\n\nSource: Jixia as a server-first research platform (p. 4)\nCapture note: Use this as supporting evidence.',
+      ].join('\n\n'),
+    );
+    expect(
+      documentContent.normalizePersistedDocumentSnapshot('Plain legacy row'),
+    ).toEqual({
+      blocks: [
+        {
+          text: 'Plain legacy row',
+          type: 'paragraph',
+        },
+      ],
+      schemaVersion: 1,
+    });
+    expect(
+      documentContent.normalizePersistedDocumentSnapshot(
+        serializedStructuredDocument,
+      ),
+    ).toEqual(normalizedStructuredDocument);
+    expect(
+      documentContent.extractDocumentBlockReferences(structuredDocument),
+    ).toMatchObject([
+      {
+        paperAssetId: 'asset_001',
+        sourceType: 'citation',
+      },
+      {
+        paperAssetId: 'asset_001',
+        sourceType: 'sourceExcerpt',
+      },
+    ]);
+    expect(
+      documentContent.extractDocumentBlockReferences({
+        blocks: [
+          {
+            evidenceSpan: 'quoted evidence',
+            libraryEntryId: 'entry_001',
+            paperAssetId: 'asset_001',
+            text: 'quoted evidence',
+            type: 'quote',
+          },
+          {
+            evidenceSpan: 'suggested evidence',
+            libraryEntryId: 'entry_001',
+            paperAssetId: 'asset_001',
+            status: 'proposed',
+            text: 'Use this supporting point.',
+            type: 'aiSuggestion',
+          },
+        ],
+        schemaVersion: 1,
+      }),
+    ).toEqual([
+      {
+        evidenceSpan: 'quoted evidence',
+        libraryEntryId: 'entry_001',
+        paperAssetId: 'asset_001',
+        sourceType: 'quote',
+      },
+      {
+        evidenceSpan: 'suggested evidence',
+        libraryEntryId: 'entry_001',
+        paperAssetId: 'asset_001',
+        sourceType: 'aiSuggestion',
+      },
+    ]);
+    expect(() =>
+      documentContent.normalizeDocumentBlockDocument({
+        blocks: [{ text: 'x', type: 'paragraph', projectId: 'project_001' }],
+        schemaVersion: 1,
+      }),
+    ).toThrow(/projectId/);
+    expect(() =>
+      documentContent.normalizeDocumentBlockDocument({
+        blocks: [{ text: 'x', type: 'paragraph', scope: { id: 'project_001', type: 'project' } }],
+        schemaVersion: 1,
+      }),
+    ).toThrow(/scope/);
+    expect(() =>
+      documentContent.normalizeDocumentBlockDocument({
+        blocks: [],
+        ownerId: 'user_001',
+        schemaVersion: 1,
+      }),
+    ).toThrow(/ownerId/);
+    expect(() =>
+      documentContent.normalizeDocumentBlockDocument({
+        blocks: [
+          {
+            libraryEntryId: 'entry_001',
+            text: 'quote with incomplete source metadata',
+            type: 'quote',
+          },
+        ],
+        schemaVersion: 1,
+      }),
+    ).toThrow(/paperAssetId is required/);
+    expect(() =>
+      documentContent.normalizeDocumentBlockDocument({
+        blocks: [
+          {
+            libraryEntryId: 'entry_001',
+            status: 'proposed',
+            text: 'suggestion with incomplete source metadata',
+            type: 'aiSuggestion',
+          },
+        ],
+        schemaVersion: 1,
+      }),
+    ).toThrow(/paperAssetId is required/);
+    const malformedPersistedEnvelope = JSON.stringify({
+      document: {
+        blocks: [{ text: 'bad persisted block', type: 'unsupported' }],
+        schemaVersion: 1,
+      },
+      format: documentContent.DOCUMENT_BLOCK_SNAPSHOT_FORMAT,
+    });
+
+    expect(
+      documentContent.normalizePersistedDocumentSnapshot(malformedPersistedEnvelope),
+    ).toEqual({
+      blocks: [
+        {
+          text: malformedPersistedEnvelope,
+          type: 'paragraph',
+        },
+      ],
+      schemaVersion: 1,
+    });
+    expect(() =>
+      documentContent.normalizeDocumentBlockDocument({
+        blocks: [{ text: 'x', type: 'unsupported' }],
+        schemaVersion: 1,
+      }),
+    ).toThrow(/supported Jixia document block type/);
+
+    expectTypeOf<DocumentContentPayload>().toMatchTypeOf<{
+      blocks: unknown[];
+      schemaVersion: 1;
+    }>();
+    expectTypeOf<DocumentSourceExcerptBlock>().toMatchTypeOf<{
+      paperAssetId: string;
+      quote: string;
+      type: 'sourceExcerpt';
+    }>();
+  });
+
   it('exports explicit notebook and project-doc writing payloads', () => {
+    expect(documentSnapshot).toBeTruthy();
     expect(writing).toBeTruthy();
     expect(notebook).toBeTruthy();
     expect(projectDocs).toBeTruthy();
@@ -285,8 +527,43 @@ describe('core contracts', () => {
       citations: [notebookCitation],
       content: '# Notebook Draft',
       document: notebookDoc,
+      documentContent: {
+        blocks: [
+          {
+            text: '# Notebook Draft',
+            type: 'paragraph',
+          },
+        ],
+        schemaVersion: 1,
+      },
       versionId: 'notebook_version_001',
       versionNumber: 1,
+    };
+    const notebookList: ListNotebookDocumentsResponse = {
+      documents: [notebookDoc],
+    };
+    const sourceExcerpt: NotebookSourceExcerptBlock = {
+      capturedAt: '2026-03-21T00:00:00.000Z',
+      libraryEntryId: 'entry_001',
+      locator: 'offsets 0-12',
+      note: 'Private interpretation stays editable outside the quote.',
+      paperAssetId: 'asset_001',
+      quote: 'source-backed quote',
+      title: 'Jixia as a server-first research platform',
+      type: 'sourceExcerpt',
+    };
+    const captureRequest: CaptureNotebookEvidenceRequest = {
+      notebookDocumentId: notebookDoc.id,
+      source: {
+        generatedInsightId: 'insight_001',
+        libraryEntryId: 'entry_001',
+        note: 'Capture this for private synthesis.',
+        type: 'generatedInsight',
+      },
+    };
+    const captureResponse: CaptureNotebookEvidenceResponse = {
+      document: notebookDoc,
+      snapshot: notebookSnapshot,
     };
 
     const projectDoc: ProjectDocRecord = {
@@ -310,22 +587,53 @@ describe('core contracts', () => {
       citations: [projectDocCitation],
       content: '# Shared Draft',
       document: projectDoc,
+      documentContent: {
+        blocks: [
+          {
+            level: 1,
+            text: 'Shared Draft',
+            type: 'heading',
+          },
+        ],
+        schemaVersion: 1,
+      },
       versionId: 'project_doc_version_001',
       versionNumber: 2,
     };
 
     expect(notebookSnapshot.document.ownerId).toBe('user_001');
     expect(notebookSnapshot.citations[0]?.evidenceSpan).toBe('p. 4');
+    expect(notebookSnapshot.documentContent?.schemaVersion).toBe(1);
+    expect(notebookList.documents).toHaveLength(1);
+    expect(sourceExcerpt.type).toBe('sourceExcerpt');
+    expect(captureRequest.source.type).toBe('generatedInsight');
+    expect(captureResponse.snapshot.document.id).toBe(notebookDoc.id);
     expect(projectDocSnapshot.document.publishState).toBe('draft');
+    expect(projectDocSnapshot.documentContent?.schemaVersion).toBe(1);
     expect(projectDocSnapshot.citations[0]?.projectDocVersionId).toBe(
       'project_doc_version_001',
     );
     expect(notebook.notebookContract).toBe('jixia-notebook-contract');
     expect(projectDocs.projectDocsContract).toBe('jixia-project-docs-contract');
+    expect(documentSnapshot.documentSnapshotContract).toBe(
+      'jixia-document-snapshot-contract',
+    );
 
     expectTypeOf<PublishState>().toEqualTypeOf<
       'draft' | 'review' | 'published'
     >();
+    expectTypeOf<NotebookCitationRecord>().toMatchTypeOf<DocumentCitationRecordBase>();
+    expectTypeOf<ProjectDocCitationRecord>().toMatchTypeOf<DocumentCitationRecordBase>();
+    expectTypeOf<NotebookDocumentSnapshot>().toEqualTypeOf<
+      DocumentSnapshot<NotebookDocumentRecord, NotebookCitationRecord>
+    >();
+    expectTypeOf<ProjectDocSnapshot>().toEqualTypeOf<
+      DocumentSnapshot<ProjectDocRecord, ProjectDocCitationRecord>
+    >();
+    expectTypeOf<DocumentBlockDocument>().toMatchTypeOf<{
+      blocks: unknown[];
+      schemaVersion: 1;
+    }>();
   });
 
   it('exports job payloads for status queries, events, and audits', () => {

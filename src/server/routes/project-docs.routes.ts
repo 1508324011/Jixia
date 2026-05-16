@@ -5,6 +5,7 @@ import type {
   ProjectDocSnapshot,
 } from '@shared/contracts/project-docs';
 import type { WritingDocumentView } from '@shared/contracts/writing';
+import type { DocumentBlockDocument } from '@shared/contracts/document-content';
 
 import type {
   ProjectDocsService,
@@ -37,9 +38,11 @@ export interface ProjectDocsRoutes {
     input: {
       citations: Array<{
         evidenceSpan?: string;
+        libraryEntryId?: string;
         paperAssetId: string;
       }>;
-      content: string;
+      content?: string;
+      documentContent?: DocumentBlockDocument;
       projectId: string;
       title: string;
     },

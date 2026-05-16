@@ -1,15 +1,30 @@
 import type { CredentialRecord } from "@shared/contracts/credentials";
 import type {
+  DiscoverySearchResponse,
+  DiscoveryTodayResponse,
+} from "@shared/contracts/discovery";
+import type { DocumentBlockDocument } from "@shared/contracts/document-content";
+import type {
   JobAuditRecord,
   JobEventRecord,
   JobStatusQuery,
   JobRecord,
 } from "@shared/contracts/jobs";
 import type {
+  AdoptProjectLibraryEntryRequest,
+  AdoptProjectLibraryEntryResponse,
   ImportSourceType,
+  LibraryListResponse,
   LibraryEntryVisibility,
   LibraryEntryView,
 } from "@shared/contracts/library";
+import type {
+  CaptureNotebookEvidenceRequest,
+  CaptureNotebookEvidenceResponse,
+  ListNotebookDocumentsResponse,
+  NotebookDocumentRecord,
+  NotebookDocumentSnapshot,
+} from "@shared/contracts/notebook";
 import type {
   AddProjectMemberRequest,
   CreateProjectRequest,
@@ -23,9 +38,15 @@ import type {
 } from "@shared/contracts/project-docs";
 import type {
   NoteRecord,
+  ReadingInsightResponse,
+  ReadingNoteResponse,
   ProjectReadingCommentRecord,
   ReadingDetail,
 } from "@shared/contracts/reading";
+import type {
+  DefaultImportTarget,
+  WorkbenchSettingsResponse,
+} from "@shared/contracts/settings";
 import type {
   CreateSpaceRequest,
   SpaceMembership,
@@ -65,14 +86,25 @@ type CreateProjectDocPayload = {
   publishState?: PublishState;
   title: string;
 };
+type CreateNotebookPayload = {
+  title: string;
+};
 type CreateReadingNotePayload = {
   body: string;
   libraryEntryId: string;
+};
+type CreateReadingNoteForEntryPayload = {
+  body: string;
+  entryId: string;
 };
 type CreateProjectReadingCommentPayload = {
   body: string;
   libraryEntryId: string;
   projectId?: string;
+};
+type ImportToPersonalLibraryPayload = {
+  sourceLocator: string;
+  sourceType: Exclude<ImportSourceType, "upload">;
 };
 type ImportPaperPayload = {
   projectId?: string;
@@ -92,9 +124,37 @@ type SaveReadingInsightPayload = {
   summary: string;
   title: string;
 };
+type SaveReadingInsightForEntryPayload = {
+  entryId: string;
+  evidenceSpans: Array<{
+    endOffset: number;
+    quote: string;
+    startOffset: number;
+  }>;
+  summary: string;
+  title: string;
+};
+type SaveWorkbenchSettingsPayload = {
+  apiKey?: string;
+  defaultImportTarget: DefaultImportTarget;
+};
 type SaveProjectDocVersionPayload = {
-  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
-  content: string;
+  citations: Array<{
+    evidenceSpan?: string;
+    libraryEntryId?: string;
+    paperAssetId: string;
+  }>;
+  content?: string;
+  documentContent?: DocumentBlockDocument;
+};
+type SaveNotebookVersionPayload = {
+  citations: Array<{
+    evidenceSpan?: string;
+    libraryEntryId?: string;
+    paperAssetId: string;
+  }>;
+  content?: string;
+  documentContent?: DocumentBlockDocument;
 };
 
 interface RequestOptions extends RequestInit {
@@ -242,6 +302,31 @@ function subscribeToJobEvents(
 }
 
 export const apiClient = {
+  adoptProjectLibraryEntry(
+    projectId: string,
+    input: AdoptProjectLibraryEntryRequest,
+  ): Promise<AdoptProjectLibraryEntryResponse> {
+    return requestJson(`/api/projects/${projectId}/library/adoptions`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  getTodayRecommendations(): Promise<DiscoveryTodayResponse> {
+    return requestJson("/api/discovery/today");
+  },
+  searchDiscovery(query: string): Promise<DiscoverySearchResponse> {
+    return requestJson("/api/discovery/search", {
+      query: { query },
+    });
+  },
+  importToPersonalLibrary(
+    input: ImportToPersonalLibraryPayload,
+  ): Promise<LibraryEntryView> {
+    return requestJson("/api/library/personal/import", {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
   addProjectMember(
     projectId: string,
     input: AddProjectMemberRequest,
@@ -286,11 +371,27 @@ export const apiClient = {
       method: "POST",
     });
   },
+  createNotebook(
+    input: CreateNotebookPayload,
+  ): Promise<NotebookDocumentRecord> {
+    return requestJson("/api/notebooks", {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
   createReadingNote(
     input: CreateReadingNotePayload,
   ): Promise<NoteRecord> {
     return requestJson("/api/reading/notes", {
       body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  createReadingNoteForEntry(
+    input: CreateReadingNoteForEntryPayload,
+  ): Promise<ReadingNoteResponse> {
+    return requestJson(`/api/reading/${input.entryId}/notes`, {
+      body: JSON.stringify({ body: input.body }),
       method: "POST",
     });
   },
@@ -315,6 +416,9 @@ export const apiClient = {
   },
   listCredentials(): Promise<CredentialRecord[]> {
     return requestJson("/api/credentials");
+  },
+  listPersonalLibraryEntries(): Promise<LibraryListResponse> {
+    return requestJson("/api/library/personal");
   },
   listLibraryEntries(
     scope: ScopeRef,
@@ -343,6 +447,9 @@ export const apiClient = {
       },
     });
   },
+  listNotebooks(): Promise<ListNotebookDocumentsResponse> {
+    return requestJson("/api/notebooks");
+  },
   listProjectMembers(
     projectId: string,
   ): Promise<ProjectMemberRecord[]> {
@@ -370,8 +477,25 @@ export const apiClient = {
   getCurrentSession(): Promise<{ user: SessionUser }> {
     return requestJson("/api/session/me");
   },
+  getWorkbenchSettings(): Promise<WorkbenchSettingsResponse> {
+    return requestJson("/api/settings/me");
+  },
+  saveWorkbenchSettings(
+    input: SaveWorkbenchSettingsPayload,
+  ): Promise<WorkbenchSettingsResponse> {
+    return requestJson("/api/settings/me", {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
   getProjectDoc(documentId: string): Promise<ProjectDocSnapshot> {
     return requestJson(`/api/project-docs/${documentId}`);
+  },
+  getNotebook(documentId: string): Promise<NotebookDocumentRecord> {
+    return requestJson(`/api/notebooks/${documentId}`);
+  },
+  getNotebookSnapshot(documentId: string): Promise<NotebookDocumentSnapshot> {
+    return requestJson(`/api/notebooks/${documentId}/snapshot`);
   },
   getLatestProjectDoc(projectId: string): Promise<ProjectDocRecord | null> {
     return requestJson(`/api/projects/${projectId}/writing-document`);
@@ -393,8 +517,13 @@ export const apiClient = {
   },
   saveProjectWritingDocument(
     input: {
-      citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
-      content: string;
+      citations: Array<{
+        evidenceSpan?: string;
+        libraryEntryId?: string;
+        paperAssetId: string;
+      }>;
+      content?: string;
+      documentContent?: DocumentBlockDocument;
       projectId: string;
       title: string;
     },
@@ -403,6 +532,7 @@ export const apiClient = {
       body: JSON.stringify({
         citations: input.citations,
         content: input.content,
+        documentContent: input.documentContent,
         title: input.title,
       }),
       method: "POST",
@@ -416,11 +546,40 @@ export const apiClient = {
       method: "POST",
     });
   },
+  saveReadingInsightForEntry(
+    input: SaveReadingInsightForEntryPayload,
+  ): Promise<ReadingInsightResponse> {
+    return requestJson(`/api/reading/${input.entryId}/insights`, {
+      body: JSON.stringify({
+        evidenceSpans: input.evidenceSpans,
+        summary: input.summary,
+        title: input.title,
+      }),
+      method: "POST",
+    });
+  },
   saveProjectDocVersion(
     documentId: string,
     input: SaveProjectDocVersionPayload,
   ): Promise<ProjectDocSnapshot> {
     return requestJson(`/api/project-docs/${documentId}/versions`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  saveNotebookVersion(
+    documentId: string,
+    input: SaveNotebookVersionPayload,
+  ): Promise<NotebookDocumentSnapshot> {
+    return requestJson(`/api/notebooks/${documentId}/versions`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  captureNotebookEvidence(
+    input: CaptureNotebookEvidenceRequest,
+  ): Promise<CaptureNotebookEvidenceResponse> {
+    return requestJson("/api/notebooks/capture", {
       body: JSON.stringify(input),
       method: "POST",
     });

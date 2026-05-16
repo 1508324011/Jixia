@@ -553,6 +553,11 @@ function createBootstrappedLibraryRepository(
   }
 
   return {
+    async adoptExistingPaperAsset(input) {
+      await ensureBootstrapped();
+
+      return repository.adoptExistingPaperAsset(input);
+    },
     async bootstrapLegacyLibrary(input: BootstrapLegacyLibraryInput): Promise<void> {
       await ensureBootstrapped();
       await repository.bootstrapLegacyLibrary(input);
@@ -891,11 +896,6 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
 
     await readingBootstrap;
   }
-  const notebookRepository = createNotebookRepository(prismaClient);
-  const notebookService = createNotebookService({
-    libraryService,
-    notebookRepository,
-  });
   const projectDocRepository = createProjectDocRepository(prismaClient);
   const projectDocsService = createProjectDocsService({
     libraryRepository,
@@ -920,6 +920,11 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
         await ensureReadingBootstrap();
 
         return readingRepository.createProjectComment(input);
+      },
+      async getGeneratedInsight(query) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.getGeneratedInsight(query);
       },
       async getReadingState(libraryEntryId, userId) {
         await ensureReadingBootstrap();
@@ -952,6 +957,12 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
         return readingRepository.touchReadingState(input);
       },
     },
+  });
+  const notebookRepository = createNotebookRepository(prismaClient);
+  const notebookService = createNotebookService({
+    libraryService,
+    notebookRepository,
+    readingService,
   });
   const credentialsService = createCredentialsService({
     nextId(prefix: string): string {

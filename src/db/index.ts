@@ -55,6 +55,8 @@ export {
 export {
   createLibraryRepository,
   initializeLibraryPersistence,
+  type AdoptExistingLibraryEntryParams,
+  type AdoptExistingLibraryEntryResult,
   type BootstrapLegacyLibraryInput,
   type ImportScopedLibraryEntryParams,
   type LegacyLibraryAssetInput,

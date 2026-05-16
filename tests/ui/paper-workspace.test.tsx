@@ -198,6 +198,57 @@ describe('paper workspace', () => {
           return jsonResponse({ insight }, 200);
         }
 
+        if (requestUrl.endsWith('/api/notebooks/capture') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            notebookTitle: string;
+            source: {
+              generatedInsightId: string;
+              libraryEntryId: string;
+              type: 'generatedInsight';
+            };
+          };
+          expect(body).toMatchObject({
+            notebookTitle: 'Reader evidence notebook',
+            source: {
+              generatedInsightId: 'insight-1',
+              libraryEntryId: 'entry-1',
+              type: 'generatedInsight',
+            },
+          });
+
+          return jsonResponse({
+            document: {
+              createdAt: '2026-03-23T00:25:00.000Z',
+              id: 'notebook-alpha',
+              ownerId: 'user-alice',
+              title: 'Reader evidence notebook',
+              updatedAt: '2026-03-23T00:25:00.000Z',
+            },
+            snapshot: {
+              capturedAt: '2026-03-23T00:25:00.000Z',
+              citations: [
+                {
+                  createdAt: '2026-03-23T00:25:00.000Z',
+                  evidenceSpan: 'Tumor board evidence',
+                  id: 'citation-alpha',
+                  notebookDocumentVersionId: 'notebook-version-alpha',
+                  paperAssetId: 'asset-1',
+                },
+              ],
+              content: 'The imported paper supports the shared review workflow.\n\n> Tumor board evidence',
+              document: {
+                createdAt: '2026-03-23T00:25:00.000Z',
+                id: 'notebook-alpha',
+                ownerId: 'user-alice',
+                title: 'Reader evidence notebook',
+                updatedAt: '2026-03-23T00:25:00.000Z',
+              },
+              versionId: 'notebook-version-alpha',
+              versionNumber: 1,
+            },
+          });
+        }
+
         if (requestUrl.endsWith('/api/project-docs') && init?.method === 'POST') {
           return jsonResponse(projectDocRecord);
         }
@@ -236,6 +287,13 @@ describe('paper workspace', () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Generate insight' }));
+    await user.click(screen.getByRole('button', { name: 'Send latest insight to Notebook' }));
+
+    expect(
+      await screen.findByText('Sent latest insight to private Notebook Reader evidence notebook.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Notebook' })).toHaveAttribute('href', '/notebook');
+
     await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
 
     expect(await screen.findByText('Promoted latest insight into Writer as doc-alpha.')).toBeInTheDocument();

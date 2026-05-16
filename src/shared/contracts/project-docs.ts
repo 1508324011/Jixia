@@ -1,3 +1,7 @@
+import type {
+  DocumentCitationRecordBase,
+  DocumentSnapshot,
+} from './document-snapshot';
 import type { PublishState } from './writing';
 
 export interface CreateProjectDocRequest {
@@ -11,11 +15,7 @@ export interface ProjectDocLookup {
   documentId: string;
 }
 
-export interface ProjectDocCitationRecord {
-  createdAt: string;
-  evidenceSpan?: string;
-  id: string;
-  paperAssetId: string;
+export interface ProjectDocCitationRecord extends DocumentCitationRecordBase {
   projectDocVersionId: string;
 }
 
@@ -29,13 +29,9 @@ export interface ProjectDocRecord {
   updatedAt: string;
 }
 
-export interface ProjectDocSnapshot {
-  capturedAt: string;
-  citations: ProjectDocCitationRecord[];
-  content: string;
-  document: ProjectDocRecord;
-  versionId: string;
-  versionNumber: number;
-}
+export type ProjectDocSnapshot = DocumentSnapshot<
+  ProjectDocRecord,
+  ProjectDocCitationRecord
+>;
 
 export const projectDocsContract = 'jixia-project-docs-contract';

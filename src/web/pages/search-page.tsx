@@ -6,10 +6,8 @@ import type {
   ImportSourceType,
 } from "@shared/contracts/library";
 
-import { createDemoApi } from "../lib/demo-api";
+import { apiClient } from "../lib/http-client";
 import { useSearchPresenter } from "../presenters/search-presenter";
-
-const demoApi = createDemoApi();
 
 export function SearchPage() {
   const {
@@ -39,7 +37,7 @@ export function SearchPage() {
     setErrorMessage(null);
 
     try {
-      const response = await demoApi.searchDiscovery(query);
+      const response = await apiClient.searchDiscovery(query);
       setResults(response.items);
     } catch (searchError) {
       setErrorMessage(searchError instanceof Error ? searchError.message : "Search failed.");
@@ -53,7 +51,7 @@ export function SearchPage() {
     setErrorMessage(null);
 
     try {
-      await demoApi.importToPersonalLibrary({
+      await apiClient.importToPersonalLibrary({
         sourceLocator: item.sourceLocator,
         sourceType: item.sourceType,
       });

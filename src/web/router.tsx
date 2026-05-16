@@ -7,6 +7,7 @@ import { HomePage } from "./pages/home-page";
 import { JobsPage } from "./pages/jobs-page";
 import { LibraryPage } from "./pages/library-page";
 import { LoginPage } from "./pages/login-page";
+import { NotebookPage } from "./pages/notebook-page";
 import { ProjectPage } from "./pages/project-page";
 import { ProjectsPage } from "./pages/projects-page";
 import { ReaderPage } from "./pages/reader-page";
@@ -36,6 +37,7 @@ export function AppRouter() {
           <Route path="/search" element={<SearchPage />} />
           <Route path="/library" element={<LibraryPage mode="personal" />} />
           <Route path="/library/:entryId/reader" element={<ReaderPage />} />
+          <Route path="/notebook" element={<NotebookPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:projectId" element={<ProjectPage />} />
           <Route path="/projects/:projectId/library" element={<LibraryPage />} />

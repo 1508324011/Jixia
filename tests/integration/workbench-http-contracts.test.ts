@@ -266,9 +266,12 @@ describe('workbench http contracts', () => {
         headers: withSessionCookie(aliceCookie, {
           'Content-Type': 'application/json',
         }),
-        method: 'POST',
-      }).then(
-        (response) => response.json() as Promise<{ asset: { id: string; storageKey?: string } }>,
+          method: 'POST',
+        }).then(
+        (response) => response.json() as Promise<{
+          asset: { id: string; storageKey?: string };
+          entry: { id: string };
+        }>,
       );
       expect(importedProjectRecord.asset.storageKey).toBeUndefined();
       const writingDocumentFromClient = await demoApi.getWritingDocument(
@@ -281,6 +284,41 @@ describe('workbench http contracts', () => {
         projectId: project.project.id,
         spaceId: sharedSpace.id,
         title: 'Writer draft title',
+      });
+      const structuredWorkbenchSave = await demoApi.saveWritingDocument({
+        citations: [],
+        documentContent: {
+          blocks: [
+            {
+              level: 2,
+              text: 'Structured Writer draft',
+              type: 'heading',
+            },
+            {
+              text: 'Structured workbench paragraph.',
+              type: 'paragraph',
+            },
+            {
+              evidenceSpan: 'structured project quote',
+              libraryEntryId: importedProjectRecord.entry.id,
+              paperAssetId: importedProjectRecord.asset.id,
+              text: 'structured project quote',
+              type: 'quote',
+            },
+            {
+              evidenceSpan: 'structured suggestion evidence',
+              libraryEntryId: importedProjectRecord.entry.id,
+              paperAssetId: importedProjectRecord.asset.id,
+              status: 'proposed',
+              text: 'Use this project-scoped evidence in the synthesis.',
+              type: 'aiSuggestion',
+            },
+          ],
+          schemaVersion: 1,
+        },
+        projectId: project.project.id,
+        spaceId: sharedSpace.id,
+        title: 'Structured Writer draft title',
       });
       const reloadedWritingDocument = await demoApi.getWritingDocument(
         sharedSpace.id,
@@ -295,11 +333,11 @@ describe('workbench http contracts', () => {
       const wrongSpaceWritingSaveResponse = await fetch(
         `${baseUrl}/api/writing/space-wrong/projects/${project.project.id}/document`,
         {
-          body: JSON.stringify({
-            citations: [{ paperAssetId: importedProjectRecord.asset.id }],
-            content: 'Wrong-space write attempt',
-            title: 'Wrong-space title',
-          }),
+            body: JSON.stringify({
+              citations: [{ paperAssetId: importedProjectRecord.asset.id }],
+              content: 'Wrong-space write attempt',
+              title: 'Wrong-space title',
+            }),
           headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
           }),
@@ -351,13 +389,65 @@ describe('workbench http contracts', () => {
           title: 'Writer draft title',
         }),
       });
+      expect(structuredWorkbenchSave.document.latestSnapshot).toMatchObject({
+        content:
+          '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+        documentContent: {
+          blocks: [
+            {
+              level: 2,
+              text: 'Structured Writer draft',
+              type: 'heading',
+            },
+            {
+              text: 'Structured workbench paragraph.',
+              type: 'paragraph',
+            },
+            {
+              evidenceSpan: 'structured project quote',
+              libraryEntryId: importedProjectRecord.entry.id,
+              paperAssetId: importedProjectRecord.asset.id,
+              text: 'structured project quote',
+              type: 'quote',
+            },
+            {
+              evidenceSpan: 'structured suggestion evidence',
+              libraryEntryId: importedProjectRecord.entry.id,
+              paperAssetId: importedProjectRecord.asset.id,
+              status: 'proposed',
+              text: 'Use this project-scoped evidence in the synthesis.',
+              type: 'aiSuggestion',
+            },
+          ],
+          schemaVersion: 1,
+        },
+      });
+      expect(structuredWorkbenchSave.document.latestSnapshot?.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: [
+            'structured project quote',
+            'structured suggestion evidence',
+          ].join('\n\n'),
+          paperAssetId: importedProjectRecord.asset.id,
+        }),
+      ]);
       expect(reloadedWritingDocument.document).toMatchObject({
         documentId: writingSaveFromClient.document.documentId,
+        latestSnapshot: expect.objectContaining({
+          content:
+            '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+          documentContent: structuredWorkbenchSave.document.latestSnapshot?.documentContent,
+        }),
         projectId: project.project.id,
         spaceId: sharedSpace.id,
       });
       expect(compatibilityWritingDocument.document).toMatchObject({
         documentId: writingSaveFromClient.document.documentId,
+        latestSnapshot: expect.objectContaining({
+          content:
+            '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+          documentContent: structuredWorkbenchSave.document.latestSnapshot?.documentContent,
+        }),
         projectId: project.project.id,
         spaceId: sharedSpace.id,
       });
@@ -368,7 +458,9 @@ describe('workbench http contracts', () => {
       expect(writingAfterWrongSpaceSave.document).toMatchObject({
         documentId: writingSaveFromClient.document.documentId,
         latestSnapshot: expect.objectContaining({
-          content: 'Writer draft content',
+          content:
+            '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+          documentContent: structuredWorkbenchSave.document.latestSnapshot?.documentContent,
         }),
       });
     } finally {

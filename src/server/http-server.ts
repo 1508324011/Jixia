@@ -8,7 +8,9 @@ import {
 import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { DocumentBlockDocument } from "@shared/contracts/document-content";
 import type { LoginSessionRequest } from "@shared/contracts/session";
+import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
 
 import { createJixiaApp, type CreateJixiaAppOptions } from "./app";
 import { resolveHttpApi } from "./http-api";
@@ -318,6 +320,58 @@ function rejectLegacyIdentityQueryFields(
   );
 }
 
+function rejectNotebookAuthorityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "spaceId"),
+    "spaceId",
+  );
+}
+
+function rejectProjectLibraryAdoptionAuthorityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "spaceId"),
+    "spaceId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeType"),
+    "scopeType",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeId"),
+    "scopeId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scope"),
+    "scope",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "visibility"),
+    "visibility",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "projectId"),
+    "projectId",
+  );
+}
+
 function rejectLegacyIdentityBodyFields(
   actor: { userId: string },
   requestBody: unknown,
@@ -334,6 +388,237 @@ function rejectLegacyIdentityBodyFields(
   assertNoClientActorIdentityField(actor, body.authorUserId, "authorUserId");
   assertNoClientActorIdentityField(actor, body.startedByUserId, "startedByUserId");
   assertNoClientActorContextField(body.actorSpaceId, "actorSpaceId");
+}
+
+function rejectProjectLibraryAdoptionAuthorityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+  assertNoClientActorContextField(body.spaceId, "spaceId");
+  assertNoClientActorContextField(body.scopeType, "scopeType");
+  assertNoClientActorContextField(body.scopeId, "scopeId");
+  assertNoClientActorContextField(body.scope, "scope");
+  assertNoClientActorContextField(body.visibility, "visibility");
+  assertNoClientActorContextField(body.projectId, "projectId");
+}
+
+function assertStringField(
+  value: unknown,
+  fieldName: string,
+): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${fieldName} is required.`);
+  }
+
+  return value.trim();
+}
+
+function assertOptionalStringField(
+  value: unknown,
+  fieldName: string,
+): string | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`${fieldName} must be a string when provided.`);
+  }
+
+  return value.trim() || undefined;
+}
+
+function assertOptionalTextField(
+  value: unknown,
+  fieldName: string,
+): string | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`${fieldName} must be a string when provided.`);
+  }
+
+  return value;
+}
+
+function assertOptionalDocumentContentField(
+  value: unknown,
+): DocumentBlockDocument | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("documentContent must be a JSON object when provided.");
+  }
+
+  return value as DocumentBlockDocument;
+}
+
+function parseDocumentCitationInputs(
+  value: unknown,
+): Array<{
+  evidenceSpan?: string;
+  libraryEntryId?: string;
+  paperAssetId: string;
+}> {
+  if (!Array.isArray(value)) {
+    throw new Error("citations must be an array.");
+  }
+
+  return value.map((citation, index) => {
+    if (!citation || typeof citation !== "object" || Array.isArray(citation)) {
+      throw new Error(`citations[${index}] must be a JSON object.`);
+    }
+
+    const citationRecord = citation as Record<string, unknown>;
+
+    return {
+      evidenceSpan: assertOptionalTextField(
+        citationRecord.evidenceSpan,
+        `citations[${index}].evidenceSpan`,
+      ),
+      libraryEntryId: assertOptionalStringField(
+        citationRecord.libraryEntryId,
+        `citations[${index}].libraryEntryId`,
+      ),
+      paperAssetId: assertStringField(
+        citationRecord.paperAssetId,
+        `citations[${index}].paperAssetId`,
+      ),
+    };
+  });
+}
+
+function parseDocumentVersionBody(requestBody: unknown): {
+  citations: Array<{
+    evidenceSpan?: string;
+    libraryEntryId?: string;
+    paperAssetId: string;
+  }>;
+  content?: string;
+  documentContent?: DocumentBlockDocument;
+} {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Document version payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  const content = assertOptionalTextField(body.content, "content");
+  const documentContent = assertOptionalDocumentContentField(body.documentContent);
+
+  if (typeof content === "undefined" && typeof documentContent === "undefined") {
+    throw new Error("content is required when documentContent is not provided.");
+  }
+
+  return {
+    citations: parseDocumentCitationInputs(body.citations),
+    content,
+    documentContent,
+  };
+}
+
+function parseWorkbenchWritingBody(requestBody: unknown): {
+  citations: Array<{
+    evidenceSpan?: string;
+    libraryEntryId?: string;
+    paperAssetId: string;
+  }>;
+  content?: string;
+  documentContent?: DocumentBlockDocument;
+  title: string;
+} {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Writing payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  const parsedVersionBody = parseDocumentVersionBody(requestBody);
+
+  return {
+    ...parsedVersionBody,
+    title: assertStringField(body.title, "title"),
+  };
+}
+
+function parseNotebookCaptureBody(requestBody: unknown): {
+  notebookDocumentId?: string;
+  notebookTitle?: string;
+  ownerId?: string;
+  spaceId?: string;
+  source: {
+    generatedInsightId: string;
+    libraryEntryId: string;
+    note?: string;
+    type: "generatedInsight";
+  };
+} {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Notebook evidence capture payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  const source = body.source;
+
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    throw new Error("Notebook evidence capture source must be a JSON object.");
+  }
+
+  const sourceRecord = source as Record<string, unknown>;
+
+  if (sourceRecord.type !== "generatedInsight") {
+    throw new Error("Notebook evidence capture source type must be generatedInsight.");
+  }
+
+  return {
+    notebookDocumentId: assertOptionalStringField(
+      body.notebookDocumentId,
+      "notebookDocumentId",
+    ),
+    notebookTitle: assertOptionalStringField(body.notebookTitle, "notebookTitle"),
+    ownerId: assertOptionalStringField(body.ownerId, "ownerId"),
+    spaceId: assertOptionalStringField(body.spaceId, "spaceId"),
+    source: {
+      generatedInsightId: assertStringField(
+        sourceRecord.generatedInsightId,
+        "source.generatedInsightId",
+      ),
+      libraryEntryId: assertStringField(
+        sourceRecord.libraryEntryId,
+        "source.libraryEntryId",
+      ),
+      note: assertOptionalStringField(sourceRecord.note, "source.note"),
+      type: "generatedInsight",
+    },
+  };
+}
+
+function parseAdoptProjectLibraryEntryBody(
+  requestBody: unknown,
+): AdoptProjectLibraryEntryRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Project library adoption payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  return {
+    sourceLibraryEntryId: assertStringField(
+      body.sourceLibraryEntryId,
+      "sourceLibraryEntryId",
+    ),
+  };
 }
 
 function rejectLegacyActorSpaceContextField(requestUrl: URL): void {
@@ -645,6 +930,30 @@ async function handleApiRequest(
       return true;
     }
 
+    const projectLibraryAdoptionsMatch = pathname.match(
+      /^\/api\/projects\/([^/]+)\/library\/adoptions$/,
+    );
+    if (projectLibraryAdoptionsMatch && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      const [, projectId] = projectLibraryAdoptionsMatch;
+      rejectProjectLibraryAdoptionAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectProjectLibraryAdoptionAuthorityBodyFields(actor, requestBody);
+      const body = parseAdoptProjectLibraryEntryBody(requestBody);
+
+      sendJson(
+        response,
+        200,
+        await app.library.adoptProjectLibraryEntry({
+          actorUserId: actor.userId,
+          projectId,
+          sourceLibraryEntryId: body.sourceLibraryEntryId,
+        }),
+        method,
+      );
+      return true;
+    }
+
     const latestProjectDocumentMatch = pathname.match(
       /^\/api\/projects\/([^/]+)\/writing-document$/,
     );
@@ -687,16 +996,9 @@ async function handleApiRequest(
       const actor = await getActor(request, actorOptions);
       const [, projectId] = projectWritingMatch;
       rejectLegacyIdentityQueryFields(actor, requestUrl);
-      const body = await readJsonBody<{
-        actorUserId?: string;
-        citations: Array<{
-          evidenceSpan?: string;
-          paperAssetId: string;
-        }>;
-        content: string;
-        title: string;
-      }>(request);
-      rejectLegacyIdentityBodyFields(actor, body);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectLegacyIdentityBodyFields(actor, requestBody);
+      const body = parseWorkbenchWritingBody(requestBody);
 
       sendJson(
         response,
@@ -706,6 +1008,7 @@ async function handleApiRequest(
             {
               citations: body.citations,
               content: body.content,
+              documentContent: body.documentContent,
               projectId,
               title: body.title,
             },
@@ -717,16 +1020,31 @@ async function handleApiRequest(
       return true;
     }
 
+    if (pathname === "/api/notebooks" && method === "GET") {
+      const actor = await getActor(request, actorOptions);
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.notebooks.listDocuments(actor.userId),
+        method,
+      );
+      return true;
+    }
+
     if (pathname === "/api/notebooks" && method === "POST") {
       const actor = await getActor(request, actorOptions);
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         ownerId?: string;
+        spaceId?: string;
         title: string;
       }>(request);
       rejectLegacyIdentityBodyFields(actor, body);
       assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+      assertNoClientActorContextField(body.spaceId, "spaceId");
 
       sendJson(
         response,
@@ -742,16 +1060,59 @@ async function handleApiRequest(
       return true;
     }
 
+    if (pathname === "/api/notebooks/capture" && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      const body = parseNotebookCaptureBody(requestBody);
+      rejectLegacyIdentityBodyFields(actor, requestBody);
+      rejectLegacyActorSpaceContextBodyField(requestBody);
+      assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+      assertNoClientActorContextField(body.spaceId, "spaceId");
+
+      sendJson(
+        response,
+        200,
+        await app.notebooks.captureEvidence(
+          {
+            notebookDocumentId: body.notebookDocumentId,
+            notebookTitle: body.notebookTitle,
+            source: body.source,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
     const notebookMatch = pathname.match(/^\/api\/notebooks\/([^/]+)$/);
     if (notebookMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = notebookMatch;
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
 
       sendJson(
         response,
         200,
         await app.notebooks.getDocument({ documentId }, actor.userId),
+        method,
+      );
+      return true;
+    }
+
+    const notebookSnapshotMatch = pathname.match(
+      /^\/api\/notebooks\/([^/]+)\/snapshot$/,
+    );
+    if (notebookSnapshotMatch && method === "GET") {
+      const actor = await getActor(request, actorOptions);
+      const [, documentId] = notebookSnapshotMatch;
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.notebooks.getLatestSnapshot({ documentId }, actor.userId),
         method,
       );
       return true;
@@ -763,16 +1124,18 @@ async function handleApiRequest(
     if (notebookVersionsMatch && method === "POST") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = notebookVersionsMatch;
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
-      const body = await readJsonBody<{
-        actorUserId?: string;
-        citations: Array<{
-          evidenceSpan?: string;
-          paperAssetId: string;
-        }>;
-        content: string;
-      }>(request);
-      rejectLegacyIdentityBodyFields(actor, body);
+      rejectNotebookAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectLegacyIdentityBodyFields(actor, requestBody);
+      rejectLegacyActorSpaceContextBodyField(requestBody);
+
+      if (requestBody && typeof requestBody === "object" && !Array.isArray(requestBody)) {
+        const rawBody = requestBody as Record<string, unknown>;
+        assertNoClientActorIdentityField(actor, rawBody.ownerId, "ownerId");
+        assertNoClientActorContextField(rawBody.spaceId, "spaceId");
+      }
+
+      const body = parseDocumentVersionBody(requestBody);
 
       sendJson(
         response,
@@ -781,6 +1144,7 @@ async function handleApiRequest(
           {
             citations: body.citations,
             content: body.content,
+            documentContent: body.documentContent,
             documentId,
           },
           actor.userId,
@@ -841,15 +1205,9 @@ async function handleApiRequest(
       const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocVersionsMatch;
       rejectLegacyIdentityQueryFields(actor, requestUrl);
-      const body = await readJsonBody<{
-        actorUserId?: string;
-        citations: Array<{
-          evidenceSpan?: string;
-          paperAssetId: string;
-        }>;
-        content: string;
-      }>(request);
-      rejectLegacyIdentityBodyFields(actor, body);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectLegacyIdentityBodyFields(actor, requestBody);
+      const body = parseDocumentVersionBody(requestBody);
 
       sendJson(
         response,
@@ -858,6 +1216,7 @@ async function handleApiRequest(
           {
             citations: body.citations,
             content: body.content,
+            documentContent: body.documentContent,
             documentId,
           },
           actor.userId,
