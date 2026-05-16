@@ -10,6 +10,7 @@ import type {
   WorkbenchSettingsResponse,
   WritingDocumentResponse,
 } from '@shared';
+import type { DocumentBlockDocument } from '@shared/contracts/document-content';
 import type { EvidenceSpanRecord } from '@shared/contracts/evidence';
 import type { ImportSourceType, LibraryListResponse } from '@shared/contracts/library';
 
@@ -155,8 +156,13 @@ export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
       );
     },
     saveWritingDocument(input: {
-      citations?: Array<{ evidenceSpan?: string; paperAssetId: string }>;
-      content: string;
+      citations?: Array<{
+        evidenceSpan?: string;
+        libraryEntryId?: string;
+        paperAssetId: string;
+      }>;
+      content?: string;
+      documentContent?: DocumentBlockDocument;
       projectId: string;
       spaceId: string;
       title: string;
@@ -169,6 +175,7 @@ export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
           body: JSON.stringify({
             citations: input.citations ?? [],
             content: input.content,
+            documentContent: input.documentContent,
             title: input.title,
           }),
           headers: requestHeaders(),

@@ -1,3 +1,5 @@
+import type { DocumentContentPayload } from './document-content';
+
 /**
  * Shared, transport-safe vocabulary for Jixia-owned document version snapshots.
  *
@@ -28,6 +30,7 @@ export interface DocumentSnapshot<
   citations: TCitation[];
   content: string;
   document: TDocument;
+  documentContent?: DocumentContentPayload;
   versionId: string;
   versionNumber: number;
 }

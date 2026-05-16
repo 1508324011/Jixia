@@ -137,9 +137,26 @@ describe('reading evidence', () => {
         ownerId: 'user-alice',
         title: 'Reader evidence notebook',
       });
-      expect(captured.snapshot.content).toContain('Generated insight:');
+      expect(captured.snapshot.content).not.toContain('Generated insight:');
       expect(captured.snapshot.content).toContain('The imported paper supports the shared review workflow.');
       expect(captured.snapshot.content).toContain('> shared review data');
+      expect(captured.snapshot.documentContent).toMatchObject({
+        blocks: expect.arrayContaining([
+          {
+            level: 2,
+            text: 'Captured reader evidence',
+            type: 'heading',
+          },
+          expect.objectContaining({
+            evidenceSpan: 'shared review data',
+            libraryEntryId: imported.entry.id,
+            paperAssetId: imported.asset.id,
+            quote: 'shared review data',
+            type: 'sourceExcerpt',
+          }),
+        ]),
+        schemaVersion: 1,
+      });
       expect(captured.snapshot.citations).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

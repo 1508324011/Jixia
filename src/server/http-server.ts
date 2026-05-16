@@ -8,6 +8,7 @@ import {
 import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { DocumentBlockDocument } from "@shared/contracts/document-content";
 import type { LoginSessionRequest } from "@shared/contracts/session";
 import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
 
@@ -434,6 +435,121 @@ function assertOptionalStringField(
   }
 
   return value.trim() || undefined;
+}
+
+function assertOptionalTextField(
+  value: unknown,
+  fieldName: string,
+): string | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`${fieldName} must be a string when provided.`);
+  }
+
+  return value;
+}
+
+function assertOptionalDocumentContentField(
+  value: unknown,
+): DocumentBlockDocument | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("documentContent must be a JSON object when provided.");
+  }
+
+  return value as DocumentBlockDocument;
+}
+
+function parseDocumentCitationInputs(
+  value: unknown,
+): Array<{
+  evidenceSpan?: string;
+  libraryEntryId?: string;
+  paperAssetId: string;
+}> {
+  if (!Array.isArray(value)) {
+    throw new Error("citations must be an array.");
+  }
+
+  return value.map((citation, index) => {
+    if (!citation || typeof citation !== "object" || Array.isArray(citation)) {
+      throw new Error(`citations[${index}] must be a JSON object.`);
+    }
+
+    const citationRecord = citation as Record<string, unknown>;
+
+    return {
+      evidenceSpan: assertOptionalTextField(
+        citationRecord.evidenceSpan,
+        `citations[${index}].evidenceSpan`,
+      ),
+      libraryEntryId: assertOptionalStringField(
+        citationRecord.libraryEntryId,
+        `citations[${index}].libraryEntryId`,
+      ),
+      paperAssetId: assertStringField(
+        citationRecord.paperAssetId,
+        `citations[${index}].paperAssetId`,
+      ),
+    };
+  });
+}
+
+function parseDocumentVersionBody(requestBody: unknown): {
+  citations: Array<{
+    evidenceSpan?: string;
+    libraryEntryId?: string;
+    paperAssetId: string;
+  }>;
+  content?: string;
+  documentContent?: DocumentBlockDocument;
+} {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Document version payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  const content = assertOptionalTextField(body.content, "content");
+  const documentContent = assertOptionalDocumentContentField(body.documentContent);
+
+  if (typeof content === "undefined" && typeof documentContent === "undefined") {
+    throw new Error("content is required when documentContent is not provided.");
+  }
+
+  return {
+    citations: parseDocumentCitationInputs(body.citations),
+    content,
+    documentContent,
+  };
+}
+
+function parseWorkbenchWritingBody(requestBody: unknown): {
+  citations: Array<{
+    evidenceSpan?: string;
+    libraryEntryId?: string;
+    paperAssetId: string;
+  }>;
+  content?: string;
+  documentContent?: DocumentBlockDocument;
+  title: string;
+} {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Writing payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  const parsedVersionBody = parseDocumentVersionBody(requestBody);
+
+  return {
+    ...parsedVersionBody,
+    title: assertStringField(body.title, "title"),
+  };
 }
 
 function parseNotebookCaptureBody(requestBody: unknown): {
@@ -880,16 +996,9 @@ async function handleApiRequest(
       const actor = await getActor(request, actorOptions);
       const [, projectId] = projectWritingMatch;
       rejectLegacyIdentityQueryFields(actor, requestUrl);
-      const body = await readJsonBody<{
-        actorUserId?: string;
-        citations: Array<{
-          evidenceSpan?: string;
-          paperAssetId: string;
-        }>;
-        content: string;
-        title: string;
-      }>(request);
-      rejectLegacyIdentityBodyFields(actor, body);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectLegacyIdentityBodyFields(actor, requestBody);
+      const body = parseWorkbenchWritingBody(requestBody);
 
       sendJson(
         response,
@@ -899,6 +1008,7 @@ async function handleApiRequest(
             {
               citations: body.citations,
               content: body.content,
+              documentContent: body.documentContent,
               projectId,
               title: body.title,
             },
@@ -1015,21 +1125,17 @@ async function handleApiRequest(
       const actor = await getActor(request, actorOptions);
       const [, documentId] = notebookVersionsMatch;
       rejectNotebookAuthorityQueryFields(actor, requestUrl);
-      const body = await readJsonBody<{
-        actorUserId?: string;
-        actorSpaceId?: string;
-        citations: Array<{
-          evidenceSpan?: string;
-          paperAssetId: string;
-        }>;
-        content: string;
-        ownerId?: string;
-        spaceId?: string;
-      }>(request);
-      rejectLegacyIdentityBodyFields(actor, body);
-      rejectLegacyActorSpaceContextBodyField(body);
-      assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
-      assertNoClientActorContextField(body.spaceId, "spaceId");
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectLegacyIdentityBodyFields(actor, requestBody);
+      rejectLegacyActorSpaceContextBodyField(requestBody);
+
+      if (requestBody && typeof requestBody === "object" && !Array.isArray(requestBody)) {
+        const rawBody = requestBody as Record<string, unknown>;
+        assertNoClientActorIdentityField(actor, rawBody.ownerId, "ownerId");
+        assertNoClientActorContextField(rawBody.spaceId, "spaceId");
+      }
+
+      const body = parseDocumentVersionBody(requestBody);
 
       sendJson(
         response,
@@ -1038,6 +1144,7 @@ async function handleApiRequest(
           {
             citations: body.citations,
             content: body.content,
+            documentContent: body.documentContent,
             documentId,
           },
           actor.userId,
@@ -1098,15 +1205,9 @@ async function handleApiRequest(
       const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocVersionsMatch;
       rejectLegacyIdentityQueryFields(actor, requestUrl);
-      const body = await readJsonBody<{
-        actorUserId?: string;
-        citations: Array<{
-          evidenceSpan?: string;
-          paperAssetId: string;
-        }>;
-        content: string;
-      }>(request);
-      rejectLegacyIdentityBodyFields(actor, body);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectLegacyIdentityBodyFields(actor, requestBody);
+      const body = parseDocumentVersionBody(requestBody);
 
       sendJson(
         response,
@@ -1115,6 +1216,7 @@ async function handleApiRequest(
           {
             citations: body.citations,
             content: body.content,
+            documentContent: body.documentContent,
             documentId,
           },
           actor.userId,

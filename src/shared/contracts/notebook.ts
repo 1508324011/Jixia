@@ -33,7 +33,6 @@ export interface CaptureNotebookEvidenceRequest {
 
 export interface NotebookSourceExcerptBlock {
   capturedAt: string;
-  evidenceSpanId?: string;
   libraryEntryId?: string;
   locator?: string;
   note?: string;

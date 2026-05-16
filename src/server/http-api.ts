@@ -3,6 +3,7 @@ import type {
   DiscoveryTodayResponse,
   TodayRecommendation,
 } from '@shared/contracts/discovery';
+import type { DocumentBlockDocument } from '@shared/contracts/document-content';
 import type { EvidenceSpanRecord } from '@shared/contracts/evidence';
 import type { LibraryListResponse } from '@shared/contracts/library';
 import type {
@@ -62,10 +63,15 @@ interface SaveReadingInsightRequestBody {
   title?: string;
 }
 
-interface SaveWritingDocumentRequestBody {
-  citations?: Array<{ evidenceSpan?: string; paperAssetId: string }>;
+interface ParsedSaveWritingDocumentRequest {
+  citations: Array<{
+    evidenceSpan?: string;
+    libraryEntryId?: string;
+    paperAssetId: string;
+  }>;
   content?: string;
-  title?: string;
+  documentContent?: DocumentBlockDocument;
+  title: string;
 }
 
 type WorkbenchSettingsUpdatePayload = Omit<
@@ -264,19 +270,15 @@ function parseSaveReadingInsightRequest(
 
 function parseSaveWritingDocumentRequest(
   requestBody: unknown,
-): Required<Pick<SaveWritingDocumentRequestBody, 'citations' | 'content' | 'title'>> {
+): ParsedSaveWritingDocumentRequest {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Writing payload must be a JSON object.');
   }
 
-  const { citations, content, title } = requestBody as Record<
+  const { citations, content, documentContent, title } = requestBody as Record<
     string,
     unknown
   >;
-
-  if (typeof content !== 'string') {
-    throw new Error('content is required.');
-  }
 
   if (typeof title !== 'string' || !title.trim()) {
     throw new Error('title is required.');
@@ -286,13 +288,23 @@ function parseSaveWritingDocumentRequest(
     throw new Error('citations must be an array.');
   }
 
+  if (typeof content !== 'undefined' && typeof content !== 'string') {
+    throw new Error('content must be a string when provided.');
+  }
+
+  if (typeof documentContent !== 'undefined') {
+    if (!documentContent || typeof documentContent !== 'object' || Array.isArray(documentContent)) {
+      throw new Error('documentContent must be a JSON object when provided.');
+    }
+  }
+
   return {
     citations: citations.map((citation, index) => {
       if (!citation || typeof citation !== 'object' || Array.isArray(citation)) {
         throw new Error(`citations[${index}] must be an object.`);
       }
 
-      const { evidenceSpan, paperAssetId } = citation as Record<string, unknown>;
+      const { evidenceSpan, libraryEntryId, paperAssetId } = citation as Record<string, unknown>;
 
       if (typeof paperAssetId !== 'string' || !paperAssetId.trim()) {
         throw new Error(`citations[${index}].paperAssetId is required.`);
@@ -302,12 +314,18 @@ function parseSaveWritingDocumentRequest(
         throw new Error(`citations[${index}].evidenceSpan must be a string when provided.`);
       }
 
+      if (typeof libraryEntryId !== 'undefined' && typeof libraryEntryId !== 'string') {
+        throw new Error(`citations[${index}].libraryEntryId must be a string when provided.`);
+      }
+
       return {
         evidenceSpan,
+        libraryEntryId: libraryEntryId?.trim() || undefined,
         paperAssetId: paperAssetId.trim(),
       };
     }),
     content,
+    documentContent: documentContent as DocumentBlockDocument | undefined,
     title: title.trim(),
   };
 }
@@ -742,6 +760,7 @@ export async function resolveHttpApi(
       {
         citations: payload.citations,
         content: payload.content,
+        documentContent: payload.documentContent,
         projectId,
         title: payload.title,
       },

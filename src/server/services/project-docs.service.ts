@@ -1,4 +1,17 @@
 import type {
+  DocumentBlockDocument,
+  DocumentBlockReference,
+} from '@shared/contracts/document-content';
+import {
+  createEmptyDocumentBlockDocument,
+  documentBlockDocumentToLegacyText,
+  extractDocumentBlockReferences,
+  legacyTextToDocumentBlockDocument,
+  normalizeDocumentBlockDocument,
+  normalizePersistedDocumentSnapshot,
+  serializeDocumentBlockSnapshotPayload,
+} from '@shared/contracts/document-content';
+import type {
   CreateProjectDocRequest,
   ProjectDocCitationRecord,
   ProjectDocLookup,
@@ -16,12 +29,10 @@ import type {
 import type { LibraryService } from './library.service';
 
 export interface SaveProjectDocRequest {
-  citations: Array<{
-    evidenceSpan?: string;
-    paperAssetId: string;
-  }>;
-  content: string;
+  citations: ProjectDocCitationInput[];
+  content?: string;
   documentId: string;
+  documentContent?: DocumentBlockDocument;
 }
 
 export interface TransitionProjectDocPublishStateRequest {
@@ -52,11 +63,9 @@ export interface ProjectDocsService {
   ): Promise<WritingDocumentView | null>;
   saveWorkbenchDocument(
     input: {
-      citations: Array<{
-        evidenceSpan?: string;
-        paperAssetId: string;
-      }>;
-      content: string;
+      citations: ProjectDocCitationInput[];
+      content?: string;
+      documentContent?: DocumentBlockDocument;
       projectId: string;
       title: string;
     },
@@ -73,6 +82,12 @@ export interface ProjectDocsStore {
   libraryService: LibraryService;
   projectDocRepository: ProjectDocRepository;
   projectRepository: ProjectRepository;
+}
+
+interface ProjectDocCitationInput {
+  evidenceSpan?: string;
+  libraryEntryId?: string;
+  paperAssetId: string;
 }
 
 function mapCitation(citation: {
@@ -133,11 +148,14 @@ function mapSnapshot(snapshot: {
   versionId: string;
   versionNumber: number;
 }): ProjectDocSnapshot {
+  const documentContent = normalizePersistedDocumentSnapshot(snapshot.content);
+
   return {
     capturedAt: snapshot.capturedAt,
     citations: snapshot.citations.map(mapCitation),
-    content: snapshot.content,
+    content: documentBlockDocumentToLegacyText(documentContent),
     document: mapDocument(snapshot.document),
+    documentContent,
     versionId: snapshot.versionId,
     versionNumber: snapshot.versionNumber,
   };
@@ -157,6 +175,7 @@ function mapWritingSnapshot(
       paperAssetId: citation.paperAssetId,
     })),
     content: snapshot.content,
+    documentContent: snapshot.documentContent,
     doc: {
       createdAt: snapshot.document.createdAt,
       id: snapshot.document.id,
@@ -169,6 +188,75 @@ function mapWritingSnapshot(
     docVersionId: snapshot.versionId,
     versionNumber: snapshot.versionNumber,
   };
+}
+
+function createEmptySnapshot(document: ProjectDocRecord): ProjectDocSnapshot {
+  return {
+    capturedAt: document.updatedAt,
+    citations: [],
+    content: '',
+    document,
+    documentContent: createEmptyDocumentBlockDocument(),
+    versionId: `project-doc:${document.id}:version-0`,
+    versionNumber: 0,
+  };
+}
+
+function normalizeSaveDocumentContent(input: {
+  content?: string;
+  documentContent?: DocumentBlockDocument;
+}): DocumentBlockDocument {
+  if (typeof input.documentContent !== 'undefined') {
+    return normalizeDocumentBlockDocument(input.documentContent);
+  }
+
+  if (typeof input.content !== 'string') {
+    throw new Error('content is required when documentContent is not provided.');
+  }
+
+  return legacyTextToDocumentBlockDocument(input.content);
+}
+
+function referenceToCitationInput(
+  reference: DocumentBlockReference,
+): ProjectDocCitationInput {
+  return {
+    evidenceSpan: reference.evidenceSpan,
+    libraryEntryId: reference.libraryEntryId,
+    paperAssetId: reference.paperAssetId,
+  };
+}
+
+function mergeCitationInputs(
+  explicitCitations: ProjectDocCitationInput[],
+  documentContent: DocumentBlockDocument,
+): ProjectDocCitationInput[] {
+  return [
+    ...explicitCitations,
+    ...extractDocumentBlockReferences(documentContent).map(referenceToCitationInput),
+  ];
+}
+
+function dedupeNormalizedCitations(
+  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>,
+): Array<{ evidenceSpan?: string; paperAssetId: string }> {
+  const byAsset = new Map<string, string[]>();
+
+  for (const citation of citations) {
+    const spans = byAsset.get(citation.paperAssetId) ?? [];
+    const evidenceSpan = citation.evidenceSpan?.trim();
+
+    if (evidenceSpan && !spans.includes(evidenceSpan)) {
+      spans.push(evidenceSpan);
+    }
+
+    byAsset.set(citation.paperAssetId, spans);
+  }
+
+  return [...byAsset.entries()].map(([paperAssetId, evidenceSpans]) => ({
+    evidenceSpan: evidenceSpans.length ? evidenceSpans.join('\n\n') : undefined,
+    paperAssetId,
+  }));
 }
 
 function mapWritingDocument(
@@ -273,7 +361,7 @@ async function assertProjectWriteAccess(
 
 async function normalizeAuthorizedCitations(
   store: ProjectDocsStore,
-  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>,
+  citations: ProjectDocCitationInput[],
   actorUserId: string,
   projectId: string,
   actorSpaceId: string,
@@ -284,6 +372,35 @@ async function normalizeAuthorizedCitations(
   }> = [];
 
   for (const citation of citations) {
+    if (citation.libraryEntryId) {
+      const authorizedView = await store.libraryService.assertCanAccessEntry(
+        citation.libraryEntryId,
+        actorUserId,
+        actorSpaceId,
+      );
+
+      if (
+        authorizedView.entry.scope.type !== 'project' ||
+        authorizedView.entry.scope.id !== projectId
+      ) {
+        throw new Error(
+          `Paper asset ${authorizedView.asset.id} is not available in project ${projectId}.`,
+        );
+      }
+
+      if (authorizedView.asset.id !== citation.paperAssetId) {
+        throw new Error(
+          `Document reference ${citation.paperAssetId} does not match library entry ${citation.libraryEntryId}.`,
+        );
+      }
+
+      normalizedCitations.push({
+        evidenceSpan: citation.evidenceSpan,
+        paperAssetId: authorizedView.asset.id,
+      });
+      continue;
+    }
+
     const directEntry = await store.libraryRepository.getLibraryEntry(
       citation.paperAssetId,
     );
@@ -355,7 +472,7 @@ async function normalizeAuthorizedCitations(
     });
   }
 
-  return normalizedCitations;
+  return dedupeNormalizedCitations(normalizedCitations);
 }
 
 export function createProjectDocsService(
@@ -424,14 +541,7 @@ export function createProjectDocsService(
       );
 
       if (!snapshot) {
-        return {
-          capturedAt: authorized.document.updatedAt,
-          citations: [],
-          content: '',
-          document: authorized.document,
-          versionId: `project-doc:${authorized.document.id}:version-0`,
-          versionNumber: 0,
-        };
+        return createEmptySnapshot(authorized.document);
       }
 
       return mapSnapshot(snapshot);
@@ -445,9 +555,10 @@ export function createProjectDocsService(
         input.documentId,
         actorUserId,
       );
+      const documentContent = normalizeSaveDocumentContent(input);
       const citations = await normalizeAuthorizedCitations(
         store,
-        input.citations,
+        mergeCitationInputs(input.citations, documentContent),
         actorUserId,
         document.projectId,
         projectSpaceId,
@@ -456,7 +567,7 @@ export function createProjectDocsService(
       return mapSnapshot(
         await store.projectDocRepository.saveVersion({
           citations,
-          content: input.content,
+          content: serializeDocumentBlockSnapshotPayload(documentContent),
           documentId: input.documentId,
         }),
       );
@@ -474,15 +585,17 @@ export function createProjectDocsService(
 
       const latestSnapshot = await store.projectDocRepository.getLatestSnapshot(document.id);
 
-      return mapWritingDocument(document, project.spaceId, latestSnapshot);
+      return mapWritingDocument(
+        mapDocument(document),
+        project.spaceId,
+        latestSnapshot ? mapSnapshot(latestSnapshot) : null,
+      );
     },
     async saveWorkbenchDocument(
       input: {
-        citations: Array<{
-          evidenceSpan?: string;
-          paperAssetId: string;
-        }>;
-        content: string;
+        citations: ProjectDocCitationInput[];
+        content?: string;
+        documentContent?: DocumentBlockDocument;
         projectId: string;
         title: string;
       },
@@ -512,6 +625,7 @@ export function createProjectDocsService(
         {
           citations: input.citations,
           content: input.content,
+          documentContent: input.documentContent,
           documentId: document.id,
         },
         actorUserId,

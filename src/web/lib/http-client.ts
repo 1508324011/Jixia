@@ -1,4 +1,5 @@
 import type { CredentialRecord } from "@shared/contracts/credentials";
+import type { DocumentBlockDocument } from "@shared/contracts/document-content";
 import type {
   JobAuditRecord,
   JobEventRecord,
@@ -106,12 +107,22 @@ type SaveReadingInsightPayload = {
   title: string;
 };
 type SaveProjectDocVersionPayload = {
-  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
-  content: string;
+  citations: Array<{
+    evidenceSpan?: string;
+    libraryEntryId?: string;
+    paperAssetId: string;
+  }>;
+  content?: string;
+  documentContent?: DocumentBlockDocument;
 };
 type SaveNotebookVersionPayload = {
-  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
-  content: string;
+  citations: Array<{
+    evidenceSpan?: string;
+    libraryEntryId?: string;
+    paperAssetId: string;
+  }>;
+  content?: string;
+  documentContent?: DocumentBlockDocument;
 };
 
 interface RequestOptions extends RequestInit {
@@ -434,8 +445,13 @@ export const apiClient = {
   },
   saveProjectWritingDocument(
     input: {
-      citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
-      content: string;
+      citations: Array<{
+        evidenceSpan?: string;
+        libraryEntryId?: string;
+        paperAssetId: string;
+      }>;
+      content?: string;
+      documentContent?: DocumentBlockDocument;
       projectId: string;
       title: string;
     },
@@ -444,6 +460,7 @@ export const apiClient = {
       body: JSON.stringify({
         citations: input.citations,
         content: input.content,
+        documentContent: input.documentContent,
         title: input.title,
       }),
       method: "POST",
