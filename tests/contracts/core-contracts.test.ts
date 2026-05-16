@@ -72,8 +72,10 @@ import type {
 } from '../../src/shared/contracts/project-docs';
 import type {
   JobAuditRecord,
+  CancelJobRequest,
   JobEventRecord,
   JobRecord,
+  RunJobRequest,
   JobStatus,
   JobStatusQuery,
 } from '../../src/shared/contracts/jobs';
@@ -638,6 +640,8 @@ describe('core contracts', () => {
     expect(jobs).toBeTruthy();
 
     const statusQuery: JobStatusQuery = { jobId: 'job_001' };
+    const runRequest: RunJobRequest = { jobId: 'job_001' };
+    const cancelRequest: CancelJobRequest = { jobId: 'job_001' };
     const status: JobStatus = 'running';
     const job: JobRecord = {
       id: 'job_001',
@@ -668,6 +672,8 @@ describe('core contracts', () => {
     };
 
     expect(statusQuery.jobId).toBe('job_001');
+    expect(runRequest.jobId).toBe('job_001');
+    expect(cancelRequest.jobId).toBe('job_001');
     expect(job.status).toBe('running');
     expect(event.message).toContain('started');
     expect(audit.action).toBe('job.created');

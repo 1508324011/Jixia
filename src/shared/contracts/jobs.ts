@@ -94,4 +94,8 @@ export interface RunJobRequest extends JobAccessQuery {
   jobId: string;
 }
 
+export interface CancelJobRequest extends JobAccessQuery {
+  jobId: string;
+}
+
 export const jobsContract = 'jixia-jobs-contract';

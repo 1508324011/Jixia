@@ -33,6 +33,7 @@ export interface JobsViewModel {
   audits: JobAuditRecord[];
   availableScopes: JobsWorkbenchScope[];
   canCreateJob: boolean;
+  canCancelActiveJob: boolean;
   credentials: CredentialRecord[];
   error: string | null;
   events: JobEventRecord[];
@@ -41,6 +42,7 @@ export interface JobsViewModel {
   jobs: JobRecord[];
   projects: ProjectListItem[];
   refresh(): Promise<void>;
+  cancelActiveJob(): Promise<void>;
   runSelectedJob(): Promise<void>;
   selectedCredentialRef: string;
   selectedJobId: string | null;
@@ -344,6 +346,7 @@ export function useJobsPresenter(): JobsViewModel {
       selectedCredential &&
       (selectedScope.type === "project" || selectedUserSpaceId),
   );
+  const canCancelActiveJob = activeJob?.status === "queued" || activeJob?.status === "running";
 
   const loadJobActivity = useCallback(async (jobId: string) => {
     const generation = activityGenerationRef.current + 1;
@@ -667,12 +670,63 @@ export function useJobsPresenter(): JobsViewModel {
     }
   }, [canCommitRun, refresh, resolvedSelectedScopeKey, selectedCredentialRef, selectedScope, selectedUserSpaceId]);
 
+  const cancelActiveJob = useCallback(async () => {
+    if (!activeJob) {
+      setError("No active job is selected for cancellation.");
+      return;
+    }
+
+    if (!canCancelActiveJob) {
+      setError("Only queued or running jobs can be cancelled.");
+      return;
+    }
+
+    const cancelScopeKey = resolvedSelectedScopeKey;
+    const runGeneration = runGenerationRef.current + 1;
+    runGenerationRef.current = runGeneration;
+
+    try {
+      setIsRunningJob(true);
+      setError(null);
+
+      const cancelledJob = await apiClient.cancelJob(activeJob.id);
+
+      if (!canCommitRun(runGeneration, cancelScopeKey)) {
+        return;
+      }
+
+      setJobs((currentJobs) =>
+        sortJobs(currentJobs.map((job) =>
+          job.id === cancelledJob.id ? cancelledJob : job
+        ))
+      );
+      setSelectedJobIdState(cancelledJob.id);
+      await loadJobActivity(cancelledJob.id);
+    } catch (presenterError) {
+      if (!canCommitRun(runGeneration, cancelScopeKey)) {
+        return;
+      }
+
+      setError(
+        presenterError instanceof Error
+          ? presenterError.message
+          : "Failed to cancel job.",
+      );
+    } finally {
+      if (isMountedRef.current && runGenerationRef.current === runGeneration) {
+        setIsRunningJob(false);
+      }
+    }
+  }, [activeJob, canCancelActiveJob, canCommitRun, loadJobActivity, resolvedSelectedScopeKey]);
+
   return useMemo(
     () => ({
       activeJob,
       audits,
       availableScopes,
+      cancelActiveJob,
       canCreateJob,
+      canCancelActiveJob,
       credentials,
       error,
       events,
@@ -698,7 +752,9 @@ export function useJobsPresenter(): JobsViewModel {
       activeJob,
       audits,
       availableScopes,
+      cancelActiveJob,
       canCreateJob,
+      canCancelActiveJob,
       credentials,
       error,
       events,

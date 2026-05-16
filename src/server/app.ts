@@ -90,7 +90,7 @@ import { createSecretBox, hasSecretBoxKey } from './security/secret-box';
 import { createAuditService } from './services/audit.service';
 import { createImportService } from './services/import.service';
 import { createJobBus } from './jobs/job-bus';
-import { createJobRunner } from './jobs/job-runner';
+import { createJobRunner, type JobExecutor } from './jobs/job-runner';
 import { createLibraryService } from './services/library.service';
 import { createNotebookService } from './services/notebooks.service';
 import { createProjectDocsService } from './services/project-docs.service';
@@ -126,6 +126,7 @@ export interface CreateJixiaAppOptions {
     pubmed?: PubmedConnector;
   };
   env?: JixiaAppEnv;
+  jobExecutor?: JobExecutor;
 }
 
 export interface JixiaAppEnv extends StorageRootEnv {
@@ -651,6 +652,11 @@ function createCredentialAuthorityBootstrappedJobRepository(
 
       return repository.listJobsForScope(query);
     },
+    async recordJobLifecycleTransition(input) {
+      await ensureBootstrapped();
+
+      return repository.recordJobLifecycleTransition(input);
+    },
     async updateJobStatus(jobId, status) {
       await ensureBootstrapped();
 
@@ -978,7 +984,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const jobBus = createJobBus();
   const jobRunner = createJobRunner({
-    auditService,
+    executor: options.jobExecutor,
     jobBus,
     jobRepository,
     nextId: persistedNextId,

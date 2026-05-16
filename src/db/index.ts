@@ -34,6 +34,7 @@ export {
   type JobLookup,
   type JobRepository,
   type ListJobsForScopeQuery,
+  type PersistedJobLifecycleTransition,
   type PersistedAuditLogRecord,
   type PersistedJobEventRecord,
   type PersistedJobRecord,
@@ -42,7 +43,14 @@ export {
   type PersistedJobStatus,
   type PersistedProviderCredentialReferenceRecord,
   type PersistedQueuedJobWithAudit,
+  type RecordJobLifecycleTransitionParams,
 } from './repositories/job.repository';
+export {
+  assertJobStatusTransition,
+  canTransitionJobStatus,
+  isTerminalJobStatus,
+  type GuardedJobStatus,
+} from './repositories/job-status-transitions';
 
 export {
   createLibraryRepository,

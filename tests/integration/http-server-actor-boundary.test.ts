@@ -273,6 +273,7 @@ describe('http server actor boundary cleanup', () => {
           fetch(`${server.url}/api/project-docs/project-doc-1`),
           fetch(`${server.url}/api/reading/entry-1`),
           fetch(`${server.url}/api/jobs`),
+          fetch(`${server.url}/api/jobs/job-1/cancel`, { method: 'POST' }),
           fetch(`${server.url}/api/jobs/job-1/stream`),
         ]);
 
@@ -617,6 +618,13 @@ describe('http server actor boundary cleanup', () => {
             method: 'POST',
           }),
           fetch(`${server.url}/api/jobs/${job.id}/run`, {
+            body: JSON.stringify({ actorUserId: 'user-bob' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/jobs/${job.id}/cancel`, {
             body: JSON.stringify({ actorUserId: 'user-bob' }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
@@ -1038,6 +1046,20 @@ describe('http server actor boundary cleanup', () => {
             method: 'POST',
           }),
           fetch(`${server.url}/api/jobs/${job.id}/run`, {
+            body: JSON.stringify({ actorUserId: 'user-alice' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/jobs/${job.id}/cancel?userId=user-alice`, {
+            body: JSON.stringify({}),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/jobs/${job.id}/cancel`, {
             body: JSON.stringify({ actorUserId: 'user-alice' }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',

@@ -532,6 +532,7 @@ describe('minimal recovery loop server truth smoke', () => {
         );
         expect(audits.map((audit) => audit.action)).toEqual([
           'job.created',
+          'job.started',
           'job.completed',
         ]);
 
@@ -593,7 +594,7 @@ describe('minimal recovery loop server truth smoke', () => {
           status: 'succeeded',
         });
         await expect(prisma.jobEvent.findMany({ where: { jobId: job.id } })).resolves.toHaveLength(3);
-        await expect(prisma.auditLog.findMany({ where: { jobId: job.id } })).resolves.toHaveLength(2);
+        await expect(prisma.auditLog.findMany({ where: { jobId: job.id } })).resolves.toHaveLength(3);
       } finally {
         await prisma.$disconnect();
       }
@@ -744,6 +745,7 @@ describe('minimal recovery loop server truth smoke', () => {
         ]);
         expect(restartedAudits.map((audit) => audit.action)).toEqual([
           'job.created',
+          'job.started',
           'job.completed',
         ]);
 

@@ -350,6 +350,11 @@ export const apiClient = {
       method: "POST",
     });
   },
+  cancelJob(jobId: string): Promise<JobRecord> {
+    return requestJson(`/api/jobs/${jobId}/cancel`, {
+      method: "POST",
+    });
+  },
   createProject(
     input: CreateProjectRequest,
   ): Promise<ProjectListItem> {
