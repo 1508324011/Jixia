@@ -1,21 +1,40 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { CredentialRecord } from "@shared/contracts/credentials";
+import type { DefaultImportTarget } from "@shared/contracts/settings";
 
 import { apiClient } from "../lib/http-client";
 
+type LoadingState = "idle" | "loading" | "loaded" | "error";
+type SaveState = "idle" | "saving" | "saved" | "error";
+
 export interface SettingsViewModel {
+  apiKeyConfigured: boolean;
   createSampleCredential(): Promise<void>;
   credentials: CredentialRecord[];
+  defaultImportTarget: DefaultImportTarget;
   error: string | null;
   isMutating: boolean;
+  loadingState: LoadingState;
   refresh(): Promise<void>;
+  saveSettings(input: {
+    apiKey?: string;
+    defaultImportTarget: DefaultImportTarget;
+  }): Promise<boolean>;
+  saveState: SaveState;
+  settingsError: string | null;
 }
 
 export function useSettingsPresenter(): SettingsViewModel {
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
   const [credentials, setCredentials] = useState<CredentialRecord[]>([]);
+  const [defaultImportTarget, setDefaultImportTarget] =
+    useState<DefaultImportTarget>("personal-library");
   const [error, setError] = useState<string | null>(null);
+  const [loadingState, setLoadingState] = useState<LoadingState>("idle");
   const [isMutating, setIsMutating] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -34,15 +53,53 @@ export function useSettingsPresenter(): SettingsViewModel {
     void refresh();
   }, [refresh]);
 
-  const createSampleCredential = useCallback(async () => {
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSettings(): Promise<void> {
+      setLoadingState("loading");
+      setSettingsError(null);
+
       try {
-        setIsMutating(true);
-        setError(null);
-        await apiClient.createCredential({
-          provider: "openai",
-          rawSecret: "local-settings-credential-placeholder",
-        });
-        await refresh();
+        const settings = await apiClient.getWorkbenchSettings();
+
+        if (cancelled) {
+          return;
+        }
+
+        setApiKeyConfigured(settings.apiKeyConfigured);
+        setDefaultImportTarget(settings.defaultImportTarget);
+        setLoadingState("loaded");
+      } catch (presenterError) {
+        if (cancelled) {
+          return;
+        }
+
+        setLoadingState("error");
+        setSettingsError(
+          presenterError instanceof Error
+            ? presenterError.message
+            : "Unable to load settings",
+        );
+      }
+    }
+
+    void loadSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const createSampleCredential = useCallback(async () => {
+    try {
+      setIsMutating(true);
+      setError(null);
+      await apiClient.createCredential({
+        provider: "openai",
+        rawSecret: "local-settings-credential-placeholder",
+      });
+      await refresh();
     } catch (presenterError) {
       setError(
         presenterError instanceof Error
@@ -54,14 +111,61 @@ export function useSettingsPresenter(): SettingsViewModel {
     }
   }, [refresh]);
 
+  const saveSettings = useCallback(
+    async (input: {
+      apiKey?: string;
+      defaultImportTarget: DefaultImportTarget;
+    }): Promise<boolean> => {
+      setSaveState("saving");
+      setSettingsError(null);
+
+      try {
+        const savedSettings = await apiClient.saveWorkbenchSettings(input);
+
+        setApiKeyConfigured(savedSettings.apiKeyConfigured);
+        setDefaultImportTarget(savedSettings.defaultImportTarget);
+        setLoadingState("loaded");
+        setSaveState("saved");
+        return true;
+      } catch (presenterError) {
+        setSaveState("error");
+        setSettingsError(
+          presenterError instanceof Error
+            ? presenterError.message
+            : "Unable to save settings",
+        );
+        return false;
+      }
+    },
+    [],
+  );
+
   return useMemo(
     () => ({
+      apiKeyConfigured,
       createSampleCredential,
       credentials,
+      defaultImportTarget,
       error,
       isMutating,
+      loadingState,
       refresh,
+      saveSettings,
+      saveState,
+      settingsError,
     }),
-    [createSampleCredential, credentials, error, isMutating, refresh],
+    [
+      apiKeyConfigured,
+      createSampleCredential,
+      credentials,
+      defaultImportTarget,
+      error,
+      isMutating,
+      loadingState,
+      refresh,
+      saveSettings,
+      saveState,
+      settingsError,
+    ],
   );
 }

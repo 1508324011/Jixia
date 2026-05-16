@@ -2,53 +2,29 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import type { DefaultImportTarget } from "@shared";
 
-import { createDemoApi } from "../lib/demo-api";
 import { useSettingsPresenter } from "../presenters/settings-presenter";
 
-const demoApi = createDemoApi();
-
 export function SettingsPage() {
-  const { createSampleCredential, credentials, error, isMutating, refresh } =
-    useSettingsPresenter();
+  const {
+    apiKeyConfigured,
+    createSampleCredential,
+    credentials,
+    defaultImportTarget,
+    error,
+    isMutating,
+    loadingState,
+    refresh,
+    saveSettings,
+    saveState,
+    settingsError,
+  } = useSettingsPresenter();
   const [apiKey, setApiKey] = useState("");
-  const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
-  const [defaultImportTarget, setDefaultImportTarget] =
+  const [selectedDefaultImportTarget, setSelectedDefaultImportTarget] =
     useState<DefaultImportTarget>("personal-library");
-  const [loadingState, setLoadingState] = useState<
-    "idle" | "loading" | "loaded" | "error"
-  >("idle");
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(
-    "idle",
-  );
 
   useEffect(() => {
-    let cancelled = false;
-
-    setLoadingState("loading");
-
-    void demoApi
-      .getWorkbenchSettings()
-      .then((settings) => {
-        if (cancelled) {
-          return;
-        }
-
-        setApiKeyConfigured(settings.apiKeyConfigured);
-        setDefaultImportTarget(settings.defaultImportTarget);
-        setLoadingState("loaded");
-      })
-      .catch(() => {
-        if (cancelled) {
-          return;
-        }
-
-        setLoadingState("error");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    setSelectedDefaultImportTarget(defaultImportTarget);
+  }, [defaultImportTarget]);
 
   const statusMessage = useMemo(() => {
     if (loadingState === "loading") {
@@ -64,21 +40,14 @@ export function SettingsPage() {
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSaveState("saving");
 
-    try {
-      const savedSettings = await demoApi.saveWorkbenchSettings({
-        apiKey: apiKey.trim().length > 0 ? apiKey.trim() : undefined,
-        defaultImportTarget,
-      });
+    const didSave = await saveSettings({
+      apiKey: apiKey.trim().length > 0 ? apiKey.trim() : undefined,
+      defaultImportTarget: selectedDefaultImportTarget,
+    });
 
+    if (didSave) {
       setApiKey("");
-      setApiKeyConfigured(savedSettings.apiKeyConfigured);
-      setDefaultImportTarget(savedSettings.defaultImportTarget);
-      setLoadingState("loaded");
-      setSaveState("saved");
-    } catch {
-      setSaveState("error");
     }
   }
 
@@ -110,9 +79,9 @@ export function SettingsPage() {
             aria-label="默认导入目标"
             name="defaultImportTarget"
             onChange={(event) =>
-              setDefaultImportTarget(event.target.value as DefaultImportTarget)
+              setSelectedDefaultImportTarget(event.target.value as DefaultImportTarget)
             }
-            value={defaultImportTarget}
+            value={selectedDefaultImportTarget}
           >
             <option value="personal-library">Personal Library</option>
             <option value="project-workspace">Project Workspace</option>
@@ -121,7 +90,7 @@ export function SettingsPage() {
         <button type="submit">保存设置</button>
         {saveState === "saved" ? <p className="quiet-copy">Settings saved</p> : null}
         {saveState === "error" ? (
-          <p className="quiet-copy">Unable to save settings</p>
+          <p className="quiet-copy">{settingsError ?? "Unable to save settings"}</p>
         ) : null}
       </form>
 

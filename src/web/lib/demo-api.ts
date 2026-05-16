@@ -1,3 +1,7 @@
+// Compatibility/test-only workbench helper.
+// Production Workbench pages must use apiClient or thin presenters instead of
+// importing this facade; static UI guards enforce that boundary.
+
 import type {
   CaptureNotebookEvidenceRequest,
   CaptureNotebookEvidenceResponse,
