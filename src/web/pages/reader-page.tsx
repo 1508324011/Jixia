@@ -5,11 +5,9 @@ import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type { ReadingDetailView } from "@shared/contracts/reading";
 
 import { PaperWorkspaceTabs } from "../components/paper-workspace-tabs";
-import { createDemoApi } from "../lib/demo-api";
 import { apiClient } from "../lib/http-client";
 import { useReaderPresenter } from "../presenters/reader-presenter";
 
-const demoApi = createDemoApi();
 const DEFAULT_WRITER_TITLE = "Tumor board literature synthesis";
 
 export function ReaderPage() {
@@ -61,7 +59,7 @@ export function ReaderPage() {
       setLoadError(null);
 
       try {
-        const readingDetail = await demoApi.getReadingDetail(entryId);
+        const readingDetail = await apiClient.getReadingDetail(entryId);
 
         if (!isCancelled) {
           setDetail(readingDetail);
@@ -180,7 +178,7 @@ export function ReaderPage() {
     setSuccessMessage(null);
 
     try {
-      const response = await demoApi.createReadingNote({
+      const response = await apiClient.createReadingNoteForEntry({
         body: body.trim(),
         entryId,
       });
@@ -219,9 +217,17 @@ export function ReaderPage() {
     setSuccessMessage(null);
 
     try {
-      const response = await demoApi.saveReadingInsight({
+      const response = await apiClient.saveReadingInsightForEntry({
         entryId,
+        evidenceSpans: [
+          {
+            endOffset: 24,
+            quote: "Tumor board evidence",
+            startOffset: 0,
+          },
+        ],
         summary: insightSummary.trim(),
+        title: "Tumor board governed insight",
       });
 
       setDetail((current) =>
@@ -262,7 +268,7 @@ export function ReaderPage() {
     setSuccessMessage(null);
 
     try {
-      const response = await demoApi.captureNotebookEvidence({
+      const response = await apiClient.captureNotebookEvidence({
         notebookTitle: "Reader evidence notebook",
         source: {
           generatedInsightId: latestInsight.id,

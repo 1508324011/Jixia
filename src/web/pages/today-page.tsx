@@ -3,9 +3,7 @@ import { Link } from 'react-router-dom';
 
 import type { TodayRecommendation } from '@shared/contracts/discovery';
 
-import { createDemoApi } from '../lib/demo-api';
-
-const demoApi = createDemoApi();
+import { apiClient } from '../lib/http-client';
 
 export function TodayPage() {
   const [items, setItems] = useState<TodayRecommendation[]>([]);
@@ -21,7 +19,7 @@ export function TodayPage() {
       setErrorMessage(null);
 
       try {
-        const response = await demoApi.getTodayRecommendations();
+        const response = await apiClient.getTodayRecommendations();
 
         if (!isMounted) {
           return;
@@ -55,7 +53,7 @@ export function TodayPage() {
     setErrorMessage(null);
 
     try {
-      await demoApi.importToPersonalLibrary({
+      await apiClient.importToPersonalLibrary({
         sourceLocator: item.sourceLocator,
         sourceType: item.sourceType,
       });
