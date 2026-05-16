@@ -4,7 +4,7 @@ import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type { LibraryEntryView } from "@shared/contracts/library";
 import type { ProjectListItem } from "@shared/contracts/projects";
 import type {
-  NoteRecord,
+  PrivateReadingNoteRecord,
   ProjectReadingCommentRecord,
   ReadingDetail,
 } from "@shared/contracts/reading";
@@ -19,13 +19,13 @@ export interface ReaderViewModel {
   insights: GeneratedInsightRecord[];
   isLoading: boolean;
   isMutating: boolean;
-  notes: NoteRecord[];
+  notes: PrivateReadingNoteRecord[];
   projectComments: ProjectReadingCommentRecord[];
   project: ProjectListItem | null;
+  saveProjectComment(body: string): Promise<void>;
   refresh(): Promise<void>;
   saveGeneratedInsight(summary?: string, title?: string): Promise<void>;
   saveNote(body: string): Promise<void>;
-  saveProjectComment(body: string): Promise<void>;
 }
 
 export function useReaderPresenter(

@@ -83,13 +83,14 @@ describe("http server phase 4 reader slice", () => {
           }),
           method: "POST",
         }).then(
-          (response) => response.json() as Promise<{ id: string; visibility: string }>,
+          (response) => response.json() as Promise<{ authorUserId: string; kind: string }>,
         );
-        expect(note.visibility).toBe("private");
+        expect(note.kind).toBe("private_note");
+        expect(note.authorUserId).toBe("user-alice");
 
-        const rejectedSharedNote = await fetch(`${server.url}/api/reading/notes`, {
+        const rejectedSharedVisibility = await fetch(`${server.url}/api/reading/notes`, {
           body: JSON.stringify({
-            body: "This paper matters for the shared review.",
+            body: "Rejected visibility-switched comment.",
             libraryEntryId: importedRecord.entry.id,
             visibility: "space_shared",
           }),
@@ -98,8 +99,8 @@ describe("http server phase 4 reader slice", () => {
           }),
           method: "POST",
         });
-        expect(rejectedSharedNote.status).toBe(400);
-        await expect(rejectedSharedNote.json()).resolves.toMatchObject({
+        expect(rejectedSharedVisibility.status).toBe(400);
+        await expect(rejectedSharedVisibility.json()).resolves.toMatchObject({
           error: expect.stringMatching(/project-comments endpoint/i),
         });
 
@@ -117,10 +118,13 @@ describe("http server phase 4 reader slice", () => {
           },
         ).then(
           (response) =>
-            response.json() as Promise<{ comment: { body: string; projectId: string } }>,
+            response.json() as Promise<{
+              comment: { body: string; kind: string; projectId: string };
+            }>,
         );
         expect(comment.comment).toMatchObject({
           body: "This paper matters for the shared review.",
+          kind: "project_comment",
           projectId: project.project.id,
         });
 

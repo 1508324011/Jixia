@@ -48,14 +48,15 @@ interface NoteResponse {
   authorUserId: string;
   body: string;
   id: string;
+  kind: 'private_note';
   libraryEntryId: string;
-  visibility: 'private' | 'space_shared';
 }
 
-interface ProjectReadingCommentResponse {
+interface ProjectCommentResponse {
   authorUserId: string;
   body: string;
   id: string;
+  kind: 'project_comment';
   libraryEntryId: string;
   projectId: string;
 }
@@ -71,7 +72,7 @@ interface ReadingDetailResponse extends LibraryEntryViewResponse {
     summary: string;
   }>;
   notes: NoteResponse[];
-  projectComments: ProjectReadingCommentResponse[];
+  projectComments: ProjectCommentResponse[];
 }
 
 interface NotebookDocumentResponse {
@@ -306,11 +307,20 @@ describe('minimal recovery loop server truth smoke', () => {
             method: 'POST',
           }),
         );
-        const sharedCommentResponse = await expectJson<{ comment: ProjectReadingCommentResponse }>(
-          await fetch(`${firstServer.url}/api/reading/project-comments`, {
+        const rejectedVisibilityComment = await fetch(`${firstServer.url}/api/reading/notes`, {
+          body: JSON.stringify({
+            body: 'Rejected visibility-switched evidence comment.',
+            libraryEntryId: importedProjectEntry.entry.id,
+            visibility: 'space_shared',
+          }),
+          headers: jsonHeaders(aliceCookie),
+          method: 'POST',
+        });
+        await expectError(rejectedVisibilityComment, 400, /project-comments endpoint/i);
+        const projectCommentResponse = await expectJson<{ comment: ProjectCommentResponse }>(
+          await fetch(`${firstServer.url}/api/reading/${importedProjectEntry.entry.id}/project-comments`, {
             body: JSON.stringify({
               body: 'Project-visible evidence comment.',
-              libraryEntryId: importedProjectEntry.entry.id,
               projectId: project.project.id,
             }),
             headers: jsonHeaders(aliceCookie),
@@ -320,10 +330,11 @@ describe('minimal recovery loop server truth smoke', () => {
 
         expect(privateNote).toMatchObject({
           authorUserId: 'user-alice',
-          visibility: 'private',
+          kind: 'private_note',
         });
-        expect(sharedCommentResponse.comment).toMatchObject({
+        expect(projectCommentResponse.comment).toMatchObject({
           authorUserId: 'user-alice',
+          kind: 'project_comment',
           projectId: project.project.id,
         });
 

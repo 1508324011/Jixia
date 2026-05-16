@@ -245,10 +245,12 @@ async function handleWorkbenchHttpApiRequest(
       allowLegacyTestOverride: false,
       sessionRoutes: app.session,
     };
-    const actor = requestUrl.pathname === "/api/discovery/today" ||
-        requestUrl.pathname === "/api/discovery/search"
+    const isDiscoveryPath = requestUrl.pathname === "/api/discovery/today" ||
+      requestUrl.pathname === "/api/discovery/search";
+    const actor = isDiscoveryPath
       ? await getOptionalActor(request, actorOptions)
       : await getActor(request, actorOptions);
+
     const requestBody = method === "GET" || method === "HEAD"
       ? undefined
       : await readJsonBody<unknown>(request);
@@ -1402,6 +1404,39 @@ async function handleApiRequest(
             actorUserId: actor.userId,
             body: body.body,
             libraryEntryId: body.libraryEntryId,
+            projectId: body.projectId,
+          }),
+        },
+        method,
+      );
+      return true;
+    }
+
+    const readingProjectCommentMatch = pathname.match(
+      /^\/api\/reading\/([^/]+)\/project-comments$/,
+    );
+    if (readingProjectCommentMatch && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      const [, entryId] = readingProjectCommentMatch;
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      const body = await readJsonBody<{
+        actorSpaceId?: string;
+        authorUserId?: string;
+        body: string;
+        projectId?: string;
+      }>(request);
+
+      rejectLegacyIdentityBodyFields(actor, body);
+      rejectLegacyActorSpaceContextBodyField(body);
+
+      sendJson(
+        response,
+        201,
+        {
+          comment: await app.reading.createProjectComment({
+            actorUserId: actor.userId,
+            body: body.body,
+            libraryEntryId: entryId,
             projectId: body.projectId,
           }),
         },

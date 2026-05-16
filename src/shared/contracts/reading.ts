@@ -1,25 +1,35 @@
 import type { GeneratedInsightRecord, EvidenceSpanRecord } from "./evidence";
 import type { LibraryEntryRecord, PaperAssetRecord } from "./library";
 
+/**
+ * @deprecated Reader collaboration authority no longer comes from visibility.
+ * Private notes and project comments have separate DTOs and write paths.
+ */
 export type NoteVisibility = "private" | "space_shared";
 
-export interface NoteRecord {
+export interface PrivateReadingNoteRecord {
   id: string;
+  kind: "private_note";
   libraryEntryId: string;
   authorUserId: string;
-  /** @deprecated Notes are private reader records; visibility is a compatibility mirror. */
-  visibility: NoteVisibility;
   body: string;
   createdAt: string;
 }
 
 export interface ProjectReadingCommentRecord {
   id: string;
+  kind: "project_comment";
   libraryEntryId: string;
   projectId: string;
   authorUserId: string;
   body: string;
   createdAt: string;
+}
+
+/** @deprecated Use PrivateReadingNoteRecord for private notes. */
+export interface NoteRecord extends PrivateReadingNoteRecord {
+  /** @deprecated Compatibility mirror only; never use for authority. */
+  visibility?: NoteVisibility;
 }
 
 export interface ConversationRecord {
@@ -41,7 +51,7 @@ export interface ReadingDetailView {
   asset: PaperAssetRecord;
   entry: LibraryEntryRecord;
   insights: GeneratedInsightRecord[];
-  notes: NoteRecord[];
+  notes: PrivateReadingNoteRecord[];
   projectComments: ProjectReadingCommentRecord[];
 }
 
@@ -59,6 +69,8 @@ export interface CreateReadingNoteRequest {
   libraryEntryId: string;
 }
 
+export type CreatePrivateReadingNoteRequest = CreateReadingNoteRequest;
+
 export interface LegacyCreateReadingNoteRequest extends CreateReadingNoteRequest {
   /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
   actorSpaceId?: string;
@@ -71,7 +83,10 @@ export interface LegacyCreateReadingNoteRequest extends CreateReadingNoteRequest
 export interface CreateProjectReadingCommentRequest {
   body: string;
   libraryEntryId: string;
-  /** Compatibility assertion only; the authoritative project id is derived from LibraryEntry.scope. */
+  /**
+   * @deprecated Compatibility assertion only. The server derives project
+   * authority from LibraryEntry.scope and ProjectMember access.
+   */
   projectId?: string;
 }
 
@@ -87,12 +102,15 @@ export interface SaveReadingInsightRequest {
 }
 
 export interface ReadingNoteResponse {
-  note: NoteRecord;
+  note: PrivateReadingNoteRecord;
 }
 
 export interface ProjectReadingCommentResponse {
   comment: ProjectReadingCommentRecord;
 }
+
+/** @deprecated Use ProjectReadingCommentResponse. */
+export type ReadingProjectCommentResponse = ProjectReadingCommentResponse;
 
 export interface ReadingInsightResponse {
   insight: GeneratedInsightRecord;

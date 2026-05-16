@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe('paper workspace', () => {
-  it('paper page persists shared notes, governed insights, and project-first writer promotion actions', async () => {
+  it('paper page persists private notes, project comments, governed insights, and project-first writer promotion actions', async () => {
     const user = userEvent.setup();
     const projectFixture = {
       membership: {
@@ -84,14 +84,15 @@ describe('paper workspace', () => {
         body: string;
         createdAt: string;
         id: string;
+        kind: 'private_note';
         libraryEntryId: string;
-        visibility: 'private' | 'space_shared';
       }>,
       projectComments: [] as Array<{
         authorUserId: string;
         body: string;
         createdAt: string;
         id: string;
+        kind: 'project_comment';
         libraryEntryId: string;
         projectId: string;
       }>,
@@ -144,12 +145,31 @@ describe('paper workspace', () => {
             body: body.body,
             createdAt: '2026-03-23T00:10:00.000Z',
             id: `note-${readingDetail.notes.length + 1}`,
+            kind: 'private_note' as const,
             libraryEntryId: 'entry-1',
-            visibility: 'private' as const,
           };
           readingDetail.notes.push(note);
 
-          return jsonResponse({ note }, 200);
+          return jsonResponse(note, 200);
+        }
+
+        if (requestUrl.endsWith('/api/reading/entry-1/project-comments') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            body: string;
+            projectId?: string;
+          };
+          const comment = {
+            authorUserId: 'user-alice',
+            body: body.body,
+            createdAt: '2026-03-23T00:12:00.000Z',
+            id: `comment-${readingDetail.projectComments.length + 1}`,
+            kind: 'project_comment' as const,
+            libraryEntryId: 'entry-1',
+            projectId: body.projectId ?? 'project-alpha',
+          };
+          readingDetail.projectComments.push(comment);
+
+          return jsonResponse({ comment }, 201);
         }
 
         if (requestUrl.endsWith('/api/reading/project-comments') && init?.method === 'POST') {
@@ -168,6 +188,7 @@ describe('paper workspace', () => {
             body: body.body,
             createdAt: '2026-03-23T00:10:00.000Z',
             id: `comment-${readingDetail.projectComments.length + 1}`,
+            kind: 'project_comment' as const,
             libraryEntryId: 'entry-1',
             projectId: 'project-alpha',
           };
@@ -279,12 +300,32 @@ describe('paper workspace', () => {
     expect(screen.getByRole('tab', { name: '共享评论' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '关键信息' })).toBeInTheDocument();
 
+    await user.type(screen.getByRole('textbox', { name: 'Private note draft' }), 'Private note for later synthesis.');
+    await user.click(screen.getByRole('button', { name: 'Save private note' }));
+    expect(
+      await screen.findByText('Private note for later synthesis.', { selector: 'p' }),
+    ).toBeInTheDocument();
+
     await user.clear(screen.getByRole('textbox', { name: 'Project comment draft' }));
-    await user.type(screen.getByRole('textbox', { name: 'Project comment draft' }), 'Shared note for later synthesis.');
+    await user.type(screen.getByRole('textbox', { name: 'Project comment draft' }), 'Project comment for later synthesis.');
     await user.click(screen.getByRole('button', { name: 'Save project comment' }));
     expect(
-      await screen.findByText('Shared note for later synthesis.', { selector: 'p' }),
+      await screen.findByText('Project comment for later synthesis.', { selector: 'p' }),
     ).toBeInTheDocument();
+
+    const noteRequest = vi.mocked(fetch).mock.calls.find(([input, init]) =>
+      String(input).endsWith('/api/reading/notes') && init?.method === 'POST',
+    );
+    const commentRequest = vi.mocked(fetch).mock.calls.find(([input, init]) =>
+      String(input).endsWith('/api/reading/entry-1/project-comments') && init?.method === 'POST',
+    );
+    expect(noteRequest).toBeDefined();
+    expect(commentRequest).toBeDefined();
+    expect(JSON.parse(String(noteRequest?.[1]?.body))).not.toHaveProperty('visibility');
+    expect(JSON.parse(String(commentRequest?.[1]?.body))).toMatchObject({
+      body: 'Project comment for later synthesis.',
+      projectId: 'project-alpha',
+    });
 
     await user.click(screen.getByRole('button', { name: 'Generate insight' }));
     await user.click(screen.getByRole('button', { name: 'Send latest insight to Notebook' }));

@@ -120,6 +120,7 @@ model Project {
   createdBy       User            @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   members         ProjectMember[]
   projectDocs     ProjectDoc[]
+  readingComments ProjectReadingComment[]
 }
 
 model ProjectMember {
@@ -197,6 +198,8 @@ model Note {
   updatedAt      DateTime       @updatedAt
   libraryEntry   LibraryEntry    @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
   author         User            @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([libraryEntryId, authorUserId])
 }
 
 model ProjectReadingComment {
@@ -208,10 +211,13 @@ model ProjectReadingComment {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   libraryEntry   LibraryEntry @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   author         User         @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
 
   @@index([libraryEntryId, projectId])
+  @@index([projectId, createdAt])
 }
+
 
 model ReadingState {
   id            String        @id @default(cuid())

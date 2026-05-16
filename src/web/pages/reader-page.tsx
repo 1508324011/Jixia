@@ -31,13 +31,12 @@ export function ReaderPage() {
   const [promotedDocumentId, setPromotedDocumentId] = useState<string | null>(null);
   const [capturedNotebookId, setCapturedNotebookId] = useState<string | null>(null);
   const [isSavingPrivateNote, setIsSavingPrivateNote] = useState(false);
-  const [isSavingProjectComment, setIsSavingProjectComment] = useState(false);
   const [isSavingInsight, setIsSavingInsight] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
-  const [isCapturingNotebook, setIsCapturingNotebook] = useState(false);
-  const [noteBody, setNoteBody] = useState(
+  const [projectReaderCommentBody, setProjectReaderCommentBody] = useState(
     "This paper matters for the shared review.",
   );
+  const [isCapturingNotebook, setIsCapturingNotebook] = useState(false);
 
   useEffect(() => {
     setPromotedDocumentId(null);
@@ -148,10 +147,10 @@ export function ReaderPage() {
           </article>
           <aside className="panel paper-workspace">
             <h2 className="panel-title">Workbench</h2>
-              <p className="quiet-copy">
-                <span className="status-badge">compatibility reader route</span> · quoted evidence ·
-                governed AI summary
-              </p>
+            <p className="quiet-copy">
+              <span className="status-badge">project comment</span> · quoted evidence ·
+              governed AI summary
+            </p>
             <p className="quiet-copy">Governed action source · queued → running → succeeded</p>
             <PaperWorkspaceTabs />
             <p className="quiet-copy">
@@ -298,7 +297,7 @@ export function ReaderPage() {
       isLoading,
       isMutating,
       notes,
-      projectComments: projectReaderComments,
+      projectComments,
       project,
       refresh,
       saveGeneratedInsight,
@@ -435,23 +434,27 @@ export function ReaderPage() {
               className="panel-link"
               type="button"
               disabled={isMutating || privateNoteBody.trim().length === 0}
-              onClick={() => void saveNote(privateNoteBody.trim())}
+              onClick={() => {
+                void saveNote(privateNoteBody.trim()).then(() => setPrivateNoteBody(""));
+              }}
             >
               {isMutating ? "Saving…" : "Save private note"}
             </button>
-            <label className="quiet-copy" htmlFor="reader-note-input">
+            <label className="quiet-copy" htmlFor="reader-comment-input">
               Project comment draft
             </label>
             <textarea
-              id="reader-note-input"
-              value={noteBody}
-              onChange={(event) => setNoteBody(event.target.value)}
+              id="reader-comment-input"
+              value={projectReaderCommentBody}
+              onChange={(event) => setProjectReaderCommentBody(event.target.value)}
             />
             <button
               className="panel-link"
               type="button"
-              disabled={isMutating || noteBody.trim().length === 0}
-              onClick={() => void saveProjectComment(noteBody.trim())}
+              disabled={isMutating || projectReaderCommentBody.trim().length === 0}
+              onClick={() => {
+                void saveProjectComment(projectReaderCommentBody.trim()).then(() => setProjectReaderCommentBody(""));
+              }}
             >
               {isMutating ? "Saving…" : "Save project comment"}
             </button>
@@ -507,7 +510,7 @@ export function ReaderPage() {
                   <p className="quiet-copy">{note.body}</p>
                 </div>
               ))}
-              {projectReaderComments.map((comment) => (
+              {projectComments.map((comment) => (
                 <div key={comment.id} className="hero-card">
                   <h3 className="panel-title">Project comment</h3>
                   <p className="quiet-copy">{comment.body}</p>
@@ -543,7 +546,7 @@ export function ReaderPage() {
         <span>Entry · {entryId}</span>
         {detail ? <span>Space context · {detail.entry.spaceId}</span> : null}
         <span className="status-badge">{privateNotes.length} private notes</span>
-        <span className="status-badge">{projectComments.length} shared comments</span>
+        <span className="status-badge">{projectComments.length} project comments</span>
       </section>
 
       <section className="reader-page" aria-label="reading layout">
@@ -598,7 +601,6 @@ export function ReaderPage() {
                 className="action-button"
                 disabled={
                   isSavingPrivateNote ||
-                  isSavingProjectComment ||
                   isSavingInsight ||
                   isPromoting ||
                   isCapturingNotebook
@@ -627,14 +629,13 @@ export function ReaderPage() {
                 className="action-button"
                 disabled={
                   isSavingPrivateNote ||
-                  isSavingProjectComment ||
                   isSavingInsight ||
                   isPromoting ||
                   isCapturingNotebook
                 }
                 onClick={() => void handlePersonalProjectCommentAttempt()}
               >
-                {isSavingProjectComment ? "Saving project comment…" : "Save project comment"}
+                Save project comment
               </button>
 
               <label className="quiet-copy" htmlFor="insight-summary-body">
@@ -652,7 +653,6 @@ export function ReaderPage() {
                 className="action-button"
                 disabled={
                   isSavingPrivateNote ||
-                  isSavingProjectComment ||
                   isSavingInsight ||
                   isPromoting ||
                   isCapturingNotebook
@@ -668,7 +668,6 @@ export function ReaderPage() {
                 disabled={
                   !latestInsight ||
                   isSavingPrivateNote ||
-                  isSavingProjectComment ||
                   isSavingInsight ||
                   isPromoting ||
                   isCapturingNotebook
@@ -684,7 +683,6 @@ export function ReaderPage() {
                 disabled={
                   !latestInsight ||
                   isSavingPrivateNote ||
-                  isSavingProjectComment ||
                   isSavingInsight ||
                   isPromoting ||
                   isCapturingNotebook
@@ -721,13 +719,13 @@ export function ReaderPage() {
               <div className="stack-xs">
                 <h3 className="panel-title">Project comments</h3>
                 {projectComments.length > 0 ? (
-                  projectComments.map((note) => (
-                    <p key={note.id} className="quiet-copy">
-                      {note.body}
+                  projectComments.map((comment) => (
+                    <p key={comment.id} className="quiet-copy">
+                      {comment.body}
                     </p>
                   ))
                 ) : (
-                  <p className="quiet-copy">No shared comments yet.</p>
+                  <p className="quiet-copy">No project comments yet.</p>
                 )}
               </div>
 

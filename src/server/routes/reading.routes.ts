@@ -1,6 +1,6 @@
 import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type {
-  NoteRecord,
+  PrivateReadingNoteRecord,
   ProjectReadingCommentRecord,
   ReadingDetail,
 } from "@shared/contracts/reading";
@@ -14,7 +14,7 @@ import type {
 } from "../services/reading.service";
 
 export interface ReadingRoutes {
-  createNote(input: CreateNoteRequest): Promise<NoteRecord>;
+  createNote(input: CreateNoteRequest): Promise<PrivateReadingNoteRecord>;
   createProjectComment(
     input: CreateProjectCommentRequest,
   ): Promise<ProjectReadingCommentRecord>;
@@ -31,7 +31,7 @@ export interface ReadingRoutes {
 
 export function createReadingRoutes(service: ReadingService): ReadingRoutes {
   return {
-    createNote(input: CreateNoteRequest): Promise<NoteRecord> {
+    createNote(input: CreateNoteRequest): Promise<PrivateReadingNoteRecord> {
       return service.createNote(input);
     },
     createProjectComment(

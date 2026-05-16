@@ -1,12 +1,12 @@
 import type { EvidenceSpanRecord, GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type {
+  CreateProjectReadingCommentRequest,
   CreateReadingNoteRequest,
   GetReadingDetailQuery,
-  NoteRecord,
+  PrivateReadingNoteRecord,
   ProjectReadingCommentRecord,
   ReadingDetail,
   SaveReadingInsightRequest,
-  NoteVisibility,
 } from "@shared/contracts/reading";
 
 import type {
@@ -18,20 +18,21 @@ import { mapPersistedLibraryEntryView } from "./import.service";
 import type { LibraryService } from "./library.service";
 
 export interface CreateNoteRequest
-  extends Omit<CreateReadingNoteRequest, "actorSpaceId" | "authorUserId"> {
+  extends CreateReadingNoteRequest {
   actorSpaceId?: string;
   actorUserId: string;
+  /** @deprecated Compatibility assertion only. */
   authorUserId?: string;
-  visibility?: NoteVisibility;
+  /** @deprecated Compatibility label. Private-note endpoint only accepts private. */
+  visibility?: "private" | "space_shared";
 }
 
-export interface CreateProjectCommentRequest {
+export interface CreateProjectCommentRequest
+  extends CreateProjectReadingCommentRequest {
   actorSpaceId?: string;
   actorUserId: string;
+  /** @deprecated Compatibility assertion only. */
   authorUserId?: string;
-  body: string;
-  libraryEntryId: string;
-  projectId?: string;
 }
 
 export interface SaveGeneratedInsightRequest
@@ -53,7 +54,7 @@ export interface ReadingStore {
 }
 
 export interface ReadingService {
-  createNote(input: CreateNoteRequest): Promise<NoteRecord>;
+  createNote(input: CreateNoteRequest): Promise<PrivateReadingNoteRecord>;
   createProjectComment(
     input: CreateProjectCommentRequest,
   ): Promise<ProjectReadingCommentRecord>;
@@ -61,9 +62,10 @@ export interface ReadingService {
     authorUserId: string;
     body: string;
     libraryEntryId: string;
-    visibility?: NoteVisibility;
-  }): Promise<NoteRecord>;
+    visibility?: "private" | "space_shared";
+  }): Promise<PrivateReadingNoteRecord>;
   createWorkbenchProjectComment(input: {
+    actorSpaceId?: string;
     authorUserId: string;
     body: string;
     libraryEntryId: string;
@@ -106,6 +108,37 @@ async function getAuthorizedLibraryContext(
   );
 }
 
+function assertPrivateNoteCompatibility(input: CreateNoteRequest): void {
+  if (input.authorUserId && input.authorUserId !== input.actorUserId) {
+    throw new Error(
+      "Request body actor does not match the server-derived actor.",
+    );
+  }
+
+  if (input.visibility && input.visibility !== "private") {
+    throw new Error(
+      "Project comments must use the project-comments endpoint instead of note visibility.",
+    );
+  }
+}
+
+function assertProjectCommentCompatibility(
+  input: CreateProjectCommentRequest,
+  projectId: string,
+): void {
+  if (input.authorUserId && input.authorUserId !== input.actorUserId) {
+    throw new Error(
+      "Request body actor does not match the server-derived actor.",
+    );
+  }
+
+  if (input.projectId && input.projectId !== projectId) {
+    throw new Error(
+      "Request project context does not match the scoped library entry project.",
+    );
+  }
+}
+
 export function createReadingService(store: ReadingStore): ReadingService {
   return {
     async getDetail(
@@ -134,9 +167,8 @@ export function createReadingService(store: ReadingStore): ReadingService {
       });
 
       const mappedView = mapPersistedLibraryEntryView(view);
-      const notes = await store.readingRepository.listNotesForEntry({
+      const notes = await store.readingRepository.listPrivateNotesForEntry({
         actorUserId: input.actorUserId,
-        includeSharedNotes: false,
         libraryEntryId: input.libraryEntryId,
       });
       const projectComments = view.entry.scope.type === "project"
@@ -153,7 +185,7 @@ export function createReadingService(store: ReadingStore): ReadingService {
         asset: mappedView.asset,
         entry: mappedView.entry,
         insights,
-        notes,
+        notes: notes.map(({ visibility: _visibility, ...note }) => note),
         projectComments,
       };
     },
@@ -183,37 +215,21 @@ export function createReadingService(store: ReadingStore): ReadingService {
 
       return insight;
     },
-    async createNote(input: CreateNoteRequest): Promise<NoteRecord> {
-      if (input.authorUserId && input.authorUserId !== input.actorUserId) {
-        throw new Error(
-          "Request body actor does not match the server-derived actor.",
-        );
-      }
-
-      if (input.visibility && input.visibility !== "private") {
-        throw new Error(
-          "Reader shared discussion must use the project-comments endpoint.",
-        );
-      }
-
+    async createNote(input: CreateNoteRequest): Promise<PrivateReadingNoteRecord> {
+      assertPrivateNoteCompatibility(input);
       await getAuthorizedLibraryContext(store, input);
 
-      return store.readingRepository.createNote({
+      const { visibility: _visibility, ...note } = await store.readingRepository.createPrivateNote({
         authorUserId: input.actorUserId,
         body: input.body,
         libraryEntryId: input.libraryEntryId,
-        visibility: "private",
       });
+
+      return note;
     },
     async createProjectComment(
       input: CreateProjectCommentRequest,
     ): Promise<ProjectReadingCommentRecord> {
-      if (input.authorUserId && input.authorUserId !== input.actorUserId) {
-        throw new Error(
-          "Request body actor does not match the server-derived actor.",
-        );
-      }
-
       const view = await getAuthorizedLibraryContext(store, input);
 
       if (view.entry.scope.type !== "project") {
@@ -222,11 +238,7 @@ export function createReadingService(store: ReadingStore): ReadingService {
         );
       }
 
-      if (input.projectId && input.projectId !== view.entry.scope.id) {
-        throw new Error(
-          "Request project context does not match the requested library entry.",
-        );
-      }
+      assertProjectCommentCompatibility(input, view.entry.scope.id);
 
       return store.readingRepository.createProjectComment({
         authorUserId: input.actorUserId,
@@ -239,8 +251,8 @@ export function createReadingService(store: ReadingStore): ReadingService {
       authorUserId: string;
       body: string;
       libraryEntryId: string;
-      visibility?: NoteVisibility;
-    }): Promise<NoteRecord> {
+      visibility?: "private" | "space_shared";
+    }): Promise<PrivateReadingNoteRecord> {
       return this.createNote({
         actorUserId: input.authorUserId,
         authorUserId: input.authorUserId,
@@ -250,12 +262,14 @@ export function createReadingService(store: ReadingStore): ReadingService {
       });
     },
     async createWorkbenchProjectComment(input: {
+      actorSpaceId?: string;
       authorUserId: string;
       body: string;
       libraryEntryId: string;
       projectId?: string;
     }): Promise<ProjectReadingCommentRecord> {
       return this.createProjectComment({
+        actorSpaceId: input.actorSpaceId,
         actorUserId: input.authorUserId,
         authorUserId: input.authorUserId,
         body: input.body,

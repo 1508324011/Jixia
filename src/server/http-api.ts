@@ -165,10 +165,11 @@ function parseCreateReadingNoteRequest(
 
   if (
     typeof visibility !== 'undefined' &&
-    visibility !== 'private' &&
-    visibility !== 'space_shared'
+    visibility !== 'private'
   ) {
-    throw new Error('visibility must be private or space_shared when provided.');
+    throw new Error(
+      'Project comments must use the project-comments endpoint instead of note visibility.',
+    );
   }
 
   return {
@@ -473,7 +474,6 @@ function toReadingInsightResponse(
 ): ReadingInsightResponse {
   return { insight };
 }
-
 
 export async function resolveHttpApi(
   app: JixiaApp,

@@ -40,6 +40,7 @@ import type {
   CreateProjectReadingCommentRequest,
   CreateReadingNoteRequest,
   NoteRecord,
+  PrivateReadingNoteRecord,
   ProjectReadingCommentRecord,
   ReadingDetailView,
   ReadingStateRecord,
@@ -218,18 +219,28 @@ describe('core contracts', () => {
 
     const note: NoteRecord = {
       id: 'note_001',
+      kind: 'private_note',
       libraryEntryId: 'entry_001',
       authorUserId: 'user_001',
       visibility: 'private',
       body: 'Key finding with evidence link',
       createdAt: '2026-03-21T00:00:00.000Z',
     };
+    const privateNote: PrivateReadingNoteRecord = {
+      id: 'private_note_001',
+      kind: 'private_note',
+      libraryEntryId: 'entry_001',
+      authorUserId: 'user_001',
+      body: 'Owner-only note with no visibility authority.',
+      createdAt: '2026-03-21T00:00:00.000Z',
+    };
     const projectComment: ProjectReadingCommentRecord = {
       id: 'comment_001',
+      kind: 'project_comment',
       libraryEntryId: 'entry_001',
       projectId: 'project_001',
       authorUserId: 'user_001',
-      body: 'Project-visible interpretation for collaborators',
+      body: 'Project-scoped comment visible through ProjectMember authority.',
       createdAt: '2026-03-21T00:00:00.000Z',
     };
     const conversation: ConversationRecord = {
@@ -274,12 +285,14 @@ describe('core contracts', () => {
         visibility: 'published_to_project',
       },
       insights: [],
-      notes: [note],
+      notes: [privateNote],
       projectComments: [projectComment],
     };
 
     expect(note.visibility).toBe('private');
+    expect(privateNote.kind).toBe('private_note');
     expect(projectComment.projectId).toBe('project_001');
+    expect(projectComment.kind).toBe('project_comment');
     expect(createNoteRequest).not.toHaveProperty('visibility');
     expect(createProjectCommentRequest.projectId).toBe('project_001');
     expect(readingDetail.notes).toHaveLength(1);

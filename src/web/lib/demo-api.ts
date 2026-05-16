@@ -10,6 +10,7 @@ import type {
   ReadingDetailView,
   ReadingInsightResponse,
   ReadingNoteResponse,
+  ReadingProjectCommentResponse,
   UpdateWorkbenchSettingsRequest,
   WorkbenchSettingsResponse,
   WritingDocumentResponse,
@@ -98,8 +99,8 @@ export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
       body: string;
       entryId: string;
       projectId?: string;
-    }): Promise<import('@shared').ProjectReadingCommentResponse> {
-      return requestJson<import('@shared').ProjectReadingCommentResponse>(
+    }): Promise<ReadingProjectCommentResponse> {
+      return requestJson<ReadingProjectCommentResponse>(
         resolvePath(`/api/reading/${input.entryId}/project-comments`),
         {
           body: JSON.stringify({

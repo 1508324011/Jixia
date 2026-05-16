@@ -37,7 +37,7 @@ import type {
   ProjectDocSnapshot,
 } from "@shared/contracts/project-docs";
 import type {
-  NoteRecord,
+  PrivateReadingNoteRecord,
   ReadingInsightResponse,
   ReadingNoteResponse,
   ProjectReadingCommentRecord,
@@ -381,8 +381,8 @@ export const apiClient = {
   },
   createReadingNote(
     input: CreateReadingNotePayload,
-  ): Promise<NoteRecord> {
-    return requestJson("/api/reading/notes", {
+  ): Promise<PrivateReadingNoteRecord> {
+    return requestJson<PrivateReadingNoteRecord>("/api/reading/notes", {
       body: JSON.stringify(input),
       method: "POST",
     });
@@ -399,9 +399,12 @@ export const apiClient = {
     input: CreateProjectReadingCommentPayload,
   ): Promise<ProjectReadingCommentRecord> {
     return requestJson<{ comment: ProjectReadingCommentRecord }>(
-      "/api/reading/project-comments",
+      `/api/reading/${input.libraryEntryId}/project-comments`,
       {
-        body: JSON.stringify(input),
+        body: JSON.stringify({
+          body: input.body,
+          projectId: input.projectId,
+        }),
         method: "POST",
       },
     ).then((response) => response.comment);

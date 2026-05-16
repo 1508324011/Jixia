@@ -266,14 +266,30 @@ describe('workbench http contracts', () => {
         headers: withSessionCookie(aliceCookie, {
           'Content-Type': 'application/json',
         }),
-          method: 'POST',
-        }).then(
+        method: 'POST',
+      }).then(
         (response) => response.json() as Promise<{
           asset: { id: string; storageKey?: string };
           entry: { id: string };
         }>,
       );
       expect(importedProjectRecord.asset.storageKey).toBeUndefined();
+      const rejectedVisibilityComment = await fetch(`${baseUrl}/api/reading/${importedProjectRecord.entry.id}/notes`, {
+        body: JSON.stringify({
+          body: 'Rejected project comment through note visibility.',
+          visibility: 'space_shared',
+        }),
+        headers: withSessionCookie(aliceCookie, {
+          'Content-Type': 'application/json',
+        }),
+        method: 'POST',
+      });
+      const projectCommentFromClient = await demoApi.createProjectReadingComment({
+        body: 'Workbench project comment through explicit route.',
+        entryId: importedProjectRecord.entry.id,
+        projectId: project.project.id,
+      });
+      const projectReaderDetail = await demoApi.getReadingDetail(importedProjectRecord.entry.id);
       const writingDocumentFromClient = await demoApi.getWritingDocument(
         sharedSpace.id,
         project.project.id,
@@ -372,6 +388,20 @@ describe('workbench http contracts', () => {
       expect(personalLibraryFromClient.entries).toContainEqual(
         expect.objectContaining({
           canonicalId: search.items[0].canonicalId,
+        }),
+      );
+      expect(rejectedVisibilityComment.status).toBe(400);
+      await expect(rejectedVisibilityComment.json()).resolves.toMatchObject({
+        error: expect.stringMatching(/project-comments endpoint/i),
+      });
+      expect(projectCommentFromClient.comment).toMatchObject({
+        body: 'Workbench project comment through explicit route.',
+        kind: 'project_comment',
+        projectId: project.project.id,
+      });
+      expect(projectReaderDetail.projectComments).toContainEqual(
+        expect.objectContaining({
+          body: 'Workbench project comment through explicit route.',
         }),
       );
       expect(writingReadWithoutActor.status).toBe(401);

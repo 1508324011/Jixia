@@ -58,14 +58,15 @@ describe('personal reader route', () => {
         body: string;
         createdAt: string;
         id: string;
+        kind: 'private_note';
         libraryEntryId: string;
-        visibility: 'private' | 'space_shared';
       }>,
       projectComments: [] as Array<{
         authorUserId: string;
         body: string;
         createdAt: string;
         id: string;
+        kind: 'project_comment';
         libraryEntryId: string;
         projectId: string;
       }>,
@@ -105,8 +106,8 @@ describe('personal reader route', () => {
             body: body.body,
             createdAt: '2026-03-23T00:10:00.000Z',
             id: `note-${readingDetail.notes.length + 1}`,
+            kind: 'private_note' as const,
             libraryEntryId: 'entry-1',
-            visibility: 'private' as const,
           };
           readingDetail.notes.push(note);
 
@@ -199,6 +200,11 @@ describe('personal reader route', () => {
     expect(await screen.findByText('Tumor board biomarkers for rapid review')).toBeInTheDocument();
     expect(screen.getByText('Personal context')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open writing' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Save project comment' }));
+    expect(
+      await screen.findByText('Open a real project workspace before saving project comments.'),
+    ).toBeInTheDocument();
 
     await user.type(screen.getByRole('textbox', { name: 'Insight summary' }), 'Personal insight summary');
     await user.click(screen.getByRole('button', { name: 'Save insight' }));

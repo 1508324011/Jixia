@@ -116,6 +116,7 @@ export {
   type CreatePersistedNoteParams,
   type CreatePersistedProjectReadingCommentParams,
   type ListEntryNotesQuery,
+  type ListProjectCommentsQuery,
   type PersistedConversationRecord,
   type PersistedEvidenceSpanRecord,
   type PersistedGeneratedInsightRecord,
