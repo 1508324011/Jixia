@@ -4,11 +4,39 @@ import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
+import type { DocumentBlockDocument } from '../../src/shared/contracts/document-content';
+
 import {
   createPrismaClient,
+  createNotebookRepository,
+  createProjectDocRepository,
   createSpaceRepository,
 } from '../../src/db';
 import { createJixiaApp } from '../../src/server/app';
+
+const EMPTY_DOCUMENT_CONTENT: DocumentBlockDocument = {
+  blocks: [],
+  schemaVersion: 1,
+};
+
+function expectLegacyParagraphDocument(
+  documentContent: DocumentBlockDocument | undefined,
+  content: string,
+): void {
+  expect(documentContent).toEqual(
+    content
+      ? {
+          blocks: [
+            {
+              text: content,
+              type: 'paragraph',
+            },
+          ],
+          schemaVersion: 1,
+        }
+      : EMPTY_DOCUMENT_CONTENT,
+  );
+}
 
 function createStorageRoot(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -66,6 +94,11 @@ describe('notebook and project document persistence', () => {
       );
 
       expect(firstSnapshot.versionNumber).toBe(1);
+      expect(firstSnapshot.content).toBe('Notebook version one');
+      expectLegacyParagraphDocument(
+        firstSnapshot.documentContent,
+        'Notebook version one',
+      );
       expect(firstSnapshot.citations[0]?.paperAssetId).toBe(imported.asset.id);
 
       await expect(
@@ -101,6 +134,11 @@ describe('notebook and project document persistence', () => {
 
       expect(secondSnapshot.document.id).toBe(notebook.id);
       expect(secondSnapshot.versionNumber).toBe(2);
+      expect(secondSnapshot.content).toBe('Notebook version two');
+      expectLegacyParagraphDocument(
+        secondSnapshot.documentContent,
+        'Notebook version two',
+      );
       expect(secondSnapshot.citations[0]?.paperAssetId).toBe(imported.asset.id);
       await secondApp.close();
     } finally {
@@ -179,6 +217,11 @@ describe('notebook and project document persistence', () => {
         'user-bob',
       );
       expect(bobReadable.document.projectId).toBe(project.project.id);
+      expect(bobReadable).toMatchObject({
+        content: '',
+        documentContent: EMPTY_DOCUMENT_CONTENT,
+        versionNumber: 0,
+      });
 
       await expect(
         firstApp.projectDocs.getDocument({ documentId: projectDoc.id }, 'user-charlie'),
@@ -226,6 +269,11 @@ describe('notebook and project document persistence', () => {
       );
 
       expect(firstSnapshot.versionNumber).toBe(1);
+      expect(firstSnapshot.content).toBe('Project doc version one');
+      expectLegacyParagraphDocument(
+        firstSnapshot.documentContent,
+        'Project doc version one',
+      );
       expect(firstSnapshot.citations[0]?.paperAssetId).toBe(imported.asset.id);
       expect(reviewed.publishState).toBe('review');
 
@@ -244,6 +292,11 @@ describe('notebook and project document persistence', () => {
       expect(secondSnapshot.document.id).toBe(projectDoc.id);
       expect(secondSnapshot.document.publishState).toBe('review');
       expect(secondSnapshot.versionNumber).toBe(2);
+      expect(secondSnapshot.content).toBe('Project doc version two');
+      expectLegacyParagraphDocument(
+        secondSnapshot.documentContent,
+        'Project doc version two',
+      );
       await secondApp.close();
     } finally {
       await prisma.$disconnect();
@@ -335,6 +388,393 @@ describe('notebook and project document persistence', () => {
 
       await app.close();
     } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('round-trips structured notebook document content and validates structured references', async () => {
+    const storageRoot = createStorageRoot('jixia-notebook-structured-content-');
+    const env = createWritingEnv(storageRoot);
+
+    try {
+      const app = createJixiaApp({ env });
+      const personalSpace = await app.spaces.createSpace(
+        { kind: 'personal', name: 'Structured Notebook Space' },
+        'user-alice',
+      );
+      const imported = await app.imports.importPaper(
+        {
+          scope: { id: 'user-alice', type: 'user' },
+          sourceLocator: '10.1000/notebook-structured-content',
+          sourceType: 'doi',
+          spaceId: personalSpace.id,
+          visibility: 'private',
+        },
+        'user-alice',
+      );
+      const notebook = await app.notebooks.createDocument(
+        { title: 'Structured Notebook' },
+        'user-alice',
+      );
+      const documentContent: DocumentBlockDocument = {
+        blocks: [
+          {
+            level: 2,
+            text: 'Structured notebook evidence',
+            type: 'heading',
+          },
+          {
+            text: 'Interpretation stays editable.',
+            type: 'paragraph',
+          },
+          {
+            evidenceSpan: 'structured quote',
+            libraryEntryId: imported.entry.id,
+            locator: 'p. 7',
+            paperAssetId: imported.asset.id,
+            quote: 'structured quote',
+            title: imported.asset.title,
+            type: 'sourceExcerpt',
+          },
+        ],
+        schemaVersion: 1,
+      };
+
+      await expect(
+        app.notebooks.saveDocument(
+          {
+            citations: [],
+            documentContent: {
+              blocks: [{ text: 'bad block', type: 'not-a-block' }],
+              schemaVersion: 1,
+            } as unknown as DocumentBlockDocument,
+            documentId: notebook.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/supported Jixia document block type/i);
+      await expect(
+        app.notebooks.saveDocument(
+          {
+            citations: [],
+            documentContent: {
+              blocks: [
+                {
+                  libraryEntryId: imported.entry.id,
+                  text: 'quote with incomplete source metadata',
+                  type: 'quote',
+                },
+              ],
+              schemaVersion: 1,
+            } as unknown as DocumentBlockDocument,
+            documentId: notebook.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/paperAssetId is required/);
+      await expect(
+        app.notebooks.saveDocument(
+          {
+            citations: [],
+            documentContent,
+            documentId: notebook.id,
+          },
+          'user-bob',
+        ),
+      ).rejects.toThrow(/access denied/i);
+
+      const saved = await app.notebooks.saveDocument(
+        {
+          citations: [],
+          documentContent,
+          documentId: notebook.id,
+        },
+        'user-alice',
+      );
+      const legacyShadowed = await app.notebooks.saveDocument(
+        {
+          citations: [],
+          content: 'Legacy notebook text should be shadowed by structured content.',
+          documentContent,
+          documentId: notebook.id,
+        },
+        'user-alice',
+      );
+      const reloaded = await app.notebooks.getLatestSnapshot(
+        { documentId: notebook.id },
+        'user-alice',
+      );
+
+      expect(saved.documentContent).toEqual(documentContent);
+      expect(legacyShadowed.content).toBe(saved.content);
+      expect(legacyShadowed.documentContent).toEqual(documentContent);
+      expect(reloaded.documentContent).toEqual(documentContent);
+      expect(saved.content).toBe(
+        [
+          '## Structured notebook evidence',
+          'Interpretation stays editable.',
+          `> structured quote\n\nSource: ${imported.asset.title} (p. 7)`,
+        ].join('\n\n'),
+      );
+      expect(saved.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: 'structured quote',
+          paperAssetId: imported.asset.id,
+        }),
+      ]);
+      await app.close();
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('round-trips structured project docs and rejects inaccessible structured references', async () => {
+    const storageRoot = createStorageRoot('jixia-project-doc-structured-content-');
+    const env = createWritingEnv(storageRoot);
+
+    try {
+      const app = createJixiaApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Structured Project Space' },
+        'user-alice',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Structured Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        project.project.id,
+        { role: 'viewer', userId: 'user-bob' },
+        'user-alice',
+      );
+      const projectImport = await app.imports.importPaper(
+        {
+          scope: { id: project.project.id, type: 'project' },
+          sourceLocator: '10.1000/project-structured-content',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+      const personalImport = await app.imports.importPaper(
+        {
+          scope: { id: 'user-alice', type: 'user' },
+          sourceLocator: '10.1000/project-structured-personal-only',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'private',
+        },
+        'user-alice',
+      );
+      const projectDoc = await app.projectDocs.createDocument(
+        {
+          projectId: project.project.id,
+          title: 'Structured Project Draft',
+        },
+        'user-alice',
+      );
+      const documentContent: DocumentBlockDocument = {
+        blocks: [
+          {
+            level: 1,
+            text: 'Structured Project Draft',
+            type: 'heading',
+          },
+          {
+            label: 'Project evidence',
+            libraryEntryId: projectImport.entry.id,
+            paperAssetId: projectImport.asset.id,
+            type: 'citation',
+          },
+          {
+            evidenceSpan: 'project-scoped quote',
+            libraryEntryId: projectImport.entry.id,
+            paperAssetId: projectImport.asset.id,
+            quote: 'project-scoped quote',
+            title: projectImport.asset.title,
+            type: 'sourceExcerpt',
+          },
+        ],
+        schemaVersion: 1,
+      };
+      const personalOnlyDocumentContent: DocumentBlockDocument = {
+        blocks: [
+          {
+            evidenceSpan: 'private quote',
+            libraryEntryId: personalImport.entry.id,
+            paperAssetId: personalImport.asset.id,
+            quote: 'private quote',
+            type: 'sourceExcerpt',
+          },
+        ],
+        schemaVersion: 1,
+      };
+      const incompleteQuoteReference: DocumentBlockDocument = {
+        blocks: [
+          {
+            libraryEntryId: personalImport.entry.id,
+            text: 'private quote with incomplete source metadata',
+            type: 'quote',
+          },
+        ],
+        schemaVersion: 1,
+      } as unknown as DocumentBlockDocument;
+      const incompleteAiSuggestionReference: DocumentBlockDocument = {
+        blocks: [
+          {
+            libraryEntryId: personalImport.entry.id,
+            status: 'proposed',
+            text: 'private suggestion with incomplete source metadata',
+            type: 'aiSuggestion',
+          },
+        ],
+        schemaVersion: 1,
+      } as unknown as DocumentBlockDocument;
+
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [],
+            documentContent: personalOnlyDocumentContent,
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/not available in project/i);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [],
+            documentContent: incompleteQuoteReference,
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/paperAssetId is required/);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [],
+            documentContent: incompleteAiSuggestionReference,
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/paperAssetId is required/);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [],
+            documentContent,
+            documentId: projectDoc.id,
+          },
+          'user-bob',
+        ),
+      ).rejects.toThrow(/mutation/i);
+
+      const saved = await app.projectDocs.saveDocument(
+        {
+          citations: [],
+          documentContent,
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+      const legacyShadowed = await app.projectDocs.saveDocument(
+        {
+          citations: [],
+          content: 'Legacy project text should be shadowed by structured content.',
+          documentContent,
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+      const reloaded = await app.projectDocs.getDocument(
+        { documentId: projectDoc.id },
+        'user-bob',
+      );
+
+      expect(saved.documentContent).toEqual(documentContent);
+      expect(legacyShadowed.content).toBe(saved.content);
+      expect(legacyShadowed.documentContent).toEqual(documentContent);
+      expect(reloaded.documentContent).toEqual(documentContent);
+      expect(saved.content).toContain('# Structured Project Draft');
+      expect(saved.content).toContain('[Citation: Project evidence]');
+      expect(saved.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: 'project-scoped quote',
+          paperAssetId: projectImport.asset.id,
+        }),
+      ]);
+      await app.close();
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('reads old plain-text persisted rows as structured legacy documents', async () => {
+    const storageRoot = createStorageRoot('jixia-legacy-plain-text-snapshots-');
+    const env = createWritingEnv(storageRoot);
+    const prisma = createPrismaClient({ url: env.JIXIA_DATABASE_URL });
+    const notebookRepository = createNotebookRepository(prisma);
+    const projectDocRepository = createProjectDocRepository(prisma);
+
+    try {
+      const app = createJixiaApp({ env });
+      const notebook = await app.notebooks.createDocument(
+        { title: 'Legacy Plain Notebook' },
+        'user-alice',
+      );
+      await notebookRepository.saveVersion({
+        citations: [],
+        content: 'Legacy notebook plain text row',
+        documentId: notebook.id,
+      });
+
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Legacy Plain Project Space' },
+        'user-alice',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Legacy Plain Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      const projectDoc = await app.projectDocs.createDocument(
+        {
+          projectId: project.project.id,
+          title: 'Legacy Plain Project Doc',
+        },
+        'user-alice',
+      );
+      await projectDocRepository.saveVersion({
+        citations: [],
+        content: '{"legacy":"json-looking text"}',
+        documentId: projectDoc.id,
+      });
+
+      const notebookSnapshot = await app.notebooks.getLatestSnapshot(
+        { documentId: notebook.id },
+        'user-alice',
+      );
+      const projectSnapshot = await app.projectDocs.getDocument(
+        { documentId: projectDoc.id },
+        'user-alice',
+      );
+
+      expect(notebookSnapshot.content).toBe('Legacy notebook plain text row');
+      expectLegacyParagraphDocument(
+        notebookSnapshot.documentContent,
+        'Legacy notebook plain text row',
+      );
+      expect(projectSnapshot.content).toBe('{"legacy":"json-looking text"}');
+      expectLegacyParagraphDocument(
+        projectSnapshot.documentContent,
+        '{"legacy":"json-looking text"}',
+      );
+      await app.close();
+    } finally {
+      await prisma.$disconnect();
       rmSync(storageRoot, { force: true, recursive: true });
     }
   });

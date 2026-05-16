@@ -1,6 +1,7 @@
 export const sharedEntrypoint = "jixia-shared-entry";
 
 export * from "./contracts/credentials";
+export * from "./contracts/document-content";
 export * from "./contracts/document-snapshot";
 export * from "./contracts/discovery";
 export * from "./contracts/evidence";

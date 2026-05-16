@@ -1,3 +1,5 @@
+import type { DocumentContentPayload } from './document-content';
+
 export type PublishState = "draft" | "review" | "published";
 
 export interface WritingDocRecord {
@@ -27,6 +29,7 @@ export interface WritingDocSnapshot {
   docVersionId: string;
   versionNumber?: number;
   content: string;
+  documentContent?: DocumentContentPayload;
   citations: CitationLinkRecord[];
   capturedAt: string;
 }

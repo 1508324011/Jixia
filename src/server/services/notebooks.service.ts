@@ -1,4 +1,17 @@
 import type {
+  DocumentBlockDocument,
+  DocumentBlockReference,
+} from '@shared/contracts/document-content';
+import {
+  createEmptyDocumentBlockDocument,
+  documentBlockDocumentToLegacyText,
+  extractDocumentBlockReferences,
+  legacyTextToDocumentBlockDocument,
+  normalizeDocumentBlockDocument,
+  normalizePersistedDocumentSnapshot,
+  serializeDocumentBlockSnapshotPayload,
+} from '@shared/contracts/document-content';
+import type {
   CaptureNotebookEvidenceRequest,
   CaptureNotebookEvidenceResponse,
   CreateNotebookDocumentRequest,
@@ -17,12 +30,10 @@ import type { LibraryService } from './library.service';
 import type { ReadingService } from './reading.service';
 
 export interface SaveNotebookDocumentRequest {
-  citations: Array<{
-    evidenceSpan?: string;
-    paperAssetId: string;
-  }>;
-  content: string;
+  citations: NotebookCitationInput[];
+  content?: string;
   documentId: string;
+  documentContent?: DocumentBlockDocument;
 }
 
 export interface NotebookService {
@@ -53,6 +64,12 @@ export interface NotebookStore {
   libraryService: LibraryService;
   notebookRepository: NotebookRepository;
   readingService: Pick<ReadingService, 'getGeneratedInsightSource'>;
+}
+
+interface NotebookCitationInput {
+  evidenceSpan?: string;
+  libraryEntryId?: string;
+  paperAssetId: string;
 }
 
 function mapCitation(citation: {
@@ -107,11 +124,14 @@ function mapSnapshot(snapshot: {
   versionId: string;
   versionNumber: number;
 }): NotebookDocumentSnapshot {
+  const documentContent = normalizePersistedDocumentSnapshot(snapshot.content);
+
   return {
     capturedAt: snapshot.capturedAt,
     citations: snapshot.citations.map(mapCitation),
-    content: snapshot.content,
+    content: documentBlockDocumentToLegacyText(documentContent),
     document: mapDocument(snapshot.document),
+    documentContent,
     versionId: snapshot.versionId,
     versionNumber: snapshot.versionNumber,
   };
@@ -146,14 +166,72 @@ function createEmptySnapshot(document: NotebookDocumentRecord): NotebookDocument
     citations: [],
     content: '',
     document,
+    documentContent: createEmptyDocumentBlockDocument(),
     versionId: `notebook:${document.id}:version-0`,
     versionNumber: 0,
   };
 }
 
+function normalizeSaveDocumentContent(input: {
+  content?: string;
+  documentContent?: DocumentBlockDocument;
+}): DocumentBlockDocument {
+  if (typeof input.documentContent !== 'undefined') {
+    return normalizeDocumentBlockDocument(input.documentContent);
+  }
+
+  if (typeof input.content !== 'string') {
+    throw new Error('content is required when documentContent is not provided.');
+  }
+
+  return legacyTextToDocumentBlockDocument(input.content);
+}
+
+function referenceToCitationInput(
+  reference: DocumentBlockReference,
+): NotebookCitationInput {
+  return {
+    evidenceSpan: reference.evidenceSpan,
+    libraryEntryId: reference.libraryEntryId,
+    paperAssetId: reference.paperAssetId,
+  };
+}
+
+function mergeCitationInputs(
+  explicitCitations: NotebookCitationInput[],
+  documentContent: DocumentBlockDocument,
+): NotebookCitationInput[] {
+  return [
+    ...explicitCitations,
+    ...extractDocumentBlockReferences(documentContent).map(referenceToCitationInput),
+  ];
+}
+
+function dedupeNormalizedCitations(
+  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>,
+): Array<{ evidenceSpan?: string; paperAssetId: string }> {
+  const byAsset = new Map<string, string[]>();
+
+  for (const citation of citations) {
+    const spans = byAsset.get(citation.paperAssetId) ?? [];
+    const evidenceSpan = citation.evidenceSpan?.trim();
+
+    if (evidenceSpan && !spans.includes(evidenceSpan)) {
+      spans.push(evidenceSpan);
+    }
+
+    byAsset.set(citation.paperAssetId, spans);
+  }
+
+  return [...byAsset.entries()].map(([paperAssetId, evidenceSpans]) => ({
+    evidenceSpan: evidenceSpans.length ? evidenceSpans.join('\n\n') : undefined,
+    paperAssetId,
+  }));
+}
+
 async function normalizeAuthorizedCitations(
   libraryService: LibraryService,
-  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>,
+  citations: NotebookCitationInput[],
   actorUserId: string,
 ): Promise<Array<{ evidenceSpan?: string; paperAssetId: string }>> {
   const normalizedCitations: Array<{
@@ -162,6 +240,25 @@ async function normalizeAuthorizedCitations(
   }> = [];
 
   for (const citation of citations) {
+    if (citation.libraryEntryId) {
+      const authorizedEntry = await libraryService.assertCanAccessEntry(
+        citation.libraryEntryId,
+        actorUserId,
+      );
+
+      if (authorizedEntry.asset.id !== citation.paperAssetId) {
+        throw new Error(
+          `Document reference ${citation.paperAssetId} does not match library entry ${citation.libraryEntryId}.`,
+        );
+      }
+
+      normalizedCitations.push({
+        evidenceSpan: citation.evidenceSpan,
+        paperAssetId: authorizedEntry.asset.id,
+      });
+      continue;
+    }
+
     const authorizedView = await libraryService
       .assertCanAccessEntry(citation.paperAssetId, actorUserId)
       .catch((error) => {
@@ -186,7 +283,7 @@ async function normalizeAuthorizedCitations(
     });
   }
 
-  return normalizedCitations;
+  return dedupeNormalizedCitations(normalizedCitations);
 }
 
 function formatEvidenceLocator(span: {
@@ -196,46 +293,48 @@ function formatEvidenceLocator(span: {
   return `offsets ${span.startOffset}-${span.endOffset}`;
 }
 
-function appendCapturedInsightContent(
-  existingContent: string,
+function appendCapturedInsightDocumentContent(
+  existingDocumentContent: DocumentBlockDocument,
   input: {
     assetTitle?: string;
     capturedAt: string;
     insight: GeneratedInsightRecord;
     note?: string;
   },
-): string {
-  const blocks = input.insight.evidenceSpans.map((span, index) => {
-    const lines = [
-      `> ${span.quote}`,
-      '',
-      `Source: ${input.assetTitle ?? span.paperAssetId} (${formatEvidenceLocator(span)})`,
-    ];
-
-    if (index === 0 && input.note?.trim()) {
-      lines.push(`Capture note: ${input.note.trim()}`);
-    }
-
-    return lines.join('\n');
+): DocumentBlockDocument {
+  return normalizeDocumentBlockDocument({
+    blocks: [
+      ...existingDocumentContent.blocks,
+      {
+        level: 2,
+        text: 'Captured reader evidence',
+        type: 'heading',
+      },
+      {
+        text: [
+          `Captured at: ${input.capturedAt}`,
+          `Library entry: ${input.insight.libraryEntryId}`,
+          '',
+          'Interpretation:',
+          input.insight.summary,
+          '',
+          'Source evidence:',
+        ].join('\n'),
+        type: 'paragraph',
+      },
+      ...input.insight.evidenceSpans.map((span, index) => ({
+        evidenceSpan: span.quote,
+        libraryEntryId: input.insight.libraryEntryId,
+        locator: formatEvidenceLocator(span),
+        note: index === 0 ? input.note : undefined,
+        paperAssetId: span.paperAssetId,
+        quote: span.quote,
+        title: input.assetTitle,
+        type: 'sourceExcerpt',
+      })),
+    ],
+    schemaVersion: 1,
   });
-
-  const captureSection = [
-    '## Captured reader evidence',
-    '',
-    `Captured at: ${input.capturedAt}`,
-    `Library entry: ${input.insight.libraryEntryId}`,
-    `Generated insight: ${input.insight.id}`,
-    '',
-    'Interpretation:',
-    input.insight.summary,
-    '',
-    'Source evidence:',
-    ...blocks,
-  ].join('\n');
-
-  const currentContent = existingContent.trimEnd();
-
-  return currentContent ? `${currentContent}\n\n${captureSection}` : captureSection;
 }
 
 function createCapturedCitations(
@@ -337,20 +436,26 @@ export function createNotebookService(store: NotebookStore): NotebookService {
         targetDocument.id,
       );
       const capturedAt = new Date().toISOString();
-      const content = appendCapturedInsightContent(latestSnapshot?.content ?? '', {
-        assetTitle: authorizedEntry.asset.title,
-        capturedAt,
-        insight,
-        note: source.note,
-      });
+      const existingDocumentContent = latestSnapshot
+        ? normalizePersistedDocumentSnapshot(latestSnapshot.content)
+        : createEmptyDocumentBlockDocument();
+      const documentContent = appendCapturedInsightDocumentContent(
+        existingDocumentContent,
+        {
+          assetTitle: authorizedEntry.asset.title,
+          capturedAt,
+          insight,
+          note: source.note,
+        },
+      );
       const citations = await normalizeAuthorizedCitations(
         store.libraryService,
-        createCapturedCitations(insight),
+        mergeCitationInputs(createCapturedCitations(insight), documentContent),
         actorUserId,
       );
       const snapshot = await store.notebookRepository.saveVersion({
         citations,
-        content,
+        content: serializeDocumentBlockSnapshotPayload(documentContent),
         documentId: targetDocument.id,
       });
 
@@ -413,16 +518,17 @@ export function createNotebookService(store: NotebookStore): NotebookService {
         input.documentId,
         actorUserId,
       );
+      const documentContent = normalizeSaveDocumentContent(input);
       const citations = await normalizeAuthorizedCitations(
         store.libraryService,
-        input.citations,
+        mergeCitationInputs(input.citations, documentContent),
         actorUserId,
       );
 
       return mapSnapshot(
         await store.notebookRepository.saveVersion({
           citations,
-          content: input.content,
+          content: serializeDocumentBlockSnapshotPayload(documentContent),
           documentId: input.documentId,
         }),
       );
