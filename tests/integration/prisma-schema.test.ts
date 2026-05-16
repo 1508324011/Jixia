@@ -51,6 +51,15 @@ describe('prisma schema', () => {
       /model ProjectReadingComment[\s\S]*@@index\(\[libraryEntryId, projectId\]\)/,
     );
     expect(schema).toMatch(
+      /model ProjectReadingComment[\s\S]*\n\s+libraryEntryId\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ProjectReadingComment[\s\S]*\n\s+projectId\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ProjectReadingComment[\s\S]*@@index\(\[libraryEntryId, projectId\]\)/,
+    );
+    expect(schema).toMatch(
       /model Conversation[\s\S]*\n\s+libraryEntryId\s+String/,
     );
     expect(schema).toMatch(/model NotebookDocument[\s\S]*\n\s+ownerId\s+String/);
@@ -319,6 +328,7 @@ describe('prisma schema', () => {
     expect(readingService).toContain('libraryService.assertCanAccessEntry');
     expect(readingService).toContain('readingRepository.listPrivateNotesForEntry');
     expect(readingService).toContain('readingRepository.listProjectCommentsForEntry');
+    expect(readingService).toContain('readingRepository.createProjectComment');
     expect(readingService).toContain('readingRepository.saveGeneratedInsight');
     expect(readingService).not.toContain('actorUserId ?? input.authorUserId');
     expect(readingService).not.toContain('actorUserId ?? input.startedByUserId');
@@ -400,8 +410,12 @@ describe('prisma schema', () => {
     expect(jobsRoutes).not.toContain('store.jobs.filter');
     expect(jobsRoutes).not.toContain('store.persist');
 
-    expect(jobRunner).toContain('jobRepository.updateJobStatus');
-    expect(jobRunner).toContain('jobRepository.appendJobEvent');
+    expect(jobRunner).toContain('jobRepository.recordJobLifecycleTransition');
+    expect(jobRunner).not.toContain('jobRepository.updateJobStatus');
+    expect(jobRunner).not.toContain('jobRepository.appendJobEvent');
+    expect(jobRepository).toContain('insertJobEvent');
+    expect(jobRepository).toContain('assertJobStatusTransition');
+    expect(jobRepository).toContain('recordJobLifecycleTransition');
     expect(jobRunner).not.toContain('store.jobs.find');
     expect(jobRunner).not.toContain('store.persist');
 
@@ -458,6 +472,8 @@ describe('prisma schema', () => {
     expect(libraryService).not.toContain('store.libraryEntries');
 
     expect(readingService).toContain('libraryService.assertCanAccessEntry');
+    expect(readingService).toContain('readingRepository.listProjectCommentsForEntry');
+    expect(readingService).toContain('readingRepository.createProjectComment');
     expect(appWiring).toContain('createReadingRepository(prismaClient)');
     expect(appWiring).toContain('initializeReadingPersistence(prismaClient)');
     expect(appWiring).toContain('legacyConversations');
@@ -544,6 +560,8 @@ describe('prisma schema', () => {
     expect(credentialsRoutes).not.toContain('saveWorkbenchSettings(input)');
     expect(workbenchHttpApi).not.toContain('userId: DEFAULT_WORKBENCH_USER_ID');
     expect(workbenchHttpApi).toContain("requestUrl.searchParams.get('actorUserId')");
-    expect(workbenchHttpApi).toContain('payload.actorUserId');
+    expect(workbenchHttpApi).toContain('rejectLegacyIdentityBodyFields(requiredActor, requestBody)');
+    expect(workbenchHttpApi).not.toContain('payload.actorUserId');
+    expect(workbenchHttpApi).not.toContain('payload.userId');
   });
 });

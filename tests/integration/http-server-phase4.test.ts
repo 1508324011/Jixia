@@ -75,9 +75,8 @@ describe("http server phase 4 reader slice", () => {
 
         const note = await fetch(`${server.url}/api/reading/notes`, {
           body: JSON.stringify({
-            body: "Private reader note for the shared review.",
+            body: "Private note for later synthesis.",
             libraryEntryId: importedRecord.entry.id,
-            visibility: "private",
           }),
           headers: withSessionCookie(aliceCookie, {
             "Content-Type": "application/json",
@@ -101,12 +100,15 @@ describe("http server phase 4 reader slice", () => {
           method: "POST",
         });
         expect(rejectedSharedVisibility.status).toBe(400);
+        await expect(rejectedSharedVisibility.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/project-comments endpoint/i),
+        });
 
         const comment = await fetch(
           `${server.url}/api/reading/${importedRecord.entry.id}/project-comments`,
           {
             body: JSON.stringify({
-              body: "Project-visible evidence comment.",
+              body: "This paper matters for the shared review.",
               projectId: project.project.id,
             }),
             headers: withSessionCookie(aliceCookie, {
@@ -115,10 +117,16 @@ describe("http server phase 4 reader slice", () => {
             method: "POST",
           },
         ).then(
-          (response) => response.json() as Promise<{ comment: { kind: string; projectId: string } }>,
+          (response) =>
+            response.json() as Promise<{
+              comment: { body: string; kind: string; projectId: string };
+            }>,
         );
-        expect(comment.comment.kind).toBe("project_comment");
-        expect(comment.comment.projectId).toBe(project.project.id);
+        expect(comment.comment).toMatchObject({
+          body: "This paper matters for the shared review.",
+          kind: "project_comment",
+          projectId: project.project.id,
+        });
 
         const insight = await fetch(`${server.url}/api/reading/insights`, {
           body: JSON.stringify({

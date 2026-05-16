@@ -81,7 +81,6 @@ describe('reading evidence', () => {
         app.reading.createProjectComment({
           actorUserId: 'user-bob',
           actorSpaceId: bobPersonal.id,
-          authorUserId: 'user-bob',
           body: 'This should not be visible here.',
           libraryEntryId: imported.entry.id,
           projectId: project.project.id,
@@ -91,13 +90,13 @@ describe('reading evidence', () => {
       const comment = await app.reading.createProjectComment({
         actorUserId: 'user-alice',
         actorSpaceId: aliceShared.id,
-        authorUserId: 'user-alice',
         body: 'This paper matters for the shared review.',
         libraryEntryId: imported.entry.id,
         projectId: project.project.id,
       });
 
       expect(comment.libraryEntryId).toBe(imported.entry.id);
+      expect(comment.kind).toBe('project_comment');
       expect(comment.projectId).toBe(project.project.id);
 
       const insight = await app.reading.saveGeneratedInsight({
@@ -127,6 +126,112 @@ describe('reading evidence', () => {
       expect(updatedDetail?.projectComments).toHaveLength(1);
       expect(updatedDetail?.insights).toHaveLength(1);
       expect(updatedDetail?.insights[0].summary).toContain('shared review');
+
+      const captured = await app.notebooks.captureEvidence(
+        {
+          notebookTitle: 'Reader evidence notebook',
+          source: {
+            generatedInsightId: insight.id,
+            libraryEntryId: imported.entry.id,
+            note: 'Keep this quote distinct from the editable interpretation.',
+            type: 'generatedInsight',
+          },
+        },
+        'user-alice',
+      );
+
+      expect(captured.document).toMatchObject({
+        ownerId: 'user-alice',
+        title: 'Reader evidence notebook',
+      });
+      expect(captured.snapshot.content).not.toContain('Generated insight:');
+      expect(captured.snapshot.content).toContain('The imported paper supports the shared review workflow.');
+      expect(captured.snapshot.content).toContain('> shared review data');
+      expect(captured.snapshot.documentContent).toMatchObject({
+        blocks: expect.arrayContaining([
+          {
+            level: 2,
+            text: 'Captured reader evidence',
+            type: 'heading',
+          },
+          expect.objectContaining({
+            evidenceSpan: 'shared review data',
+            libraryEntryId: imported.entry.id,
+            paperAssetId: imported.asset.id,
+            quote: 'shared review data',
+            type: 'sourceExcerpt',
+          }),
+        ]),
+        schemaVersion: 1,
+      });
+      expect(captured.snapshot.citations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            evidenceSpan: 'shared review data',
+            paperAssetId: imported.asset.id,
+          }),
+        ]),
+      );
+
+      await expect(
+        app.notebooks.captureEvidence(
+          {
+            notebookTitle: 'Should not be created for unauthorized capture',
+            source: {
+              generatedInsightId: insight.id,
+              libraryEntryId: imported.entry.id,
+              type: 'generatedInsight',
+            },
+          },
+          'user-bob',
+        ),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.notebooks.captureEvidence(
+          {
+            notebookDocumentId: captured.document.id,
+            source: {
+              generatedInsightId: 'missing-insight',
+              libraryEntryId: imported.entry.id,
+              type: 'generatedInsight',
+            },
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/does not exist/i);
+
+      await app.projects.addProjectMember(
+        project.project.id,
+        { role: 'viewer', userId: 'user-bob' },
+        'user-alice',
+      );
+
+      await expect(
+        app.notebooks.getDocument({ documentId: captured.document.id }, 'user-bob'),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.notebooks.saveDocument(
+          {
+            citations: [],
+            content: 'Project membership must not open Alice Notebook.',
+            documentId: captured.document.id,
+          },
+          'user-bob',
+        ),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.notebooks.captureEvidence(
+          {
+            notebookDocumentId: captured.document.id,
+            source: {
+              generatedInsightId: insight.id,
+              libraryEntryId: imported.entry.id,
+              type: 'generatedInsight',
+            },
+          },
+          'user-bob',
+        ),
+      ).rejects.toThrow(/access denied/i);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
@@ -201,7 +306,7 @@ describe('reading evidence', () => {
     }
   });
 
-  it('reopens private notes, shared comments, and governed insights for the workbench reader', async () => {
+  it('reopens private notes and governed insights for the personal workbench reader', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-reading-reopen-'));
     const env = {
       JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-reading-reopen.db')}`,

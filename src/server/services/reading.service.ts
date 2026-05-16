@@ -72,6 +72,11 @@ export interface ReadingService {
     projectId?: string;
   }): Promise<ProjectReadingCommentRecord>;
   getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
+  getGeneratedInsightSource(input: {
+    actorUserId: string;
+    generatedInsightId: string;
+    libraryEntryId: string;
+  }): Promise<GeneratedInsightRecord>;
   getWorkbenchDetail(input: {
     actorUserId: string;
     libraryEntryId: string;
@@ -190,9 +195,28 @@ export function createReadingService(store: ReadingStore): ReadingService {
     }): Promise<ReadingDetail | null> {
       return this.getDetail(input);
     },
+    async getGeneratedInsightSource(input: {
+      actorUserId: string;
+      generatedInsightId: string;
+      libraryEntryId: string;
+    }): Promise<GeneratedInsightRecord> {
+      await getAuthorizedLibraryContext(store, input);
+
+      const insight = await store.readingRepository.getGeneratedInsight({
+        generatedInsightId: input.generatedInsightId,
+        libraryEntryId: input.libraryEntryId,
+      });
+
+      if (!insight) {
+        throw new Error(
+          `Generated insight ${input.generatedInsightId} does not exist for library entry ${input.libraryEntryId}.`,
+        );
+      }
+
+      return insight;
+    },
     async createNote(input: CreateNoteRequest): Promise<PrivateReadingNoteRecord> {
       assertPrivateNoteCompatibility(input);
-
       await getAuthorizedLibraryContext(store, input);
 
       const { visibility: _visibility, ...note } = await store.readingRepository.createPrivateNote({

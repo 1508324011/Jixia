@@ -61,7 +61,15 @@ describe('personal reader route', () => {
         kind: 'private_note';
         libraryEntryId: string;
       }>,
-      projectComments: [],
+      projectComments: [] as Array<{
+        authorUserId: string;
+        body: string;
+        createdAt: string;
+        id: string;
+        kind: 'project_comment';
+        libraryEntryId: string;
+        projectId: string;
+      }>,
     };
 
     vi.stubGlobal(
@@ -92,6 +100,7 @@ describe('personal reader route', () => {
           const body = JSON.parse(String(init.body)) as {
             body: string;
           };
+          expect(body).toEqual({ body: expect.any(String) });
           const note = {
             authorUserId: 'user-alice',
             body: body.body,
@@ -127,6 +136,57 @@ describe('personal reader route', () => {
           return jsonResponse({ insight }, 201);
         }
 
+        if (requestUrl.endsWith('/api/notebooks/capture') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            notebookTitle: string;
+            source: {
+              generatedInsightId: string;
+              libraryEntryId: string;
+              type: 'generatedInsight';
+            };
+          };
+          expect(body).toMatchObject({
+            notebookTitle: 'Reader evidence notebook',
+            source: {
+              generatedInsightId: 'insight-1',
+              libraryEntryId: 'entry-1',
+              type: 'generatedInsight',
+            },
+          });
+
+          return jsonResponse({
+            document: {
+              createdAt: '2026-03-23T00:30:00.000Z',
+              id: 'notebook-1',
+              ownerId: 'user-alice',
+              title: 'Reader evidence notebook',
+              updatedAt: '2026-03-23T00:30:00.000Z',
+            },
+            snapshot: {
+              capturedAt: '2026-03-23T00:30:00.000Z',
+              citations: [
+                {
+                  createdAt: '2026-03-23T00:30:00.000Z',
+                  evidenceSpan: 'Tumor board evidence',
+                  id: 'citation-1',
+                  notebookDocumentVersionId: 'notebook-version-1',
+                  paperAssetId: 'asset-1',
+                },
+              ],
+              content: 'Personal insight summary\n\n> Tumor board evidence',
+              document: {
+                createdAt: '2026-03-23T00:30:00.000Z',
+                id: 'notebook-1',
+                ownerId: 'user-alice',
+                title: 'Reader evidence notebook',
+                updatedAt: '2026-03-23T00:30:00.000Z',
+              },
+              versionId: 'notebook-version-1',
+              versionNumber: 1,
+            },
+          });
+        }
+
         if (requestUrl.endsWith('/api/projects')) {
           return jsonResponse([]);
         }
@@ -148,6 +208,13 @@ describe('personal reader route', () => {
 
     await user.type(screen.getByRole('textbox', { name: 'Insight summary' }), 'Personal insight summary');
     await user.click(screen.getByRole('button', { name: 'Save insight' }));
+    await user.click(screen.getByRole('button', { name: 'Send latest insight to Notebook' }));
+
+    expect(
+      await screen.findByText('Sent latest insight to private Notebook Reader evidence notebook.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Notebook' })).toHaveAttribute('href', '/notebook');
+
     await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
 
     expect(
@@ -159,6 +226,13 @@ describe('personal reader route', () => {
       screen.getByText(
         'Personal reader does not invent a project. Open a real project workspace before Writer promotion.',
       ),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: 'Project comment' }), 'Should not post');
+    await user.click(screen.getByRole('button', { name: 'Save project comment' }));
+
+    expect(
+      await screen.findByText('Open a real project workspace before saving project comments.'),
     ).toBeInTheDocument();
   });
 });

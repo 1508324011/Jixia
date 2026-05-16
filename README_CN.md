@@ -56,6 +56,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 
 - `/login` 是真实的 session 入口页；根路由仍然会先跳到 `/home`，而未登录浏览器会由受保护路由边界再重定向到 `/login?redirect=...`。
 - `POST /api/session/login`、`GET /api/session/me` 与 `POST /api/session/logout` 负责管理浏览器使用的服务端 `jixia_session` cookie。
+- `POST /api/session/login` 只接受受限的 `{ loginProfileKey }` 选择器来映射预置的实验室 / demo 用户；`userId`、`email`、`actorUserId` 等调用方自带身份字段如果出现在 query 或 body 中，会被拒绝，而不会拿来铸造登录权限。
 - `GET /api/discovery/today` 与 `GET /api/discovery/search?query=...` 提供当前 discovery 切片。
 - `GET /api/settings/me` 与 `POST /api/settings/me` 会通过 Prisma-backed per-user workbench settings 与加密后的 provider credential secret 行持久化浏览器可见的 settings 状态，同时不把原始 API key 暴露到响应体或 settings 记录中。
 - `GET /api/library/personal` 与 `POST /api/library/personal/import` 由服务端托管个人导入归属。
@@ -117,6 +118,8 @@ npm run start:server
 
 启动后，服务会从 `dist/` 提供构建后的 workbench shell，响应 `/health`，并在 `/api/` 下暴露当前 beta 需要的浏览器接口。
 
+推荐把 `http://127.0.0.1:3000/health` 作为第一步运行时自检；健康的 Task 11 进程会返回 `{"service":"jixia-server","status":"ok"}`。
+
 ### Docker Compose 启动路径
 
 ```bash
@@ -125,3 +128,5 @@ docker compose up --build
 ```
 
 仓库内置的 `docker-compose.yml` 会映射运行端口，把 `JIXIA_STORAGE_ROOT` 固定到挂载后的 `/var/lib/jixia/storage`，并把 `JIXIA_DATABASE_URL` 指向挂载后的 `/var/lib/jixia/data`，用于 Prisma-backed Project 协作数据，同时继续将 legacy beta 状态文件持久化到 `/var/lib/jixia/storage/server-state.json`，并把 credential encryption key material 放在同一个持久 storage root 下。
+
+Docker 镜像也把同一个 `/health` 运行时约定编码为容器 health check，因此 `docker compose ps` 看到的健康状态代表的是应用已经真正可响应，而不只是 Node 进程被拉起。

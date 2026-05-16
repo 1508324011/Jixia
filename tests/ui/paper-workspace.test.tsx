@@ -134,7 +134,12 @@ describe('paper workspace', () => {
         if (requestUrl.endsWith('/api/reading/notes') && init?.method === 'POST') {
           const body = JSON.parse(String(init.body)) as {
             body: string;
+            libraryEntryId: string;
           };
+          expect(body).toEqual({
+            body: expect.any(String),
+            libraryEntryId: 'entry-1',
+          });
           const note = {
             authorUserId: 'user-alice',
             body: body.body,
@@ -167,6 +172,31 @@ describe('paper workspace', () => {
           return jsonResponse({ comment }, 201);
         }
 
+        if (requestUrl.endsWith('/api/reading/project-comments') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            body: string;
+            libraryEntryId: string;
+            projectId?: string;
+          };
+          expect(body).toEqual({
+            body: expect.any(String),
+            libraryEntryId: 'entry-1',
+            projectId: 'project-alpha',
+          });
+          const comment = {
+            authorUserId: 'user-alice',
+            body: body.body,
+            createdAt: '2026-03-23T00:10:00.000Z',
+            id: `comment-${readingDetail.projectComments.length + 1}`,
+            kind: 'project_comment' as const,
+            libraryEntryId: 'entry-1',
+            projectId: 'project-alpha',
+          };
+          readingDetail.projectComments.push(comment);
+
+          return jsonResponse({ comment }, 200);
+        }
+
         if (requestUrl.endsWith('/api/reading/insights') && init?.method === 'POST') {
           const body = JSON.parse(String(init.body)) as { summary: string };
           const insight = {
@@ -187,6 +217,57 @@ describe('paper workspace', () => {
           readingDetail.insights.push(insight);
 
           return jsonResponse({ insight }, 200);
+        }
+
+        if (requestUrl.endsWith('/api/notebooks/capture') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            notebookTitle: string;
+            source: {
+              generatedInsightId: string;
+              libraryEntryId: string;
+              type: 'generatedInsight';
+            };
+          };
+          expect(body).toMatchObject({
+            notebookTitle: 'Reader evidence notebook',
+            source: {
+              generatedInsightId: 'insight-1',
+              libraryEntryId: 'entry-1',
+              type: 'generatedInsight',
+            },
+          });
+
+          return jsonResponse({
+            document: {
+              createdAt: '2026-03-23T00:25:00.000Z',
+              id: 'notebook-alpha',
+              ownerId: 'user-alice',
+              title: 'Reader evidence notebook',
+              updatedAt: '2026-03-23T00:25:00.000Z',
+            },
+            snapshot: {
+              capturedAt: '2026-03-23T00:25:00.000Z',
+              citations: [
+                {
+                  createdAt: '2026-03-23T00:25:00.000Z',
+                  evidenceSpan: 'Tumor board evidence',
+                  id: 'citation-alpha',
+                  notebookDocumentVersionId: 'notebook-version-alpha',
+                  paperAssetId: 'asset-1',
+                },
+              ],
+              content: 'The imported paper supports the shared review workflow.\n\n> Tumor board evidence',
+              document: {
+                createdAt: '2026-03-23T00:25:00.000Z',
+                id: 'notebook-alpha',
+                ownerId: 'user-alice',
+                title: 'Reader evidence notebook',
+                updatedAt: '2026-03-23T00:25:00.000Z',
+              },
+              versionId: 'notebook-version-alpha',
+              versionNumber: 1,
+            },
+          });
         }
 
         if (requestUrl.endsWith('/api/project-docs') && init?.method === 'POST') {
@@ -247,6 +328,13 @@ describe('paper workspace', () => {
     });
 
     await user.click(screen.getByRole('button', { name: 'Generate insight' }));
+    await user.click(screen.getByRole('button', { name: 'Send latest insight to Notebook' }));
+
+    expect(
+      await screen.findByText('Sent latest insight to private Notebook Reader evidence notebook.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Notebook' })).toHaveAttribute('href', '/notebook');
+
     await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
 
     expect(await screen.findByText('Promoted latest insight into Writer as doc-alpha.')).toBeInTheDocument();

@@ -55,6 +55,16 @@ describe('workbench navigation', () => {
         title: 'Tumor board biomarkers for rapid review',
       },
     ];
+    const notebooks = [
+      {
+        createdAt: '2026-03-23T00:00:00.000Z',
+        id: 'notebook-1',
+        ownerId: 'user-alice',
+        title: 'Private synthesis notebook',
+        updatedAt: '2026-03-23T00:00:00.000Z',
+      },
+    ];
+    let notebookContent = 'Initial private Notebook content';
 
     vi.stubGlobal(
       'fetch',
@@ -150,6 +160,71 @@ describe('workbench navigation', () => {
           );
         }
 
+        if (url.endsWith('/api/notebooks') && (!init?.method || init.method === 'GET')) {
+          return new Response(
+            JSON.stringify({ documents: notebooks }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
+        if (url.endsWith('/api/notebooks') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as { title: string };
+          const document = {
+            createdAt: '2026-03-23T00:30:00.000Z',
+            id: `notebook-${notebooks.length + 1}`,
+            ownerId: 'user-alice',
+            title: body.title,
+            updatedAt: '2026-03-23T00:30:00.000Z',
+          };
+          notebooks.unshift(document);
+          notebookContent = '';
+
+          return new Response(JSON.stringify(document), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          });
+        }
+
+        if (url.endsWith('/api/notebooks/notebook-1/snapshot') && (!init?.method || init.method === 'GET')) {
+          return new Response(
+            JSON.stringify({
+              capturedAt: '2026-03-23T00:00:00.000Z',
+              citations: [],
+              content: notebookContent,
+              document: notebooks.find((notebook) => notebook.id === 'notebook-1'),
+              versionId: 'notebook-version-1',
+              versionNumber: 1,
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
+        if (url.endsWith('/api/notebooks/notebook-1/versions') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as { content: string };
+          notebookContent = body.content;
+
+          return new Response(
+            JSON.stringify({
+              capturedAt: '2026-03-23T00:40:00.000Z',
+              citations: [],
+              content: notebookContent,
+              document: notebooks.find((notebook) => notebook.id === 'notebook-1'),
+              versionId: 'notebook-version-2',
+              versionNumber: 2,
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
         if (url.endsWith('/api/projects')) {
           return new Response(JSON.stringify([projectFixture]), {
             headers: { 'Content-Type': 'application/json' },
@@ -213,6 +288,15 @@ describe('workbench navigation', () => {
     expect(
       await screen.findByRole('heading', { name: 'Tumor board biomarkers for rapid review' }),
     ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Notebook' }));
+    expect(screen.getByRole('heading', { name: 'Notebook' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Private synthesis notebook' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Initial private Notebook content')).toBeInTheDocument();
+    await user.clear(screen.getByLabelText('Editable private Notebook content'));
+    await user.type(screen.getByLabelText('Editable private Notebook content'), 'Saved private Notebook content');
+    await user.click(screen.getByRole('button', { name: 'Save Notebook' }));
+    expect(await screen.findByText(/Saved Private synthesis notebook version 2/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Projects' }));
     expect(screen.getByRole('heading', { name: '项目工作台' })).toBeInTheDocument();

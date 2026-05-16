@@ -77,6 +77,26 @@ describe('workbench http contracts', () => {
       );
       expect(searchResponse.status).toBe(200);
 
+      const unauthenticatedDiscoveryActorQueryResponse = await fetch(
+        `${baseUrl}/api/discovery/today?actorUserId=user-alice`,
+      );
+      expect(unauthenticatedDiscoveryActorQueryResponse.status).toBe(400);
+      await expect(
+        unauthenticatedDiscoveryActorQueryResponse.json(),
+      ).resolves.toMatchObject({
+        error: expect.stringMatching(/not accepted for protected routes/i),
+      });
+
+      const unauthenticatedDiscoveryLegacyIdentityResponse = await fetch(
+        `${baseUrl}/api/discovery/search?query=tumor&requestedByUserId=user-alice`,
+      );
+      expect(unauthenticatedDiscoveryLegacyIdentityResponse.status).toBe(400);
+      await expect(
+        unauthenticatedDiscoveryLegacyIdentityResponse.json(),
+      ).resolves.toMatchObject({
+        error: expect.stringMatching(/not accepted for protected routes/i),
+      });
+
       const search = await searchResponse.json();
       expect(search.query).toBe('tumor board');
       expect(search.items.length).toBeGreaterThan(0);
@@ -248,7 +268,10 @@ describe('workbench http contracts', () => {
         }),
         method: 'POST',
       }).then(
-        (response) => response.json() as Promise<{ asset: { id: string; storageKey?: string }; entry: { id: string } }>,
+        (response) => response.json() as Promise<{
+          asset: { id: string; storageKey?: string };
+          entry: { id: string };
+        }>,
       );
       expect(importedProjectRecord.asset.storageKey).toBeUndefined();
       const rejectedVisibilityComment = await fetch(`${baseUrl}/api/reading/${importedProjectRecord.entry.id}/notes`, {
@@ -278,6 +301,41 @@ describe('workbench http contracts', () => {
         spaceId: sharedSpace.id,
         title: 'Writer draft title',
       });
+      const structuredWorkbenchSave = await demoApi.saveWritingDocument({
+        citations: [],
+        documentContent: {
+          blocks: [
+            {
+              level: 2,
+              text: 'Structured Writer draft',
+              type: 'heading',
+            },
+            {
+              text: 'Structured workbench paragraph.',
+              type: 'paragraph',
+            },
+            {
+              evidenceSpan: 'structured project quote',
+              libraryEntryId: importedProjectRecord.entry.id,
+              paperAssetId: importedProjectRecord.asset.id,
+              text: 'structured project quote',
+              type: 'quote',
+            },
+            {
+              evidenceSpan: 'structured suggestion evidence',
+              libraryEntryId: importedProjectRecord.entry.id,
+              paperAssetId: importedProjectRecord.asset.id,
+              status: 'proposed',
+              text: 'Use this project-scoped evidence in the synthesis.',
+              type: 'aiSuggestion',
+            },
+          ],
+          schemaVersion: 1,
+        },
+        projectId: project.project.id,
+        spaceId: sharedSpace.id,
+        title: 'Structured Writer draft title',
+      });
       const reloadedWritingDocument = await demoApi.getWritingDocument(
         sharedSpace.id,
         project.project.id,
@@ -291,11 +349,11 @@ describe('workbench http contracts', () => {
       const wrongSpaceWritingSaveResponse = await fetch(
         `${baseUrl}/api/writing/space-wrong/projects/${project.project.id}/document`,
         {
-          body: JSON.stringify({
-            citations: [{ paperAssetId: importedProjectRecord.asset.id }],
-            content: 'Wrong-space write attempt',
-            title: 'Wrong-space title',
-          }),
+            body: JSON.stringify({
+              citations: [{ paperAssetId: importedProjectRecord.asset.id }],
+              content: 'Wrong-space write attempt',
+              title: 'Wrong-space title',
+            }),
           headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
           }),
@@ -361,13 +419,65 @@ describe('workbench http contracts', () => {
           title: 'Writer draft title',
         }),
       });
+      expect(structuredWorkbenchSave.document.latestSnapshot).toMatchObject({
+        content:
+          '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+        documentContent: {
+          blocks: [
+            {
+              level: 2,
+              text: 'Structured Writer draft',
+              type: 'heading',
+            },
+            {
+              text: 'Structured workbench paragraph.',
+              type: 'paragraph',
+            },
+            {
+              evidenceSpan: 'structured project quote',
+              libraryEntryId: importedProjectRecord.entry.id,
+              paperAssetId: importedProjectRecord.asset.id,
+              text: 'structured project quote',
+              type: 'quote',
+            },
+            {
+              evidenceSpan: 'structured suggestion evidence',
+              libraryEntryId: importedProjectRecord.entry.id,
+              paperAssetId: importedProjectRecord.asset.id,
+              status: 'proposed',
+              text: 'Use this project-scoped evidence in the synthesis.',
+              type: 'aiSuggestion',
+            },
+          ],
+          schemaVersion: 1,
+        },
+      });
+      expect(structuredWorkbenchSave.document.latestSnapshot?.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: [
+            'structured project quote',
+            'structured suggestion evidence',
+          ].join('\n\n'),
+          paperAssetId: importedProjectRecord.asset.id,
+        }),
+      ]);
       expect(reloadedWritingDocument.document).toMatchObject({
         documentId: writingSaveFromClient.document.documentId,
+        latestSnapshot: expect.objectContaining({
+          content:
+            '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+          documentContent: structuredWorkbenchSave.document.latestSnapshot?.documentContent,
+        }),
         projectId: project.project.id,
         spaceId: sharedSpace.id,
       });
       expect(compatibilityWritingDocument.document).toMatchObject({
         documentId: writingSaveFromClient.document.documentId,
+        latestSnapshot: expect.objectContaining({
+          content:
+            '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+          documentContent: structuredWorkbenchSave.document.latestSnapshot?.documentContent,
+        }),
         projectId: project.project.id,
         spaceId: sharedSpace.id,
       });
@@ -378,7 +488,9 @@ describe('workbench http contracts', () => {
       expect(writingAfterWrongSpaceSave.document).toMatchObject({
         documentId: writingSaveFromClient.document.documentId,
         latestSnapshot: expect.objectContaining({
-          content: 'Writer draft content',
+          content:
+            '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+          documentContent: structuredWorkbenchSave.document.latestSnapshot?.documentContent,
         }),
       });
     } finally {
@@ -387,9 +499,202 @@ describe('workbench http contracts', () => {
     }
   }, 15_000);
 
+  it('rejects matching legacy identity fields on workbench compatibility APIs', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-identity-'));
+    const httpServer = createHttpServer({
+      env: {
+        JIXIA_HOST: '127.0.0.1',
+        JIXIA_STORAGE_ROOT: storageRoot,
+      },
+    });
+
+    try {
+      const baseUrl = await listenOnEphemeralPort(httpServer.server);
+      const aliceCookie = await loginAs(baseUrl, 'user-alice');
+
+      const rejectionResponses = await Promise.all([
+        fetch(`${baseUrl}/api/discovery/today?actorUserId=user-alice`, {
+          headers: withSessionCookie(aliceCookie),
+        }),
+        fetch(`${baseUrl}/api/discovery/search?query=tumor&userId=user-alice`, {
+          headers: withSessionCookie(aliceCookie),
+        }),
+        fetch(`${baseUrl}/api/library/personal?actorUserId=user-alice`, {
+          headers: withSessionCookie(aliceCookie),
+        }),
+        fetch(`${baseUrl}/api/library/personal/import?actorUserId=user-alice`, {
+          body: JSON.stringify({
+            sourceLocator: '10.1000/workbench-query-import',
+            sourceType: 'doi',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/library/personal/import?requestedByUserId=user-alice`, {
+          body: JSON.stringify({
+            sourceLocator: '10.1000/workbench-requested-query-import',
+            sourceType: 'doi',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/library/personal/import`, {
+          body: JSON.stringify({
+            requestedByUserId: 'user-alice',
+            sourceLocator: '10.1000/workbench-matching-import',
+            sourceType: 'doi',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/settings/me?userId=user-alice`, {
+          headers: withSessionCookie(aliceCookie),
+        }),
+        fetch(`${baseUrl}/api/settings/me?actorUserId=user-alice`, {
+          body: JSON.stringify({
+            defaultImportTarget: 'personal-library',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/settings/me`, {
+          body: JSON.stringify({
+            defaultImportTarget: 'personal-library',
+            userId: 'user-alice',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/notes?actorUserId=user-alice`, {
+          body: JSON.stringify({
+            body: 'Legacy query actor should be rejected.',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/notes?authorUserId=user-alice`, {
+          body: JSON.stringify({
+            body: 'Legacy query author should be rejected.',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/notes`, {
+          body: JSON.stringify({
+            authorUserId: 'user-alice',
+            body: 'Legacy matching author should be rejected.',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/notes`, {
+          body: JSON.stringify({
+            actorSpaceId: 'space-alpha',
+            body: 'Legacy actor space should be rejected.',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/insights?userId=user-alice`, {
+          body: JSON.stringify({
+            evidenceSpans: [],
+            summary: 'Legacy query insight actor should be rejected.',
+            title: 'Legacy Query Insight',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/insights?startedByUserId=user-alice`, {
+          body: JSON.stringify({
+            evidenceSpans: [],
+            summary: 'Legacy query insight starter should be rejected.',
+            title: 'Legacy Query Insight Starter',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/reading/entry-matching/insights`, {
+          body: JSON.stringify({
+            evidenceSpans: [],
+            startedByUserId: 'user-alice',
+            summary: 'Legacy matching insight starter should be rejected.',
+            title: 'Legacy Insight',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/writing/space-alpha/projects/project-alpha/document?actorUserId=user-alice`, {
+          headers: withSessionCookie(aliceCookie),
+        }),
+        fetch(`${baseUrl}/api/writing/space-alpha/projects/project-alpha/document?userId=user-alice`, {
+          body: JSON.stringify({
+            citations: [],
+            content: 'Legacy query writer actor should be rejected.',
+            title: 'Legacy Query Writer',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+        fetch(`${baseUrl}/api/writing/space-alpha/projects/project-alpha/document`, {
+          body: JSON.stringify({
+            actorUserId: 'user-alice',
+            citations: [],
+            content: 'Legacy matching writer actor should be rejected.',
+            title: 'Legacy Writer',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }),
+      ]);
+
+      for (const response of rejectionResponses) {
+        const payload = (await response.json()) as { error: string };
+
+        expect(response.status).toBe(400);
+        expect(payload.error).toMatch(/not accepted for protected routes/i);
+      }
+    } finally {
+      await closeServer(httpServer.server);
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 10_000);
+
   it('documents the new workbench surfaces in the README and handoff notes', () => {
     const readme = readFileSync(join(process.cwd(), 'README.md'), 'utf8');
     const readmeCn = readFileSync(join(process.cwd(), 'README_CN.md'), 'utf8');
+    const loginPage = readFileSync(join(process.cwd(), 'src/web/pages/login-page.tsx'), 'utf8');
+    const sessionContract = readFileSync(
+      join(process.cwd(), 'src/shared/contracts/session.ts'),
+      'utf8',
+    );
     const handoffNotes = readFileSync(
       join(
         process.cwd(),
@@ -401,9 +706,18 @@ describe('workbench http contracts', () => {
     expect(readme).toContain('个人工作台首页');
     expect(readme).toContain('今日推荐');
     expect(readme).toContain('Projects');
+    expect(readme).toContain('loginProfileKey');
+    expect(readme).toContain('raw identity fields such as `userId`, `email`, `actorUserId`');
     expect(readmeCn).toContain('个人工作台首页');
     expect(readmeCn).toContain('共享评论');
     expect(readmeCn).toContain('/login` 是真实的 session 入口页');
+    expect(readmeCn).toContain('loginProfileKey');
+    expect(readmeCn).toContain('`userId`、`email`、`actorUserId`');
+    expect(sessionContract).toContain('loginProfileKey: LoginProfileKey');
+    expect(sessionContract).not.toContain('userId?: string');
+    expect(sessionContract).not.toContain('email?: string');
+    expect(loginPage).toContain('loginProfileKey');
+    expect(loginPage).not.toContain('await login({ userId:');
     expect(handoffNotes).toContain('Personal vs Project 上下文');
     expect(handoffNotes).toContain('Writer 文档区');
     expect(

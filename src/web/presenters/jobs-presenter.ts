@@ -33,6 +33,7 @@ export interface JobsViewModel {
   audits: JobAuditRecord[];
   availableScopes: JobsWorkbenchScope[];
   canCreateJob: boolean;
+  canCancelActiveJob: boolean;
   credentials: CredentialRecord[];
   error: string | null;
   events: JobEventRecord[];
@@ -41,6 +42,7 @@ export interface JobsViewModel {
   jobs: JobRecord[];
   projects: ProjectListItem[];
   refresh(): Promise<void>;
+  cancelActiveJob(): Promise<void>;
   runSelectedJob(): Promise<void>;
   selectedCredentialRef: string;
   selectedJobId: string | null;
@@ -245,10 +247,27 @@ export function useJobsPresenter(): JobsViewModel {
   const [selectedJobId, setSelectedJobIdState] = useState<string | null>(null);
   const [selectedUserSpaceId, setSelectedUserSpaceIdState] = useState("");
   const subscriptionRef = useRef<{ close(): void } | null>(null);
+  const isMountedRef = useRef(false);
   const refreshGenerationRef = useRef(0);
   const activityGenerationRef = useRef(0);
   const runGenerationRef = useRef(0);
   const selectedScopeKeyRef = useRef(selectedScopeKey);
+
+  const canCommitRefresh = useCallback((generation: number) => {
+    return isMountedRef.current && refreshGenerationRef.current === generation;
+  }, []);
+
+  const canCommitActivity = useCallback((generation: number) => {
+    return isMountedRef.current && activityGenerationRef.current === generation;
+  }, []);
+
+  const canCommitRun = useCallback((generation: number, scopeKey: string) => {
+    return (
+      isMountedRef.current &&
+      runGenerationRef.current === generation &&
+      selectedScopeKeyRef.current === scopeKey
+    );
+  }, []);
 
   const availableScopes = useMemo(() => {
     if (!user?.id) {
@@ -274,6 +293,19 @@ export function useJobsPresenter(): JobsViewModel {
     () => findScope(availableScopes, resolvedSelectedScopeKey),
     [availableScopes, resolvedSelectedScopeKey],
   );
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      refreshGenerationRef.current += 1;
+      activityGenerationRef.current += 1;
+      runGenerationRef.current += 1;
+      subscriptionRef.current?.close();
+      subscriptionRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     selectedScopeKeyRef.current = resolvedSelectedScopeKey;
@@ -314,6 +346,7 @@ export function useJobsPresenter(): JobsViewModel {
       selectedCredential &&
       (selectedScope.type === "project" || selectedUserSpaceId),
   );
+  const canCancelActiveJob = activeJob?.status === "queued" || activeJob?.status === "running";
 
   const loadJobActivity = useCallback(async (jobId: string) => {
     const generation = activityGenerationRef.current + 1;
@@ -325,7 +358,7 @@ export function useJobsPresenter(): JobsViewModel {
         apiClient.listJobAudits(jobId),
       ]);
 
-      if (activityGenerationRef.current !== generation) {
+      if (!canCommitActivity(generation)) {
         return;
       }
 
@@ -335,7 +368,7 @@ export function useJobsPresenter(): JobsViewModel {
       setEvents((currentEvents) => mergeJobEvents(currentEvents, nextEvents));
       setAudits((currentAudits) => mergeJobAudits(currentAudits, nextAudits));
     } catch (presenterError) {
-      if (activityGenerationRef.current !== generation) {
+      if (!canCommitActivity(generation)) {
         return;
       }
 
@@ -347,7 +380,7 @@ export function useJobsPresenter(): JobsViewModel {
           : "Failed to load job activity.",
       );
     }
-  }, []);
+  }, [canCommitActivity]);
 
   const refresh = useCallback(async (requestedScopeKey?: string) => {
     if (!user?.id) {
@@ -356,6 +389,10 @@ export function useJobsPresenter(): JobsViewModel {
 
     const generation = refreshGenerationRef.current + 1;
     refreshGenerationRef.current = generation;
+
+    if (!isMountedRef.current) {
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -366,7 +403,7 @@ export function useJobsPresenter(): JobsViewModel {
         apiClient.listCredentials(),
       ]);
 
-      if (refreshGenerationRef.current !== generation) {
+      if (!canCommitRefresh(generation)) {
         return;
       }
 
@@ -399,6 +436,7 @@ export function useJobsPresenter(): JobsViewModel {
         user.id,
       );
       const nextScope = findScope(nextAvailableScopes, nextScopeKey);
+      selectedScopeKeyRef.current = nextScopeKey;
       setSelectedScopeKeyState(nextScopeKey);
       persistSelectedScopeKey(nextScopeKey);
 
@@ -414,7 +452,7 @@ export function useJobsPresenter(): JobsViewModel {
         await apiClient.listJobs(toListJobsInput(nextScope)),
       );
 
-      if (refreshGenerationRef.current !== generation) {
+      if (!canCommitRefresh(generation)) {
         return;
       }
 
@@ -430,7 +468,7 @@ export function useJobsPresenter(): JobsViewModel {
         return;
       }
     } catch (presenterError) {
-      if (refreshGenerationRef.current !== generation) {
+      if (!canCommitRefresh(generation)) {
         return;
       }
 
@@ -444,11 +482,11 @@ export function useJobsPresenter(): JobsViewModel {
           : "Failed to load jobs.",
       );
     } finally {
-      if (refreshGenerationRef.current === generation) {
+      if (canCommitRefresh(generation)) {
         setIsLoading(false);
       }
     }
-  }, [selectedJobId, selectedScopeKey, user?.displayName, user?.id]);
+  }, [canCommitRefresh, selectedJobId, selectedScopeKey, user?.displayName, user?.id]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -488,6 +526,10 @@ export function useJobsPresenter(): JobsViewModel {
         jobId: activeJobId,
       },
       (event) => {
+        if (!isMountedRef.current) {
+          return;
+        }
+
         setEvents((currentEvents) => {
           if (
             currentEvents.some((currentEvent) => currentEvent.id === event.id)
@@ -516,6 +558,10 @@ export function useJobsPresenter(): JobsViewModel {
         }
       },
       () => {
+        if (!isMountedRef.current) {
+          return;
+        }
+
         setError("Live job stream disconnected. Refresh to recover.");
       },
     );
@@ -527,6 +573,7 @@ export function useJobsPresenter(): JobsViewModel {
   }, [activeJobId, loadJobActivity]);
 
   const setSelectedScopeKey = useCallback((nextScopeKey: string) => {
+    selectedScopeKeyRef.current = nextScopeKey;
     setSelectedScopeKeyState(nextScopeKey);
     persistSelectedScopeKey(nextScopeKey);
     setSelectedJobIdState(null);
@@ -588,11 +635,7 @@ export function useJobsPresenter(): JobsViewModel {
         spaceId: compatibilitySpaceId,
       });
 
-      if (runGenerationRef.current !== runGeneration) {
-        return;
-      }
-
-      if (selectedScopeKeyRef.current !== runScopeKey) {
+      if (!canCommitRun(runGeneration, runScopeKey)) {
         return;
       }
 
@@ -605,32 +648,85 @@ export function useJobsPresenter(): JobsViewModel {
 
       await apiClient.runJob(createdJob.id);
 
-      if (runGenerationRef.current !== runGeneration) {
-        return;
-      }
-
-      if (selectedScopeKeyRef.current !== runScopeKey) {
+      if (!canCommitRun(runGeneration, runScopeKey)) {
         return;
       }
 
       await refresh(runScopeKey);
     } catch (presenterError) {
+      if (!canCommitRun(runGeneration, runScopeKey)) {
+        return;
+      }
+
       setError(
         presenterError instanceof Error
           ? presenterError.message
           : "Failed to run job.",
       );
     } finally {
-      setIsRunningJob(false);
+      if (isMountedRef.current && runGenerationRef.current === runGeneration) {
+        setIsRunningJob(false);
+      }
     }
-  }, [refresh, resolvedSelectedScopeKey, selectedCredentialRef, selectedScope, selectedUserSpaceId]);
+  }, [canCommitRun, refresh, resolvedSelectedScopeKey, selectedCredentialRef, selectedScope, selectedUserSpaceId]);
+
+  const cancelActiveJob = useCallback(async () => {
+    if (!activeJob) {
+      setError("No active job is selected for cancellation.");
+      return;
+    }
+
+    if (!canCancelActiveJob) {
+      setError("Only queued or running jobs can be cancelled.");
+      return;
+    }
+
+    const cancelScopeKey = resolvedSelectedScopeKey;
+    const runGeneration = runGenerationRef.current + 1;
+    runGenerationRef.current = runGeneration;
+
+    try {
+      setIsRunningJob(true);
+      setError(null);
+
+      const cancelledJob = await apiClient.cancelJob(activeJob.id);
+
+      if (!canCommitRun(runGeneration, cancelScopeKey)) {
+        return;
+      }
+
+      setJobs((currentJobs) =>
+        sortJobs(currentJobs.map((job) =>
+          job.id === cancelledJob.id ? cancelledJob : job
+        ))
+      );
+      setSelectedJobIdState(cancelledJob.id);
+      await loadJobActivity(cancelledJob.id);
+    } catch (presenterError) {
+      if (!canCommitRun(runGeneration, cancelScopeKey)) {
+        return;
+      }
+
+      setError(
+        presenterError instanceof Error
+          ? presenterError.message
+          : "Failed to cancel job.",
+      );
+    } finally {
+      if (isMountedRef.current && runGenerationRef.current === runGeneration) {
+        setIsRunningJob(false);
+      }
+    }
+  }, [activeJob, canCancelActiveJob, canCommitRun, loadJobActivity, resolvedSelectedScopeKey]);
 
   return useMemo(
     () => ({
       activeJob,
       audits,
       availableScopes,
+      cancelActiveJob,
       canCreateJob,
+      canCancelActiveJob,
       credentials,
       error,
       events,
@@ -656,7 +752,9 @@ export function useJobsPresenter(): JobsViewModel {
       activeJob,
       audits,
       availableScopes,
+      cancelActiveJob,
       canCreateJob,
+      canCancelActiveJob,
       credentials,
       error,
       events,

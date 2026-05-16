@@ -64,6 +64,7 @@ describe('job governance', () => {
       });
       expect(audits.map((audit) => audit.action)).toEqual([
         'job.created',
+        'job.started',
         'job.completed',
       ]);
     } finally {
@@ -129,6 +130,7 @@ describe('job governance', () => {
       ]);
       expect(persistedAudits.map((audit) => audit.action)).toEqual([
         'job.created',
+        'job.started',
         'job.completed',
       ]);
       expect(persistedCredential).toMatchObject({
@@ -489,6 +491,445 @@ describe('job governance', () => {
       expect(await jobRepository.listJobsForScope({ scope: { id: 'user-bob', type: 'user' } })).toEqual([]);
     } finally {
       await prisma.$disconnect();
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('guards lifecycle transitions and rejects invalid terminal state jumps', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-job-transition-guard-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-job-transition-guard.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    const prisma = createPrismaClient({ url: databaseUrl });
+    const jobRepository = createJobRepository(prisma);
+
+    try {
+      const app = createJixiaApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Lifecycle Guard' },
+        'user-alice',
+      );
+      const credential = await app.credentials.createCredential(
+        {
+          provider: 'openai',
+          rawSecret: 'lifecycle-guard-credential',
+          userId: 'user-alice',
+        },
+        'user-alice',
+      );
+      const job = await app.jobs.createJob(
+        {
+          credentialRef: credential.credentialRef,
+          kind: 'ai.summary',
+          payload: { prompt: 'Guard invalid status jumps.' },
+          spaceId: sharedSpace.id,
+        },
+        'user-alice',
+      );
+
+      await expect(
+        jobRepository.updateJobStatus(job.id, 'succeeded'),
+      ).rejects.toThrow(/invalid job status transition from queued to succeeded/i);
+
+      const completed = await app.jobs.runJob({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        jobId: job.id,
+      });
+      expect(completed.status).toBe('succeeded');
+
+      await expect(
+        app.jobs.runJob({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).rejects.toThrow(/terminal state succeeded to running/i);
+      await expect(
+        app.jobs.cancelJob({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).rejects.toThrow(/terminal state succeeded to cancelled/i);
+
+      expect(await jobRepository.listJobEvents(job.id)).toHaveLength(3);
+      expect(await jobRepository.listAuditRecordsByJob(job.id)).toHaveLength(3);
+    } finally {
+      await prisma.$disconnect();
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('persists durable failure events and audits when execution fails', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-job-failure-lifecycle-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-job-failure-lifecycle.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+
+    try {
+      const app = createJixiaApp({
+        env,
+        jobExecutor() {
+          throw new Error('Simulated provider failure.');
+        },
+      });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Failure Lifecycle' },
+        'user-alice',
+      );
+      const credential = await app.credentials.createCredential(
+        {
+          provider: 'openai',
+          rawSecret: 'failure-lifecycle-credential',
+          userId: 'user-alice',
+        },
+        'user-alice',
+      );
+      const job = await app.jobs.createJob(
+        {
+          credentialRef: credential.credentialRef,
+          kind: 'ai.summary',
+          payload: { prompt: 'Fail durably.' },
+          spaceId: sharedSpace.id,
+        },
+        'user-alice',
+      );
+
+      const failed = await app.jobs.runJob({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        jobId: job.id,
+      });
+      expect(failed.status).toBe('failed');
+
+      await expect(
+        app.jobStream.listEvents({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).resolves.toEqual([
+        expect.objectContaining({ status: 'queued' }),
+        expect.objectContaining({ status: 'running' }),
+        expect.objectContaining({ status: 'failed' }),
+      ]);
+      await expect(
+        app.jobs.listAuditRecords({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).resolves.toEqual([
+        expect.objectContaining({ action: 'job.created' }),
+        expect.objectContaining({ action: 'job.started' }),
+        expect.objectContaining({ action: 'job.failed' }),
+      ]);
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('persists durable cancellation events and audits before execution starts', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-job-cancel-lifecycle-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-job-cancel-lifecycle.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+
+    try {
+      const app = createJixiaApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Cancel Lifecycle' },
+        'user-alice',
+      );
+      const credential = await app.credentials.createCredential(
+        {
+          provider: 'openai',
+          rawSecret: 'cancel-lifecycle-credential',
+          userId: 'user-alice',
+        },
+        'user-alice',
+      );
+      const job = await app.jobs.createJob(
+        {
+          credentialRef: credential.credentialRef,
+          kind: 'ai.summary',
+          payload: { prompt: 'Cancel durably.' },
+          spaceId: sharedSpace.id,
+        },
+        'user-alice',
+      );
+
+      const cancelled = await app.jobs.cancelJob({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        jobId: job.id,
+      });
+      expect(cancelled.status).toBe('cancelled');
+
+      await expect(
+        app.jobStream.listEvents({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).resolves.toEqual([
+        expect.objectContaining({ status: 'queued' }),
+        expect.objectContaining({ status: 'cancelled' }),
+      ]);
+      await expect(
+        app.jobs.listAuditRecords({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).resolves.toEqual([
+        expect.objectContaining({ action: 'job.created' }),
+        expect.objectContaining({ action: 'job.cancelled' }),
+      ]);
+      await expect(
+        app.jobs.runJob({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).rejects.toThrow(/terminal state cancelled to running/i);
+      await expect(
+        app.jobs.cancelJob({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).rejects.toThrow(/job is already cancelled/i);
+      await expect(
+        app.jobStream.listEvents({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).resolves.toHaveLength(2);
+      await expect(
+        app.jobs.listAuditRecords({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).resolves.toHaveLength(2);
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('keeps a running job cancelled when execution resolves after cancellation', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-job-running-cancel-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-job-running-cancel.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    let releaseExecutor: () => void = () => {
+      throw new Error('Executor release was called before initialization.');
+    };
+    let markExecutorStarted: () => void = () => {
+      throw new Error('Executor start marker was called before initialization.');
+    };
+    const executorStarted = new Promise<void>((resolve) => {
+      markExecutorStarted = resolve;
+    });
+
+    try {
+      const app = createJixiaApp({
+        env,
+        jobExecutor() {
+          markExecutorStarted();
+
+          return new Promise<void>((resolve) => {
+            releaseExecutor = resolve;
+          });
+        },
+      });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Running Cancel Lifecycle' },
+        'user-alice',
+      );
+      const credential = await app.credentials.createCredential(
+        {
+          provider: 'openai',
+          rawSecret: 'running-cancel-lifecycle-credential',
+          userId: 'user-alice',
+        },
+        'user-alice',
+      );
+      const job = await app.jobs.createJob(
+        {
+          credentialRef: credential.credentialRef,
+          kind: 'ai.summary',
+          payload: { prompt: 'Cancel while running.' },
+          spaceId: sharedSpace.id,
+        },
+        'user-alice',
+      );
+
+      const runPromise = app.jobs.runJob({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        jobId: job.id,
+      });
+
+      await executorStarted;
+
+      await expect(
+        app.jobStream.listEvents({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).resolves.toEqual([
+        expect.objectContaining({ status: 'queued' }),
+        expect.objectContaining({ status: 'running' }),
+      ]);
+
+      const cancelled = await app.jobs.cancelJob({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        jobId: job.id,
+      });
+      expect(cancelled.status).toBe('cancelled');
+
+      releaseExecutor();
+
+      await expect(runPromise).resolves.toMatchObject({
+        id: job.id,
+        status: 'cancelled',
+      });
+      await expect(
+        app.jobStream.listEvents({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).resolves.toEqual([
+        expect.objectContaining({ status: 'queued' }),
+        expect.objectContaining({ status: 'running' }),
+        expect.objectContaining({ status: 'cancelled' }),
+      ]);
+      await expect(
+        app.jobs.listAuditRecords({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).resolves.toEqual([
+        expect.objectContaining({ action: 'job.created' }),
+        expect.objectContaining({ action: 'job.started' }),
+        expect.objectContaining({ action: 'job.cancelled' }),
+      ]);
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects duplicate run attempts without duplicate lifecycle records', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-job-duplicate-run-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-job-duplicate-run.db')}`;
+    const env = {
+      JIXIA_DATABASE_URL: databaseUrl,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    let releaseExecutor: () => void = () => {
+      throw new Error('Executor release was called before initialization.');
+    };
+    let markExecutorStarted: () => void = () => {
+      throw new Error('Executor start marker was called before initialization.');
+    };
+    const executorStarted = new Promise<void>((resolve) => {
+      markExecutorStarted = resolve;
+    });
+
+    try {
+      const app = createJixiaApp({
+        env,
+        jobExecutor() {
+          markExecutorStarted();
+
+          return new Promise<void>((resolve) => {
+            releaseExecutor = resolve;
+          });
+        },
+      });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Duplicate Run Lifecycle' },
+        'user-alice',
+      );
+      const credential = await app.credentials.createCredential(
+        {
+          provider: 'openai',
+          rawSecret: 'duplicate-run-lifecycle-credential',
+          userId: 'user-alice',
+        },
+        'user-alice',
+      );
+      const job = await app.jobs.createJob(
+        {
+          credentialRef: credential.credentialRef,
+          kind: 'ai.summary',
+          payload: { prompt: 'Reject duplicate runs.' },
+          spaceId: sharedSpace.id,
+        },
+        'user-alice',
+      );
+
+      const firstRunPromise = app.jobs.runJob({
+        actorSpaceId: sharedSpace.id,
+        actorUserId: 'user-alice',
+        jobId: job.id,
+      });
+
+      await executorStarted;
+
+      await expect(
+        app.jobs.runJob({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).rejects.toThrow(/job is already running/i);
+
+      releaseExecutor();
+
+      await expect(firstRunPromise).resolves.toMatchObject({
+        id: job.id,
+        status: 'succeeded',
+      });
+      await expect(
+        app.jobStream.listEvents({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).resolves.toEqual([
+        expect.objectContaining({ status: 'queued' }),
+        expect.objectContaining({ status: 'running' }),
+        expect.objectContaining({ status: 'succeeded' }),
+      ]);
+      await expect(
+        app.jobs.listAuditRecords({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-alice',
+          jobId: job.id,
+        }),
+      ).resolves.toEqual([
+        expect.objectContaining({ action: 'job.created' }),
+        expect.objectContaining({ action: 'job.started' }),
+        expect.objectContaining({ action: 'job.completed' }),
+      ]);
+    } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
   });

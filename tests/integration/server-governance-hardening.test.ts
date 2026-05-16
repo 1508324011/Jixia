@@ -243,6 +243,7 @@ describe('server governance hardening', () => {
       expect(completed.status).toBe('succeeded');
       expect(audits.map((audit) => audit.action)).toEqual([
         'job.created',
+        'job.started',
         'job.completed',
       ]);
       expect(stream).toContain('"status":"queued"');

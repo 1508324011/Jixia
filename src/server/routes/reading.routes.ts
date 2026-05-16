@@ -21,6 +21,7 @@ export interface ReadingRoutes {
   createWorkbenchNote: ReadingService["createWorkbenchNote"];
   createWorkbenchProjectComment: ReadingService["createWorkbenchProjectComment"];
   getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
+  getGeneratedInsightSource: ReadingService["getGeneratedInsightSource"];
   getWorkbenchDetail: ReadingService["getWorkbenchDetail"];
   saveGeneratedInsight(
     input: SaveGeneratedInsightRequest,
@@ -46,6 +47,9 @@ export function createReadingRoutes(service: ReadingService): ReadingRoutes {
     },
     getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null> {
       return service.getDetail(input);
+    },
+    getGeneratedInsightSource(input) {
+      return service.getGeneratedInsightSource(input);
     },
     getWorkbenchDetail(input) {
       return service.getWorkbenchDetail(input);

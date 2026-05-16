@@ -245,6 +245,13 @@ Acceptance criteria:
 - The server derives the actor from a session or equivalent server-controlled mechanism.
 - A request body cannot impersonate another user.
 
+Current implementation note (2026-05-12): browser session login now accepts only
+the bounded seeded `{ loginProfileKey }` selector (`alice`, `bob`, `charlie`).
+Legacy login identity fields such as `userId`, `email`, `actorUserId`, `actorId`,
+`user`, and `actor` are rejected from the login query/body before the server
+issues `jixia_session`; protected browser APIs continue deriving actor identity
+from the server-owned session cookie rather than caller-supplied payload fields.
+
 ### Phase 2: Project-first schema and contracts
 
 Goal: make project collaboration a first-class server concept.
@@ -289,6 +296,21 @@ Prisma-backed authority path. `ProviderCredential`, `Job`, `JobEvent`, and
 SSE bootstrap, and job audit flows use `JobRepository` plus persisted
 `SpaceRepository` membership checks. Legacy `server-state.json` job/event/audit
 arrays are intentionally ignored as runtime truth.
+
+Current implementation note (2026-05-14): job execution now uses a guarded
+server-owned lifecycle boundary. `src/db/repositories/job-status-transitions.ts`
+is the canonical transition matrix: `queued -> running | cancelled`,
+`running -> succeeded | failed | cancelled`, and terminal `succeeded`, `failed`,
+or `cancelled` jobs cannot re-enter execution. Runtime execution records
+`job.started`, then exactly one terminal `job.completed` or `job.failed` audit and
+event through `JobRepository.recordJobLifecycleTransition`; `POST
+/api/jobs/:jobId/cancel` records `job.cancelled` through the same guarded
+transactional path. Browser clients can request cancellation for queued/running
+jobs without sending actor, ownership, or status fields, and the UI disables that
+request for terminal jobs. The server still derives actor authority from the
+session, rechecks credential ownership before any lifecycle side effect, owns
+terminal-state validation, and returns the `JobRecord` plus replayable
+event/audit history that the browser renders.
 
 Current implementation note (2026-05-09): credential secret material and
 workbench settings have joined the Prisma-backed authority path. Migration

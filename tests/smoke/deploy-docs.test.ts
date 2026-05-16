@@ -40,11 +40,24 @@ describe('deployment and operator scaffolding', () => {
     expect(existsSync('docker-compose.yml')).toBe(true);
   });
 
+  it('keeps docker build context secret-safe for local operator files', () => {
+    const dockerignore = read('.dockerignore');
+
+    expect(dockerignore).toContain('.trellis/');
+    expect(dockerignore).toContain('.claude/');
+    expect(dockerignore).toContain('.cursor/');
+    expect(dockerignore).toContain('*.pem');
+    expect(dockerignore).toContain('*.key');
+    expect(dockerignore).toContain('credentials.key');
+  });
+
   it('defines a dockerized operator path', () => {
     const dockerfile = read('Dockerfile');
     const compose = read('docker-compose.yml');
 
     expect(dockerfile).toContain('FROM node:22');
+    expect(dockerfile).toContain('HEALTHCHECK');
+    expect(dockerfile).toContain('/health');
     expect(dockerfile).toContain('COPY prisma ./prisma');
     expect(dockerfile).toContain('COPY prisma.config.ts ./prisma.config.ts');
     expect(dockerfile).toContain('npm run build');
@@ -74,6 +87,7 @@ describe('deployment and operator scaffolding', () => {
     expect(readme).toContain('docker compose up --build');
     expect(readme).toContain('npm run build');
     expect(readme).toContain('npm run start:server');
+    expect(readme).toContain('/health');
     expect(readme).toContain('JIXIA_STORAGE_ROOT');
     expect(readme).toContain('JIXIA_DATABASE_URL');
     expect(readme).toContain('/var/lib/jixia/storage');
@@ -87,10 +101,24 @@ describe('deployment and operator scaffolding', () => {
 
     expect(readmeCn).toContain('docker compose up --build');
     expect(readmeCn).toContain('npm run start:server');
+    expect(readmeCn).toContain('/health');
     expect(readmeCn).toContain('JIXIA_STORAGE_ROOT');
     expect(readmeCn).toContain('JIXIA_DATABASE_URL');
     expect(readmeCn).toContain('server-state.json');
     expect(readmeCn).toContain('Prisma-backed Project 协作数据');
     expect(ciWorkflow).toContain('npm run build');
+  });
+
+  it('keeps the Task 11 deployment plan aligned with the current runtime contract', () => {
+    const plan = read('docs/plans/2026-03-22-jixia-task-11-deployment-implementation.md');
+
+    expect(plan).toContain('src/server/http-server.ts');
+    expect(plan).toContain('src/server/runtime-config.ts');
+    expect(plan).toContain('/health');
+    expect(plan).toContain('Dockerfile');
+    expect(plan).toContain('docker-compose.yml');
+    expect(plan).toContain('.dockerignore');
+    expect(plan).toContain('docs/runbooks/native-demo-showcase.md');
+    expect(plan).toContain('integrated workbench shell');
   });
 });

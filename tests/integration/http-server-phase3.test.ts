@@ -208,7 +208,7 @@ describe("http server phase 3 library slice", () => {
           `${server.url}/api/library?scopeType=project&scopeId=${firstProject.project.id}&projectId=${secondProject.project.id}&spaceId=${firstSpace.id}`,
           { headers: withSessionCookie(aliceCookie) },
         );
-        const projectListWithStaleSpaceResponse = await fetch(
+        const projectListWithLegacyActorSpaceResponse = await fetch(
           `${server.url}/api/library?scopeType=project&scopeId=${firstProject.project.id}&projectId=${secondProject.project.id}&spaceId=${secondSpace.id}&actorSpaceId=${firstSpace.id}`,
           { headers: withSessionCookie(aliceCookie) },
         );
@@ -222,28 +222,24 @@ describe("http server phase 3 library slice", () => {
         );
 
         expect(projectListResponse.status).toBe(200);
-        expect(projectListWithStaleSpaceResponse.status).toBe(200);
+        expect(projectListWithLegacyActorSpaceResponse.status).toBe(400);
         expect(personalListResponse.status).toBe(200);
         expect(mismatchedSpaceResponse.status).toBe(400);
 
         const projectList = await projectListResponse.json() as Array<{
           entry: { id: string };
         }>;
-        const projectListWithStaleSpace =
-          await projectListWithStaleSpaceResponse.json() as Array<{
-            entry: { id: string };
-          }>;
         const personalList = await personalListResponse.json() as Array<{
           entry: { id: string };
         }>;
+        const projectListWithLegacyActorSpace =
+          await projectListWithLegacyActorSpaceResponse.json() as { error: string };
         const mismatchedSpace = await mismatchedSpaceResponse.json() as { error: string };
 
         expect(projectList.map((entry) => entry.entry.id)).toContain(
           projectImport.entry.id,
         );
-        expect(projectListWithStaleSpace.map((entry) => entry.entry.id)).toContain(
-          projectImport.entry.id,
-        );
+        expect(projectListWithLegacyActorSpace.error).toMatch(/not accepted for protected routes/i);
         expect(projectList.map((entry) => entry.entry.id)).not.toContain(
           personalImport.entry.id,
         );

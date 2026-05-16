@@ -27,6 +27,7 @@ describe('workbench beta runbook contract', () => {
     expect(runbook).toContain('npm install');
     expect(runbook).toContain('npm run build');
     expect(runbook).toContain('npm run start:server');
+    expect(runbook).toContain('/health');
     expect(runbook).toContain('http://127.0.0.1:3000');
     expect(runbook).toContain('登录');
     expect(runbook).toContain('个人工作台');

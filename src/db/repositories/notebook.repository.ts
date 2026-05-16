@@ -53,10 +53,16 @@ export interface NotebookRepository {
     input: CreateNotebookDocumentParams,
   ): Promise<PersistedNotebookDocumentRecord>;
   findDocument(documentId: string): Promise<PersistedNotebookDocumentRecord | null>;
+  getLatestSnapshot(
+    documentId: string,
+  ): Promise<PersistedNotebookDocumentSnapshot | null>;
   getDocumentForOwner(
     documentId: string,
     ownerId: string,
   ): Promise<PersistedNotebookDocumentRecord | null>;
+  listDocumentsForOwner(
+    ownerId: string,
+  ): Promise<PersistedNotebookDocumentRecord[]>;
   saveVersion(
     input: CreateNotebookDocumentVersionParams,
   ): Promise<PersistedNotebookDocumentSnapshot>;
@@ -143,6 +149,17 @@ async function getNextVersionNumber(
   return (latestVersion?.versionNumber ?? 0) + 1;
 }
 
+async function getLatestVersion(
+  prisma: NotebookClient,
+  documentId: string,
+): Promise<NotebookVersionWithRelations | null> {
+  return prisma.notebookDocumentVersion.findFirst({
+    include: NOTEBOOK_VERSION_INCLUDE,
+    orderBy: { versionNumber: 'desc' },
+    where: { notebookDocumentId: documentId },
+  });
+}
+
 export async function initializeNotebookPersistence(
   prisma: JixiaPrismaClient,
 ): Promise<void> {
@@ -226,6 +243,15 @@ export function createNotebookRepository(
 
       return document ? mapDocument(document) : null;
     },
+    async getLatestSnapshot(
+      documentId: string,
+    ): Promise<PersistedNotebookDocumentSnapshot | null> {
+      await ensureInitialized();
+
+      const snapshot = await getLatestVersion(prisma, documentId);
+
+      return snapshot ? mapSnapshot(snapshot) : null;
+    },
     async getDocumentForOwner(
       documentId: string,
       ownerId: string,
@@ -240,6 +266,19 @@ export function createNotebookRepository(
       });
 
       return document ? mapDocument(document) : null;
+    },
+    async listDocumentsForOwner(
+      ownerId: string,
+    ): Promise<PersistedNotebookDocumentRecord[]> {
+      await ensureInitialized();
+      await ensureUser(prisma, ownerId);
+
+      const documents = await prisma.notebookDocument.findMany({
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        where: { ownerId },
+      });
+
+      return documents.map(mapDocument);
     },
     async saveVersion(
       input: CreateNotebookDocumentVersionParams,

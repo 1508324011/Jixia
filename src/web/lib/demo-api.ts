@@ -1,4 +1,10 @@
+// Compatibility/test-only workbench helper.
+// Production Workbench pages must use apiClient or thin presenters instead of
+// importing this facade; static UI guards enforce that boundary.
+
 import type {
+  CaptureNotebookEvidenceRequest,
+  CaptureNotebookEvidenceResponse,
   DiscoverySearchResponse,
   DiscoveryTodayResponse,
   ReadingDetailView,
@@ -9,6 +15,7 @@ import type {
   WorkbenchSettingsResponse,
   WritingDocumentResponse,
 } from '@shared';
+import type { DocumentBlockDocument } from '@shared/contracts/document-content';
 import type { EvidenceSpanRecord } from '@shared/contracts/evidence';
 import type { ImportSourceType, LibraryListResponse } from '@shared/contracts/library';
 
@@ -130,6 +137,18 @@ export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
         },
       );
     },
+    captureNotebookEvidence(
+      input: CaptureNotebookEvidenceRequest,
+    ): Promise<CaptureNotebookEvidenceResponse> {
+      return requestJson<CaptureNotebookEvidenceResponse>(
+        resolvePath('/api/notebooks/capture'),
+        {
+          body: JSON.stringify(input),
+          headers: requestHeaders(),
+          method: 'POST',
+        },
+      );
+    },
     getWritingDocument(
       spaceId: string,
       projectId: string,
@@ -142,8 +161,13 @@ export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
       );
     },
     saveWritingDocument(input: {
-      citations?: Array<{ evidenceSpan?: string; paperAssetId: string }>;
-      content: string;
+      citations?: Array<{
+        evidenceSpan?: string;
+        libraryEntryId?: string;
+        paperAssetId: string;
+      }>;
+      content?: string;
+      documentContent?: DocumentBlockDocument;
       projectId: string;
       spaceId: string;
       title: string;
@@ -156,6 +180,7 @@ export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
           body: JSON.stringify({
             citations: input.citations ?? [],
             content: input.content,
+            documentContent: input.documentContent,
             title: input.title,
           }),
           headers: requestHeaders(),

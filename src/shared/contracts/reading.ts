@@ -71,6 +71,15 @@ export interface CreateReadingNoteRequest {
 
 export type CreatePrivateReadingNoteRequest = CreateReadingNoteRequest;
 
+export interface LegacyCreateReadingNoteRequest extends CreateReadingNoteRequest {
+  /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
+  actorSpaceId?: string;
+  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
+  authorUserId?: string;
+  /** @deprecated Reader sharing uses the project-comments endpoint, not note visibility. */
+  visibility?: NoteVisibility;
+}
+
 export interface CreateProjectReadingCommentRequest {
   body: string;
   libraryEntryId: string;
@@ -96,9 +105,12 @@ export interface ReadingNoteResponse {
   note: PrivateReadingNoteRecord;
 }
 
-export interface ReadingProjectCommentResponse {
+export interface ProjectReadingCommentResponse {
   comment: ProjectReadingCommentRecord;
 }
+
+/** @deprecated Use ProjectReadingCommentResponse. */
+export type ReadingProjectCommentResponse = ProjectReadingCommentResponse;
 
 export interface ReadingInsightResponse {
   insight: GeneratedInsightRecord;

@@ -302,7 +302,6 @@ describe('minimal recovery loop server truth smoke', () => {
             body: JSON.stringify({
               body: 'Alice private synthesis before project handoff.',
               libraryEntryId: importedProjectEntry.entry.id,
-              visibility: 'private',
             }),
             headers: jsonHeaders(aliceCookie),
             method: 'POST',
@@ -544,6 +543,7 @@ describe('minimal recovery loop server truth smoke', () => {
         );
         expect(audits.map((audit) => audit.action)).toEqual([
           'job.created',
+          'job.started',
           'job.completed',
         ]);
 
@@ -605,7 +605,7 @@ describe('minimal recovery loop server truth smoke', () => {
           status: 'succeeded',
         });
         await expect(prisma.jobEvent.findMany({ where: { jobId: job.id } })).resolves.toHaveLength(3);
-        await expect(prisma.auditLog.findMany({ where: { jobId: job.id } })).resolves.toHaveLength(2);
+        await expect(prisma.auditLog.findMany({ where: { jobId: job.id } })).resolves.toHaveLength(3);
       } finally {
         await prisma.$disconnect();
       }
@@ -661,15 +661,11 @@ describe('minimal recovery loop server truth smoke', () => {
             headers: withSessionCookie(aliceCookie),
           }),
         );
-        expect(restartedAliceReading.notes.map((note) => note.body)).toEqual(
-          expect.arrayContaining([
-            'Alice private synthesis before project handoff.',
-          ]),
+        expect(restartedAliceReading.notes.map((note) => note.body)).toContain(
+          'Alice private synthesis before project handoff.',
         );
-        expect(restartedAliceReading.projectComments.map((comment) => comment.body)).toEqual(
-          expect.arrayContaining([
-            'Project-visible evidence comment.',
-          ]),
+        expect(restartedAliceReading.projectComments.map((comment) => comment.body)).toContain(
+          'Project-visible evidence comment.',
         );
         expect(restartedAliceReading.insights.map((item) => item.summary)).toContain(
           'The imported paper supports the minimal recovery loop.',
@@ -760,6 +756,7 @@ describe('minimal recovery loop server truth smoke', () => {
         ]);
         expect(restartedAudits.map((audit) => audit.action)).toEqual([
           'job.created',
+          'job.started',
           'job.completed',
         ]);
 

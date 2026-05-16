@@ -56,6 +56,7 @@ Personal-facing routes are workbench shorthand over server-side ownership and sc
 
 - `/login` is the real session entry page; the root route still redirects to `/home`, and unauthenticated browsers are redirected back to `/login?redirect=...` by the protected route boundary.
 - `POST /api/session/login`, `GET /api/session/me`, and `POST /api/session/logout` manage the server-owned `jixia_session` cookie used by browser auth.
+- `POST /api/session/login` accepts only a supported bounded `{ loginProfileKey }` selector for the seeded lab/demo personas; raw identity fields such as `userId`, `email`, `actorUserId`, and similar caller-supplied actor selectors are rejected from the login body/query instead of minting authority.
 - `GET /api/discovery/today` and `GET /api/discovery/search?query=...` serve the discovery slice.
 - `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings through Prisma-backed per-user workbench settings and encrypted provider credential secret rows without exposing raw API keys in responses or stored settings records.
 - `GET /api/library/personal` and `POST /api/library/personal/import` keep personal import ownership on the server.
@@ -119,6 +120,8 @@ npm run start:server
 
 After startup, the server serves the built workbench shell from `dist/`, responds on `/health`, and exposes the current beta browser/API surface under `/api/`.
 
+Use `http://127.0.0.1:3000/health` as the first runtime sanity check. A healthy Task 11 process returns `{"service":"jixia-server","status":"ok"}`.
+
 ### Docker Compose startup path
 
 ```bash
@@ -127,3 +130,5 @@ docker compose up --build
 ```
 
 The included `docker-compose.yml` maps the runtime port, pins `JIXIA_STORAGE_ROOT` to the mounted `/var/lib/jixia/storage` path, points `JIXIA_DATABASE_URL` at the mounted `/var/lib/jixia/data` path for Prisma-backed collaboration, persists legacy beta state at `/var/lib/jixia/storage/server-state.json`, and keeps credential encryption key material under the same durable storage root.
+
+The Docker image also encodes the same `/health` runtime contract with a container health check against the in-container Node server, so `docker compose ps` can report when the packaged runtime is actually ready instead of only when the process has started.

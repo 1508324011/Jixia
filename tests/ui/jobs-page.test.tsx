@@ -20,8 +20,12 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 function createDeferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error?: unknown) => void;
+  let resolve: (value: T) => void = () => {
+    throw new Error('Deferred resolver was called before initialization.');
+  };
+  let reject: (error?: unknown) => void = () => {
+    throw new Error('Deferred rejecter was called before initialization.');
+  };
 
   const promise = new Promise<T>((nextResolve, nextReject) => {
     resolve = nextResolve;
@@ -613,6 +617,320 @@ describe('jobs page', () => {
     expect(screen.getByRole('button', { name: 'Create and run scoped job' })).toBeDisabled();
   });
 
+  it('cancels an active queued job without browser-supplied actor or status fields', async () => {
+    const user = userEvent.setup();
+    let cancelRequested = false;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const requestUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/spaces')) {
+        return jsonResponse([
+          {
+            createdAt: '2026-05-11T00:00:00.000Z',
+            id: 'space-personal-alice',
+            kind: 'personal',
+            name: 'Alice Personal Space',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/projects')) {
+        return jsonResponse([]);
+      }
+
+      if (requestUrl.endsWith('/api/credentials')) {
+        return jsonResponse([
+          {
+            createdAt: '2026-05-11T00:00:00.000Z',
+            credentialRef: 'cred-alice',
+            provider: 'openai',
+            userId: 'user-alice',
+          },
+        ]);
+      }
+
+      if (requestUrl.includes('/api/jobs?')) {
+        return jsonResponse([
+          {
+            createdAt: '2026-05-11T00:01:00.000Z',
+            credentialRef: 'cred-alice',
+            id: 'job-personal-1',
+            kind: 'ai.summary',
+            scope: { id: 'user-alice', type: 'user' },
+            scopeId: 'user-alice',
+            scopeType: 'user',
+            spaceId: 'space-personal-alice',
+            status: cancelRequested ? 'cancelled' : 'queued',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/jobs/job-personal-1/cancel') && init?.method === 'POST') {
+        const headers = new Headers(init.headers);
+        const url = new URL(requestUrl);
+        cancelRequested = true;
+
+        expect(init.credentials).toBe('same-origin');
+        expect(init.body).toBeUndefined();
+        expect(headers.has('Authorization')).toBe(false);
+        expect(headers.has('x-jixia-actor')).toBe(false);
+        expect(url.searchParams.get('actorUserId')).toBeNull();
+        expect(url.searchParams.get('requestedByUserId')).toBeNull();
+        expect(url.searchParams.get('actorSpaceId')).toBeNull();
+        expect(url.searchParams.get('status')).toBeNull();
+
+        return jsonResponse({
+          createdAt: '2026-05-11T00:01:00.000Z',
+          credentialRef: 'cred-alice',
+          id: 'job-personal-1',
+          kind: 'ai.summary',
+          scope: { id: 'user-alice', type: 'user' },
+          scopeId: 'user-alice',
+          scopeType: 'user',
+          spaceId: 'space-personal-alice',
+          status: 'cancelled',
+        });
+      }
+
+      if (requestUrl.endsWith('/api/jobs/job-personal-1/events')) {
+        return jsonResponse(
+          cancelRequested
+            ? [
+                {
+                  id: 'job-event-1',
+                  jobId: 'job-personal-1',
+                  message: 'Queued personal job.',
+                  recordedAt: '2026-05-11T00:01:00.000Z',
+                  status: 'queued',
+                },
+                {
+                  id: 'job-event-2',
+                  jobId: 'job-personal-1',
+                  message: 'ai.summary cancelled before completion.',
+                  recordedAt: '2026-05-11T00:02:00.000Z',
+                  status: 'cancelled',
+                },
+              ]
+            : [
+                {
+                  id: 'job-event-1',
+                  jobId: 'job-personal-1',
+                  message: 'Queued personal job.',
+                  recordedAt: '2026-05-11T00:01:00.000Z',
+                  status: 'queued',
+                },
+              ],
+        );
+      }
+
+      if (requestUrl.endsWith('/api/jobs/job-personal-1/audit')) {
+        return jsonResponse(
+          cancelRequested
+            ? [
+                {
+                  action: 'job.created',
+                  actorUserId: 'user-alice',
+                  detail: 'Created ai.summary with credential cred-alice.',
+                  id: 'audit-1',
+                  jobId: 'job-personal-1',
+                  recordedAt: '2026-05-11T00:01:00.000Z',
+                  spaceId: 'space-personal-alice',
+                },
+                {
+                  action: 'job.cancelled',
+                  actorUserId: 'user-alice',
+                  detail: 'Cancelled ai.summary with credential cred-alice.',
+                  id: 'audit-2',
+                  jobId: 'job-personal-1',
+                  recordedAt: '2026-05-11T00:02:00.000Z',
+                  spaceId: 'space-personal-alice',
+                },
+              ]
+            : [
+                {
+                  action: 'job.created',
+                  actorUserId: 'user-alice',
+                  detail: 'Created ai.summary with credential cred-alice.',
+                  id: 'audit-1',
+                  jobId: 'job-personal-1',
+                  recordedAt: '2026-05-11T00:01:00.000Z',
+                  spaceId: 'space-personal-alice',
+                },
+              ],
+        );
+      }
+
+      if (requestUrl.endsWith('/api/jobs/job-personal-1/stream')) {
+        return new Response('', {
+          headers: {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+          },
+          status: 200,
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench('/jobs');
+
+    expect(await screen.findByRole('heading', { name: 'Jobs' })).toBeInTheDocument();
+    expect(await screen.findByText(/Job id · job-personal-1/)).toBeInTheDocument();
+
+    const cancelButton = screen.getByRole('button', { name: 'Cancel active job' });
+    await waitFor(() => expect(cancelButton).toBeEnabled());
+
+    await user.click(cancelButton);
+
+    expect(await screen.findByText('ai.summary cancelled before completion.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'job.cancelled' })).toBeInTheDocument();
+    await waitFor(() => expect(cancelButton).toBeDisabled());
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/jobs\/job-personal-1\/cancel$/),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('does not offer browser cancellation for terminal jobs', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const requestUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/spaces')) {
+        return jsonResponse([
+          {
+            createdAt: '2026-05-11T00:00:00.000Z',
+            id: 'space-personal-alice',
+            kind: 'personal',
+            name: 'Alice Personal Space',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/projects')) {
+        return jsonResponse([]);
+      }
+
+      if (requestUrl.endsWith('/api/credentials')) {
+        return jsonResponse([
+          {
+            createdAt: '2026-05-11T00:00:00.000Z',
+            credentialRef: 'cred-alice',
+            provider: 'openai',
+            userId: 'user-alice',
+          },
+        ]);
+      }
+
+      if (requestUrl.includes('/api/jobs?')) {
+        return jsonResponse([
+          {
+            createdAt: '2026-05-11T00:01:00.000Z',
+            credentialRef: 'cred-alice',
+            id: 'job-personal-1',
+            kind: 'ai.summary',
+            scope: { id: 'user-alice', type: 'user' },
+            scopeId: 'user-alice',
+            scopeType: 'user',
+            spaceId: 'space-personal-alice',
+            status: 'succeeded',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/jobs/job-personal-1/events')) {
+        return jsonResponse([
+          {
+            id: 'job-event-1',
+            jobId: 'job-personal-1',
+            message: 'ai.summary completed successfully.',
+            recordedAt: '2026-05-11T00:02:00.000Z',
+            status: 'succeeded',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/jobs/job-personal-1/audit')) {
+        return jsonResponse([
+          {
+            action: 'job.completed',
+            actorUserId: 'user-alice',
+            detail: 'Completed ai.summary with credential cred-alice.',
+            id: 'audit-1',
+            jobId: 'job-personal-1',
+            recordedAt: '2026-05-11T00:02:00.000Z',
+            spaceId: 'space-personal-alice',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/jobs/job-personal-1/stream')) {
+        return new Response('', {
+          headers: {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+          },
+          status: 200,
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench('/jobs');
+
+    expect(await screen.findByRole('heading', { name: 'Jobs' })).toBeInTheDocument();
+    expect(await screen.findByText(/Job id · job-personal-1/)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Cancel active job' })).toBeDisabled();
+    });
+    expect(
+      fetchMock.mock.calls.some(([input]) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        return requestUrl.endsWith('/api/jobs/job-personal-1/cancel');
+      }),
+    ).toBe(false);
+  });
+
   it('keeps a single active job stream subscription when a live event updates the selected job status', async () => {
     let streamRequestCount = 0;
     const subscribeSpy = vi.spyOn(apiClient, 'subscribeToJobEvents').mockImplementation(
@@ -971,6 +1289,107 @@ describe('jobs page', () => {
     });
 
     expect(screen.queryByText('job-project-1')).not.toBeInTheDocument();
+  });
+
+  it('ignores a stale scoped job run failure after the user switches scope', async () => {
+    const user = userEvent.setup();
+    const pendingCreateResponse = createDeferred<Response>();
+
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const requestUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return Promise.resolve(jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        }));
+      }
+
+      if (requestUrl.endsWith('/api/spaces')) {
+        return Promise.resolve(jsonResponse([
+          {
+            createdAt: '2026-05-11T00:00:00.000Z',
+            id: 'space-personal-alice',
+            kind: 'personal',
+            name: 'Alice Personal Space',
+          },
+        ]));
+      }
+
+      if (requestUrl.endsWith('/api/projects')) {
+        return Promise.resolve(jsonResponse([
+          {
+            membership: {
+              joinedAt: '2026-05-11T00:00:00.000Z',
+              projectId: 'project-alpha',
+              role: 'editor',
+              userId: 'user-alice',
+            },
+            project: {
+              createdAt: '2026-05-11T00:00:00.000Z',
+              createdByUserId: 'user-alice',
+              id: 'project-alpha',
+              name: 'Project Alpha',
+              spaceId: 'space-project-alpha',
+              status: 'active',
+              updatedAt: '2026-05-11T00:00:00.000Z',
+            },
+          },
+        ]));
+      }
+
+      if (requestUrl.endsWith('/api/credentials')) {
+        return Promise.resolve(jsonResponse([
+          {
+            createdAt: '2026-05-11T00:00:00.000Z',
+            credentialRef: 'cred-alice',
+            provider: 'openai',
+            userId: 'user-alice',
+          },
+        ]));
+      }
+
+      if (requestUrl.includes('/api/jobs?')) {
+        return Promise.resolve(jsonResponse([]));
+      }
+
+      if (requestUrl.endsWith('/api/jobs') && init?.method === 'POST') {
+        return pendingCreateResponse.promise;
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench('/jobs');
+
+    expect(await screen.findByRole('heading', { name: 'Jobs' })).toBeInTheDocument();
+    await screen.findByRole('option', { name: 'Project · Project Alpha' });
+
+    await user.selectOptions(screen.getByLabelText('Jobs scope'), 'project:project-alpha');
+    await user.click(screen.getByRole('button', { name: 'Create and run scoped job' }));
+    await user.selectOptions(screen.getByLabelText('Jobs scope'), 'user:user-alice');
+
+    pendingCreateResponse.resolve(jsonResponse(
+      { error: 'Project scope mutation was denied.' },
+      403,
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Jobs scope')).toHaveValue('user:user-alice');
+    });
+
+    expect(screen.queryByRole('heading', { name: 'Runtime error' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Project scope mutation was denied.')).not.toBeInTheDocument();
   });
 
   it('shows an explicit unavailable project state when the requested project scope is not visible', async () => {

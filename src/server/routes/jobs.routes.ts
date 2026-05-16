@@ -27,6 +27,7 @@ export interface ListJobsRequest extends ListJobsQuery {
 }
 
 export interface JobsRoutes {
+  cancelJob(input: JobAccessRequest): Promise<JobRecord>;
   createJob(input: CreateJobRequest, actorUserId: string): Promise<JobRecord>;
   getJob(input: JobAccessRequest): Promise<JobRecord>;
   listJobs(input: ListJobsRequest): Promise<JobRecord[]>;
@@ -60,6 +61,14 @@ function toJobRecord(job: PersistedJobRecord): JobRecord {
 
 export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
   return {
+    async cancelJob(input: JobAccessRequest): Promise<JobRecord> {
+      const job = await findAuthorizedJob(store, input, 'run');
+
+      return store.jobRunner.cancel({
+        actorUserId: input.actorUserId,
+        jobId: job.id,
+      });
+    },
     async createJob(
       input: CreateJobRequest,
       actorUserId: string,

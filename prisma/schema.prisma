@@ -218,6 +218,7 @@ model ProjectReadingComment {
   @@index([projectId, createdAt])
 }
 
+
 model ReadingState {
   id            String        @id @default(cuid())
   libraryEntryId String

@@ -4,6 +4,7 @@ const workbenchLinks = [
   { label: '今日推荐', to: '/today' },
   { label: '搜索', to: '/search' },
   { label: 'Library', to: '/library' },
+  { label: 'Notebook', to: '/notebook' },
   { label: 'Projects', to: '/projects' },
   { label: '设置', to: '/settings' },
 ] as const;

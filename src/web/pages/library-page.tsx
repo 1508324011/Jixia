@@ -3,10 +3,8 @@ import { Link, useParams } from "react-router-dom";
 
 import type { LibraryListResponse } from "@shared/contracts/library";
 
-import { createDemoApi } from "../lib/demo-api";
+import { apiClient } from "../lib/http-client";
 import { useLibraryPresenter } from "../presenters/library-presenter";
-
-const demoApi = createDemoApi();
 
 interface LibraryPageProps {
   mode?: "personal" | "project";
@@ -16,23 +14,30 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
   const { spaceId: routeSpaceId, projectId = "" } = useParams();
   const isPersonalMode = mode === "personal";
   const {
+    adoptEntryToProject,
     entries: projectEntries,
     error: projectError,
     isLoading: projectIsLoading,
     project,
+    projects,
     refresh,
-  } = useLibraryPresenter(projectId);
+  } = useLibraryPresenter(projectId, { loadProjectEntries: !isPersonalMode });
   const [personalEntries, setPersonalEntries] =
     useState<LibraryListResponse["entries"]>([]);
   const [personalError, setPersonalError] = useState<string | null>(null);
   const [personalIsLoading, setPersonalIsLoading] = useState(isPersonalMode);
+  const [selectedAdoptionProjectId, setSelectedAdoptionProjectId] = useState("");
+  const [adoptingEntryId, setAdoptingEntryId] = useState<string | null>(null);
+  const [adoptionMessage, setAdoptionMessage] = useState<string | null>(null);
+  const [adoptionError, setAdoptionError] = useState<string | null>(null);
+  const [adoptionTargetPath, setAdoptionTargetPath] = useState<string | null>(null);
 
   const loadPersonalLibrary = useCallback(async () => {
     setPersonalIsLoading(true);
     setPersonalError(null);
 
     try {
-      const response = await demoApi.getPersonalLibraryEntries();
+      const response = await apiClient.listPersonalLibraryEntries();
       setPersonalEntries(response.entries);
     } catch (error) {
       setPersonalEntries([]);
@@ -56,7 +61,7 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
       setPersonalError(null);
 
       try {
-        const response = await demoApi.getPersonalLibraryEntries();
+        const response = await apiClient.listPersonalLibraryEntries();
 
         if (isMounted) {
           setPersonalEntries(response.entries);
@@ -82,12 +87,66 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
     };
   }, [isPersonalMode]);
 
+  useEffect(() => {
+    if (!isPersonalMode) {
+      return;
+    }
+
+    setSelectedAdoptionProjectId((currentProjectId) => {
+      if (
+        currentProjectId &&
+        projects.some((item) => item.project.id === currentProjectId)
+      ) {
+        return currentProjectId;
+      }
+
+      return projects[0]?.project.id ?? "";
+    });
+  }, [isPersonalMode, projects]);
+
+  const handleAdoptEntry = useCallback(
+    async (sourceLibraryEntryId: string) => {
+      if (!selectedAdoptionProjectId) {
+        setAdoptionError("Select a visible project before adopting this source.");
+        setAdoptionMessage(null);
+        setAdoptionTargetPath(null);
+        return;
+      }
+
+      setAdoptingEntryId(sourceLibraryEntryId);
+      setAdoptionError(null);
+      setAdoptionMessage(null);
+      setAdoptionTargetPath(null);
+
+      try {
+        const response = await adoptEntryToProject({
+          sourceLibraryEntryId,
+          targetProjectId: selectedAdoptionProjectId,
+        });
+        setAdoptionMessage(
+          response.reused
+            ? `${response.entry.asset.title} was already available in ${response.project.project.name}.`
+            : `${response.entry.asset.title} is now available in ${response.project.project.name}.`,
+        );
+        setAdoptionTargetPath(`/projects/${response.project.project.id}/library`);
+      } catch (error) {
+        setAdoptionError(
+          error instanceof Error ? error.message : "Failed to adopt source into project.",
+        );
+        setAdoptionTargetPath(null);
+      } finally {
+        setAdoptingEntryId(null);
+      }
+    },
+    [adoptEntryToProject, selectedAdoptionProjectId],
+  );
+
   const resolvedSpaceId =
     project?.project.spaceId ?? routeSpaceId ?? "No governance space";
   const projectLabel = project?.project.name ?? (projectId || "No project");
   const contextProjectId = project?.project.id ?? projectId;
   const isLoading = isPersonalMode ? personalIsLoading : projectIsLoading;
-  const error = isPersonalMode ? personalError : projectError;
+  const error = isPersonalMode ? personalError ?? projectError : projectError;
   const kicker = isPersonalMode
     ? "Personal library · imported references · ready to sort"
     : "Project library · server-owned collaboration context";
@@ -112,6 +171,9 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
         <span className="status-badge">
           {isPersonalMode ? "personal" : projectLabel}
         </span>
+        {isPersonalMode ? (
+          <span className="status-badge">project adoption explicit</span>
+        ) : null}
         <span className="status-badge">pmid import</span>
         <button
           className="panel-link"
@@ -121,6 +183,41 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
           Refresh
         </button>
       </section>
+
+      {isPersonalMode ? (
+        <section className="panel" aria-label="project adoption controls">
+          <h2 className="panel-title">Adopt personal source into project</h2>
+          <p className="quiet-copy">
+            Make a readable personal source citable in a project by creating or reusing the
+            server-owned project LibraryEntry. Private notes, reading state, and Notebook
+            content stay personal.
+          </p>
+          <label className="quiet-copy" htmlFor="library-adoption-project-select">
+            Visible target project
+          </label>
+          <select
+            id="library-adoption-project-select"
+            value={selectedAdoptionProjectId}
+            onChange={(event) => setSelectedAdoptionProjectId(event.target.value)}
+          >
+            {projects.length === 0 ? (
+              <option value="">No visible projects</option>
+            ) : null}
+            {projects.map((item) => (
+              <option key={item.project.id} value={item.project.id}>
+                {item.project.name}
+              </option>
+            ))}
+          </select>
+          {adoptionMessage ? <p className="quiet-copy">{adoptionMessage}</p> : null}
+          {adoptionTargetPath ? (
+            <Link className="panel-link" to={adoptionTargetPath}>
+              Open target project library
+            </Link>
+          ) : null}
+          {adoptionError ? <p className="quiet-copy">{adoptionError}</p> : null}
+        </section>
+      ) : null}
 
       {error ? (
         <section className="panel-grid" aria-label="library errors">
@@ -167,6 +264,18 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
                 >
                   Open reader
                 </Link>
+                <button
+                  className="panel-link"
+                  type="button"
+                  disabled={
+                    adoptingEntryId === entry.entryId || selectedAdoptionProjectId.length === 0
+                  }
+                  onClick={() => void handleAdoptEntry(entry.entryId)}
+                >
+                  {adoptingEntryId === entry.entryId
+                    ? "Adopting into project…"
+                    : "Adopt into selected project"}
+                </button>
               </article>
             ))
           : projectEntries.map((record) => (
