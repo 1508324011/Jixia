@@ -1,19 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import type { DocumentBlockDocument } from "@shared/contracts/document-content";
+
+import { DocumentBlockEditor } from "../components/document-block-editor";
+import { createLegacyTextProjection } from "../lib/document-blocks";
 import { useProjectDocPresenter } from "../presenters/project-doc-presenter";
 
 export function WritingPage() {
   const { projectId = "", docId = "" } = useParams();
   const presenter = useProjectDocPresenter(projectId, docId);
-  const [draftContent, setDraftContent] = useState(presenter.content);
+  const [draftDocumentContent, setDraftDocumentContent] = useState<DocumentBlockDocument>(
+    presenter.documentContent,
+  );
   const [draftVersionId, setDraftVersionId] = useState<string | null>(
     presenter.snapshot?.versionId ?? null,
   );
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [isSavePendingLocally, setIsSavePendingLocally] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
-  const draftContentRef = useRef(draftContent);
+  const draftDocumentContentRef = useRef(draftDocumentContent);
   const mutationLockRef = useRef<"save" | "reload" | null>(null);
   const snapshotVersionId = presenter.snapshot?.versionId ?? null;
   const isMutating =
@@ -22,12 +28,13 @@ export function WritingPage() {
     isReloading ||
     mutationLockRef.current !== null;
   const isDraftHydrating = snapshotVersionId !== draftVersionId;
+  const draftProjection = createLegacyTextProjection(draftDocumentContent);
 
   useEffect(() => {
-    setDraftContent(presenter.content);
-    draftContentRef.current = presenter.content;
+    setDraftDocumentContent(presenter.documentContent);
+    draftDocumentContentRef.current = presenter.documentContent;
     setDraftVersionId(snapshotVersionId);
-  }, [presenter.content, snapshotVersionId]);
+  }, [presenter.documentContent, snapshotVersionId]);
 
   if (!projectId || !docId) {
     return (
@@ -70,7 +77,7 @@ export function WritingPage() {
           evidenceSpan: citation.evidenceSpan,
           paperAssetId: citation.paperAssetId,
         })),
-        content: draftContentRef.current,
+        documentContent: draftDocumentContentRef.current,
       });
     } catch (error) {
       setMutationError(
@@ -157,18 +164,13 @@ export function WritingPage() {
               <p className="quiet-copy">
                 Latest snapshot · {presenter.snapshot?.capturedAt ?? "Not saved yet"}
               </p>
-              <label className="quiet-copy" htmlFor="draft-content">
-                Draft content
-              </label>
-              <textarea
-                id="draft-content"
-                className="draft-editor"
+              <DocumentBlockEditor
                 disabled={isMutating}
-                rows={12}
-                value={draftContent}
-                onChange={(event) => {
-                  draftContentRef.current = event.target.value;
-                  setDraftContent(event.target.value);
+                label="Draft content"
+                value={draftDocumentContent}
+                onChange={(nextDocumentContent) => {
+                  draftDocumentContentRef.current = nextDocumentContent;
+                  setDraftDocumentContent(nextDocumentContent);
                 }}
               />
               <div className="button-row">
@@ -209,7 +211,7 @@ export function WritingPage() {
           <p className="quiet-copy">Publish state path</p>
           <p className="quiet-copy">draft · review · published</p>
           <p className="quiet-copy">
-            Latest content size · {draftContent.length} characters
+            Latest content size · {draftProjection.length} characters
           </p>
         </aside>
       </section>

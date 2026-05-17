@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 
+import type { DocumentBlockDocument } from "@shared/contracts/document-content";
 import type {
   NotebookDocumentRecord,
   NotebookDocumentSnapshot,
 } from "@shared/contracts/notebook";
 
+import { DocumentBlockEditor } from "../components/document-block-editor";
+import {
+  createEditableDocumentContent,
+  createLegacyTextProjection,
+} from "../lib/document-blocks";
 import { apiClient, ApiError } from "../lib/http-client";
 
 const DEFAULT_NOTEBOOK_TITLE = "Private research notebook";
@@ -15,7 +21,9 @@ export function NotebookPage() {
   const [documents, setDocuments] = useState<NotebookDocumentRecord[]>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [snapshot, setSnapshot] = useState<NotebookDocumentSnapshot | null>(null);
-  const [draftContent, setDraftContent] = useState("");
+  const [draftDocumentContent, setDraftDocumentContent] = useState<DocumentBlockDocument>(
+    () => createEditableDocumentContent(),
+  );
   const [newNotebookTitle, setNewNotebookTitle] = useState(DEFAULT_NOTEBOOK_TITLE);
   const [status, setStatus] = useState<PageStatus>("loading");
   const [message, setMessage] = useState<string | null>(null);
@@ -40,10 +48,10 @@ export function NotebookPage() {
       if (nextDocumentId) {
         const nextSnapshot = await apiClient.getNotebookSnapshot(nextDocumentId);
         setSnapshot(nextSnapshot);
-        setDraftContent(nextSnapshot.content);
+        setDraftDocumentContent(createEditableDocumentContent(nextSnapshot));
       } else {
         setSnapshot(null);
-        setDraftContent("");
+        setDraftDocumentContent(createEditableDocumentContent());
       }
     } catch (loadError) {
       setError(
@@ -52,7 +60,7 @@ export function NotebookPage() {
           : "Failed to load private notebooks.",
       );
       setSnapshot(null);
-      setDraftContent("");
+      setDraftDocumentContent(createEditableDocumentContent());
     } finally {
       setStatus("idle");
     }
@@ -71,10 +79,10 @@ export function NotebookPage() {
     try {
       const nextSnapshot = await apiClient.getNotebookSnapshot(documentId);
       setSnapshot(nextSnapshot);
-      setDraftContent(nextSnapshot.content);
+      setDraftDocumentContent(createEditableDocumentContent(nextSnapshot));
     } catch (loadError) {
       setSnapshot(null);
-      setDraftContent("");
+      setDraftDocumentContent(createEditableDocumentContent());
       setError(
         loadError instanceof ApiError && loadError.status === 403
           ? "Unauthorized: this private Notebook belongs to another user."
@@ -120,10 +128,10 @@ export function NotebookPage() {
     try {
       const savedSnapshot = await apiClient.saveNotebookVersion(selectedDocument.id, {
         citations: [],
-        content: draftContent,
+        documentContent: draftDocumentContent,
       });
       setSnapshot(savedSnapshot);
-      setDraftContent(savedSnapshot.content);
+      setDraftDocumentContent(createEditableDocumentContent(savedSnapshot));
       const response = await apiClient.listNotebooks();
       setDocuments(response.documents);
       setSelectedDocumentId(savedSnapshot.document.id);
@@ -142,6 +150,7 @@ export function NotebookPage() {
 
   const isLoading = status === "loading";
   const isSaving = status === "saving";
+  const draftProjection = createLegacyTextProjection(draftDocumentContent);
 
   return (
     <main className="page-shell">
@@ -210,15 +219,11 @@ export function NotebookPage() {
 
           {selectedDocument ? (
             <>
-              <label className="quiet-copy" htmlFor="notebook-draft-editor">
-                Editable private Notebook content
-              </label>
-              <textarea
-                className="draft-editor"
-                id="notebook-draft-editor"
-                rows={16}
-                value={draftContent}
-                onChange={(event) => setDraftContent(event.target.value)}
+              <DocumentBlockEditor
+                disabled={isLoading || isSaving}
+                label="Editable private Notebook content"
+                value={draftDocumentContent}
+                onChange={setDraftDocumentContent}
               />
               <div className="context-bar">
                 <button
@@ -243,6 +248,9 @@ export function NotebookPage() {
                   Saved snapshot · {snapshot.versionId} · {snapshot.citations.length} citation(s)
                 </p>
               ) : null}
+              <p className="quiet-copy">
+                Current legacy projection size · {draftProjection.length} characters
+              </p>
             </>
           ) : (
             <p className="quiet-copy">

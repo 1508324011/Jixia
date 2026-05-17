@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/web/app';
 
+import { expectDocumentBlocksToOmitAuthorityFields } from './document-block-assertions';
+
 function renderWorkbench(pathname: string) {
   window.history.replaceState({}, '', pathname);
   render(<App />);
@@ -275,13 +277,51 @@ describe('paper workspace', () => {
         }
 
         if (requestUrl.endsWith('/api/project-docs/doc-alpha/versions') && init?.method === 'POST') {
-          const body = JSON.parse(String(init.body)) as { content: string };
-          promotedDraft = body.content;
+          const body = JSON.parse(String(init.body)) as {
+            content?: string;
+            documentContent?: {
+              blocks: Array<{
+                libraryEntryId?: string;
+                paperAssetId?: string;
+                quote?: string;
+                text?: string;
+                type: string;
+              }>;
+              schemaVersion: 1;
+            };
+          };
+          expect(body).not.toHaveProperty('content');
+          expectDocumentBlocksToOmitAuthorityFields(body.documentContent);
+          expect(body.documentContent).toMatchObject({
+            blocks: [
+              {
+                level: 2,
+                text: 'Promoted Reader insight',
+                type: 'heading',
+              },
+              {
+                text: 'The imported paper supports the shared review workflow.',
+                type: 'paragraph',
+              },
+              {
+                libraryEntryId: 'entry-1',
+                paperAssetId: 'asset-1',
+                quote: 'Tumor board evidence',
+                type: 'sourceExcerpt',
+              },
+            ],
+            schemaVersion: 1,
+          });
+          const promotedParagraphBlock = body.documentContent?.blocks[1];
+          promotedDraft = promotedParagraphBlock && 'text' in promotedParagraphBlock
+            ? promotedParagraphBlock.text ?? ''
+            : '';
 
           return jsonResponse({
             capturedAt: '2026-03-23T00:30:00.000Z',
             citations: [],
             content: promotedDraft,
+            documentContent: body.documentContent,
             document: projectDocRecord,
             versionId: 'project-doc-version-1',
             versionNumber: 1,

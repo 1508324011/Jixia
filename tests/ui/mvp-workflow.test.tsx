@@ -2,7 +2,11 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { DocumentBlockDocument } from '../../src/shared/contracts/document-content';
+
 import { App } from '../../src/web/app';
+
+import { expectDocumentBlocksToOmitAuthorityFields } from './document-block-assertions';
 
 const projectFixture = {
   membership: {
@@ -73,6 +77,7 @@ function installFetchMock() {
       projectDocVersionId: string;
     }>;
     content: string;
+    documentContent?: DocumentBlockDocument;
     document: typeof projectDocRecordFixture;
     versionId: string;
     versionNumber: number;
@@ -194,6 +199,8 @@ function installFetchMock() {
     }
 
     if (requestUrl.pathname === '/api/project-docs/doc-project-recovery/versions' && init?.method === 'POST') {
+      const documentContent = body?.documentContent as DocumentBlockDocument | undefined;
+      expectDocumentBlocksToOmitAuthorityFields(documentContent);
       projectDocSnapshot = {
         capturedAt: '2026-05-03T00:31:00.000Z',
         citations: ((body?.citations as Array<{ evidenceSpan?: string; paperAssetId: string }> | undefined) ?? []).map(
@@ -205,7 +212,13 @@ function installFetchMock() {
             projectDocVersionId: 'project-doc-version-1',
           }),
         ),
-        content: String(body?.content ?? ''),
+        content: documentContent
+          ? documentContent.blocks
+            .map((block) => ('text' in block ? block.text : ''))
+            .filter(Boolean)
+            .join('\n\n')
+          : String(body?.content ?? ''),
+        documentContent,
         document: projectDocRecordFixture,
         versionId: 'project-doc-version-1',
         versionNumber: 1,
@@ -219,6 +232,7 @@ function installFetchMock() {
         capturedAt: '2026-05-03T00:31:00.000Z',
         citations: [],
         content: '',
+        documentContent: { blocks: [], schemaVersion: 1 },
         document: projectDocRecordFixture,
         versionId: 'project-doc-version-0',
         versionNumber: 0,

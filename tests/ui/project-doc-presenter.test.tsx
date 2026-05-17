@@ -5,6 +5,8 @@ import type { ProjectDocSnapshot } from '../../src/shared/contracts/project-docs
 import { apiClient } from '../../src/web/lib/http-client';
 import { useProjectDocPresenter } from '../../src/web/presenters/project-doc-presenter';
 
+import { expectDocumentBlocksToOmitAuthorityFields } from './document-block-assertions';
+
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error?: unknown) => void;
@@ -52,7 +54,15 @@ function PresenterHarness() {
         onClick={() =>
           void presenter.save({
             citations: [],
-            content: 'Saved content wins over stale reloads.',
+            documentContent: {
+              blocks: [
+                {
+                  text: 'Saved content wins over stale reloads.',
+                  type: 'paragraph',
+                },
+              ],
+              schemaVersion: 1,
+            },
           })
         }
       >
@@ -106,6 +116,25 @@ describe('project doc presenter', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'refresh' }));
     fireEvent.click(screen.getByRole('button', { name: 'save' }));
+
+    expect(apiClient.saveProjectDocVersion).toHaveBeenCalledWith(
+      'doc-project-1',
+      {
+        citations: [],
+        documentContent: {
+          blocks: [
+            {
+              text: 'Saved content wins over stale reloads.',
+              type: 'paragraph',
+            },
+          ],
+          schemaVersion: 1,
+        },
+      },
+    );
+    expectDocumentBlocksToOmitAuthorityFields(
+      vi.mocked(apiClient.saveProjectDocVersion).mock.calls[0]?.[1].documentContent,
+    );
 
     saveRequest.resolve(
       buildSnapshot('project-doc-version-2', 2, 'Saved content wins over stale reloads.'),
