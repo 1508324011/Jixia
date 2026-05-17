@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/web/app';
 
+import { expectDocumentBlocksToOmitAuthorityFields } from './document-block-assertions';
+
 function renderWorkbench(pathname: string) {
   window.history.replaceState({}, '', pathname);
   render(<App />);
@@ -127,6 +129,15 @@ describe('project writer flow', () => {
         },
       ],
       content: 'Promoted governed insight paragraph.',
+      documentContent: {
+        blocks: [
+          {
+            text: 'Promoted governed insight paragraph.',
+            type: 'paragraph',
+          },
+        ],
+        schemaVersion: 1,
+      },
       document: {
         createdAt: '2026-03-23T00:35:00.000Z',
         createdByUserId: 'user-alice',
@@ -173,8 +184,23 @@ describe('project writer flow', () => {
         }
 
         if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
-          const body = JSON.parse(String(init.body)) as { content: string };
-          documentState.content = body.content;
+          const body = JSON.parse(String(init.body)) as {
+            content?: string;
+            documentContent: typeof documentState.documentContent;
+          };
+          expect(body).not.toHaveProperty('content');
+          expectDocumentBlocksToOmitAuthorityFields(body.documentContent);
+          expect(body.documentContent).toEqual({
+            blocks: [
+              {
+                text: 'Reopened writer draft with persisted edits.',
+                type: 'paragraph',
+              },
+            ],
+            schemaVersion: 1,
+          });
+          documentState.documentContent = body.documentContent;
+          documentState.content = body.documentContent.blocks[0]?.text ?? '';
           documentState.capturedAt = '2026-03-23T00:45:00.000Z';
           documentState.versionId = 'project-doc-version-2';
           documentState.versionNumber = 2;
@@ -193,10 +219,10 @@ describe('project writer flow', () => {
     renderWorkbench('/projects/project-1/writing/doc-project-1');
 
     expect(
-      await screen.findByDisplayValue('Promoted governed insight paragraph.'),
-    ).toBeInTheDocument();
+      await screen.findByRole('textbox', { name: 'Paragraph block 1' }),
+    ).toHaveValue('Promoted governed insight paragraph.');
 
-    const draftContent = await screen.findByRole('textbox', { name: 'Draft content' });
+    const draftContent = await screen.findByRole('textbox', { name: 'Paragraph block 1' });
     await user.clear(draftContent);
     await user.type(draftContent, 'Reopened writer draft with persisted edits.');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
@@ -204,7 +230,7 @@ describe('project writer flow', () => {
       await screen.findByText('Latest snapshot · 2026-03-23T00:45:00.000Z'),
     ).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByRole('textbox', { name: 'Draft content' })).toHaveValue(
+      expect(screen.getByRole('textbox', { name: 'Paragraph block 1' })).toHaveValue(
         'Reopened writer draft with persisted edits.',
       );
     });
@@ -238,6 +264,15 @@ describe('project writer flow', () => {
       capturedAt: '2026-03-23T00:40:00.000Z',
       citations: [],
       content: 'Original promoted draft.',
+      documentContent: {
+        blocks: [
+          {
+            text: 'Original promoted draft.',
+            type: 'paragraph',
+          },
+        ],
+        schemaVersion: 1,
+      },
       document: {
         createdAt: '2026-03-23T00:35:00.000Z',
         createdByUserId: 'user-alice',
@@ -294,7 +329,7 @@ describe('project writer flow', () => {
 
     renderWorkbench('/projects/project-1/writing/doc-project-1');
 
-    const draftContent = await screen.findByRole('textbox', { name: 'Draft content' });
+    const draftContent = await screen.findByRole('textbox', { name: 'Paragraph block 1' });
     await user.clear(draftContent);
     await user.type(draftContent, 'Queued writer edits that should survive the save.');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
@@ -302,9 +337,18 @@ describe('project writer flow', () => {
     const savingButton = await screen.findByRole('button', { name: 'Saving draft…' });
     expect(savingButton).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Reload draft' })).toBeDisabled();
-    expect(screen.getByRole('textbox', { name: 'Draft content' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'Paragraph block 1' })).toBeDisabled();
 
     documentState.content = 'Queued writer edits that should survive the save.';
+    documentState.documentContent = {
+      blocks: [
+        {
+          text: 'Queued writer edits that should survive the save.',
+          type: 'paragraph',
+        },
+      ],
+      schemaVersion: 1,
+    };
     documentState.capturedAt = '2026-03-23T00:45:00.000Z';
     documentState.versionId = 'project-doc-version-2';
     documentState.versionNumber = 2;

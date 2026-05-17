@@ -113,7 +113,27 @@ export function ReaderPage() {
           evidenceSpan: span.quote,
           paperAssetId: span.paperAssetId,
         })),
-        content: insight.summary,
+        documentContent: {
+          blocks: [
+            {
+              level: 2,
+              text: "Promoted Reader insight",
+              type: "heading",
+            },
+            {
+              text: insight.summary,
+              type: "paragraph",
+            },
+            ...insight.evidenceSpans.map((span) => ({
+              evidenceSpan: span.quote,
+              libraryEntryId: insight.libraryEntryId,
+              paperAssetId: span.paperAssetId,
+              quote: span.quote,
+              type: "sourceExcerpt" as const,
+            })),
+          ],
+          schemaVersion: 1,
+        },
       },
     );
 

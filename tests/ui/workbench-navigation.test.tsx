@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/web/app';
 
+import { expectDocumentBlocksToOmitAuthorityFields } from './document-block-assertions';
+
 const projectFixture = {
   membership: {
     joinedAt: '2026-05-08T00:00:00.000Z',
@@ -65,6 +67,15 @@ describe('workbench navigation', () => {
       },
     ];
     let notebookContent = 'Initial private Notebook content';
+    let notebookDocumentContent = {
+      blocks: [
+        {
+          text: notebookContent,
+          type: 'paragraph',
+        },
+      ],
+      schemaVersion: 1,
+    };
 
     vi.stubGlobal(
       'fetch',
@@ -181,6 +192,7 @@ describe('workbench navigation', () => {
           };
           notebooks.unshift(document);
           notebookContent = '';
+          notebookDocumentContent = { blocks: [], schemaVersion: 1 };
 
           return new Response(JSON.stringify(document), {
             headers: { 'Content-Type': 'application/json' },
@@ -194,6 +206,7 @@ describe('workbench navigation', () => {
               capturedAt: '2026-03-23T00:00:00.000Z',
               citations: [],
               content: notebookContent,
+              documentContent: notebookDocumentContent,
               document: notebooks.find((notebook) => notebook.id === 'notebook-1'),
               versionId: 'notebook-version-1',
               versionNumber: 1,
@@ -206,14 +219,30 @@ describe('workbench navigation', () => {
         }
 
         if (url.endsWith('/api/notebooks/notebook-1/versions') && init?.method === 'POST') {
-          const body = JSON.parse(String(init.body)) as { content: string };
-          notebookContent = body.content;
+          const body = JSON.parse(String(init.body)) as {
+            content?: string;
+            documentContent?: typeof notebookDocumentContent;
+          };
+          expect(body).not.toHaveProperty('content');
+          expectDocumentBlocksToOmitAuthorityFields(body.documentContent);
+          expect(body.documentContent).toEqual({
+            blocks: [
+              {
+                text: 'Saved private Notebook content',
+                type: 'paragraph',
+              },
+            ],
+            schemaVersion: 1,
+          });
+          notebookDocumentContent = body.documentContent ?? { blocks: [], schemaVersion: 1 };
+          notebookContent = notebookDocumentContent.blocks[0]?.text ?? '';
 
           return new Response(
             JSON.stringify({
               capturedAt: '2026-03-23T00:40:00.000Z',
               citations: [],
               content: notebookContent,
+              documentContent: notebookDocumentContent,
               document: notebooks.find((notebook) => notebook.id === 'notebook-1'),
               versionId: 'notebook-version-2',
               versionNumber: 2,
@@ -292,9 +321,9 @@ describe('workbench navigation', () => {
     await user.click(screen.getByRole('link', { name: 'Notebook' }));
     expect(screen.getByRole('heading', { name: 'Notebook' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Private synthesis notebook' })).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Initial private Notebook content')).toBeInTheDocument();
-    await user.clear(screen.getByLabelText('Editable private Notebook content'));
-    await user.type(screen.getByLabelText('Editable private Notebook content'), 'Saved private Notebook content');
+    expect(screen.getByRole('textbox', { name: 'Paragraph block 1' })).toHaveValue('Initial private Notebook content');
+    await user.clear(screen.getByRole('textbox', { name: 'Paragraph block 1' }));
+    await user.type(screen.getByRole('textbox', { name: 'Paragraph block 1' }), 'Saved private Notebook content');
     await user.click(screen.getByRole('button', { name: 'Save Notebook' }));
     expect(await screen.findByText(/Saved Private synthesis notebook version 2/)).toBeInTheDocument();
 

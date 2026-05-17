@@ -349,6 +349,182 @@ a {
   color: color-mix(in srgb, var(--jixia-accent) 82%, black);
 }
 
+.action-button,
+.document-block-editor__toolbar button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 2.4rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid rgba(46, 170, 220, 0.28);
+  border-radius: var(--jixia-radius-sm);
+  background: var(--jixia-accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.action-button-secondary,
+.document-block-editor__toolbar button {
+  background: rgba(46, 170, 220, 0.1);
+  color: var(--jixia-accent);
+}
+
+.action-button:disabled,
+.document-block-editor:disabled button,
+.document-block-editor:disabled input,
+.document-block-editor:disabled select,
+.document-block-editor:disabled textarea {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.button-row,
+.stack-sm,
+.stack-xs {
+  display: grid;
+  gap: var(--jixia-space-2);
+}
+
+.button-row {
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  justify-content: start;
+}
+
+.draft-editor,
+.document-block-editor textarea,
+.document-block-editor input,
+.document-block-editor select,
+#new-notebook-title {
+  width: 100%;
+  border: 1px solid var(--jixia-border-strong);
+  border-radius: var(--jixia-radius-sm);
+  background: var(--jixia-bg);
+  color: var(--jixia-text);
+  font: inherit;
+  padding: 0.75rem 0.85rem;
+}
+
+.document-block-editor {
+  display: grid;
+  gap: var(--jixia-space-3);
+  min-width: 0;
+  padding: var(--jixia-space-3);
+  border: 1px solid var(--jixia-border);
+  border-radius: var(--jixia-radius-md);
+  background: var(--jixia-surface-strong);
+}
+
+.document-block-editor__legend {
+  padding: 0 var(--jixia-space-1);
+  color: var(--jixia-ink);
+  font-weight: 700;
+}
+
+.document-block-editor__toolbar,
+.document-block-editor__block-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--jixia-space-2);
+  align-items: center;
+}
+
+.document-block-editor__blocks {
+  display: grid;
+  gap: var(--jixia-space-3);
+}
+
+.document-block-editor__block {
+  display: grid;
+  gap: var(--jixia-space-2);
+  padding: var(--jixia-space-3);
+  border: 1px solid var(--jixia-border);
+  border-radius: var(--jixia-radius-md);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.document-block-editor__field {
+  display: grid;
+  gap: var(--jixia-space-1);
+  color: var(--jixia-text-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.document-block-editor__field--compact {
+  max-width: 16rem;
+}
+
+.document-block-editor__checkbox {
+  display: inline-flex;
+  gap: var(--jixia-space-2);
+  align-items: center;
+  color: var(--jixia-text-muted);
+  font-weight: 600;
+}
+
+.document-block-editor__checkbox input {
+  width: auto;
+}
+
+.document-block-editor__readonly-body {
+  display: grid;
+  gap: var(--jixia-space-2);
+  padding: var(--jixia-space-3);
+  border-radius: var(--jixia-radius-sm);
+  background: rgba(46, 170, 220, 0.08);
+}
+
+.document-block-editor__readonly-body p,
+.document-block-editor__readonly-body blockquote,
+.document-block-editor__metadata,
+.document-block-editor__projection pre {
+  margin: 0;
+}
+
+.document-block-editor__readonly-body blockquote {
+  padding-left: var(--jixia-space-3);
+  border-left: 3px solid rgba(46, 170, 220, 0.45);
+  color: var(--jixia-text);
+}
+
+.document-block-editor__metadata {
+  display: grid;
+  gap: var(--jixia-space-1);
+}
+
+.document-block-editor__metadata div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--jixia-space-1);
+}
+
+.document-block-editor__metadata dt {
+  color: var(--jixia-text-tertiary);
+  font-weight: 700;
+}
+
+.document-block-editor__metadata dd {
+  margin: 0;
+  color: var(--jixia-text-muted);
+}
+
+.document-block-editor__projection {
+  color: var(--jixia-text-muted);
+}
+
+.document-block-editor__projection pre {
+  overflow: auto;
+  margin-top: var(--jixia-space-2);
+  white-space: pre-wrap;
+  padding: var(--jixia-space-3);
+  border: 1px solid var(--jixia-border);
+  border-radius: var(--jixia-radius-sm);
+  background: rgba(255, 255, 255, 0.78);
+}
+
 @media (max-width: 960px) {
   .page-shell {
     padding: var(--jixia-space-4);

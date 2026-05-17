@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import type { DocumentBlockDocument } from "@shared/contracts/document-content";
 import type {
   ProjectDocCitationRecord,
   ProjectDocRecord,
@@ -7,16 +8,23 @@ import type {
 } from "@shared/contracts/project-docs";
 
 import { apiClient } from "../lib/http-client";
+import { createEditableDocumentContent } from "../lib/document-blocks";
 import { useProjectContext } from "./project-context";
 
 interface SaveProjectDocInput {
-  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>;
-  content: string;
+  citations: Array<{
+    evidenceSpan?: string;
+    libraryEntryId?: string;
+    paperAssetId: string;
+  }>;
+  content?: string;
+  documentContent: DocumentBlockDocument;
 }
 
 export interface ProjectDocPresenterViewModel {
   citations: ProjectDocCitationRecord[];
   content: string;
+  documentContent: DocumentBlockDocument;
   document: ProjectDocRecord | null;
   error: string | null;
   isLoading: boolean;
@@ -190,6 +198,11 @@ export function useProjectDocPresenter(
     [beginRequest, canCommitRequest, completeRequest, documentId, invalidatePendingRequests, projectContext.project, projectId],
   );
 
+  const documentContent = useMemo(
+    () => createEditableDocumentContent(snapshot),
+    [snapshot],
+  );
+
   useEffect(() => {
     isMountedRef.current = true;
 
@@ -219,6 +232,7 @@ export function useProjectDocPresenter(
     () => ({
       citations: snapshot?.citations ?? [],
       content: snapshot?.content ?? "",
+      documentContent,
       document: snapshot?.document ?? null,
       error,
       isLoading,
@@ -230,6 +244,6 @@ export function useProjectDocPresenter(
       save,
       snapshot,
     }),
-    [error, isLoading, isSaving, projectContext.error, projectContext.isLoading, projectContext.project, refresh, save, snapshot],
+    [documentContent, error, isLoading, isSaving, projectContext.error, projectContext.isLoading, projectContext.project, refresh, save, snapshot],
   );
 }
