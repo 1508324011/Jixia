@@ -1,13 +1,6 @@
 import { NavLink } from 'react-router-dom';
 
-const workbenchLinks = [
-  { label: '今日推荐', to: '/today' },
-  { label: '搜索', to: '/search' },
-  { label: 'Library', to: '/library' },
-  { label: 'Notebook', to: '/notebook' },
-  { label: 'Projects', to: '/projects' },
-  { label: '设置', to: '/settings' },
-] as const;
+import { workbenchNavigationItems } from '../lib/workbench-navigation';
 
 export function SidebarNav() {
   return (
@@ -18,7 +11,7 @@ export function SidebarNav() {
       </div>
 
       <div className="sidebar-nav__links">
-        {workbenchLinks.map((link) => (
+        {workbenchNavigationItems.map((link) => (
           <NavLink
             key={link.to}
             className={({ isActive }) =>

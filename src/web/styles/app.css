@@ -540,7 +540,7 @@ a {
 
 @media (min-width: 960px) {
   .workbench-shell {
-    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .dashboard-layout {

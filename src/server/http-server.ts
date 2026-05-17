@@ -786,6 +786,34 @@ async function handleApiRequest(
       return true;
     }
 
+    if (pathname === "/api/home-cockpit" && method === "GET") {
+      const actor = await getActor(request, actorOptions);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+
+      const sessionToken = readSessionTokenFromCookieHeader(
+        readSingleHeader(request.headers.cookie),
+      );
+
+      if (!sessionToken) {
+        throw new Error(
+          "Project API requires a server-derived actor session from the session cookie.",
+        );
+      }
+
+      const user = await app.session.getCurrentUserFromToken(sessionToken, {
+        userAgent: readSingleHeader(request.headers["user-agent"]) ?? undefined,
+      });
+
+      if (!user || user.id !== actor.userId) {
+        throw new Error(
+          "Project API requires a server-derived actor session from the session cookie.",
+        );
+      }
+
+      sendJson(response, 200, await app.homeCockpit.getHomeCockpit(user), method);
+      return true;
+    }
+
     if (pathname === "/api/spaces" && method === "POST") {
       const actor = await getActor(request, actorOptions);
       rejectLegacyIdentityQueryFields(actor, requestUrl);
