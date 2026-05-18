@@ -44,6 +44,15 @@ afterEach(() => {
 describe('project writer flow', () => {
   it('project page renders the server-owned Project Docs empty state from the workspace endpoint', async () => {
     const workspaceFixture = {
+      activity: {
+        emptyState: {
+          body: 'Project activity will appear when Project Docs, project Library resources, Reader comments or evidence, and governed project jobs change.',
+          title: 'No project activity yet',
+        },
+        items: [],
+        projectId: 'project-1',
+        totalCount: 0,
+      },
       actor: {
         role: 'owner',
         userId: 'user-alice',
@@ -79,6 +88,15 @@ describe('project writer flow', () => {
         status: 'active',
         updatedAt: '2026-03-23T00:35:00.000Z',
       },
+      resources: {
+        emptyState: {
+          body: 'Project resources will appear when the team creates Project Docs or adopts literature into the project-scoped Library.',
+          title: 'No project resources yet',
+        },
+        items: [],
+        projectId: 'project-1',
+        totalCount: 0,
+      },
     };
 
     vi.stubGlobal(
@@ -113,6 +131,8 @@ describe('project writer flow', () => {
 
     expect(await screen.findByText('Project Docs 共享知识中心')).toBeInTheDocument();
     expect(await screen.findByText('No Project Docs yet')).toBeInTheDocument();
+    expect(screen.getByText('No project resources yet')).toBeInTheDocument();
+    expect(screen.getByText('No project activity yet')).toBeInTheDocument();
     expect(
       screen.getByText('No Project Docs have been created for this project yet. Use Project Docs to maintain shared background, evidence, rationale, conclusions, and formal drafts for the team.'),
     ).toBeInTheDocument();
@@ -139,6 +159,28 @@ describe('project writer flow', () => {
 
       if (requestUrl.endsWith('/api/projects/project-1/workspace')) {
         return jsonResponse({
+          activity: {
+            emptyState: {
+              body: 'Project activity will appear when project-scoped records change.',
+              title: 'No project activity yet',
+            },
+            items: [
+              {
+                actorUserId: 'user-alice',
+                href: '/projects/project-1/writing/doc-project-1',
+                id: 'project-doc:doc-project-1',
+                kind: 'project-doc',
+                occurredAt: '2026-03-23T00:40:00.000Z',
+                projectId: 'project-1',
+                sourceId: 'doc-project-1',
+                sourceLabel: 'Project Doc',
+                summary: 'Project Doc draft · version 1',
+                title: 'Tumor board literature synthesis',
+              },
+            ],
+            projectId: 'project-1',
+            totalCount: 1,
+          },
           actor: {
             role: 'owner',
             userId: 'user-alice',
@@ -191,6 +233,26 @@ describe('project writer flow', () => {
             status: 'active',
             updatedAt: '2026-03-23T00:35:00.000Z',
           },
+          resources: {
+            emptyState: {
+              body: 'Project resources will appear when project-scoped records are created.',
+              title: 'No project resources yet',
+            },
+            items: [
+              {
+                href: '/projects/project-1/writing/doc-project-1',
+                id: 'project-doc:doc-project-1',
+                kind: 'project-doc',
+                projectId: 'project-1',
+                sourceId: 'doc-project-1',
+                subtitle: 'draft · version 1',
+                title: 'Tumor board literature synthesis',
+                updatedAt: '2026-03-23T00:40:00.000Z',
+              },
+            ],
+            projectId: 'project-1',
+            totalCount: 1,
+          },
         });
       }
 
@@ -201,10 +263,21 @@ describe('project writer flow', () => {
 
     renderWorkbench('/projects/project-1');
 
-    expect(await screen.findByText('Tumor board literature synthesis')).toBeInTheDocument();
+    expect(await screen.findAllByText('Tumor board literature synthesis')).toHaveLength(3);
     expect(screen.getByText('Document · doc-project-1')).toBeInTheDocument();
     expect(screen.getByText('Updated 2026-03-23T00:40:00.000Z · Version 1')).toBeInTheDocument();
     expect(screen.getByText('Latest version · project-doc-version-1')).toBeInTheDocument();
+    expect(screen.getByText('Project Doc draft · version 1')).toBeInTheDocument();
+    expect(screen.getByText('draft · version 1')).toBeInTheDocument();
+    expect(screen.getByText('Occurred 2026-03-23T00:40:00.000Z')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Resume from activity' })).toHaveAttribute(
+      'href',
+      '/projects/project-1/writing/doc-project-1',
+    );
+    expect(screen.getByRole('link', { name: 'Open resource' })).toHaveAttribute(
+      'href',
+      '/projects/project-1/writing/doc-project-1',
+    );
     expect(screen.getByRole('link', { name: 'Open Project Doc' })).toHaveAttribute(
       'href',
       '/projects/project-1/writing/doc-project-1',
@@ -241,6 +314,15 @@ describe('project writer flow', () => {
 
       if (requestUrl.endsWith('/api/projects/project-1/workspace')) {
         return jsonResponse({
+          activity: {
+            emptyState: {
+              body: 'Project activity will appear when Project Docs, project Library resources, Reader comments or evidence, and governed project jobs change.',
+              title: 'No project activity yet',
+            },
+            items: [],
+            projectId: 'project-1',
+            totalCount: 0,
+          },
           actor: {
             role: 'owner',
             userId: 'user-alice',
@@ -275,6 +357,15 @@ describe('project writer flow', () => {
             spaceId: 'space-project-1',
             status: 'active',
             updatedAt: '2026-03-23T00:35:00.000Z',
+          },
+          resources: {
+            emptyState: {
+              body: 'Project resources will appear when the team creates Project Docs or adopts literature into the project-scoped Library.',
+              title: 'No project resources yet',
+            },
+            items: [],
+            projectId: 'project-1',
+            totalCount: 0,
           },
         });
       }
@@ -384,6 +475,28 @@ describe('project writer flow', () => {
 
         if (requestUrl.endsWith('/api/projects/project-1/workspace')) {
           return jsonResponse({
+            activity: {
+              emptyState: {
+                body: 'Project activity will appear when project-scoped records change.',
+                title: 'No project activity yet',
+              },
+              items: [
+                {
+                  actorUserId: 'user-alice',
+                  href: '/projects/project-1/writing/doc-project-1',
+                  id: 'project-doc:doc-project-1',
+                  kind: 'project-doc',
+                  occurredAt: '2026-03-23T00:35:00.000Z',
+                  projectId: 'project-1',
+                  sourceId: 'doc-project-1',
+                  sourceLabel: 'Project Doc',
+                  summary: 'Project Doc draft · no saved version yet',
+                  title: 'Viewer-readable synthesis',
+                },
+              ],
+              projectId: 'project-1',
+              totalCount: 1,
+            },
             actor: {
               role: 'viewer',
               userId: 'user-bob',
@@ -432,6 +545,26 @@ describe('project writer flow', () => {
               status: 'active',
               updatedAt: '2026-03-23T00:35:00.000Z',
             },
+            resources: {
+              emptyState: {
+                body: 'Project resources will appear when project-scoped records are created.',
+                title: 'No project resources yet',
+              },
+              items: [
+                {
+                  href: '/projects/project-1/writing/doc-project-1',
+                  id: 'project-doc:doc-project-1',
+                  kind: 'project-doc',
+                  projectId: 'project-1',
+                  sourceId: 'doc-project-1',
+                  subtitle: 'draft · no saved version yet',
+                  title: 'Viewer-readable synthesis',
+                  updatedAt: '2026-03-23T00:35:00.000Z',
+                },
+              ],
+              projectId: 'project-1',
+              totalCount: 1,
+            },
           });
         }
 
@@ -441,7 +574,7 @@ describe('project writer flow', () => {
 
     renderWorkbench('/projects/project-1');
 
-    expect(await screen.findByText('Viewer-readable synthesis')).toBeInTheDocument();
+    expect(await screen.findAllByText('Viewer-readable synthesis')).toHaveLength(3);
     expect(screen.getByText('Project viewers can read visible Project Docs but cannot create shared project knowledge documents.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Create Project Doc' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('New Project Doc title')).not.toBeInTheDocument();
@@ -798,6 +931,15 @@ describe('project writer flow', () => {
 
   it('project page treats an empty Project Docs index as an empty state instead of a runtime failure', async () => {
     const workspaceFixture = {
+      activity: {
+        emptyState: {
+          body: 'Project activity appears when project-scoped records change.',
+          title: 'No project activity yet',
+        },
+        items: [],
+        projectId: 'project-alpha',
+        totalCount: 0,
+      },
       actor: {
         role: 'owner',
         userId: 'user-alice',
@@ -832,6 +974,15 @@ describe('project writer flow', () => {
         spaceId: 'space-alpha',
         status: 'active',
         updatedAt: '2026-05-08T00:00:00.000Z',
+      },
+      resources: {
+        emptyState: {
+          body: 'Project resources will appear when the team creates Project Docs or adopts literature into the project-scoped Library.',
+          title: 'No project resources yet',
+        },
+        items: [],
+        projectId: 'project-alpha',
+        totalCount: 0,
       },
     };
 

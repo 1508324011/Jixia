@@ -23,6 +23,15 @@ const projectFixture = {
 };
 
 const projectWorkspaceFixture = {
+  activity: {
+    emptyState: {
+      body: 'Project activity will appear when project-scoped records change.',
+      title: 'No project activity yet',
+    },
+    items: [],
+    projectId: projectFixture.project.id,
+    totalCount: 0,
+  },
   actor: {
     role: projectFixture.membership.role,
     userId: projectFixture.membership.userId,
@@ -45,6 +54,15 @@ const projectWorkspaceFixture = {
   },
   membership: projectFixture.membership,
   project: projectFixture.project,
+  resources: {
+    emptyState: {
+      body: 'Project resources will appear when the team creates Project Docs or adopts literature into the project-scoped Library.',
+      title: 'No project resources yet',
+    },
+    items: [],
+    projectId: projectFixture.project.id,
+    totalCount: 0,
+  },
 };
 
 const personalLibraryEntryFixture = {

@@ -30,6 +30,8 @@ import type {
 import type {
   CreateProjectRequest,
   ProjectListItem,
+  ProjectWorkspaceActivityKind,
+  ProjectWorkspaceResourceKind,
   ProjectMemberRecord,
   ProjectMemberRole,
   ProjectRecord,
@@ -154,6 +156,28 @@ describe('core contracts', () => {
     };
     const listItem: ProjectListItem = { membership, project };
     const workspace: ProjectWorkspaceResponse = {
+      activity: {
+        emptyState: {
+          body: 'Project activity will appear when project-scoped records change.',
+          title: 'No project activity yet',
+        },
+        items: [
+          {
+            actorUserId: 'user_001',
+            href: '/projects/project_001/writing/project-doc_001',
+            id: 'project-doc:project-doc_001',
+            kind: 'project-doc',
+            occurredAt: '2026-05-03T00:10:00.000Z',
+            projectId: project.id,
+            sourceId: 'project-doc_001',
+            sourceLabel: 'Project Doc',
+            summary: 'Project Doc draft · version 1',
+            title: 'Shared synthesis',
+          },
+        ],
+        projectId: project.id,
+        totalCount: 1,
+      },
       actor: {
         role: 'owner',
         userId: 'user_001',
@@ -193,6 +217,26 @@ describe('core contracts', () => {
       },
       membership,
       project,
+      resources: {
+        emptyState: {
+          body: 'Project resources will appear when project-scoped records are created.',
+          title: 'No project resources yet',
+        },
+        items: [
+          {
+            href: '/projects/project_001/writing/project-doc_001',
+            id: 'project-doc:project-doc_001',
+            kind: 'project-doc',
+            projectId: project.id,
+            sourceId: 'project-doc_001',
+            subtitle: 'draft · version 1',
+            title: 'Shared synthesis',
+            updatedAt: '2026-05-03T00:10:00.000Z',
+          },
+        ],
+        projectId: project.id,
+        totalCount: 1,
+      },
     };
 
     expect(personalScope.type).toBe('user');
@@ -202,6 +246,9 @@ describe('core contracts', () => {
     expect(workspace.contract).toBe(projects.projectsContract);
     expect(workspace.actor.userId).toBe('user_001');
     expect(workspace.docs.totalCount).toBe(1);
+    expect(workspace.activity.items[0]?.kind).toBe('project-doc');
+    expect(workspace.activity.items[0]?.href).toBe('/projects/project_001/writing/project-doc_001');
+    expect(workspace.resources.items[0]?.title).toBe('Shared synthesis');
     expect(workspace.links.libraryHref).toBe('/projects/project_001/library');
     expect(workspace.docs.documents[0]?.openHref).toBe('/projects/project_001/writing/project-doc_001');
     expect(workspace.docs.documents[0]?.latestVersion?.versionNumber).toBe(1);
@@ -211,6 +258,8 @@ describe('core contracts', () => {
     expectTypeOf<ProjectMemberRole>().toEqualTypeOf<
       'owner' | 'editor' | 'viewer'
     >();
+    expectTypeOf<ProjectWorkspaceActivityKind>().toEqualTypeOf<'project-doc'>();
+    expectTypeOf<ProjectWorkspaceResourceKind>().toEqualTypeOf<'project-doc'>();
   });
 
   it('exports the server-owned Home cockpit read-model contract', () => {
