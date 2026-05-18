@@ -68,7 +68,56 @@ export interface ProjectWorkspaceDocsIndex {
   totalCount: number;
 }
 
+export type ProjectWorkspaceActivityKind = 'project-doc';
+
+export interface ProjectWorkspaceActivityItem {
+  actorUserId?: string;
+  href?: string;
+  id: string;
+  kind: ProjectWorkspaceActivityKind;
+  occurredAt: string;
+  projectId: string;
+  sourceId?: string;
+  sourceLabel?: string;
+  summary: string;
+  title: string;
+}
+
+export interface ProjectWorkspaceActivitySection {
+  emptyState: {
+    body: string;
+    title: string;
+  };
+  items: ProjectWorkspaceActivityItem[];
+  projectId: string;
+  totalCount: number;
+}
+
+export type ProjectWorkspaceResourceKind = 'project-doc';
+
+export interface ProjectWorkspaceResourceItem {
+  href?: string;
+  id: string;
+  kind: ProjectWorkspaceResourceKind;
+  projectId: string;
+  sourceId?: string;
+  subtitle?: string;
+  title: string;
+  updatedAt?: string;
+}
+
+export interface ProjectWorkspaceResourcesSection {
+  emptyState: {
+    body: string;
+    title: string;
+  };
+  items: ProjectWorkspaceResourceItem[];
+  projectId: string;
+  totalCount: number;
+}
+
 export interface ProjectWorkspaceResponse {
+  activity: ProjectWorkspaceActivitySection;
   actor: {
     role: ProjectMemberRole;
     userId: string;
@@ -83,6 +132,7 @@ export interface ProjectWorkspaceResponse {
   };
   membership: ProjectMemberRecord;
   project: ProjectRecord;
+  resources: ProjectWorkspaceResourcesSection;
 }
 
 export interface AddProjectMemberRequest {

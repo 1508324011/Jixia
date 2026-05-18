@@ -5,8 +5,11 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import {
+  createLibraryRepository,
+  createNotebookRepository,
   createPrismaClient,
   createProjectDocRepository,
+  createReadingRepository,
   createSpaceRepository,
 } from '../../src/db';
 import {
@@ -351,8 +354,69 @@ describe('http server project api', () => {
         );
 
         const prisma = createPrismaClient({ url: databaseUrl });
+        const privateLeakSentinels = [
+          'Private reader leak title',
+          'Private reader leak abstract',
+          'Private reader leak note body',
+          'Private reader leak insight conversation',
+          'Private reader leak insight summary',
+          'Private reader leak evidence quote',
+          'Private notebook leak title',
+          'Private notebook leak content',
+        ];
         const projectDocRepository = createProjectDocRepository(prisma);
         try {
+          const privateLibraryEntry = await createLibraryRepository(prisma).importScopedEntry({
+            asset: {
+              abstractText: 'Private reader leak abstract',
+              canonicalId: 'doi:10.1000/private-reader-leak',
+              importedByUserId: 'user-alice',
+              sourceLocator: '10.1000/private-reader-leak',
+              sourceType: 'doi',
+              title: 'Private reader leak title',
+            },
+            entry: {
+              addedByUserId: 'user-alice',
+              legacySpaceId: createdSpace.id,
+              legacyVisibility: 'private',
+              scope: { id: 'user-alice', type: 'user' },
+            },
+          });
+          const readingRepository = createReadingRepository(prisma);
+          await readingRepository.createPrivateNote({
+            authorUserId: 'user-alice',
+            body: 'Private reader leak note body',
+            libraryEntryId: privateLibraryEntry.entry.id,
+          });
+          const privateConversation = await readingRepository.createConversation({
+            libraryEntryId: privateLibraryEntry.entry.id,
+            startedByUserId: 'user-alice',
+            title: 'Private reader leak insight conversation',
+          });
+          await readingRepository.saveGeneratedInsight({
+            conversationId: privateConversation.id,
+            createdByUserId: 'user-alice',
+            evidenceSpans: [
+              {
+                endOffset: 34,
+                orderIndex: 0,
+                paperAssetId: privateLibraryEntry.asset.id,
+                quote: 'Private reader leak evidence quote',
+                startOffset: 0,
+              },
+            ],
+            libraryEntryId: privateLibraryEntry.entry.id,
+            summary: 'Private reader leak insight summary',
+          });
+          const privateNotebook = await createNotebookRepository(prisma).createDocument({
+            ownerId: 'user-alice',
+            title: 'Private notebook leak title',
+          });
+          await createNotebookRepository(prisma).saveVersion({
+            citations: [],
+            content: 'Private notebook leak content',
+            documentId: privateNotebook.id,
+          });
           const document = await projectDocRepository.createDocument({
             createdByUserId: 'user-alice',
             projectId: project.project.id,
@@ -373,13 +437,29 @@ describe('http server project api', () => {
         );
         const ownerWorkspace = (await ownerResponse.json()) as {
           actor: { role: string; userId: string };
+          activity: {
+            emptyState: { body: string; title: string };
+            items: Array<{
+              actorUserId?: string;
+              href?: string;
+              id: string;
+              kind: string;
+              occurredAt: string;
+              projectId: string;
+              sourceId?: string;
+              sourceLabel?: string;
+              summary: string;
+              title: string;
+            }>;
+            totalCount: number;
+          };
           docs: {
             canCreate: boolean;
             createDisabledReason?: string;
             documents: Array<{
               createdByUserId: string;
               documentId: string;
-              latestVersion: { versionNumber: number } | null;
+              latestVersion: { capturedAt: string; versionNumber: number } | null;
               openHref: string;
               title: string;
             }>;
@@ -388,6 +468,20 @@ describe('http server project api', () => {
           links: { libraryHref: string; projectHref: string; writerHref?: string };
           membership: { role: string; userId: string };
           project: { id: string; spaceId: string };
+          resources: {
+            emptyState: { body: string; title: string };
+            items: Array<{
+              href?: string;
+              id: string;
+              kind: string;
+              projectId: string;
+              sourceId?: string;
+              subtitle?: string;
+              title: string;
+              updatedAt?: string;
+            }>;
+            totalCount: number;
+          };
         };
 
         expect(ownerResponse.status).toBe(200);
@@ -402,6 +496,38 @@ describe('http server project api', () => {
           openHref: `/projects/${project.project.id}/writing/${ownerWorkspace.docs.documents[0]?.documentId}`,
           title: 'Workspace indexed synthesis',
         });
+        expect(ownerWorkspace.activity.totalCount).toBe(1);
+        expect(ownerWorkspace.activity.items).toHaveLength(1);
+        expect(ownerWorkspace.activity.items[0]).toMatchObject({
+          href: ownerWorkspace.docs.documents[0]?.openHref,
+          kind: 'project-doc',
+          occurredAt: ownerWorkspace.docs.documents[0]?.latestVersion?.capturedAt,
+          projectId: project.project.id,
+          sourceId: ownerWorkspace.docs.documents[0]?.documentId,
+          sourceLabel: 'Project Doc',
+          summary: 'Project Doc draft · version 1',
+          title: 'Workspace indexed synthesis',
+        });
+        expect(ownerWorkspace.activity.items[0]).not.toHaveProperty('actorUserId');
+        expect(ownerWorkspace.activity.items.map((item) => item.kind)).toEqual(['project-doc']);
+        const serializedWorkspaceActivity = JSON.stringify(ownerWorkspace.activity.items);
+        for (const sentinel of privateLeakSentinels) {
+          expect(serializedWorkspaceActivity).not.toContain(sentinel);
+        }
+        expect(ownerWorkspace.resources.totalCount).toBe(1);
+        expect(ownerWorkspace.resources.items[0]).toMatchObject({
+          href: ownerWorkspace.docs.documents[0]?.openHref,
+          kind: 'project-doc',
+          projectId: project.project.id,
+          sourceId: ownerWorkspace.docs.documents[0]?.documentId,
+          subtitle: 'draft · version 1',
+          title: 'Workspace indexed synthesis',
+        });
+        expect(ownerWorkspace.resources.items.map((item) => item.kind)).toEqual(['project-doc']);
+        const serializedWorkspaceResources = JSON.stringify(ownerWorkspace.resources.items);
+        for (const sentinel of privateLeakSentinels) {
+          expect(serializedWorkspaceResources).not.toContain(sentinel);
+        }
         expect(ownerWorkspace.links).toMatchObject({
           libraryHref: `/projects/${project.project.id}/library`,
           projectHref: `/projects/${project.project.id}`,
@@ -473,7 +599,17 @@ describe('http server project api', () => {
             emptyState: { body: string; title: string };
             totalCount: number;
           };
+          activity: {
+            emptyState: { body: string; title: string };
+            items: unknown[];
+            totalCount: number;
+          };
           links: { writerHref?: string };
+          resources: {
+            emptyState: { body: string; title: string };
+            items: unknown[];
+            totalCount: number;
+          };
         };
 
         expect(emptyResponse.status).toBe(200);
@@ -481,6 +617,14 @@ describe('http server project api', () => {
         expect(emptyWorkspace.docs.totalCount).toBe(0);
         expect(emptyWorkspace.docs.canCreate).toBe(true);
         expect(emptyWorkspace.docs.emptyState.title).toBe('No Project Docs yet');
+        expect(emptyWorkspace.activity.items).toEqual([]);
+        expect(emptyWorkspace.activity.totalCount).toBe(0);
+        expect(emptyWorkspace.activity.emptyState.title).toBe('No project activity yet');
+        expect(emptyWorkspace.activity.emptyState.body).toMatch(/Project Docs, project Library resources, Reader comments or evidence, and governed project jobs/i);
+        expect(emptyWorkspace.resources.items).toEqual([]);
+        expect(emptyWorkspace.resources.totalCount).toBe(0);
+        expect(emptyWorkspace.resources.emptyState.title).toBe('No project resources yet');
+        expect(emptyWorkspace.resources.emptyState.body).toMatch(/Project Docs or adopts literature/i);
         expect(emptyWorkspace.links.writerHref).toBeUndefined();
       } finally {
         await server.close();

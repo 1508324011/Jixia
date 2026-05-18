@@ -106,6 +106,8 @@ export function ProjectPage() {
   const projectLabel = project.project.name;
   const spaceId = project.project.spaceId;
   const docs = workspace.docs.documents;
+  const activityItems = workspace.activity.items;
+  const resourceItems = workspace.resources.items;
 
   return (
     <main className="page-shell">
@@ -131,7 +133,30 @@ export function ProjectPage() {
         <p className="quiet-copy">
           先从概览进入共享 Library、Project Docs 和协作动态。
         </p>
-        <Link className="panel-link" to={`/projects/${projectId}/library`}>
+        <div className="panel-grid" aria-label="project resources summary">
+          {resourceItems.length > 0 ? (
+            resourceItems.slice(0, 3).map((resource) => (
+              <article className="panel" key={resource.id}>
+                <h3 className="panel-title">{resource.title}</h3>
+                <p className="quiet-copy">{resource.subtitle ?? 'Project resource'}</p>
+                {resource.updatedAt ? (
+                  <p className="quiet-copy">Updated {resource.updatedAt}</p>
+                ) : null}
+                {resource.href ? (
+                  <Link className="panel-link" to={resource.href}>
+                    Open resource
+                  </Link>
+                ) : null}
+              </article>
+            ))
+          ) : (
+            <article className="panel">
+              <h3 className="panel-title">{workspace.resources.emptyState.title}</h3>
+              <p className="quiet-copy">{workspace.resources.emptyState.body}</p>
+            </article>
+          )}
+        </div>
+        <Link className="panel-link" to={workspace.links.libraryHref}>
           Open project library
         </Link>
       </section>
@@ -194,9 +219,41 @@ export function ProjectPage() {
             <article className="panel">
               <h3 className="panel-title">{workspace.docs.emptyState.title}</h3>
               <p className="quiet-copy">{workspace.docs.emptyState.body}</p>
-              <Link className="panel-link" to={`/projects/${projectId}/library`}>
+              <Link className="panel-link" to={workspace.links.libraryHref}>
                 Open project library
               </Link>
+            </article>
+          )}
+        </div>
+      </section>
+
+      <section className="panel" aria-label="Project activity">
+        <h2 className="panel-title">Project activity</h2>
+        <p className="quiet-copy">
+          Server-owned continuation signals from project-scoped records. Private notes and personal Notebook state are not included.
+        </p>
+        <div className="panel-grid" aria-label="project activity feed">
+          {activityItems.length > 0 ? (
+            activityItems.map((activity) => (
+              <article className="panel" key={activity.id}>
+                <p className="page-kicker">{activity.sourceLabel ?? activity.kind}</p>
+                <h3 className="panel-title">{activity.title}</h3>
+                <p className="quiet-copy">{activity.summary}</p>
+                <p className="quiet-copy">Occurred {activity.occurredAt}</p>
+                {activity.actorUserId ? (
+                  <p className="quiet-copy">Actor · {activity.actorUserId}</p>
+                ) : null}
+                {activity.href ? (
+                  <Link className="panel-link" to={activity.href}>
+                    Resume from activity
+                  </Link>
+                ) : null}
+              </article>
+            ))
+          ) : (
+            <article className="panel">
+              <h3 className="panel-title">{workspace.activity.emptyState.title}</h3>
+              <p className="quiet-copy">{workspace.activity.emptyState.body}</p>
             </article>
           )}
         </div>
