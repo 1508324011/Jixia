@@ -103,6 +103,7 @@ export {
   type CreateProjectDocParams,
   type CreateProjectDocVersionParams,
   type PersistedProjectDocCitationRecord,
+  type PersistedProjectDocIndexItem,
   type PersistedProjectDocPublishState,
   type PersistedProjectDocRecord,
   type PersistedProjectDocSnapshot,

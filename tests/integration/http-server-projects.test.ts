@@ -5,6 +5,11 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import {
+  createPrismaClient,
+  createProjectDocRepository,
+  createSpaceRepository,
+} from '../../src/db';
+import {
   loginAs,
   startTestServer,
   withSessionCookie,
@@ -187,6 +192,14 @@ describe('http server project api', () => {
             `${server.url}/api/projects/${createdProject.project.id}/members?actorUserId=user-alice`,
             { headers: withSessionCookie(aliceCookie) },
           ),
+          fetch(
+            `${server.url}/api/projects/${createdProject.project.id}/workspace?actorUserId=user-alice`,
+            { headers: withSessionCookie(aliceCookie) },
+          ),
+          fetch(
+            `${server.url}/api/projects/${createdProject.project.id}/workspace?actorSpaceId=${createdSpace.id}`,
+            { headers: withSessionCookie(aliceCookie) },
+          ),
         ]);
 
         for (const response of matchingResponses) {
@@ -237,7 +250,7 @@ describe('http server project api', () => {
           (response) => response.json() as Promise<{ project: { id: string } }>,
         );
 
-        const [listResponse, readResponse, membersResponse] = await Promise.all([
+        const [listResponse, readResponse, membersResponse, workspaceResponse] = await Promise.all([
           fetch(`${server.url}/api/projects?actorUserId=user-alice`, {
             headers: withSessionCookie(bobCookie),
           }),
@@ -249,9 +262,13 @@ describe('http server project api', () => {
             `${server.url}/api/projects/${createdProject.project.id}/members?actorUserId=user-alice`,
             { headers: withSessionCookie(bobCookie) },
           ),
+          fetch(
+            `${server.url}/api/projects/${createdProject.project.id}/workspace?actorUserId=user-alice`,
+            { headers: withSessionCookie(bobCookie) },
+          ),
         ]);
 
-        for (const response of [listResponse, readResponse, membersResponse]) {
+        for (const response of [listResponse, readResponse, membersResponse, workspaceResponse]) {
           const payload = (await response.json()) as { error: string };
 
           expect(response.status).toBe(400);
@@ -284,6 +301,256 @@ describe('http server project api', () => {
           headers: { 'Content-Type': 'application/json' },
           method: 'POST',
         });
+        const payload = (await response.json()) as { error: string };
+
+        expect(response.status).toBe(401);
+        expect(payload.error).toMatch(/server-derived actor session/i);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('returns a ProjectMember-authorized workspace read model with populated and empty docs indexes', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-workspace-'));
+
+    try {
+      const databaseUrl = `file:${join(storageRoot, 'jixia-http-project-workspace.db')}`;
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: databaseUrl,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+        const charlieCookie = await loginAs(server.url, 'user-charlie');
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'Workspace Docs' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const project = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({
+            name: 'Workspace Project',
+            spaceId: createdSpace.id,
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{
+            project: { id: string; spaceId: string };
+          }>,
+        );
+
+        const prisma = createPrismaClient({ url: databaseUrl });
+        const projectDocRepository = createProjectDocRepository(prisma);
+        try {
+          const document = await projectDocRepository.createDocument({
+            createdByUserId: 'user-alice',
+            projectId: project.project.id,
+            title: 'Workspace indexed synthesis',
+          });
+          await projectDocRepository.saveVersion({
+            citations: [],
+            content: 'Server-owned indexed content.',
+            documentId: document.id,
+          });
+        } finally {
+          await prisma.$disconnect();
+        }
+
+        const ownerResponse = await fetch(
+          `${server.url}/api/projects/${project.project.id}/workspace`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const ownerWorkspace = (await ownerResponse.json()) as {
+          actor: { role: string; userId: string };
+          docs: {
+            documents: Array<{
+              createdByUserId: string;
+              documentId: string;
+              latestVersion: { versionNumber: number } | null;
+              openHref: string;
+              title: string;
+            }>;
+            totalCount: number;
+          };
+          links: { libraryHref: string; projectHref: string; writerHref?: string };
+          membership: { role: string; userId: string };
+          project: { id: string; spaceId: string };
+        };
+
+        expect(ownerResponse.status).toBe(200);
+        expect(ownerWorkspace.actor).toEqual({ role: 'owner', userId: 'user-alice' });
+        expect(ownerWorkspace.project).toMatchObject(project.project);
+        expect(ownerWorkspace.docs.totalCount).toBe(1);
+        expect(ownerWorkspace.docs.documents[0]).toMatchObject({
+          latestVersion: { versionNumber: 1 },
+          createdByUserId: 'user-alice',
+          openHref: `/projects/${project.project.id}/writing/${ownerWorkspace.docs.documents[0]?.documentId}`,
+          title: 'Workspace indexed synthesis',
+        });
+        expect(ownerWorkspace.links).toMatchObject({
+          libraryHref: `/projects/${project.project.id}/library`,
+          projectHref: `/projects/${project.project.id}`,
+          writerHref: ownerWorkspace.docs.documents[0]?.openHref,
+        });
+
+        await fetch(`${server.url}/api/projects/${project.project.id}/members`, {
+          body: JSON.stringify({ role: 'viewer', userId: 'user-bob' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        await fetch(`${server.url}/api/projects/${project.project.id}/members`, {
+          body: JSON.stringify({ role: 'editor', userId: 'user-charlie' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const viewerResponse = await fetch(
+          `${server.url}/api/projects/${project.project.id}/workspace`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        const viewerWorkspace = (await viewerResponse.json()) as {
+          actor: { role: string; userId: string };
+          docs: { totalCount: number };
+        };
+
+        expect(viewerResponse.status).toBe(200);
+        expect(viewerWorkspace.actor).toEqual({ role: 'viewer', userId: 'user-bob' });
+        expect(viewerWorkspace.docs.totalCount).toBe(1);
+
+        const editorResponse = await fetch(
+          `${server.url}/api/projects/${project.project.id}/workspace`,
+          { headers: withSessionCookie(charlieCookie) },
+        );
+        const editorWorkspace = (await editorResponse.json()) as {
+          actor: { role: string; userId: string };
+          docs: { totalCount: number };
+        };
+
+        expect(editorResponse.status).toBe(200);
+        expect(editorWorkspace.actor).toEqual({ role: 'editor', userId: 'user-charlie' });
+        expect(editorWorkspace.docs.totalCount).toBe(1);
+
+        const emptyProject = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({
+            name: 'Empty Workspace Project',
+            spaceId: createdSpace.id,
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ project: { id: string } }>);
+        const emptyResponse = await fetch(
+          `${server.url}/api/projects/${emptyProject.project.id}/workspace`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const emptyWorkspace = (await emptyResponse.json()) as {
+          docs: {
+            documents: unknown[];
+            emptyState: { body: string; title: string };
+            totalCount: number;
+          };
+          links: { writerHref?: string };
+        };
+
+        expect(emptyResponse.status).toBe(200);
+        expect(emptyWorkspace.docs.documents).toEqual([]);
+        expect(emptyWorkspace.docs.totalCount).toBe(0);
+        expect(emptyWorkspace.docs.emptyState.title).toBe('No Project Docs yet');
+        expect(emptyWorkspace.links.writerHref).toBeUndefined();
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('denies workspace reads for non-members even when they belong to the governance space', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-workspace-auth-'));
+
+    try {
+      const databaseUrl = `file:${join(storageRoot, 'jixia-http-project-workspace-auth.db')}`;
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: databaseUrl,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const charlieCookie = await loginAs(server.url, 'user-charlie');
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'Workspace Space Gate' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const project = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({
+            name: 'ProjectMember Only Workspace',
+            spaceId: createdSpace.id,
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ project: { id: string } }>);
+
+        const prisma = createPrismaClient({ url: databaseUrl });
+        try {
+          await createSpaceRepository(prisma).addMembership(createdSpace.id, {
+            role: 'viewer',
+            userId: 'user-charlie',
+          });
+        } finally {
+          await prisma.$disconnect();
+        }
+
+        const response = await fetch(
+          `${server.url}/api/projects/${project.project.id}/workspace`,
+          { headers: withSessionCookie(charlieCookie) },
+        );
+        const payload = (await response.json()) as { error: string };
+
+        expect(response.status).toBe(403);
+        expect(payload.error).toMatch(/access denied/i);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('requires the session actor for project workspace reads before trusting query identity', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-workspace-session-'));
+
+    try {
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-project-workspace-session.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
+
+      try {
+        const response = await fetch(
+          `${server.url}/api/projects/project-unknown/workspace?actorUserId=user-alice`,
+        );
         const payload = (await response.json()) as { error: string };
 
         expect(response.status).toBe(401);

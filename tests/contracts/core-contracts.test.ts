@@ -34,6 +34,7 @@ import type {
   ProjectMemberRole,
   ProjectRecord,
   ProjectStatus,
+  ProjectWorkspaceResponse,
   ScopeRef,
 } from '../../src/shared/contracts/projects';
 import type {
@@ -152,11 +153,57 @@ describe('core contracts', () => {
       userId: 'user_001',
     };
     const listItem: ProjectListItem = { membership, project };
+    const workspace: ProjectWorkspaceResponse = {
+      actor: {
+        role: 'owner',
+        userId: 'user_001',
+      },
+      contract: projects.projectsContract,
+      docs: {
+        documents: [
+          {
+            createdAt: '2026-05-03T00:00:00.000Z',
+            createdByUserId: 'user_001',
+            documentId: 'project-doc_001',
+            latestVersion: {
+              capturedAt: '2026-05-03T00:10:00.000Z',
+              versionId: 'project-doc-version_001',
+              versionNumber: 1,
+            },
+            openHref: '/projects/project_001/writing/project-doc_001',
+            projectId: project.id,
+            publishState: 'draft',
+            title: 'Shared synthesis',
+            updatedAt: '2026-05-03T00:10:00.000Z',
+          },
+        ],
+        emptyState: {
+          body: 'No Project Docs have been created yet.',
+          title: 'No Project Docs yet',
+        },
+        projectId: project.id,
+        totalCount: 1,
+      },
+      generatedAt: '2026-05-03T00:11:00.000Z',
+      links: {
+        libraryHref: '/projects/project_001/library',
+        projectHref: '/projects/project_001',
+        writerHref: '/projects/project_001/writing/project-doc_001',
+      },
+      membership,
+      project,
+    };
 
     expect(personalScope.type).toBe('user');
     expect(projectScope.type).toBe('project');
     expect(createProjectRequest.spaceId).toBe('space_001');
     expect(listItem.membership.role).toBe('owner');
+    expect(workspace.contract).toBe(projects.projectsContract);
+    expect(workspace.actor.userId).toBe('user_001');
+    expect(workspace.docs.totalCount).toBe(1);
+    expect(workspace.links.libraryHref).toBe('/projects/project_001/library');
+    expect(workspace.docs.documents[0]?.openHref).toBe('/projects/project_001/writing/project-doc_001');
+    expect(workspace.docs.documents[0]?.latestVersion?.versionNumber).toBe(1);
     expect(projects.projectsContract).toBe('jixia-projects-contract');
 
     expectTypeOf<ProjectStatus>().toEqualTypeOf<'active' | 'archived'>();

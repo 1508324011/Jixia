@@ -56,12 +56,22 @@ export interface PersistedProjectDocSnapshot {
   versionNumber: number;
 }
 
+export interface PersistedProjectDocIndexItem {
+  document: PersistedProjectDocRecord;
+  latestVersion: {
+    capturedAt: string;
+    versionId: string;
+    versionNumber: number;
+  } | null;
+}
+
 export interface ProjectDocRepository {
   createDocument(input: CreateProjectDocParams): Promise<PersistedProjectDocRecord>;
   findDocument(documentId: string): Promise<PersistedProjectDocRecord | null>;
   findLatestDocumentForProject(
     projectId: string,
   ): Promise<PersistedProjectDocRecord | null>;
+  listDocumentsForProject(projectId: string): Promise<PersistedProjectDocIndexItem[]>;
   getLatestSnapshot(
     documentId: string,
   ): Promise<PersistedProjectDocSnapshot | null>;
@@ -87,8 +97,22 @@ const PROJECT_DOC_VERSION_INCLUDE = {
   projectDoc: true,
 } satisfies Prisma.ProjectDocVersionInclude;
 
+const PROJECT_DOC_INDEX_INCLUDE = {
+  versions: {
+    orderBy: [
+      { versionNumber: 'desc' },
+      { createdAt: 'desc' },
+    ],
+    take: 1,
+  },
+} satisfies Prisma.ProjectDocInclude;
+
 type ProjectDocVersionWithRelations = Prisma.ProjectDocVersionGetPayload<{
   include: typeof PROJECT_DOC_VERSION_INCLUDE;
+}>;
+
+type ProjectDocWithIndexRelations = Prisma.ProjectDocGetPayload<{
+  include: typeof PROJECT_DOC_INDEX_INCLUDE;
 }>;
 
 function toIsoString(value: Date): string {
@@ -127,6 +151,23 @@ function mapSnapshot(
     document: mapDocument(version.projectDoc),
     versionId: version.id,
     versionNumber: version.versionNumber,
+  };
+}
+
+function mapDocumentIndexItem(
+  document: ProjectDocWithIndexRelations,
+): PersistedProjectDocIndexItem {
+  const latestVersion = document.versions[0];
+
+  return {
+    document: mapDocument(document),
+    latestVersion: latestVersion
+      ? {
+          capturedAt: toIsoString(latestVersion.createdAt),
+          versionId: latestVersion.id,
+          versionNumber: latestVersion.versionNumber,
+        }
+      : null,
   };
 }
 
@@ -270,6 +311,23 @@ export function createProjectDocRepository(
       });
 
       return document ? mapDocument(document) : null;
+    },
+    async listDocumentsForProject(
+      projectId: string,
+    ): Promise<PersistedProjectDocIndexItem[]> {
+      await ensureInitialized();
+
+      const documents = await prisma.projectDoc.findMany({
+        include: PROJECT_DOC_INDEX_INCLUDE,
+        orderBy: [
+          { updatedAt: 'desc' },
+          { createdAt: 'desc' },
+          { id: 'asc' },
+        ],
+        where: { projectId },
+      });
+
+      return documents.map(mapDocumentIndexItem);
     },
     async getLatestSnapshot(
       documentId: string,

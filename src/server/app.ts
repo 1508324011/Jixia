@@ -70,6 +70,10 @@ import {
   type ProjectDocsRoutes,
 } from './routes/project-docs.routes';
 import {
+  createProjectWorkspaceRoutes,
+  type ProjectWorkspaceRoutes,
+} from './routes/project-workspace.routes';
+import {
   createReadingRoutes,
   type ReadingRoutes,
 } from './routes/reading.routes';
@@ -106,6 +110,7 @@ import { createReadingService } from './services/reading.service';
 import {
   createProjectsService,
 } from './services/projects.service';
+import { createProjectWorkspaceService } from './services/project-workspace.service';
 import {
   createSpacesService,
   type StoredSpace,
@@ -215,6 +220,7 @@ export interface JixiaApp {
   library: LibraryRoutes;
   notebooks: NotebooksRoutes;
   projectDocs: ProjectDocsRoutes;
+  projectWorkspace: ProjectWorkspaceRoutes;
   projects: ProjectsRoutes;
   reading: ReadingRoutes;
   session: SessionRoutes;
@@ -932,6 +938,12 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     projectDocRepository,
     projectRepository,
   });
+  const projectWorkspaceRoutes = createProjectWorkspaceRoutes(
+    createProjectWorkspaceService({
+      projectDocRepository,
+      projectRepository,
+    }),
+  );
   const readingService = createReadingService({
     libraryService,
     readingRepository: {
@@ -1075,6 +1087,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     library: libraryRoutes,
     notebooks: notebooksRoutes,
     projectDocs: projectDocsRoutes,
+    projectWorkspace: projectWorkspaceRoutes,
     projects: projectsRoutes,
     reading: createReadingRoutes(readingService),
     session: sessionRoutes,
