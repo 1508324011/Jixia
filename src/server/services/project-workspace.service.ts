@@ -98,7 +98,6 @@ function buildProjectDocActivityItem(
     : `Project Doc ${document.publishState} · no saved version yet`;
 
   return {
-    actorUserId: document.createdByUserId,
     href: document.openHref,
     id: `project-doc:${document.documentId}`,
     kind: 'project-doc',

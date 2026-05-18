@@ -499,7 +499,6 @@ describe('http server project api', () => {
         expect(ownerWorkspace.activity.totalCount).toBe(1);
         expect(ownerWorkspace.activity.items).toHaveLength(1);
         expect(ownerWorkspace.activity.items[0]).toMatchObject({
-          actorUserId: 'user-alice',
           href: ownerWorkspace.docs.documents[0]?.openHref,
           kind: 'project-doc',
           occurredAt: ownerWorkspace.docs.documents[0]?.latestVersion?.capturedAt,
@@ -509,6 +508,7 @@ describe('http server project api', () => {
           summary: 'Project Doc draft · version 1',
           title: 'Workspace indexed synthesis',
         });
+        expect(ownerWorkspace.activity.items[0]).not.toHaveProperty('actorUserId');
         expect(ownerWorkspace.activity.items.map((item) => item.kind)).toEqual(['project-doc']);
         const serializedWorkspaceActivity = JSON.stringify(ownerWorkspace.activity.items);
         for (const sentinel of privateLeakSentinels) {

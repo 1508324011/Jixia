@@ -82,7 +82,6 @@ describe('project workspace service activity/resources projection', () => {
       'project-doc-03',
     ]);
     expect(workspace.activity.items[0]).toMatchObject({
-      actorUserId: 'user-alice',
       href: '/projects/project-activity/writing/project-doc-10',
       kind: 'project-doc',
       occurredAt: '2026-05-18T00:10:30.000Z',
@@ -91,6 +90,7 @@ describe('project workspace service activity/resources projection', () => {
       summary: 'Project Doc review · version 10',
       title: 'Activity doc 10',
     });
+    expect(workspace.activity.items[0]).not.toHaveProperty('actorUserId');
     expect(workspace.resources.totalCount).toBe(10);
     expect(workspace.resources.items.map((item) => item.sourceId)).toEqual(
       documents.map((document) => document.document.id),
