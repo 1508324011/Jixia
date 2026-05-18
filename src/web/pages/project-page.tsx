@@ -1,15 +1,14 @@
 import { Link, useParams } from 'react-router-dom';
 
 import { ProjectTabs } from '../components/project-tabs';
-import { ProjectWriterList } from '../components/project-writer-list';
-import { useProjectContext } from '../presenters/project-context';
+import { useProjectWorkspace } from '../presenters/project-workspace-presenter';
 
 const projectTabs = ['概览', '共享 Library', 'Writer', '活动'];
 
 export function ProjectPage() {
   const { projectId = '' } = useParams();
-  const projectContext = useProjectContext(projectId);
-  const { error, isLoading, project } = projectContext;
+  const projectWorkspace = useProjectWorkspace(projectId);
+  const { error, isLoading, project, workspace } = projectWorkspace;
 
   if (!projectId) {
     return (
@@ -49,7 +48,7 @@ export function ProjectPage() {
     );
   }
 
-  if (error || !project) {
+  if (error || !project || !workspace) {
     return (
       <main className="page-shell">
         <header className="page-header">
@@ -63,6 +62,7 @@ export function ProjectPage() {
 
   const projectLabel = project.project.name;
   const spaceId = project.project.spaceId;
+  const docs = workspace.docs.documents;
 
   return (
     <main className="page-shell">
@@ -77,7 +77,7 @@ export function ProjectPage() {
         <span>Governed by space · {spaceId}</span>
         <span>Your role · {project.membership.role}</span>
         <span className="status-badge">{project.project.status}</span>
-        <button className="panel-link" type="button" onClick={() => void projectContext.refresh()}>
+        <button className="panel-link" type="button" onClick={() => void projectWorkspace.refresh()}>
           Refresh
         </button>
       </section>
@@ -94,7 +94,33 @@ export function ProjectPage() {
       <section className="panel" aria-label="Writer 文档区">
         <h2 className="panel-title">Writer 文档区</h2>
         <p className="quiet-copy">将成熟内容整理进入 Writer</p>
-        <ProjectWriterList projectId={projectId} />
+        <div className="panel-grid" aria-label="project docs index">
+          {docs.length > 0 ? (
+            docs.map((document) => (
+              <article className="panel" key={document.documentId}>
+                <h3 className="panel-title">{document.title}</h3>
+                <p className="quiet-copy">
+                  Updated {document.updatedAt} · Version {document.latestVersion?.versionNumber ?? 0}
+                </p>
+                <p className="quiet-copy">
+                  Document · {document.documentId}
+                </p>
+                <span className="status-badge">{document.publishState}</span>
+                <Link className="panel-link" to={document.openHref}>
+                  打开 Writer 文稿
+                </Link>
+              </article>
+            ))
+          ) : (
+            <article className="panel">
+              <h3 className="panel-title">{workspace.docs.emptyState.title}</h3>
+              <p className="quiet-copy">{workspace.docs.emptyState.body}</p>
+              <Link className="panel-link" to={`/projects/${projectId}/library`}>
+                Open project library
+              </Link>
+            </article>
+          )}
+        </div>
       </section>
     </main>
   );

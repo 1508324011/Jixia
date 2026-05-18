@@ -946,6 +946,22 @@ async function handleApiRequest(
       return true;
     }
 
+    const projectWorkspaceMatch = pathname.match(
+      /^\/api\/projects\/([^/]+)\/workspace$/,
+    );
+    if (projectWorkspaceMatch && method === "GET") {
+      const actor = await getActor(request, actorOptions);
+      const [, projectId] = projectWorkspaceMatch;
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      sendJson(
+        response,
+        200,
+        await app.projectWorkspace.getWorkspace(projectId, actor.userId),
+        method,
+      );
+      return true;
+    }
+
     const projectMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
     if (projectMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);

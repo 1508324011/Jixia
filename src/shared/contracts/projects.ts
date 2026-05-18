@@ -40,6 +40,49 @@ export interface ProjectListItem {
   project: ProjectRecord;
 }
 
+export interface ProjectWorkspaceDocIndexItem {
+  createdAt: string;
+  createdByUserId: string;
+  documentId: string;
+  latestVersion: {
+    capturedAt: string;
+    versionId: string;
+    versionNumber: number;
+  } | null;
+  openHref: string;
+  projectId: string;
+  publishState: "draft" | "review" | "published";
+  title: string;
+  updatedAt: string;
+}
+
+export interface ProjectWorkspaceDocsIndex {
+  documents: ProjectWorkspaceDocIndexItem[];
+  emptyState: {
+    body: string;
+    title: string;
+  };
+  projectId: string;
+  totalCount: number;
+}
+
+export interface ProjectWorkspaceResponse {
+  actor: {
+    role: ProjectMemberRole;
+    userId: string;
+  };
+  contract: typeof projectsContract;
+  docs: ProjectWorkspaceDocsIndex;
+  generatedAt: string;
+  links: {
+    libraryHref: string;
+    projectHref: string;
+    writerHref?: string;
+  };
+  membership: ProjectMemberRecord;
+  project: ProjectRecord;
+}
+
 export interface AddProjectMemberRequest {
   role: ProjectMemberRole;
   userId: string;

@@ -11,7 +11,6 @@ import {
   resolveWorkbenchSectionTitle,
   workbenchNavigationItems,
 } from "../lib/workbench-navigation";
-import { useProjectContext } from "../presenters/project-context";
 
 const SIDEBAR_COLLAPSED_KEY = "jixia-sidebar-collapsed";
 
@@ -33,18 +32,16 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
     () => deriveWorkbenchRouteContext(location.pathname),
     [location.pathname],
   );
-  const projectContext = useProjectContext(context.projectId);
-  const resolvedProject = projectContext.project?.project ?? null;
-  const resolvedProjectId = context.projectId ?? resolvedProject?.id;
-  const resolvedSpaceId = context.spaceId ?? resolvedProject?.spaceId;
+  const resolvedProjectId = context.projectId;
+  const resolvedSpaceId = context.spaceId;
 
   const shellLinks = useMemo(
     () =>
       workbenchNavigationItems.map((item) => ({
         ...item,
-        to: resolveWorkbenchNavigationTarget(item, context),
+        to: resolveWorkbenchNavigationTarget(item, context, resolvedProjectId),
       })),
-    [context],
+    [context, resolvedProjectId],
   );
 
   function toggleSidebar() {
@@ -197,14 +194,9 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
                     project
                   </span>
                   <span className="truncate">
-                    {resolvedProject?.name ?? resolvedProjectId ?? "No project selected"}
+                    {resolvedProjectId ?? "No project selected"}
                   </span>
                 </div>
-                {projectContext.error ? (
-                  <p className="pt-1 text-xs text-amber-700">
-                    {projectContext.error}
-                  </p>
-                ) : null}
               </div>
             </div>
           )}
@@ -223,7 +215,7 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
             </div>
             <div className="mt-1 truncate text-sm text-notion-text-secondary">
               {resolvedSpaceId ?? "No governance space"} ·{" "}
-              {resolvedProject?.name ?? resolvedProjectId ?? "No project"}
+              {resolvedProjectId ?? "No project"}
             </div>
           </div>
 

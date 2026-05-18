@@ -22,6 +22,30 @@ const projectFixture = {
   },
 };
 
+const projectWorkspaceFixture = {
+  actor: {
+    role: projectFixture.membership.role,
+    userId: projectFixture.membership.userId,
+  },
+  contract: 'jixia-projects-contract',
+  docs: {
+    documents: [],
+    emptyState: {
+      body: 'Adopt a source into the project library, then promote it into Writer.',
+      title: 'No shared project docs yet',
+    },
+    projectId: projectFixture.project.id,
+    totalCount: 0,
+  },
+  generatedAt: '2026-05-03T00:00:00.000Z',
+  links: {
+    libraryHref: '/projects/project-recovery/library',
+    projectHref: '/projects/project-recovery',
+  },
+  membership: projectFixture.membership,
+  project: projectFixture.project,
+};
+
 const personalLibraryEntryFixture = {
   addedAt: '2026-05-15T00:10:00.000Z',
   canonicalId: 'doi:10.1000/personal-source',
@@ -84,6 +108,10 @@ describe('library and project context', () => {
 
         if (url.endsWith('/api/projects')) {
           return Response.json([projectFixture]);
+        }
+
+        if (url.endsWith('/api/projects/project-recovery/workspace')) {
+          return Response.json(projectWorkspaceFixture);
         }
 
         if (url.endsWith('/api/library/personal')) {

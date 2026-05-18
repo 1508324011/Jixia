@@ -31,6 +31,7 @@ import type {
   CreateProjectRequest,
   ProjectListItem,
   ProjectMemberRecord,
+  ProjectWorkspaceResponse,
   ScopeRef,
 } from "@shared/contracts/projects";
 import type {
@@ -506,6 +507,9 @@ export const apiClient = {
   },
   getLatestProjectDoc(projectId: string): Promise<ProjectDocRecord | null> {
     return requestJson(`/api/projects/${projectId}/writing-document`);
+  },
+  getProjectWorkspace(projectId: string): Promise<ProjectWorkspaceResponse> {
+    return requestJson(`/api/projects/${projectId}/workspace`);
   },
   getReadingDetail(
     entryId: string,

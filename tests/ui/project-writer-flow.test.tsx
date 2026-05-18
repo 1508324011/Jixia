@@ -38,8 +38,27 @@ afterEach(() => {
 });
 
 describe('project writer flow', () => {
-  it('project page shows Writer onboarding when no known project document id exists', async () => {
-    const projectFixture = {
+  it('project page renders the server-owned Project Docs empty state from the workspace endpoint', async () => {
+    const workspaceFixture = {
+      actor: {
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      contract: 'jixia-projects-contract',
+      docs: {
+        documents: [],
+        emptyState: {
+          body: 'No Project Docs have been created for this project yet. Promote governed evidence from Reader or create a Writer draft to start the shared index.',
+          title: 'No Project Docs yet',
+        },
+        projectId: 'project-1',
+        totalCount: 0,
+      },
+      generatedAt: '2026-03-23T00:35:30.000Z',
+      links: {
+        libraryHref: '/projects/project-1/library',
+        projectHref: '/projects/project-1',
+      },
       membership: {
         joinedAt: '2026-03-23T00:35:00.000Z',
         projectId: 'project-1',
@@ -77,12 +96,8 @@ describe('project writer flow', () => {
           });
         }
 
-        if (requestUrl.endsWith('/api/projects')) {
-          return jsonResponse([projectFixture]);
-        }
-
-        if (requestUrl.endsWith('/api/projects/project-1/writing-document')) {
-          return jsonResponse(null);
+        if (requestUrl.endsWith('/api/projects/project-1/workspace')) {
+          return jsonResponse(workspaceFixture);
         }
 
         throw new Error(`Unexpected fetch: ${requestUrl}`);
@@ -92,10 +107,109 @@ describe('project writer flow', () => {
     renderWorkbench('/projects/project-1');
 
     expect(await screen.findByText('Writer 文档区')).toBeInTheDocument();
-    expect(await screen.findByText('No Writer draft selected yet')).toBeInTheDocument();
+    expect(await screen.findByText('No Project Docs yet')).toBeInTheDocument();
     expect(
-      screen.getByText('Promote a governed Reader insight to create a project document before reopening it here.'),
+      screen.getByText('No Project Docs have been created for this project yet. Promote governed evidence from Reader or create a Writer draft to start the shared index.'),
     ).toBeInTheDocument();
+  });
+
+  it('project page renders server-indexed Project Docs without loading the legacy latest-doc preview', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const requestUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/projects/project-1/workspace')) {
+        return jsonResponse({
+          actor: {
+            role: 'owner',
+            userId: 'user-alice',
+          },
+          contract: 'jixia-projects-contract',
+          docs: {
+            documents: [
+              {
+                createdAt: '2026-03-23T00:35:00.000Z',
+                createdByUserId: 'user-alice',
+                documentId: 'doc-project-1',
+                latestVersion: {
+                  capturedAt: '2026-03-23T00:40:00.000Z',
+                  versionId: 'project-doc-version-1',
+                  versionNumber: 1,
+                },
+                openHref: '/projects/project-1/writing/doc-project-1',
+                projectId: 'project-1',
+                publishState: 'draft',
+                title: 'Tumor board literature synthesis',
+                updatedAt: '2026-03-23T00:40:00.000Z',
+              },
+            ],
+            emptyState: {
+              body: 'No Project Docs have been created for this project yet.',
+              title: 'No Project Docs yet',
+            },
+            projectId: 'project-1',
+            totalCount: 1,
+          },
+          generatedAt: '2026-03-23T00:41:00.000Z',
+          links: {
+            libraryHref: '/projects/project-1/library',
+            projectHref: '/projects/project-1',
+            writerHref: '/projects/project-1/writing/doc-project-1',
+          },
+          membership: {
+            joinedAt: '2026-03-23T00:35:00.000Z',
+            projectId: 'project-1',
+            role: 'owner',
+            userId: 'user-alice',
+          },
+          project: {
+            createdAt: '2026-03-23T00:35:00.000Z',
+            createdByUserId: 'user-alice',
+            id: 'project-1',
+            name: 'Tumor board project',
+            spaceId: 'personal-space-user-alice',
+            status: 'active',
+            updatedAt: '2026-03-23T00:35:00.000Z',
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench('/projects/project-1');
+
+    expect(await screen.findByText('Tumor board literature synthesis')).toBeInTheDocument();
+    expect(screen.getByText('Document · doc-project-1')).toBeInTheDocument();
+    expect(screen.getByText('Updated 2026-03-23T00:40:00.000Z · Version 1')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '打开 Writer 文稿' })).toHaveAttribute(
+      'href',
+      '/projects/project-1/writing/doc-project-1',
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/projects/project-1/writing-document'),
+      expect.anything(),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects$/),
+      expect.anything(),
+    );
   });
 
   it('writing page reopens the promoted writer draft and saves updates', async () => {
@@ -173,10 +287,6 @@ describe('project writer flow', () => {
 
         if (requestUrl.endsWith('/api/projects')) {
           return jsonResponse([projectFixture]);
-        }
-
-        if (requestUrl.endsWith('/api/projects/project-1/writing-document')) {
-          return jsonResponse(documentState.document);
         }
 
         if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
@@ -311,10 +421,6 @@ describe('project writer flow', () => {
           return Promise.resolve(jsonResponse([projectFixture]));
         }
 
-        if (requestUrl.endsWith('/api/projects/project-1/writing-document')) {
-          return Promise.resolve(jsonResponse(documentState.document));
-        }
-
         if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
           return Promise.resolve(jsonResponse(documentState));
         }
@@ -367,8 +473,27 @@ describe('project writer flow', () => {
     expect(await screen.findByRole('button', { name: 'Reload draft' })).toBeEnabled();
   });
 
-  it('project page treats a missing writer draft as an empty state instead of a runtime failure', async () => {
-    const projectFixture = {
+  it('project page treats an empty Project Docs index as an empty state instead of a runtime failure', async () => {
+    const workspaceFixture = {
+      actor: {
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      contract: 'jixia-projects-contract',
+      docs: {
+        documents: [],
+        emptyState: {
+          body: 'Create a shared Project Doc from governed Reader evidence.',
+          title: 'No Project Docs yet',
+        },
+        projectId: 'project-alpha',
+        totalCount: 0,
+      },
+      generatedAt: '2026-05-08T00:01:00.000Z',
+      links: {
+        libraryHref: '/projects/project-alpha/library',
+        projectHref: '/projects/project-alpha',
+      },
       membership: {
         joinedAt: '2026-05-08T00:00:00.000Z',
         projectId: 'project-alpha',
@@ -406,15 +531,8 @@ describe('project writer flow', () => {
           });
         }
 
-        if (requestUrl.endsWith('/api/projects')) {
-          return jsonResponse([projectFixture]);
-        }
-
-        if (requestUrl.endsWith('/api/projects/project-alpha/writing-document')) {
-          return jsonResponse(
-            { error: 'No Writer document exists for project project-alpha.' },
-            404,
-          );
+        if (requestUrl.endsWith('/api/projects/project-alpha/workspace')) {
+          return jsonResponse(workspaceFixture);
         }
 
         throw new Error(`Unexpected fetch: ${requestUrl}`);
@@ -423,7 +541,8 @@ describe('project writer flow', () => {
 
     renderWorkbench('/projects/project-alpha');
 
-    expect(await screen.findByText('No Writer draft selected yet')).toBeInTheDocument();
+    expect(await screen.findByText('No Project Docs yet')).toBeInTheDocument();
+    expect(screen.getByText('Create a shared Project Doc from governed Reader evidence.')).toBeInTheDocument();
     expect(screen.queryByText('Writer preview unavailable')).not.toBeInTheDocument();
   });
 });

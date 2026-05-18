@@ -2,35 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   ProjectListItem,
+  ProjectWorkspaceResponse,
 } from "@shared/contracts/projects";
 
 import { apiClient } from "../lib/http-client";
 
-export interface ProjectContextViewModel {
+export interface ProjectWorkspaceViewModel {
   error: string | null;
   isLoading: boolean;
   project: ProjectListItem | null;
-  projects: ProjectListItem[];
   refresh(): Promise<void>;
+  workspace: ProjectWorkspaceResponse | null;
 }
 
-function selectProject(
-  projects: ProjectListItem[],
-  projectId: string | undefined,
-): ProjectListItem | null {
-  if (projectId) {
-    return projects.find((item) => item.project.id === projectId) ?? null;
-  }
-
-  return projects[0] ?? null;
-}
-
-export function useProjectContext(
+export function useProjectWorkspace(
   projectId?: string,
-): ProjectContextViewModel {
-  const [projects, setProjects] = useState<ProjectListItem[]>([]);
+): ProjectWorkspaceViewModel {
+  const [workspace, setWorkspace] = useState<ProjectWorkspaceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hasLoaded, setHasLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const isMountedRef = useRef(false);
   const refreshGenerationRef = useRef(0);
@@ -47,32 +36,37 @@ export function useProjectContext(
       return;
     }
 
+    if (!projectId) {
+      setWorkspace(null);
+      setError("The project workspace route requires a project id.");
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
-      setHasLoaded(false);
       setError(null);
 
-      const nextProjects = await apiClient.listProjects();
+      const nextWorkspace = await apiClient.getProjectWorkspace(projectId);
 
       if (!canCommitRefresh(generation)) {
         return;
       }
 
-      setProjects(nextProjects);
+      setWorkspace(nextWorkspace);
     } catch (presenterError) {
       if (!canCommitRefresh(generation)) {
         return;
       }
 
-      setProjects([]);
+      setWorkspace(null);
       setError(
         presenterError instanceof Error
           ? presenterError.message
-          : "Failed to load projects.",
+          : "Failed to load the project workspace.",
       );
     } finally {
       if (canCommitRefresh(generation)) {
-        setHasLoaded(true);
         setIsLoading(false);
       }
     }
@@ -89,30 +83,20 @@ export function useProjectContext(
   }, [refresh]);
 
   const project = useMemo(
-    () => selectProject(projects, projectId),
-    [projectId, projects],
+    () => workspace
+      ? { membership: workspace.membership, project: workspace.project }
+      : null,
+    [workspace],
   );
-
-  const derivedError = useMemo(() => {
-    if (error) {
-      return error;
-    }
-
-    if (projectId && hasLoaded && !project) {
-      return `Project ${projectId} is not visible to the current actor.`;
-    }
-
-    return null;
-  }, [error, hasLoaded, project, projectId]);
 
   return useMemo(
     () => ({
-      error: derivedError,
+      error,
       isLoading,
       project,
-      projects,
       refresh,
+      workspace,
     }),
-    [derivedError, isLoading, project, projects, refresh],
+    [error, isLoading, project, refresh, workspace],
   );
 }
