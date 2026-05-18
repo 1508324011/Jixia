@@ -78,6 +78,10 @@ import {
   type HealthRoutes,
 } from './routes/health.routes';
 import {
+  createHomeCockpitRoutes,
+  type HomeCockpitRoutes,
+} from './routes/home-cockpit.routes';
+import {
   createProjectsRoutes,
   type ProjectsRoutes,
 } from './routes/projects.routes';
@@ -92,6 +96,7 @@ import { createSessionService } from './services/session.service';
 import { createSecretBox, hasSecretBoxKey } from './security/secret-box';
 import { createAuditService } from './services/audit.service';
 import { createImportService } from './services/import.service';
+import { createHomeCockpitService } from './services/home-cockpit.service';
 import { createJobBus } from './jobs/job-bus';
 import { createJobRunner, type JobExecutor } from './jobs/job-runner';
 import { createLibraryService } from './services/library.service';
@@ -203,6 +208,7 @@ export interface JixiaApp {
   close(): Promise<void>;
   credentials: CredentialsRoutes;
   health: HealthRoutes;
+  homeCockpit: HomeCockpitRoutes;
   imports: ImportRoutes;
   jobs: JobsRoutes;
   jobStream: JobStreamRoutes;
@@ -1011,6 +1017,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const sessionService = createSessionService({
     repository: sessionRepository,
   });
+  const sessionRoutes = createSessionRoutes(sessionService);
   const auditService = createAuditService({
     jobRepository,
     nextId: persistedNextId,
@@ -1031,6 +1038,12 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     projectRepository,
     spaceRepository,
   });
+  const notebooksRoutes = createNotebooksRoutes(notebookService);
+  const projectDocsRoutes = createProjectDocsRoutes(projectDocsService);
+  const projectsRoutes = createProjectsRoutes(projectsService);
+  const spacesRoutes = createSpacesRoutes(spacesService);
+  const credentialsRoutes = createCredentialsRoutes(credentialsService);
+  const libraryRoutes = createLibraryRoutes(libraryService);
   let closePromise: Promise<void> | null = null;
 
   return {
@@ -1038,8 +1051,19 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       closePromise ??= prismaClient.$disconnect().catch(() => undefined);
       return closePromise;
     },
-    credentials: createCredentialsRoutes(credentialsService),
+    credentials: credentialsRoutes,
     health: createHealthRoutes(),
+    homeCockpit: createHomeCockpitRoutes(
+      createHomeCockpitService({
+        credentials: credentialsRoutes,
+        jobs: jobsRoutes,
+        library: libraryRoutes,
+        notebooks: notebooksRoutes,
+        projectDocs: projectDocsRoutes,
+        projects: projectsRoutes,
+        spaces: spacesRoutes,
+      }),
+    ),
     imports: createImportRoutes(importService),
     jobs: jobsRoutes,
     jobStream: createJobStreamRoutes({
@@ -1048,12 +1072,12 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       projectRepository,
       spaceRepository,
     }),
-    library: createLibraryRoutes(libraryService),
-    notebooks: createNotebooksRoutes(notebookService),
-    projectDocs: createProjectDocsRoutes(projectDocsService),
-    projects: createProjectsRoutes(projectsService),
+    library: libraryRoutes,
+    notebooks: notebooksRoutes,
+    projectDocs: projectDocsRoutes,
+    projects: projectsRoutes,
     reading: createReadingRoutes(readingService),
-    session: createSessionRoutes(sessionService),
-    spaces: createSpacesRoutes(spacesService),
+    session: sessionRoutes,
+    spaces: spacesRoutes,
   };
 }

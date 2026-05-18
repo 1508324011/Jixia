@@ -25,9 +25,11 @@ const productionFiles = [
   'src/web/pages/search-page.tsx',
   'src/web/pages/settings-page.tsx',
   'src/web/pages/today-page.tsx',
+  'src/web/pages/home-page.tsx',
   'src/web/components/project-writer-list.tsx',
   'src/web/components/app-shell.tsx',
   'src/web/components/workbench-layout.tsx',
+  'src/web/lib/workbench-navigation.ts',
   'src/web/lib/recent-opened-store.ts',
 ];
 
@@ -36,6 +38,7 @@ const productionWorkbenchPages = [
   'src/web/pages/search-page.tsx',
   'src/web/pages/settings-page.tsx',
   'src/web/pages/today-page.tsx',
+  'src/web/pages/home-page.tsx',
 ];
 
 describe('project-first route static guard', () => {

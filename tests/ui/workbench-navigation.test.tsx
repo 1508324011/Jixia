@@ -3,6 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/web/app';
+import {
+  deriveWorkbenchRouteContext,
+  isWorkbenchNavigationItemActive,
+  resolveWorkbenchNavigationTarget,
+  workbenchNavigationItems,
+} from '../../src/web/lib/workbench-navigation';
 
 import { expectDocumentBlocksToOmitAuthorityFields } from './document-block-assertions';
 
@@ -34,6 +40,47 @@ afterEach(() => {
 });
 
 describe('workbench navigation', () => {
+  it('recognizes preserved spaces deep links but generates project-first targets', () => {
+    const readerPath = '/spaces/space-alpha/projects/project-alpha/library/entry-alpha/reader';
+    const readerContext = deriveWorkbenchRouteContext(readerPath);
+
+    expect(readerContext).toEqual({
+      currentSection: 'reader',
+      entryId: 'entry-alpha',
+      projectId: 'project-alpha',
+      spaceId: 'space-alpha',
+    });
+    expect(isWorkbenchNavigationItemActive(readerPath, 'library')).toBe(true);
+
+    const libraryItem = workbenchNavigationItems.find((item) => item.key === 'library');
+    if (!libraryItem) {
+      throw new Error('Library navigation item is required.');
+    }
+
+    expect(resolveWorkbenchNavigationTarget(libraryItem, readerContext)).toBe(
+      '/projects/project-alpha/library',
+    );
+
+    const writingPath = '/spaces/space-alpha/projects/project-alpha/writing/doc-alpha';
+    const writingContext = deriveWorkbenchRouteContext(writingPath);
+    expect(writingContext).toEqual({
+      currentSection: 'writing',
+      docId: 'doc-alpha',
+      projectId: 'project-alpha',
+      spaceId: 'space-alpha',
+    });
+    expect(isWorkbenchNavigationItemActive(writingPath, 'projects')).toBe(true);
+
+    const projectsItem = workbenchNavigationItems.find((item) => item.key === 'projects');
+    if (!projectsItem) {
+      throw new Error('Projects navigation item is required.');
+    }
+
+    expect(resolveWorkbenchNavigationTarget(projectsItem, writingContext)).toBe(
+      '/projects/project-alpha',
+    );
+  });
+
   it('sidebar switches among approved top-level surfaces', async () => {
     const user = userEvent.setup();
     const personalLibraryEntries: Array<{
@@ -114,6 +161,90 @@ describe('workbench navigation', () => {
                 displayName: 'Alice',
                 email: 'alice@example.test',
                 id: 'user-alice',
+              },
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
+        if (url.endsWith('/api/home-cockpit')) {
+          return new Response(
+            JSON.stringify({
+              actor: {
+                displayName: 'Alice',
+                email: 'alice@example.test',
+                id: 'user-alice',
+              },
+              contract: 'jixia-home-cockpit-contract',
+              generatedAt: '2026-05-17T12:00:00.000Z',
+              nextActions: [],
+              notices: [],
+              recentActivity: [],
+              sections: [
+                {
+                  description: 'Server-visible spaces and project memberships define collaboration access.',
+                  id: 'collaboration',
+                  metrics: [{ label: 'Visible projects', value: 1 }],
+                  primaryAction: {
+                    description: 'Review visible project workspaces.',
+                    id: 'open-projects',
+                    label: 'Open Projects',
+                    priority: 'primary',
+                    to: '/projects',
+                  },
+                  status: 'active',
+                  title: 'Collaboration cockpit',
+                },
+                {
+                  description: 'Personal Library entries are ready for reading and project adoption.',
+                  id: 'library',
+                  metrics: [{ label: 'Personal sources', value: personalLibraryEntries.length }],
+                  primaryAction: {
+                    description: 'Continue from server-owned personal sources.',
+                    id: 'open-library',
+                    label: 'Open Library',
+                    priority: 'primary',
+                    to: '/library',
+                  },
+                  status: personalLibraryEntries.length > 0 ? 'active' : 'empty',
+                  title: 'Literature and reading',
+                },
+                {
+                  description: 'Private notebooks and project Writer drafts are available through server document contracts.',
+                  id: 'writing',
+                  metrics: [{ label: 'Private notebooks', value: notebooks.length }],
+                  primaryAction: {
+                    description: 'Return to private synthesis.',
+                    id: 'open-notebook',
+                    label: 'Open Notebook',
+                    priority: 'primary',
+                    to: '/notebook',
+                  },
+                  status: notebooks.length > 0 ? 'active' : 'empty',
+                  title: 'Writing and versioning',
+                },
+                {
+                  description: 'Configure provider credentials before running governed AI jobs.',
+                  id: 'jobs',
+                  metrics: [{ label: 'Personal jobs', value: 0 }],
+                  primaryAction: {
+                    description: 'Set up a credential reference before launching jobs.',
+                    id: 'configure-credentials',
+                    label: 'Configure credentials',
+                    priority: 'primary',
+                    to: '/settings',
+                  },
+                  status: 'empty',
+                  title: 'Governed jobs',
+                },
+              ],
+              workbench: {
+                label: 'Personal workbench',
+                route: '/home',
+                scope: { id: 'user-alice', type: 'user' },
               },
             }),
             {

@@ -5,6 +5,7 @@ export * from "./contracts/document-content";
 export * from "./contracts/document-snapshot";
 export * from "./contracts/discovery";
 export * from "./contracts/evidence";
+export * from "./contracts/home-cockpit";
 export * from "./contracts/jobs";
 export * from "./contracts/library";
 export * from "./contracts/notebook";

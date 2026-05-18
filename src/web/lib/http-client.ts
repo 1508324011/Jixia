@@ -4,6 +4,7 @@ import type {
   DiscoveryTodayResponse,
 } from "@shared/contracts/discovery";
 import type { DocumentBlockDocument } from "@shared/contracts/document-content";
+import type { HomeCockpitResponse } from "@shared/contracts/home-cockpit";
 import type {
   JobAuditRecord,
   JobEventRecord,
@@ -313,6 +314,9 @@ export const apiClient = {
   },
   getTodayRecommendations(): Promise<DiscoveryTodayResponse> {
     return requestJson("/api/discovery/today");
+  },
+  getHomeCockpit(): Promise<HomeCockpitResponse> {
+    return requestJson("/api/home-cockpit");
   },
   searchDiscovery(query: string): Promise<DiscoverySearchResponse> {
     return requestJson("/api/discovery/search", {

@@ -1,50 +1,19 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Link, matchPath, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import {
-  Bot,
-  BookOpen,
-  ChevronRight,
-  FileText,
-  FolderKanban,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Search,
-  Settings,
-} from "lucide-react";
+import { ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { useSessionAuth } from "../lib/session-auth";
+import {
+  deriveWorkbenchRouteContext,
+  isWorkbenchNavigationItemActive,
+  resolveWorkbenchNavigationTarget,
+  resolveWorkbenchSectionTitle,
+  workbenchNavigationItems,
+} from "../lib/workbench-navigation";
 import { useProjectContext } from "../presenters/project-context";
 
 const SIDEBAR_COLLAPSED_KEY = "jixia-sidebar-collapsed";
-
-interface WorkflowContext {
-  currentSection:
-    | "spaces"
-    | "projects"
-    | "search"
-    | "library"
-    | "reader"
-    | "writing"
-    | "jobs"
-    | "settings";
-  docId?: string;
-  entryId?: string;
-  projectId?: string;
-  spaceId?: string;
-}
-
-interface ShellLink {
-  key: WorkflowContext["currentSection"];
-  label: string;
-  subtitle?: string;
-  to: string;
-  icon: React.ComponentType<{
-    className?: string;
-    size?: number;
-    strokeWidth?: number;
-  }>;
-}
 
 function readCollapsedPreference(): boolean {
   if (typeof window === "undefined") {
@@ -54,129 +23,6 @@ function readCollapsedPreference(): boolean {
   return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
 }
 
-function deriveWorkflowContext(pathname: string): WorkflowContext {
-  const projectReaderMatch = matchPath(
-    "/projects/:projectId/library/:entryId/reader",
-    pathname,
-  );
-  if (projectReaderMatch?.params.projectId && projectReaderMatch.params.entryId) {
-    return {
-      currentSection: "reader",
-      entryId: projectReaderMatch.params.entryId,
-      projectId: projectReaderMatch.params.projectId,
-    };
-  }
-
-  const projectWritingMatch = matchPath(
-    "/projects/:projectId/writing/:docId",
-    pathname,
-  );
-  if (projectWritingMatch?.params.projectId && projectWritingMatch.params.docId) {
-    return {
-      currentSection: "writing",
-      docId: projectWritingMatch.params.docId,
-      projectId: projectWritingMatch.params.projectId,
-    };
-  }
-
-  const projectLibraryMatch = matchPath(
-    "/projects/:projectId/library",
-    pathname,
-  );
-  if (projectLibraryMatch?.params.projectId) {
-    return {
-      currentSection: "library",
-      projectId: projectLibraryMatch.params.projectId,
-    };
-  }
-
-  if (pathname === "/search") {
-    return {
-      currentSection: "search",
-    };
-  }
-
-  if (pathname === "/jobs") {
-    return {
-      currentSection: "jobs",
-    };
-  }
-
-  if (pathname === "/settings") {
-    return {
-      currentSection: "settings",
-    };
-  }
-
-  if (pathname === "/spaces") {
-    return {
-      currentSection: "spaces",
-    };
-  }
-
-  return {
-    currentSection: "projects",
-  };
-}
-
-function currentSectionTitle(
-  section: WorkflowContext["currentSection"],
-): string {
-  switch (section) {
-    case "search":
-      return "Search";
-    case "projects":
-      return "Projects";
-    case "library":
-      return "Library";
-    case "reader":
-      return "Reader";
-    case "writing":
-      return "Writing";
-    case "jobs":
-      return "Jobs";
-    case "settings":
-      return "Settings";
-    case "spaces":
-      return "Spaces";
-    default:
-      return "Projects";
-  }
-}
-
-function isActiveSection(
-  pathname: string,
-  section: WorkflowContext["currentSection"],
-): boolean {
-  switch (section) {
-    case "spaces":
-      return pathname === "/spaces";
-    case "projects":
-      return pathname === "/projects" || pathname === "/";
-    case "search":
-      return pathname === "/search";
-    case "library":
-      return Boolean(
-        matchPath("/projects/:projectId/library", pathname) ??
-          false,
-      );
-    case "reader":
-      return Boolean(
-        matchPath("/projects/:projectId/library/:entryId/reader", pathname) ??
-          false,
-      );
-    case "writing":
-      return Boolean(
-        matchPath("/projects/:projectId/writing/:docId", pathname) ??
-          false,
-      );
-    case "jobs":
-      return pathname === "/jobs";
-    case "settings":
-      return pathname === "/settings";
-  }
-}
-
 function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -184,7 +30,7 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   const [isCollapsed, setIsCollapsed] = useState(readCollapsedPreference);
 
   const context = useMemo(
-    () => deriveWorkflowContext(location.pathname),
+    () => deriveWorkbenchRouteContext(location.pathname),
     [location.pathname],
   );
   const projectContext = useProjectContext(context.projectId);
@@ -192,67 +38,13 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   const resolvedProjectId = context.projectId ?? resolvedProject?.id;
   const resolvedSpaceId = context.spaceId ?? resolvedProject?.spaceId;
 
-  const shellLinks = useMemo<ShellLink[]>(
-    () => [
-      {
-        key: "projects",
-        label: "Projects",
-        subtitle: "Collaboration lanes",
-        to: "/projects",
-        icon: FolderKanban,
-      },
-      {
-        key: "spaces",
-        label: "Spaces",
-        subtitle: "Governance settings",
-        to: "/spaces",
-        icon: Settings,
-      },
-      {
-        key: "search",
-        label: "Search",
-        subtitle: "Discover and import",
-        to: "/search",
-        icon: Search,
-      },
-      {
-        key: "library",
-        label: "Library",
-        subtitle: "Project assets",
-        to: resolvedProjectId ? `/projects/${resolvedProjectId}/library` : "/projects",
-        icon: FileText,
-      },
-      {
-        key: "reader",
-        label: "Reader",
-        subtitle: "Read with evidence",
-        to: resolvedProjectId && context.entryId
-          ? `/projects/${resolvedProjectId}/library/${context.entryId}/reader`
-          : resolvedProjectId
-            ? `/projects/${resolvedProjectId}/library`
-            : "/projects",
-        icon: BookOpen,
-      },
-      {
-        key: "writing",
-        label: "Writing",
-        subtitle: "Versioned drafting",
-        to: resolvedProjectId && context.docId
-          ? `/projects/${resolvedProjectId}/writing/${context.docId}`
-          : resolvedProjectId
-            ? `/projects/${resolvedProjectId}`
-            : "/projects",
-        icon: FileText,
-      },
-      {
-        key: "jobs",
-        label: "Jobs",
-        subtitle: "Governed AI runtime",
-        to: "/jobs",
-        icon: Bot,
-      },
-    ],
-    [context.docId, context.entryId, resolvedProjectId],
+  const shellLinks = useMemo(
+    () =>
+      workbenchNavigationItems.map((item) => ({
+        ...item,
+        to: resolveWorkbenchNavigationTarget(item, context),
+      })),
+    [context],
   );
 
   function toggleSidebar() {
@@ -330,12 +122,14 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
         >
           <div className="flex flex-col gap-1">
             {shellLinks.map((item) => {
-              const isActive = isActiveSection(location.pathname, item.key);
+              const isActive = isWorkbenchNavigationItemActive(location.pathname, item.key);
               const Icon = item.icon;
               return (
                 <Link
                   key={item.key}
+                  aria-label={item.label}
                   to={item.to}
+                  aria-current={isActive ? "page" : undefined}
                   title={isCollapsed ? item.label : undefined}
                   className={`group relative flex items-center rounded-lg text-sm no-underline transition-colors hover:bg-notion-sidebar-hover/70 ${
                     isCollapsed
@@ -415,50 +209,7 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
             </div>
           )}
 
-          <div className="mt-auto border-t border-notion-border/80 pt-3">
-            <Link
-              to="/settings"
-              title={isCollapsed ? "Settings" : undefined}
-              className={`group relative flex items-center rounded-lg text-sm no-underline transition-colors hover:bg-notion-sidebar-hover/70 ${
-                isCollapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5"
-              }`}
-            >
-              {isActiveSection(location.pathname, "settings") && (
-                <motion.div
-                  layoutId="jixia-sidebar-indicator"
-                  className="absolute inset-0 rounded-lg bg-notion-accent-light"
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                />
-              )}
-              <Settings
-                size={isCollapsed ? 20 : 18}
-                strokeWidth={
-                  isActiveSection(location.pathname, "settings") ? 2.2 : 1.8
-                }
-                className={`relative z-10 shrink-0 ${
-                  isActiveSection(location.pathname, "settings")
-                    ? "text-notion-text"
-                    : "text-notion-text-tertiary group-hover:text-notion-text-secondary"
-                }`}
-              />
-              {!isCollapsed && (
-                <div className="relative z-10 min-w-0">
-                  <div
-                    className={`truncate ${
-                      isActiveSection(location.pathname, "settings")
-                        ? "font-medium text-notion-text"
-                        : "text-notion-text-secondary group-hover:text-notion-text"
-                    }`}
-                  >
-                    Settings
-                  </div>
-                  <div className="truncate text-xs text-notion-text-tertiary">
-                    Credentials and governance
-                  </div>
-                </div>
-              )}
-            </Link>
-          </div>
+          <div className="mt-auto border-t border-notion-border/80 pt-3" aria-hidden="true" />
         </nav>
       </aside>
 
@@ -468,7 +219,7 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-notion-text-tertiary">
               <span>Jixia</span>
               <ChevronRight size={12} />
-              <span>{currentSectionTitle(context.currentSection)}</span>
+              <span>{resolveWorkbenchSectionTitle(context.currentSection)}</span>
             </div>
             <div className="mt-1 truncate text-sm text-notion-text-secondary">
               {resolvedSpaceId ?? "No governance space"} ·{" "}

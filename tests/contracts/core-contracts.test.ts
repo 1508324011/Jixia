@@ -4,6 +4,7 @@ import * as jobs from '../../src/shared/contracts/jobs';
 import * as library from '../../src/shared/contracts/library';
 import * as documentContent from '../../src/shared/contracts/document-content';
 import * as documentSnapshot from '../../src/shared/contracts/document-snapshot';
+import * as homeCockpit from '../../src/shared/contracts/home-cockpit';
 import * as notebook from '../../src/shared/contracts/notebook';
 import * as projects from '../../src/shared/contracts/projects';
 import * as projectDocs from '../../src/shared/contracts/project-docs';
@@ -57,6 +58,12 @@ import type {
   DocumentContentPayload,
   DocumentSourceExcerptBlock,
 } from '../../src/shared/contracts/document-content';
+import type {
+  HomeCockpitResponse,
+  HomeCockpitSectionId,
+  HomeCockpitSectionStatus,
+  HomeCockpitWorkbenchContext,
+} from '../../src/shared/contracts/home-cockpit';
 import type {
   CaptureNotebookEvidenceRequest,
   CaptureNotebookEvidenceResponse,
@@ -155,6 +162,83 @@ describe('core contracts', () => {
     expectTypeOf<ProjectStatus>().toEqualTypeOf<'active' | 'archived'>();
     expectTypeOf<ProjectMemberRole>().toEqualTypeOf<
       'owner' | 'editor' | 'viewer'
+    >();
+  });
+
+  it('exports the server-owned Home cockpit read-model contract', () => {
+    expect(homeCockpit.homeCockpitContract).toBe('jixia-home-cockpit-contract');
+
+    const workbench: HomeCockpitWorkbenchContext = {
+      label: 'Personal workbench',
+      route: '/home',
+      scope: { id: 'user_001', type: 'user' },
+    };
+    const response: HomeCockpitResponse = {
+      actor: {
+        displayName: 'Alice',
+        email: 'alice@example.test',
+        id: 'user_001',
+      },
+      contract: homeCockpit.homeCockpitContract,
+      generatedAt: '2026-05-17T00:00:00.000Z',
+      nextActions: [
+        {
+          description: 'Open the governed jobs surface.',
+          id: 'open-jobs',
+          label: 'Open Jobs',
+          priority: 'primary',
+          to: '/jobs',
+        },
+      ],
+      notices: [
+        {
+          body: 'Built from a session-derived server actor.',
+          id: 'server-owned-read-model',
+          title: 'Server-owned cockpit',
+          tone: 'info',
+        },
+      ],
+      recentActivity: [
+        {
+          context: 'ai.summary · queued',
+          href: '/jobs',
+          id: 'job:job_001',
+          kind: 'job',
+          occurredAt: '2026-05-17T00:00:00.000Z',
+          title: 'job_001',
+        },
+      ],
+      sections: [
+        {
+          description: 'Visible projects and spaces.',
+          id: 'collaboration',
+          metrics: [{ label: 'Visible projects', value: 1 }],
+          primaryAction: {
+            description: 'Review visible project workspaces.',
+            id: 'open-projects',
+            label: 'Open Projects',
+            priority: 'primary',
+            to: '/projects',
+          },
+          status: 'active',
+          title: 'Collaboration cockpit',
+        },
+      ],
+      workbench,
+    };
+
+    expect(response.contract).toBe(homeCockpit.homeCockpitContract);
+    expect(response.workbench.route).toBe('/home');
+    expect(response.workbench.scope).toEqual({ id: 'user_001', type: 'user' });
+    expect(response.sections[0]?.id).toBe('collaboration');
+    expect(response.recentActivity[0]?.kind).toBe('job');
+
+    expectTypeOf<HomeCockpitWorkbenchContext['scope']>().toEqualTypeOf<ScopeRef>();
+    expectTypeOf<HomeCockpitSectionId>().toEqualTypeOf<
+      'collaboration' | 'library' | 'writing' | 'jobs'
+    >();
+    expectTypeOf<HomeCockpitSectionStatus>().toEqualTypeOf<
+      'empty' | 'active' | 'attention'
     >();
   });
 
