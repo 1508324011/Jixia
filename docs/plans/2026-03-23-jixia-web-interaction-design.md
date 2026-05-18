@@ -144,17 +144,17 @@ Paper 页面是 Jixia 的核心工作面。它不只是阅读器，而是围绕�
 
 - 项目共享评论
 - 项目共享笔记
-- 与该项目相关的 Writer 文档入口
+- 与该项目相关的 Project Docs 文档入口
 
 用户感知到的是“同一篇 paper 的不同工作视角”，而不是“进入了另一套系统”。
 
-## 🤝 Projects 与 Writer 的角色分工
+## 🤝 Projects 与 Project Docs 的角色分工
 
 `Projects` 页面不能只是共享文献列表，而应是一个小型共享工作台。进入某个项目后，至少应包含四块内容：
 
 1. 项目概览
 2. 共享 Library
-3. Writer 文档区
+3. Project Docs 共享知识中心
 4. 活动 / 讨论记录
 
 ### Project 的定位
@@ -167,9 +167,9 @@ Project 是用户进入共享协作的主要入口。它代表一个具体研究
 - 文献综述项目
 - 课题申请书项目
 
-### Writer 的定位
+### Project Docs 的定位
 
-Writer 不是 paper 右侧笔记区的放大版，而是**正式产出区**。它应该承载：
+Project Docs 不是 paper 右侧笔记区的放大版，而是**项目共享知识中心与正式产出区**。它应该承载：
 
 - 会议纪要
 - 文献综述草稿
@@ -177,9 +177,9 @@ Writer 不是 paper 右侧笔记区的放大版，而是**正式产出区**。�
 - 项目总结
 - 课题材料
 
-项目页上的 `Writer 文档区` 应先通过 `GET /api/projects/:projectId/writing-document`
-发现当前项目最新可见的共享文稿，再决定是直接重开已有 Writer 草稿，还是显示
-“尚未创建 Writer 文稿”的空状态提示。
+项目页上的 `Project Docs 共享知识中心` 应先通过服务端 workspace DTO
+发现当前项目最新可见的共享文稿，再决定是直接重开已有 Project Doc 草稿，还是显示
+“尚未创建 Project Doc”的空状态提示。
 进入 `/projects/:projectId/writing/:docId` 之后，页面应继续通过
 `GET /api/project-docs/:documentId` 读取当前最新快照；如果文稿已经存在但还没有保存过任何版本，
 服务端也应返回 `content = ''`、`citations = []`、`versionNumber = 0` 的真实空快照，而不是让前端补假数据。
@@ -190,7 +190,7 @@ Writer 不是 paper 右侧笔记区的放大版，而是**正式产出区**。�
 |---|---|
 | paper 私人笔记 | 个人理解与草稿思考 |
 | paper 共享评论 | 围绕某篇 paper 的项目讨论 |
-| Writer 文档 | 已经上升成项目正式内容的输出 |
+| Project Docs 文档 | 已经上升成项目共享知识与正式内容的输出 |
 
 ## 🔁 快速切换与上下文感知
 

@@ -57,6 +57,8 @@ export interface ProjectWorkspaceDocIndexItem {
 }
 
 export interface ProjectWorkspaceDocsIndex {
+  canCreate: boolean;
+  createDisabledReason?: string;
   documents: ProjectWorkspaceDocIndexItem[];
   emptyState: {
     body: string;

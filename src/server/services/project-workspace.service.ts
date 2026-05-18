@@ -20,9 +20,23 @@ export interface ProjectWorkspaceService {
 }
 
 const emptyProjectDocsIndex = {
-  body: 'No Project Docs have been created for this project yet. Promote governed evidence from Reader or create a Writer draft to start the shared index.',
+  body: 'No Project Docs have been created for this project yet. Use Project Docs to maintain shared background, evidence, rationale, conclusions, and formal drafts for the team.',
   title: 'No Project Docs yet',
 };
+
+function resolveDocsCreatePermissions(role: string): {
+  canCreate: boolean;
+  createDisabledReason?: string;
+} {
+  if (role === 'owner' || role === 'editor') {
+    return { canCreate: true };
+  }
+
+  return {
+    canCreate: false,
+    createDisabledReason: 'Project viewers can read visible Project Docs but cannot create shared project knowledge documents.',
+  };
+}
 
 function mapDocIndexItem(
   item: PersistedProjectDocIndexItem,
@@ -65,6 +79,7 @@ export function createProjectWorkspaceService(
 
       const documents = await store.projectDocRepository.listDocumentsForProject(projectId);
       const docIndexDocuments = documents.map(mapDocIndexItem);
+      const docsCreatePermissions = resolveDocsCreatePermissions(project.membership.role);
 
       return {
         actor: {
@@ -73,6 +88,7 @@ export function createProjectWorkspaceService(
         },
         contract: projectsContract,
         docs: {
+          ...docsCreatePermissions,
           documents: docIndexDocuments,
           emptyState: emptyProjectDocsIndex,
           projectId,

@@ -9,7 +9,7 @@ The `main` branch now carries an integrated workbench beta rather than a placeho
 1. a server-first backend scaffold for spaces, library, reading, writing, and governed AI jobs
 2. a project-first browser shell that loads real server-owned projects before entering library, reader, and writing lanes
 3. an integrated workbench-first beta for `Login -> Home -> Today/Search/Library/Projects/Settings`
-4. a current-host beta path that can persist settings, personal imports, paper notes/comments, and Writer drafts across restart
+4. a current-host beta path that can persist settings, personal imports, paper notes/comments, and Project Docs across restart
 
 Bootstrap guardrails remain in place, but the repository has moved beyond bootstrap-only setup. The active product baseline is `docs/plans/design.md`; older Space-first plans are historical server-first scaffolding notes unless reconciled with the project-first recovery plan.
 
@@ -19,7 +19,7 @@ The fastest truthful entry for the integrated product flow on `main` is:
 
 - `docs/runbooks/native-demo-showcase.md`
 
-That runbook documents the **current-host beta path** for `main`: start the app natively, enter the workbench, set up Settings, search PubMed, import into Personal Library, open Reader, persist notes/comments/insights, promote into Writer, reopen the Writer draft, restart the process, and confirm the persisted state still exists. The packaged reset/showcase workflow is a **demo-only convenience** that still belongs to the downstream `demo-native-showcase` branch.
+That runbook documents the **current-host beta path** for `main`: start the app natively, enter the workbench, set up Settings, search PubMed, import into Personal Library, open Reader, persist notes/comments/insights, promote into Project Docs, reopen the Project Doc, restart the process, and confirm the persisted state still exists. The packaged reset/showcase workflow is a **demo-only convenience** that still belongs to the downstream `demo-native-showcase` branch.
 
 ## Planning Documents
 
@@ -45,7 +45,7 @@ The shipped product surface includes:
 - top-level workbench surfaces for `今日推荐`, `搜索`, `Library`, `Projects`, and `设置`
 - explicit `Personal` vs `Project / 项目名` context indicators
 - paper workspace panels for `AI 对话`, `私人笔记`, `共享评论`, and `关键信息`
-- project-level `Writer 文档区` cues plus a reopenable Writer draft preview
+- project-level Project Docs shared knowledge center cues plus a reopenable Project Doc editor route
 - server-backed project routes using Prisma/SQLite `Project` and `ProjectMember` authority instead of legacy JSON project arrays
 - browser-facing `/api/*` routes for spaces, credentials, jobs, library/import, reading, notebooks, project docs, and the workbench compatibility endpoints
 - preserved `/spaces/...` routes so deep-link regression tests still guard compatibility
@@ -62,7 +62,7 @@ Personal-facing routes are workbench shorthand over server-side ownership and sc
 - `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings through Prisma-backed per-user workbench settings and encrypted provider credential secret rows without exposing raw API keys in responses or stored settings records.
 - `GET /api/library/personal` and `POST /api/library/personal/import` keep personal import ownership on the server.
 - `GET /api/reading/:entryId`, `POST /api/reading/notes`, `POST /api/reading/:entryId/project-comments`, and `POST /api/reading/:entryId/insights` back the paper workspace; private notes and project comments are separate server-authorized paths.
-- `GET /api/projects/:projectId/writing-document` lets the project workspace reopen the latest visible shared Writer draft, or truthfully report that the project has no shared draft yet.
+- `GET /api/projects/:projectId/writing-document` lets compatibility callers reopen the latest visible shared Project Doc, or truthfully report that the project has no shared Project Doc yet.
 - `GET /api/project-docs/:documentId` returns the latest Project Doc snapshot; when a document exists but has not been saved yet, the server returns an empty snapshot with `versionNumber: 0` instead of browser-authored fallback content.
 - `GET /api/writing/:spaceId/projects/:projectId/document` and `POST /api/writing/:spaceId/projects/:projectId/document` remain compatibility-only workbench endpoints for preserved legacy deep links; Project Docs remain the authoritative project writing runtime.
 - `GET /api/projects/:projectId/writing/document` and `POST /api/projects/:projectId/writing/document` remain workbench compatibility endpoints backed by Project Docs for newer route callers; the project-doc routes are the authoritative project writing runtime.
@@ -75,7 +75,7 @@ Current branch verification is maintained with:
 - `npm run typecheck`
 - `npm run build`
 
-Targeted verification also covers workbench routing/navigation, personal vs project context switching, discovery/search to Personal Library import, paper workspace persistence, Writer promotion/reopen, current-host beta runbook truthfulness, and server-first Prisma-backed project membership.
+Targeted verification also covers workbench routing/navigation, personal vs project context switching, discovery/search to Personal Library import, paper workspace persistence, Project Docs promotion/reopen, current-host beta runbook truthfulness, and server-first Prisma-backed project membership.
 
 ## Near-Term Direction
 

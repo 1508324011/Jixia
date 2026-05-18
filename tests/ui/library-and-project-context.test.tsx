@@ -29,6 +29,7 @@ const projectWorkspaceFixture = {
   },
   contract: 'jixia-projects-contract',
   docs: {
+    canCreate: true,
     documents: [],
     emptyState: {
       body: 'Adopt a source into the project library, then promote it into Writer.',
@@ -136,7 +137,7 @@ describe('library and project context', () => {
     expect(await screen.findByText('Project / project-recovery')).toBeInTheDocument();
     expect(await screen.findByText('Project / Project-first Recovery')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '共享 Library' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Writer' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Project Docs' })).toBeInTheDocument();
   });
 
   it('adopts a personal library source into a visible project with the narrow server DTO', async () => {

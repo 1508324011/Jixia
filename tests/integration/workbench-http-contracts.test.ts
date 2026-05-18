@@ -719,7 +719,7 @@ describe('workbench http contracts', () => {
     expect(loginPage).toContain('loginProfileKey');
     expect(loginPage).not.toContain('await login({ userId:');
     expect(handoffNotes).toContain('Personal vs Project 上下文');
-    expect(handoffNotes).toContain('Writer 文档区');
+    expect(handoffNotes).toContain('Project Docs 共享知识中心');
     expect(
       existsSync(join(process.cwd(), 'docs/plans/2026-03-23-jixia-web-interaction-design.md')),
     ).toBe(true);

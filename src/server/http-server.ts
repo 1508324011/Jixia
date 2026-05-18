@@ -338,6 +338,18 @@ function rejectNotebookAuthorityQueryFields(
   );
 }
 
+function rejectProjectDocAuthorityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "createdByUserId"),
+    "createdByUserId",
+  );
+}
+
 function rejectProjectLibraryAdoptionAuthorityQueryFields(
   actor: { userId: string },
   requestUrl: URL,
@@ -390,6 +402,21 @@ function rejectLegacyIdentityBodyFields(
   assertNoClientActorIdentityField(actor, body.authorUserId, "authorUserId");
   assertNoClientActorIdentityField(actor, body.startedByUserId, "startedByUserId");
   assertNoClientActorContextField(body.actorSpaceId, "actorSpaceId");
+}
+
+function rejectProjectDocAuthorityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
 }
 
 function rejectProjectLibraryAdoptionAuthorityBodyFields(
@@ -1006,7 +1033,7 @@ async function handleApiRequest(
     if (latestProjectDocumentMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, projectId] = latestProjectDocumentMatch;
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectProjectDocAuthorityQueryFields(actor, requestUrl);
       sendJson(
         response,
         200,
@@ -1020,7 +1047,7 @@ async function handleApiRequest(
     if (projectWritingMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, projectId] = projectWritingMatch;
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectProjectDocAuthorityQueryFields(actor, requestUrl);
 
       const document = await app.projectDocs.getWorkbenchDocument(projectId, actor.userId);
 
@@ -1041,9 +1068,9 @@ async function handleApiRequest(
     if (projectWritingMatch && method === "POST") {
       const actor = await getActor(request, actorOptions);
       const [, projectId] = projectWritingMatch;
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectProjectDocAuthorityQueryFields(actor, requestUrl);
       const requestBody = await readJsonBody<unknown>(request);
-      rejectLegacyIdentityBodyFields(actor, requestBody);
+      rejectProjectDocAuthorityBodyFields(actor, requestBody);
       const body = parseWorkbenchWritingBody(requestBody);
 
       sendJson(
@@ -1202,7 +1229,7 @@ async function handleApiRequest(
 
     if (pathname === "/api/project-docs" && method === "POST") {
       const actor = await getActor(request, actorOptions);
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectProjectDocAuthorityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
         createdByUserId?: string;
@@ -1210,8 +1237,7 @@ async function handleApiRequest(
         publishState?: "draft" | "review" | "published";
         title: string;
       }>(request);
-      rejectLegacyIdentityBodyFields(actor, body);
-      assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
+      rejectProjectDocAuthorityBodyFields(actor, body);
 
       sendJson(
         response,
@@ -1233,7 +1259,7 @@ async function handleApiRequest(
     if (projectDocMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocMatch;
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectProjectDocAuthorityQueryFields(actor, requestUrl);
 
       sendJson(
         response,
@@ -1250,9 +1276,9 @@ async function handleApiRequest(
     if (projectDocVersionsMatch && method === "POST") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocVersionsMatch;
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectProjectDocAuthorityQueryFields(actor, requestUrl);
       const requestBody = await readJsonBody<unknown>(request);
-      rejectLegacyIdentityBodyFields(actor, requestBody);
+      rejectProjectDocAuthorityBodyFields(actor, requestBody);
       const body = parseDocumentVersionBody(requestBody);
 
       sendJson(
@@ -1278,12 +1304,13 @@ async function handleApiRequest(
     if (projectDocPublishStateMatch && method === "POST") {
       const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocPublishStateMatch;
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectProjectDocAuthorityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorUserId?: string;
+        createdByUserId?: string;
         publishState: "draft" | "review" | "published";
       }>(request);
-      rejectLegacyIdentityBodyFields(actor, body);
+      rejectProjectDocAuthorityBodyFields(actor, body);
 
       sendJson(
         response,

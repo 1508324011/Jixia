@@ -40,7 +40,8 @@ describe('workbench beta runbook contract', () => {
     expect(runbook).toContain('Save project comment');
     expect(runbook).toContain('Save insight');
     expect(runbook).toContain('Promote latest insight to Writer');
-    expect(runbook).toContain('打开 Writer 文稿');
+    expect(runbook).toContain('Project Docs 共享知识中心');
+    expect(runbook).toContain('Open Project Doc');
     expect(runbook).toContain('Reload draft');
     expect(runbook).toContain('restart the app process');
     expect(runbook).toContain('server-state.json');

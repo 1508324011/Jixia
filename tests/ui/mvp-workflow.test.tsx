@@ -322,7 +322,7 @@ describe('mvp workflow shell', () => {
     );
     await user.click(screen.getByRole('link', { name: 'Open writing' }));
 
-    expect(screen.getByRole('heading', { name: 'Writing' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Project Doc editor' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Versions and references' })).toBeInTheDocument();
     expect(
       screen.getByLabelText('context bar'),
@@ -441,7 +441,7 @@ describe('mvp workflow shell', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Writing' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Project Doc editor' })).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText('context bar')).toHaveTextContent(
         'Space context · space-recovery',

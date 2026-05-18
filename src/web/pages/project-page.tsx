@@ -1,14 +1,57 @@
-import { Link, useParams } from 'react-router-dom';
+import type { SyntheticEvent } from 'react';
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { ProjectTabs } from '../components/project-tabs';
+import { apiClient } from '../lib/http-client';
 import { useProjectWorkspace } from '../presenters/project-workspace-presenter';
 
-const projectTabs = ['概览', '共享 Library', 'Writer', '活动'];
+const projectTabs = ['概览', '共享 Library', 'Project Docs', '活动'];
 
 export function ProjectPage() {
   const { projectId = '' } = useParams();
+  const navigate = useNavigate();
   const projectWorkspace = useProjectWorkspace(projectId);
   const { error, isLoading, project, workspace } = projectWorkspace;
+  const [newDocumentTitle, setNewDocumentTitle] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isCreatingDocument, setIsCreatingDocument] = useState(false);
+
+  async function handleCreateProjectDoc(event: SyntheticEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+
+    if (!workspace?.docs.canCreate || isCreatingDocument) {
+      return;
+    }
+
+    const title = newDocumentTitle.trim();
+
+    if (!title) {
+      setCreateError('Enter a Project Doc title before creating the shared document.');
+      return;
+    }
+
+    setCreateError(null);
+    setIsCreatingDocument(true);
+
+    try {
+      const document = await apiClient.createProjectDoc({
+        projectId: workspace.project.id,
+        title,
+      });
+
+      setNewDocumentTitle('');
+      navigate(`/projects/${workspace.project.id}/writing/${document.id}`);
+    } catch (creationError) {
+      setCreateError(
+        creationError instanceof Error
+          ? creationError.message
+          : 'Failed to create the Project Doc.',
+      );
+    } finally {
+      setIsCreatingDocument(false);
+    }
+  }
 
   if (!projectId) {
     return (
@@ -69,7 +112,9 @@ export function ProjectPage() {
       <header className="page-header">
         <p className="page-kicker">Project workspace</p>
         <h1 className="page-title">{projectLabel}</h1>
-        <p className="page-description">共享阅读、项目图书馆和正式写作入口在这里汇合。</p>
+        <p className="page-description">
+          Project Docs 是项目共享知识中心，用于沉淀背景、证据、rationale、结论和正式文稿。
+        </p>
         <p className="quiet-copy">Project / {projectLabel}</p>
       </header>
 
@@ -84,16 +129,47 @@ export function ProjectPage() {
       <section className="panel project-workspace-panel">
         <ProjectTabs tabs={projectTabs} />
         <p className="quiet-copy">
-          先从概览进入共享 Library、Writer 和协作动态。
+          先从概览进入共享 Library、Project Docs 和协作动态。
         </p>
         <Link className="panel-link" to={`/projects/${projectId}/library`}>
           Open project library
         </Link>
       </section>
 
-      <section className="panel" aria-label="Writer 文档区">
-        <h2 className="panel-title">Writer 文档区</h2>
-        <p className="quiet-copy">将成熟内容整理进入 Writer</p>
+      <section className="panel" aria-label="Project Docs shared knowledge center">
+        <h2 className="panel-title">Project Docs 共享知识中心</h2>
+        <p className="quiet-copy">
+          维护项目背景、证据、rationale、结论和正式 drafts。所有内容由服务器 ProjectDoc 权限和版本模型管理。
+        </p>
+        {workspace.docs.canCreate ? (
+          <form className="stack-sm" aria-label="create Project Doc" onSubmit={(event) => void handleCreateProjectDoc(event)}>
+            <label className="quiet-copy" htmlFor="project-doc-title">
+              New Project Doc title
+            </label>
+            <input
+              id="project-doc-title"
+              className="draft-editor"
+              type="text"
+              value={newDocumentTitle}
+              disabled={isCreatingDocument}
+              placeholder="e.g. Background, evidence rationale, or manuscript draft"
+              onChange={(event) => {
+                setNewDocumentTitle(event.target.value);
+                setCreateError(null);
+              }}
+            />
+            <div className="button-row">
+              <button className="action-button" type="submit" disabled={isCreatingDocument}>
+                {isCreatingDocument ? 'Creating Project Doc…' : 'Create Project Doc'}
+              </button>
+            </div>
+            {createError ? <p className="quiet-copy">{createError}</p> : null}
+          </form>
+        ) : (
+          <p className="quiet-copy">
+            {workspace.docs.createDisabledReason ?? 'Your project role can read visible Project Docs but cannot create shared documents.'}
+          </p>
+        )}
         <div className="panel-grid" aria-label="project docs index">
           {docs.length > 0 ? (
             docs.map((document) => (
@@ -105,9 +181,12 @@ export function ProjectPage() {
                 <p className="quiet-copy">
                   Document · {document.documentId}
                 </p>
+                <p className="quiet-copy">
+                  Latest version · {document.latestVersion?.versionId ?? 'No saved version'}
+                </p>
                 <span className="status-badge">{document.publishState}</span>
                 <Link className="panel-link" to={document.openHref}>
-                  打开 Writer 文稿
+                  Open Project Doc
                 </Link>
               </article>
             ))
