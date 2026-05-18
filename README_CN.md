@@ -9,7 +9,7 @@
 1. 面向 spaces、library、reading、writing 与 governed AI jobs 的 server-first 后端骨架
 2. 一个 project-first 浏览器工作流壳，会先加载服务端持有的真实 Project，再进入 library、reader 与 writing lane
 3. 面向 `Login -> Home -> Today/Search/Library/Projects/Settings` 的集成式 workbench beta
-4. 一条可在当前主机上原生跑通、并可跨重启保留 settings、个人导入、paper 注释/评论与 Writer 草稿的 beta 路径
+4. 一条可在当前主机上原生跑通、并可跨重启保留 settings、个人导入、paper 注释/评论与 Project Docs 的 beta 路径
 
 bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当前目标态产品基线是 `docs/plans/design.md`；较早的 Space-first 计划属于历史 server-first 脚手架说明，除非已经与 project-first recovery plan 对齐，否则不再定义前台产品模型。
 
@@ -19,7 +19,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 
 - `docs/runbooks/native-demo-showcase.md`
 
-这份 runbook 记录的是 `main` 上的**当前主机 beta 路径**：原生启动应用、进入 workbench、配置设置、检索 PubMed、导入到 Personal Library、打开 Reader、持久化私人笔记 / 项目评论 / insight、推进到 Writer、重新打开 Writer 草稿，并在重启进程后确认状态仍然存在。打包、reset、showcase 这一类能力仍然属于下游 `demo-native-showcase` 分支上的 **demo-only convenience**。
+这份 runbook 记录的是 `main` 上的**当前主机 beta 路径**：原生启动应用、进入 workbench、配置设置、检索 PubMed、导入到 Personal Library、打开 Reader、持久化私人笔记 / 项目评论 / insight、推进到 Project Docs、重新打开 Project Doc，并在重启进程后确认状态仍然存在。打包、reset、showcase 这一类能力仍然属于下游 `demo-native-showcase` 分支上的 **demo-only convenience**。
 
 ## 计划文档
 
@@ -45,7 +45,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 - `今日推荐`、`搜索`、`Library`、`Projects`、`设置` 五个顶层入口
 - 明确的 `Personal` 与 `Project / 项目名` 上下文提示
 - `AI 对话`、`私人笔记`、`共享评论`、`关键信息` 四个 paper workspace 面板
-- 项目级 `Writer 文档区` 以及可重新打开的 Writer 草稿预览
+- 项目级 Project Docs 共享知识中心，以及可重新打开的 Project Doc 编辑器路径
 - Project 与 ProjectMember 继续由 Prisma/SQLite 作为权威状态，不依赖旧 JSON project 数组
 - 面向 discovery、settings、personal-library import/list、reading detail / mutation、notebook、project-doc 与 workbench 兼容端点的浏览器接口
 - 继续保留 legacy `/spaces/...` 路由，用回归测试守住兼容性
@@ -61,7 +61,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 - `GET /api/settings/me` 与 `POST /api/settings/me` 会通过 Prisma-backed per-user workbench settings 与加密后的 provider credential secret 行持久化浏览器可见的 settings 状态，同时不把原始 API key 暴露到响应体或 settings 记录中。
 - `GET /api/library/personal` 与 `POST /api/library/personal/import` 由服务端托管个人导入归属。
 - `GET /api/reading/:entryId`、`POST /api/reading/notes`、`POST /api/reading/:entryId/project-comments`、`POST /api/reading/:entryId/insights` 支撑 paper workspace；私人笔记与项目评论走分离的 server-authorized 写入路径。
-- `GET /api/projects/:projectId/writing/document` 与 `POST /api/projects/:projectId/writing/document` 是 project-first workbench 主流程下的 canonical 浏览器 Writer 端点。
+- `GET /api/projects/:projectId/writing/document` 与 `POST /api/projects/:projectId/writing/document` 是由 Project Docs 支撑的 project-first workbench 兼容端点；Project Docs 是项目共享知识中心的权威运行时。
 - `GET /api/writing/:spaceId/projects/:projectId/document` 与 `POST /api/writing/:spaceId/projects/:projectId/document` 只保留为 legacy deep link 的兼容 workbench 端点；Project Docs 仍然是项目写作的权威运行时。
 
 ## 验证快照
@@ -72,7 +72,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 - `npm run typecheck`
 - `npm run build`
 
-额外的定向验证还覆盖 workbench 路由与导航、personal / project 上下文切换、discovery/search 到 Personal Library 的导入路径、paper workspace 持久化与 Writer promotion/reopen、当前主机 beta runbook 的真实性，以及 server-first Prisma-backed project membership。
+额外的定向验证还覆盖 workbench 路由与导航、personal / project 上下文切换、discovery/search 到 Personal Library 的导入路径、paper workspace 持久化与 Project Docs promotion/reopen、当前主机 beta runbook 的真实性，以及 server-first Prisma-backed project membership。
 
 ## 近期方向
 

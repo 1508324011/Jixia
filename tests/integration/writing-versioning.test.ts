@@ -205,7 +205,6 @@ describe('notebook and project document persistence', () => {
 
       const projectDoc = await firstApp.projectDocs.createDocument(
         {
-          createdByUserId: 'user-alice',
           projectId: project.project.id,
           title: 'Collaborative Draft',
         },
@@ -1044,7 +1043,6 @@ describe('notebook and project document persistence', () => {
       );
       const document = await app.projectDocs.createDocument(
         {
-          createdByUserId: 'user-alice',
           projectId: project.project.id,
           title: 'Tumor board literature synthesis',
         },

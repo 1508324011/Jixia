@@ -29,6 +29,7 @@ export function WritingPage() {
     mutationLockRef.current !== null;
   const isDraftHydrating = snapshotVersionId !== draftVersionId;
   const draftProjection = createLegacyTextProjection(draftDocumentContent);
+  const canEditProjectDoc = presenter.project?.membership.role === "owner" || presenter.project?.membership.role === "editor";
 
   useEffect(() => {
     setDraftDocumentContent(presenter.documentContent);
@@ -40,8 +41,8 @@ export function WritingPage() {
     return (
       <main className="page-shell">
         <header className="page-header">
-          <p className="page-kicker">Manuscript studio · versioned drafting · citation traceability</p>
-          <h1 className="page-title">Writing</h1>
+          <p className="page-kicker">Project Docs · shared knowledge center · citation traceability</p>
+          <h1 className="page-title">Project Doc editor</h1>
           <p className="page-description">
             Select a visible project document before opening the shared writing surface.
           </p>
@@ -63,7 +64,7 @@ export function WritingPage() {
   }
 
   async function handleSave(): Promise<void> {
-    if (!presenter.document || mutationLockRef.current) {
+    if (!presenter.document || mutationLockRef.current || !canEditProjectDoc) {
       return;
     }
 
@@ -81,7 +82,7 @@ export function WritingPage() {
       });
     } catch (error) {
       setMutationError(
-        error instanceof Error ? error.message : "Failed to save the writer draft.",
+        error instanceof Error ? error.message : "Failed to save the Project Doc.",
       );
     } finally {
       mutationLockRef.current = null;
@@ -102,7 +103,7 @@ export function WritingPage() {
       await presenter.refresh();
     } catch (error) {
       setMutationError(
-        error instanceof Error ? error.message : "Failed to reload the writer draft.",
+        error instanceof Error ? error.message : "Failed to reload the Project Doc.",
       );
     } finally {
       mutationLockRef.current = null;
@@ -120,14 +121,13 @@ export function WritingPage() {
   return (
     <main className="page-shell">
       <header className="page-header">
-        <p className="page-kicker">Manuscript studio · versioned drafting · citation traceability</p>
-        <h1 className="page-title">Writing</h1>
+        <p className="page-kicker">Project Docs · shared knowledge center · citation traceability</p>
+        <h1 className="page-title">Project Doc editor</h1>
         <p className="page-description">
-          Draft the shared document while keeping versions, citations, and
-          publish state visible but quiet.
+          Maintain shared project background, evidence, rationale, conclusions, and formal drafts while keeping versions and citations server-owned.
         </p>
         <p className="quiet-copy">
-          Mature content path · AI 对话 → 私人笔记 → 共享评论 → Writer 文稿
+          Reader evidence can inform this document only through explicit, project-scoped, citation-backed saves.
         </p>
       </header>
 
@@ -152,7 +152,7 @@ export function WritingPage() {
         <article className="panel">
           {presenter.isProjectLoading || presenter.isLoading || isDraftHydrating ? (
             <>
-              <h2 className="panel-title">Loading writer draft…</h2>
+              <h2 className="panel-title">Loading Project Doc…</h2>
               <p className="quiet-copy">Pulling the latest saved project document from the server-owned project-doc runtime.</p>
             </>
           ) : activeDocument && !pageError ? (
@@ -165,7 +165,7 @@ export function WritingPage() {
                 Latest snapshot · {presenter.snapshot?.capturedAt ?? "Not saved yet"}
               </p>
               <DocumentBlockEditor
-                disabled={isMutating}
+                disabled={isMutating || !canEditProjectDoc}
                 label="Draft content"
                 value={draftDocumentContent}
                 onChange={(nextDocumentContent) => {
@@ -177,7 +177,7 @@ export function WritingPage() {
                 <button
                   type="button"
                   className="action-button"
-                  disabled={isMutating}
+                  disabled={isMutating || !canEditProjectDoc}
                   onClick={() => void handleSave()}
                 >
                   {presenter.isSaving || isSavePendingLocally ? "Saving draft…" : "Save draft"}
@@ -191,6 +191,11 @@ export function WritingPage() {
                   {isReloading ? "Reloading…" : "Reload draft"}
                 </button>
               </div>
+              {!canEditProjectDoc ? (
+                <p className="quiet-copy">
+                  Your project role can read this Project Doc, but only project owners and editors can save shared document versions.
+                </p>
+              ) : null}
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
             </div>
           ) : (
@@ -207,7 +212,7 @@ export function WritingPage() {
         <aside className="panel">
           <h2 className="panel-title">Versions and references</h2>
           <p className="quiet-copy">review path · published target · citation links</p>
-          <p className="quiet-copy">将成熟内容整理进入 Writer</p>
+          <p className="quiet-copy">将成熟内容整理进入 Project Docs</p>
           <p className="quiet-copy">Publish state path</p>
           <p className="quiet-copy">draft · review · published</p>
           <p className="quiet-copy">

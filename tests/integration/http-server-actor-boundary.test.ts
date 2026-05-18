@@ -552,6 +552,13 @@ describe('http server actor boundary cleanup', () => {
             }),
             method: 'POST',
           }),
+          fetch(`${server.url}/api/project-docs?createdByUserId=user-bob`, {
+            body: JSON.stringify({ projectId: importedRecord.projectId, title: 'Spoofed query project doc' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/project-docs/${projectDoc.id}/versions`, {
             body: JSON.stringify({ actorUserId: 'user-bob', citations: [], content: 'Spoofed project-doc save' }),
             headers: withSessionCookie(aliceCookie, {
@@ -559,8 +566,22 @@ describe('http server actor boundary cleanup', () => {
             }),
             method: 'POST',
           }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/versions`, {
+            body: JSON.stringify({ citations: [], content: 'Spoofed project-doc save creator', createdByUserId: 'user-bob' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/project-docs/${projectDoc.id}/publish-state`, {
             body: JSON.stringify({ actorUserId: 'user-bob', publishState: 'review' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/publish-state?createdByUserId=user-bob`, {
+            body: JSON.stringify({ publishState: 'review' }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
             }),
@@ -893,6 +914,13 @@ describe('http server actor boundary cleanup', () => {
             }),
             method: 'POST',
           }),
+          fetch(`${server.url}/api/project-docs?createdByUserId=user-alice`, {
+            body: JSON.stringify({ projectId: importedRecord.projectId, title: 'Matching query creator project doc' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/project-docs?actorUserId=user-alice`, {
             body: JSON.stringify({ projectId: importedRecord.projectId, title: 'Matching query project doc' }),
             headers: withSessionCookie(aliceCookie, {
@@ -909,6 +937,13 @@ describe('http server actor boundary cleanup', () => {
           }),
           fetch(`${server.url}/api/project-docs/${projectDoc.id}/versions?userId=user-alice`, {
             body: JSON.stringify({ citations: [], content: 'Matching query project-doc save' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/versions`, {
+            body: JSON.stringify({ citations: [], content: 'Matching creator project-doc save', createdByUserId: 'user-alice' }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
             }),

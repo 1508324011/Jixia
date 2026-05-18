@@ -204,7 +204,6 @@ describe('http server notebook and project-doc api', () => {
           }),
           method: 'POST',
         });
-
         const createResponse = await fetch(`${server.url}/api/project-docs`, {
           body: JSON.stringify({ projectId: project.project.id, title: 'HTTP Project Draft' }),
           headers: withSessionCookie(aliceCookie, {
@@ -223,20 +222,74 @@ describe('http server notebook and project-doc api', () => {
           headers: withSessionCookie(charlieCookie),
         });
         const spoofedCreate = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({ createdByUserId: 'user-alice', projectId: project.project.id, title: 'Spoofed Project Draft' }),
+          headers: withSessionCookie(bobCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const viewerCreate = await fetch(`${server.url}/api/project-docs`, {
           body: JSON.stringify({
-            createdByUserId: 'user-alice',
             projectId: project.project.id,
-            title: 'Spoofed Project Draft',
+            title: 'Viewer Project Draft',
           }),
           headers: withSessionCookie(bobCookie, {
             'Content-Type': 'application/json',
           }),
           method: 'POST',
         });
+        const nonMemberCreate = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({
+            projectId: project.project.id,
+            title: 'Non-member Project Draft',
+          }),
+          headers: withSessionCookie(charlieCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        await fetch(`${server.url}/api/projects/${project.project.id}/members`, {
+          body: JSON.stringify({ role: 'editor', userId: 'user-charlie' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const editorCreate = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({
+            projectId: project.project.id,
+            title: 'Editor Project Draft',
+          }),
+          headers: withSessionCookie(charlieCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const editorProjectDoc = await editorCreate.json() as { createdByUserId: string; id: string; projectId: string; title: string };
+        const editorSave = await fetch(
+          `${server.url}/api/project-docs/${editorProjectDoc.id}/versions`,
+          {
+            body: JSON.stringify({ citations: [], content: 'Editor saved draft' }),
+            headers: withSessionCookie(charlieCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
         const viewerSave = await fetch(
           `${server.url}/api/project-docs/${projectDoc.id}/versions`,
           {
             body: JSON.stringify({ citations: [], content: 'Viewer cannot write' }),
+            headers: withSessionCookie(bobCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const viewerPublishState = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/publish-state`,
+          {
+            body: JSON.stringify({ publishState: 'review' }),
             headers: withSessionCookie(bobCookie, {
               'Content-Type': 'application/json',
             }),
@@ -261,6 +314,29 @@ describe('http server notebook and project-doc api', () => {
           `${server.url}/api/projects/${project.project.id}/writing-document`,
           { headers: withSessionCookie(aliceCookie) },
         );
+        const latestProjectDocumentWithCreatorQuery = await fetch(
+          `${server.url}/api/projects/${project.project.id}/writing-document?createdByUserId=user-alice`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const workbenchDocumentWithCreatorQuery = await fetch(
+          `${server.url}/api/projects/${project.project.id}/writing/document?createdByUserId=user-alice`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const workbenchSaveWithCreatorBody = await fetch(
+          `${server.url}/api/projects/${project.project.id}/writing/document`,
+          {
+            body: JSON.stringify({
+              citations: [],
+              content: 'Compatibility writer creator should be rejected.',
+              createdByUserId: 'user-alice',
+              title: 'Compatibility Writer Creator',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
 
         const ownerSnapshot = await ownerRead.json() as {
           content: string;
@@ -276,7 +352,17 @@ describe('http server notebook and project-doc api', () => {
         expect(memberRead.status).toBe(200);
         expect(nonMemberRead.status).toBe(403);
         expect(spoofedCreate.status).toBe(400);
+        expect(viewerCreate.status).toBe(403);
+        expect(editorCreate.status).toBe(200);
+        expect(editorProjectDoc).toMatchObject({
+          createdByUserId: 'user-charlie',
+          projectId: project.project.id,
+          title: 'Editor Project Draft',
+        });
+        expect(nonMemberCreate.status).toBe(403);
+        expect(editorSave.status).toBe(200);
         expect(viewerSave.status).toBe(403);
+        expect(viewerPublishState.status).toBe(403);
         expect(ownerSave.status).toBe(200);
         expect(ownerRead.status).toBe(200);
         expect(ownerSnapshot.content).toBe('Owner saved draft');
@@ -294,11 +380,35 @@ describe('http server notebook and project-doc api', () => {
           schemaVersion: 1,
         });
         expect(ownerSnapshot.versionNumber).toBe(1);
+        const editorSnapshot = await editorSave.json() as {
+          content: string;
+          document: { id: string; projectId: string };
+          documentContent?: { blocks: unknown[]; schemaVersion: 1 };
+          versionNumber: number;
+        };
+        expect(editorSnapshot.content).toBe('Editor saved draft');
+        expect(editorSnapshot.document).toMatchObject({
+          id: editorProjectDoc.id,
+          projectId: project.project.id,
+        });
+        expect(editorSnapshot.documentContent).toEqual({
+          blocks: [
+            {
+              text: 'Editor saved draft',
+              type: 'paragraph',
+            },
+          ],
+          schemaVersion: 1,
+        });
+        expect(editorSnapshot.versionNumber).toBe(1);
         expect(latestProjectDocument.status).toBe(200);
         expect(latestDocument).toMatchObject({
           id: projectDoc.id,
           projectId: project.project.id,
         });
+        expect(latestProjectDocumentWithCreatorQuery.status).toBe(400);
+        expect(workbenchDocumentWithCreatorQuery.status).toBe(400);
+        expect(workbenchSaveWithCreatorBody.status).toBe(400);
       } finally {
         await server.close();
       }

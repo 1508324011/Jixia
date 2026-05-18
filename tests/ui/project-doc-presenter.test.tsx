@@ -8,13 +8,17 @@ import { useProjectDocPresenter } from '../../src/web/presenters/project-doc-pre
 import { expectDocumentBlocksToOmitAuthorityFields } from './document-block-assertions';
 
 function createDeferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error?: unknown) => void;
+  let resolve: ((value: T) => void) | undefined;
+  let reject: ((error?: unknown) => void) | undefined;
 
   const promise = new Promise<T>((nextResolve, nextReject) => {
     resolve = nextResolve;
     reject = nextReject;
   });
+
+  if (!resolve || !reject) {
+    throw new Error('Deferred promise failed to initialize.');
+  }
 
   return { promise, reject, resolve };
 }

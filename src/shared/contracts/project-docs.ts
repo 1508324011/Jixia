@@ -5,7 +5,6 @@ import type {
 import type { PublishState } from './writing';
 
 export interface CreateProjectDocRequest {
-  createdByUserId?: string;
   projectId: string;
   publishState?: PublishState;
   title: string;

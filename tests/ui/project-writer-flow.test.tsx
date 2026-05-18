@@ -21,13 +21,17 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 function createDeferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error?: unknown) => void;
+  let resolve: ((value: T) => void) | undefined;
+  let reject: ((error?: unknown) => void) | undefined;
 
   const promise = new Promise<T>((nextResolve, nextReject) => {
     resolve = nextResolve;
     reject = nextReject;
   });
+
+  if (!resolve || !reject) {
+    throw new Error('Deferred promise failed to initialize.');
+  }
 
   return { promise, reject, resolve };
 }
@@ -46,9 +50,10 @@ describe('project writer flow', () => {
       },
       contract: 'jixia-projects-contract',
       docs: {
+        canCreate: true,
         documents: [],
         emptyState: {
-          body: 'No Project Docs have been created for this project yet. Promote governed evidence from Reader or create a Writer draft to start the shared index.',
+          body: 'No Project Docs have been created for this project yet. Use Project Docs to maintain shared background, evidence, rationale, conclusions, and formal drafts for the team.',
           title: 'No Project Docs yet',
         },
         projectId: 'project-1',
@@ -106,10 +111,10 @@ describe('project writer flow', () => {
 
     renderWorkbench('/projects/project-1');
 
-    expect(await screen.findByText('Writer 文档区')).toBeInTheDocument();
+    expect(await screen.findByText('Project Docs 共享知识中心')).toBeInTheDocument();
     expect(await screen.findByText('No Project Docs yet')).toBeInTheDocument();
     expect(
-      screen.getByText('No Project Docs have been created for this project yet. Promote governed evidence from Reader or create a Writer draft to start the shared index.'),
+      screen.getByText('No Project Docs have been created for this project yet. Use Project Docs to maintain shared background, evidence, rationale, conclusions, and formal drafts for the team.'),
     ).toBeInTheDocument();
   });
 
@@ -140,6 +145,7 @@ describe('project writer flow', () => {
           },
           contract: 'jixia-projects-contract',
           docs: {
+            canCreate: true,
             documents: [
               {
                 createdAt: '2026-03-23T00:35:00.000Z',
@@ -198,7 +204,8 @@ describe('project writer flow', () => {
     expect(await screen.findByText('Tumor board literature synthesis')).toBeInTheDocument();
     expect(screen.getByText('Document · doc-project-1')).toBeInTheDocument();
     expect(screen.getByText('Updated 2026-03-23T00:40:00.000Z · Version 1')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '打开 Writer 文稿' })).toHaveAttribute(
+    expect(screen.getByText('Latest version · project-doc-version-1')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Project Doc' })).toHaveAttribute(
       'href',
       '/projects/project-1/writing/doc-project-1',
     );
@@ -210,6 +217,322 @@ describe('project writer flow', () => {
       expect.stringMatching(/\/api\/projects$/),
       expect.anything(),
     );
+  });
+
+  it('owner creates a Project Doc from the workspace with no browser actor fields', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const requestUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/projects/project-1/workspace')) {
+        return jsonResponse({
+          actor: {
+            role: 'owner',
+            userId: 'user-alice',
+          },
+          contract: 'jixia-projects-contract',
+          docs: {
+            canCreate: true,
+            documents: [],
+            emptyState: {
+              body: 'Use Project Docs to maintain shared background, evidence, rationale, conclusions, and formal drafts.',
+              title: 'No Project Docs yet',
+            },
+            projectId: 'project-1',
+            totalCount: 0,
+          },
+          generatedAt: '2026-03-23T00:41:00.000Z',
+          links: {
+            libraryHref: '/projects/project-1/library',
+            projectHref: '/projects/project-1',
+          },
+          membership: {
+            joinedAt: '2026-03-23T00:35:00.000Z',
+            projectId: 'project-1',
+            role: 'owner',
+            userId: 'user-alice',
+          },
+          project: {
+            createdAt: '2026-03-23T00:35:00.000Z',
+            createdByUserId: 'user-alice',
+            id: 'project-1',
+            name: 'Tumor board project',
+            spaceId: 'space-project-1',
+            status: 'active',
+            updatedAt: '2026-03-23T00:35:00.000Z',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/project-docs') && init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({
+          projectId: 'project-1',
+          title: 'Shared evidence rationale',
+        });
+
+        return jsonResponse({
+          createdAt: '2026-03-23T00:42:00.000Z',
+          createdByUserId: 'user-alice',
+          id: 'doc-created-1',
+          projectId: 'project-1',
+          publishState: 'draft',
+          title: 'Shared evidence rationale',
+          updatedAt: '2026-03-23T00:42:00.000Z',
+        });
+      }
+
+      if (requestUrl.endsWith('/api/projects')) {
+        return jsonResponse([
+          {
+            membership: {
+              joinedAt: '2026-03-23T00:35:00.000Z',
+              projectId: 'project-1',
+              role: 'owner',
+              userId: 'user-alice',
+            },
+            project: {
+              createdAt: '2026-03-23T00:35:00.000Z',
+              createdByUserId: 'user-alice',
+              id: 'project-1',
+              name: 'Tumor board project',
+              spaceId: 'space-project-1',
+              status: 'active',
+              updatedAt: '2026-03-23T00:35:00.000Z',
+            },
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/project-docs/doc-created-1')) {
+        return jsonResponse({
+          capturedAt: '2026-03-23T00:42:00.000Z',
+          citations: [],
+          content: '',
+          document: {
+            createdAt: '2026-03-23T00:42:00.000Z',
+            createdByUserId: 'user-alice',
+            id: 'doc-created-1',
+            projectId: 'project-1',
+            publishState: 'draft',
+            title: 'Shared evidence rationale',
+            updatedAt: '2026-03-23T00:42:00.000Z',
+          },
+          documentContent: { blocks: [], schemaVersion: 1 },
+          versionId: 'project-doc:doc-created-1:version-0',
+          versionNumber: 0,
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench('/projects/project-1');
+
+    await user.type(
+      await screen.findByLabelText('New Project Doc title'),
+      'Shared evidence rationale',
+    );
+    await user.click(screen.getByRole('button', { name: 'Create Project Doc' }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/projects/project-1/writing/doc-created-1');
+    });
+    expect(await screen.findByText('Project Doc editor')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/project-docs'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('viewer sees Project Docs as readonly with no create path on the project page', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Bob',
+              email: 'bob@example.test',
+              id: 'user-bob',
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/projects/project-1/workspace')) {
+          return jsonResponse({
+            actor: {
+              role: 'viewer',
+              userId: 'user-bob',
+            },
+            contract: 'jixia-projects-contract',
+            docs: {
+              canCreate: false,
+              createDisabledReason: 'Project viewers can read visible Project Docs but cannot create shared project knowledge documents.',
+              documents: [
+                {
+                  createdAt: '2026-03-23T00:35:00.000Z',
+                  createdByUserId: 'user-alice',
+                  documentId: 'doc-project-1',
+                  latestVersion: null,
+                  openHref: '/projects/project-1/writing/doc-project-1',
+                  projectId: 'project-1',
+                  publishState: 'draft',
+                  title: 'Viewer-readable synthesis',
+                  updatedAt: '2026-03-23T00:35:00.000Z',
+                },
+              ],
+              emptyState: {
+                body: 'No Project Docs yet.',
+                title: 'No Project Docs yet',
+              },
+              projectId: 'project-1',
+              totalCount: 1,
+            },
+            generatedAt: '2026-03-23T00:41:00.000Z',
+            links: {
+              libraryHref: '/projects/project-1/library',
+              projectHref: '/projects/project-1',
+            },
+            membership: {
+              joinedAt: '2026-03-23T00:35:00.000Z',
+              projectId: 'project-1',
+              role: 'viewer',
+              userId: 'user-bob',
+            },
+            project: {
+              createdAt: '2026-03-23T00:35:00.000Z',
+              createdByUserId: 'user-alice',
+              id: 'project-1',
+              name: 'Tumor board project',
+              spaceId: 'space-project-1',
+              status: 'active',
+              updatedAt: '2026-03-23T00:35:00.000Z',
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-1');
+
+    expect(await screen.findByText('Viewer-readable synthesis')).toBeInTheDocument();
+    expect(screen.getByText('Project viewers can read visible Project Docs but cannot create shared project knowledge documents.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create Project Doc' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('New Project Doc title')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Project Doc' })).toHaveAttribute(
+      'href',
+      '/projects/project-1/writing/doc-project-1',
+    );
+  });
+
+  it('viewer can open a Project Doc but cannot save from the editor UI', async () => {
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'viewer',
+        userId: 'user-bob',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'space-project-1',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Bob',
+              email: 'bob@example.test',
+              id: 'user-bob',
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([projectFixture]);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
+          return jsonResponse({
+            capturedAt: '2026-03-23T00:40:00.000Z',
+            citations: [],
+            content: 'Viewer readable paragraph.',
+            document: {
+              createdAt: '2026-03-23T00:35:00.000Z',
+              createdByUserId: 'user-alice',
+              id: 'doc-project-1',
+              projectId: 'project-1',
+              publishState: 'draft',
+              title: 'Viewer-readable synthesis',
+              updatedAt: '2026-03-23T00:35:00.000Z',
+            },
+            documentContent: {
+              blocks: [{ text: 'Viewer readable paragraph.', type: 'paragraph' }],
+              schemaVersion: 1,
+            },
+            versionId: 'project-doc-version-1',
+            versionNumber: 1,
+          });
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
+          throw new Error('Viewer UI must not attempt a Project Doc save.');
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-1/writing/doc-project-1');
+
+    expect(
+      await screen.findByDisplayValue('Viewer readable paragraph.'),
+    ).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+    expect(screen.getByText('Your project role can read this Project Doc, but only project owners and editors can save shared document versions.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload draft' })).toBeEnabled();
   });
 
   it('writing page reopens the promoted writer draft and saves updates', async () => {
@@ -481,6 +804,7 @@ describe('project writer flow', () => {
       },
       contract: 'jixia-projects-contract',
       docs: {
+        canCreate: true,
         documents: [],
         emptyState: {
           body: 'Create a shared Project Doc from governed Reader evidence.',

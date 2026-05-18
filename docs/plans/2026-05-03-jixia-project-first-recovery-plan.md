@@ -350,7 +350,7 @@ Goal: remove synthetic project state from the browser and drive screens from rea
 Tasks:
 
 - Add project-first routes such as `/projects/:projectId/library`, `/projects/:projectId/reader/:assetId`, and `/projects/:projectId/writing/:docId`.
-- Expose `GET /api/projects/:projectId/writing-document` so the project surface can discover the latest visible Writer document before deep-linking into the writing route.
+- Expose `GET /api/projects/:projectId/writing-document` so compatibility callers can discover the latest visible Project Doc before deep-linking into the existing `/writing/:docId` route.
 - Keep `GET /api/project-docs/:documentId` authoritative for Project Doc snapshot reads; if a visible document exists but has not been saved yet, return an empty snapshot with empty content/citations and `versionNumber: 0` instead of browser-authored fallback data.
 - Move `Space` management to settings/admin surfaces.
 - Remove hardcoded `shared-space`, `tumor-board`, and similar route defaults from the app shell.
@@ -360,7 +360,7 @@ Tasks:
 Acceptance criteria:
 
 - UI can complete the minimal recovery loop using real API calls.
-- Project pages either reopen the discovered Writer draft from `GET /api/projects/:projectId/writing-document` or show an explicit empty state when no shared document exists yet.
+- Project pages either reopen the discovered Project Doc draft from `GET /api/projects/:projectId/writing-document` or show an explicit Project Docs empty state when no shared document exists yet.
 - Opening `/projects/:projectId/writing/:docId` without any saved versions still renders a truthful server snapshot from `GET /api/project-docs/:documentId` rather than inventing local placeholder content.
 - Missing server data appears as an error or empty state, not as silent fallback content.
 - Browser terminal B can observe server state created by browser terminal A.

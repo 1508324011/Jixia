@@ -41,7 +41,7 @@ The shipped shell now centers the following responsibilities:
 - `Login -> Home -> Today/Search/Library/Projects/Settings`
 - `Personal vs Project 上下文` cues instead of exposing raw space language in every surface
 - paper workspace panels for `AI 对话`, `私人笔记`, `共享评论`, and `关键信息`
-- a project-level `Writer 文档区` for promoting mature reading output into formal writing
+- a project-level `Project Docs 共享知识中心` for promoting mature reading output into shared project documents
 - shell HTTP endpoints for discovery and settings so the workbench has explicit server-facing boundaries
 
 The old `Spaces -> Library -> Reader -> Writing` shell still exists for legacy route coverage,
@@ -80,7 +80,7 @@ The shell now expresses the confirmed mental model in both copy and routes:
 - stable top-level navigation
 - project-aware context indicators
 - separated paper workspace modes
-- explicit promotion path from discussion to Writer documents
+- explicit promotion path from discussion to Project Docs documents
 
 Governance cues remain visible through visibility labels, project/personal context hints,
 quoted-evidence language, and governed AI terminology.
@@ -93,7 +93,7 @@ The current workbench shell satisfies the interaction acceptance direction on th
 2. The top-level navigation exposes `今日推荐`, `搜索`, `Library`, `Projects`, and `设置`.
 3. Personal and project contexts are visually distinct.
 4. The paper workspace separates AI, private notes, shared comments, and metadata.
-5. Project pages expose a Writer handoff surface.
+5. Project pages expose a Project Docs handoff surface.
 6. Shell discovery/settings HTTP endpoints exist for the current workbench model.
 7. Legacy deep-link coverage still protects the earlier `/spaces/...` flow.
 
@@ -135,7 +135,7 @@ The next phase should continue in two directions at the same time.
 
 1. Replace demo discovery/settings payloads with authoritative server-backed data.
 2. Connect the home, today, search, projects, and settings surfaces to real persistence.
-3. Expand paper workspace and Writer promotion flows into saved collaborative state.
+3. Expand paper workspace and Project Docs promotion flows into saved collaborative state.
 
 ### Operator/runtime next work
 
@@ -155,6 +155,6 @@ The next phase should continue in two directions at the same time.
 
 Task 10 is no longer only a first linear browser shell. On this branch it has evolved into a
 test-backed workbench interaction model with calm scholarly tone, Personal vs Project context,
-paper workspace separation, Writer handoff cues, and minimal HTTP contracts for the new shell.
+paper workspace separation, Project Docs handoff cues, and minimal HTTP contracts for the new shell.
 The next milestone is to replace shell data with authoritative server-backed behavior while
 keeping deployment and operator clarity aligned with the server-first architecture.

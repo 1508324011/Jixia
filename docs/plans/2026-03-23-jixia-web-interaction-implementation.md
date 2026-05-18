@@ -361,11 +361,11 @@ git commit -m "feat: add paper workspace panels"
 **Step 1: Write the failing test**
 
 ```tsx
-test('project page links shared paper work into writer documents', async () => {
+test('project page links shared paper work into Project Docs documents', async () => {
   renderWorkbench('/projects/project-1');
 
-  expect(screen.getByText('Writer 文档区')).toBeInTheDocument();
-  expect(screen.getByText('将成熟内容整理进入 Writer')).toBeInTheDocument();
+  expect(screen.getByText('Project Docs 共享知识中心')).toBeInTheDocument();
+  expect(screen.getByText('将成熟内容整理进入 Project Docs')).toBeInTheDocument();
 });
 ```
 
@@ -378,9 +378,9 @@ Expected: FAIL because project-to-writer integration cues are missing.
 
 ```tsx
 // src/web/pages/project-page.tsx
-<section aria-label="Writer 文档区">
-  <h2>Writer 文档区</h2>
-  <p>将成熟内容整理进入 Writer。</p>
+<section aria-label="Project Docs shared knowledge center">
+  <h2>Project Docs 共享知识中心</h2>
+  <p>将成熟内容整理进入 Project Docs。</p>
   <ProjectWriterList />
 </section>
 ```

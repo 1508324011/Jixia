@@ -483,10 +483,6 @@ export function createProjectDocsService(
       input: CreateProjectDocRequest,
       actorUserId: string,
     ): Promise<ProjectDocRecord> {
-      if (input.createdByUserId && input.createdByUserId !== actorUserId) {
-        throw new Error('Project documents must be created by the active actor.');
-      }
-
       const membership = await store.projectRepository.getProjectMember(
         input.projectId,
         actorUserId,

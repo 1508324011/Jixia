@@ -47,7 +47,7 @@ Node runtime is up before validating workbench behavior.
 
 The required flow is:
 
-workbench entry -> settings ready -> PubMed search -> personal import -> Reader persistence -> Writer promotion -> Writer reopen -> restart -> reopen persisted state
+workbench entry -> settings ready -> PubMed search -> personal import -> Reader persistence -> Project Docs promotion -> Project Doc reopen -> restart -> reopen persisted state
 
 1. Open `http://127.0.0.1:3000` and confirm the browser is redirected to **登录**.
 2. Keep the default lab user or choose another lab user, then click **进入工作台**.
@@ -65,18 +65,18 @@ workbench entry -> settings ready -> PubMed search -> personal import -> Reader 
 14. Enter a short project-visible comment into **Project comment**, then click **Save project comment**.
 15. Enter a short governed summary into **Insight summary**, then click **Save insight**.
 16. Confirm the saved private note, project comment, and governed insight remain visible in the paper workspace.
-17. Click **Promote latest insight to Writer**.
+17. Click **Promote latest insight to Writer**. This legacy button now creates or updates the server-owned Project Doc used as the project's shared knowledge center.
 18. Open **Projects** and confirm the top-level list now loads real server-visible projects.
-19. Open a concrete project from the list, then confirm the promoted draft preview appears in **Writer 文档区**.
-20. Click **打开 Writer 文稿**.
-21. In **Writing**, update **Draft content**, click **Save draft**, then click **Reload draft**.
-22. Confirm the Writer view reopens with the saved draft content still present.
+19. Open a concrete project from the list, then confirm the promoted document appears in **Project Docs 共享知识中心**.
+20. Click **Open Project Doc**.
+21. In **Project Doc editor**, update **Draft content**, click **Save draft**, then click **Reload draft**.
+22. Confirm the Project Doc editor reopens with the saved document content still present.
 23. Stop the server process and restart the app process with the same `.env` and `npm run start:server` command.
 24. Reopen `http://127.0.0.1:3000`, return to **Library**, **Reader**, and the same `/projects/:projectId` route, and confirm:
      - the imported personal-library paper still exists
      - the saved private note still exists
      - the saved project comment still exists
-     - the promoted Writer draft still reopens with its saved content
+     - the promoted Project Doc still reopens with its saved content
 
 ## What this beta currently proves
 
@@ -85,7 +85,7 @@ workbench entry -> settings ready -> PubMed search -> personal import -> Reader 
   secret rows without exposing raw API keys in browser payloads
 - PubMed-backed discovery can import into Personal Library through the real server path
 - the paper workspace persists a private note separately from a project-visible comment
-- a governed insight can be promoted into Writer and reopened after reload and process restart
+- a governed insight can be promoted into Project Docs and reopened after reload and process restart
 
 ## What still belongs to demo-native-showcase
 
@@ -105,5 +105,5 @@ Current-host pass completed on 2026-03-23 with `JIXIA_STORAGE_ROOT=/home/zhurui/
 - The root route still redirects straight to `/home`, but unauthenticated browsers are now redirected into `/login?redirect=/home` and establish a real `jixia_session` cookie before entering the workbench.
 - Live PubMed search returned a real result set for `tumor board biomarkers`; the first rendered identifier in this pass was `PubMed · pmid:38181798`, so the current-host experience is no longer tied to the deterministic fallback titles used in tests.
 - The top-level **Projects** page now loads real server-visible projects and links into canonical `/projects/:projectId` routes.
-- Reopened Writer routes now stay on canonical `/projects/:projectId/writing/:docId` paths for the main workbench flow, while legacy `/spaces/...` routes remain compatibility-only deep links.
-- Persistence itself worked cleanly after restart: the imported paper, private note, project comment, governed insight, and reopened Writer draft were all still present after the app process restarted.
+- Reopened Project Doc routes now stay on canonical `/projects/:projectId/writing/:docId` paths for the main workbench flow, while legacy `/spaces/...` routes remain compatibility-only deep links.
+- Persistence itself worked cleanly after restart: the imported paper, private note, project comment, governed insight, and reopened Project Doc were all still present after the app process restarted.

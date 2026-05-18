@@ -374,6 +374,8 @@ describe('http server project api', () => {
         const ownerWorkspace = (await ownerResponse.json()) as {
           actor: { role: string; userId: string };
           docs: {
+            canCreate: boolean;
+            createDisabledReason?: string;
             documents: Array<{
               createdByUserId: string;
               documentId: string;
@@ -392,6 +394,8 @@ describe('http server project api', () => {
         expect(ownerWorkspace.actor).toEqual({ role: 'owner', userId: 'user-alice' });
         expect(ownerWorkspace.project).toMatchObject(project.project);
         expect(ownerWorkspace.docs.totalCount).toBe(1);
+        expect(ownerWorkspace.docs.canCreate).toBe(true);
+        expect(ownerWorkspace.docs.createDisabledReason).toBeUndefined();
         expect(ownerWorkspace.docs.documents[0]).toMatchObject({
           latestVersion: { versionNumber: 1 },
           createdByUserId: 'user-alice',
@@ -424,12 +428,14 @@ describe('http server project api', () => {
         );
         const viewerWorkspace = (await viewerResponse.json()) as {
           actor: { role: string; userId: string };
-          docs: { totalCount: number };
+          docs: { canCreate: boolean; createDisabledReason?: string; totalCount: number };
         };
 
         expect(viewerResponse.status).toBe(200);
         expect(viewerWorkspace.actor).toEqual({ role: 'viewer', userId: 'user-bob' });
         expect(viewerWorkspace.docs.totalCount).toBe(1);
+        expect(viewerWorkspace.docs.canCreate).toBe(false);
+        expect(viewerWorkspace.docs.createDisabledReason).toMatch(/viewers can read/i);
 
         const editorResponse = await fetch(
           `${server.url}/api/projects/${project.project.id}/workspace`,
@@ -437,12 +443,14 @@ describe('http server project api', () => {
         );
         const editorWorkspace = (await editorResponse.json()) as {
           actor: { role: string; userId: string };
-          docs: { totalCount: number };
+          docs: { canCreate: boolean; createDisabledReason?: string; totalCount: number };
         };
 
         expect(editorResponse.status).toBe(200);
         expect(editorWorkspace.actor).toEqual({ role: 'editor', userId: 'user-charlie' });
         expect(editorWorkspace.docs.totalCount).toBe(1);
+        expect(editorWorkspace.docs.canCreate).toBe(true);
+        expect(editorWorkspace.docs.createDisabledReason).toBeUndefined();
 
         const emptyProject = await fetch(`${server.url}/api/projects`, {
           body: JSON.stringify({
@@ -460,6 +468,7 @@ describe('http server project api', () => {
         );
         const emptyWorkspace = (await emptyResponse.json()) as {
           docs: {
+            canCreate: boolean;
             documents: unknown[];
             emptyState: { body: string; title: string };
             totalCount: number;
@@ -470,6 +479,7 @@ describe('http server project api', () => {
         expect(emptyResponse.status).toBe(200);
         expect(emptyWorkspace.docs.documents).toEqual([]);
         expect(emptyWorkspace.docs.totalCount).toBe(0);
+        expect(emptyWorkspace.docs.canCreate).toBe(true);
         expect(emptyWorkspace.docs.emptyState.title).toBe('No Project Docs yet');
         expect(emptyWorkspace.links.writerHref).toBeUndefined();
       } finally {
