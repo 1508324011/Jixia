@@ -807,6 +807,154 @@ describe('project writer flow', () => {
     expect(await screen.findByDisplayValue('Reopened writer draft with persisted edits.')).toBeInTheDocument();
   });
 
+  it('writing page preserves structured reference blocks in the canonical save payload and reloads them', async () => {
+    const user = userEvent.setup();
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'space-project-1',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+    };
+    const documentState = {
+      capturedAt: '2026-03-23T00:40:00.000Z',
+      citations: [],
+      content: '## Evidence synthesis\n\n> Project-visible quote\n\nSource: Project-visible paper (p. 12)',
+      documentContent: {
+        blocks: [
+          {
+            level: 2,
+            text: 'Evidence synthesis',
+            type: 'heading',
+          },
+          {
+            evidenceSpan: 'Project-visible quote',
+            libraryEntryId: 'entry-project-visible',
+            locator: 'p. 12',
+            paperAssetId: 'asset-project-visible',
+            quote: 'Project-visible quote',
+            title: 'Project-visible paper',
+            type: 'sourceExcerpt',
+          },
+        ],
+        schemaVersion: 1,
+      },
+      document: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'doc-project-1',
+        projectId: 'project-1',
+        publishState: 'draft',
+        title: 'Tumor board literature synthesis',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+      versionId: 'project-doc-version-1',
+      versionNumber: 1,
+    };
+    let projectDocGetCount = 0;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([projectFixture]);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
+          projectDocGetCount += 1;
+          return jsonResponse(documentState);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            content?: string;
+            documentContent: typeof documentState.documentContent;
+          };
+          expect(body).not.toHaveProperty('content');
+          expectDocumentBlocksToOmitAuthorityFields(body.documentContent);
+          expect(body.documentContent.schemaVersion).toBe(1);
+          expect(body.documentContent.blocks).toHaveLength(2);
+          expect(body.documentContent.blocks[0]).toMatchObject({
+            level: 2,
+            text: 'Evidence synthesis',
+            type: 'heading',
+          });
+          expect(body.documentContent.blocks[1]).toMatchObject({
+            evidenceSpan: 'Project-visible quote',
+            libraryEntryId: 'entry-project-visible',
+            locator: 'p. 12',
+            paperAssetId: 'asset-project-visible',
+            quote: 'Project-visible quote',
+            title: 'Project-visible paper',
+            type: 'sourceExcerpt',
+          });
+          documentState.capturedAt = '2026-03-23T00:46:00.000Z';
+          documentState.versionId = 'project-doc-version-2';
+          documentState.versionNumber = 2;
+          documentState.document = {
+            ...documentState.document,
+            updatedAt: '2026-03-23T00:46:00.000Z',
+          };
+
+          return jsonResponse(documentState);
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-1/writing/doc-project-1');
+
+    expect(await screen.findByDisplayValue('Evidence synthesis')).toBeInTheDocument();
+    expect(screen.getByText('Project-visible paper')).toBeInTheDocument();
+    expect(screen.getByText('Project-visible quote')).toBeInTheDocument();
+    expect(screen.getByText('Paper asset')).toBeInTheDocument();
+    expect(screen.getByText('asset-project-visible')).toBeInTheDocument();
+    expect(screen.getByText('Library entry')).toBeInTheDocument();
+    expect(screen.getByText('entry-project-visible')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(
+      await screen.findByText('Latest snapshot · 2026-03-23T00:46:00.000Z'),
+    ).toBeInTheDocument();
+
+    const projectDocGetCountBeforeReload = projectDocGetCount;
+    const reloadButton = await screen.findByRole('button', { name: 'Reload draft' });
+    await user.click(reloadButton);
+    await waitFor(() => expect(projectDocGetCount).toBeGreaterThan(projectDocGetCountBeforeReload));
+    expect(await screen.findByText('Project-visible paper')).toBeInTheDocument();
+    expect(screen.getByText('Project-visible quote')).toBeInTheDocument();
+    expect(screen.getByText('asset-project-visible')).toBeInTheDocument();
+    expect(screen.getByText('entry-project-visible')).toBeInTheDocument();
+  });
+
   it('writer page keeps reload locked while a save is still pending', async () => {
     const user = userEvent.setup();
     const projectFixture = {

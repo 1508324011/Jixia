@@ -951,6 +951,184 @@ describe('notebook and project document persistence', () => {
     }
   });
 
+  it('validates explicit and structured project-doc references against target project entries', async () => {
+    const storageRoot = createStorageRoot('jixia-project-doc-reference-pairs-');
+    const env = createWritingEnv(storageRoot);
+
+    try {
+      const app = createJixiaApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Reference Pair Space' },
+        'user-alice',
+      );
+      const targetProject = await app.projects.createProject(
+        { name: 'Target Reference Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      const sourceProject = await app.projects.createProject(
+        { name: 'Source Reference Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      const targetProjectImport = await app.imports.importPaper(
+        {
+          scope: { id: targetProject.project.id, type: 'project' },
+          sourceLocator: '10.1000/target-reference-entry',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+      const otherTargetProjectImport = await app.imports.importPaper(
+        {
+          scope: { id: targetProject.project.id, type: 'project' },
+          sourceLocator: '10.1000/other-target-reference-entry',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+      const sourceProjectImport = await app.imports.importPaper(
+        {
+          scope: { id: sourceProject.project.id, type: 'project' },
+          sourceLocator: '10.1000/source-project-reference-entry',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+      const projectDoc = await app.projectDocs.createDocument(
+        {
+          projectId: targetProject.project.id,
+          title: 'Reference pair validation draft',
+        },
+        'user-alice',
+      );
+
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [
+              {
+                libraryEntryId: targetProjectImport.entry.id,
+                paperAssetId: otherTargetProjectImport.asset.id,
+              },
+            ],
+            content: 'Mismatched explicit project reference should fail.',
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/does not match library entry/i);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [],
+            documentContent: {
+              blocks: [
+                {
+                  label: 'Mismatched structured citation',
+                  libraryEntryId: targetProjectImport.entry.id,
+                  paperAssetId: otherTargetProjectImport.asset.id,
+                  type: 'citation',
+                },
+              ],
+              schemaVersion: 1,
+            },
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/does not match library entry/i);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [],
+            documentContent: {
+              blocks: [
+                {
+                  libraryEntryId: sourceProjectImport.entry.id,
+                  paperAssetId: sourceProjectImport.asset.id,
+                  quote: 'Source-project evidence cannot stand in for target adoption.',
+                  type: 'sourceExcerpt',
+                },
+              ],
+              schemaVersion: 1,
+            },
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/not available in project/i);
+
+      const adoption = await app.library.adoptProjectLibraryEntry({
+        actorUserId: 'user-alice',
+        projectId: targetProject.project.id,
+        sourceLibraryEntryId: sourceProjectImport.entry.id,
+      });
+      const savedWithStructuredAssetId = await app.projectDocs.saveDocument(
+        {
+          citations: [],
+          documentContent: {
+            blocks: [
+              {
+                paperAssetId: sourceProjectImport.asset.id,
+                title: sourceProjectImport.asset.title,
+                type: 'paperReference',
+              },
+            ],
+            schemaVersion: 1,
+          },
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+      const savedWithStructuredTargetEntry = await app.projectDocs.saveDocument(
+        {
+          citations: [],
+          documentContent: {
+            blocks: [
+              {
+                evidenceSpan: 'Adopted project-scoped quote',
+                libraryEntryId: adoption.entry.entry.id,
+                paperAssetId: sourceProjectImport.asset.id,
+                quote: 'Adopted project-scoped quote',
+                title: sourceProjectImport.asset.title,
+                type: 'sourceExcerpt',
+              },
+            ],
+            schemaVersion: 1,
+          },
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+
+      expect(adoption.entry.entry.scope).toEqual({
+        id: targetProject.project.id,
+        type: 'project',
+      });
+      expect(savedWithStructuredAssetId.citations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ paperAssetId: sourceProjectImport.asset.id }),
+        ]),
+      );
+      expect(savedWithStructuredTargetEntry.citations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            evidenceSpan: 'Adopted project-scoped quote',
+            paperAssetId: sourceProjectImport.asset.id,
+          }),
+        ]),
+      );
+      await app.close();
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('ignores legacy server-state writing arrays for new document authority', async () => {
     const storageRoot = createStorageRoot('jixia-legacy-writing-ignore-');
     const statePath = join(storageRoot, 'server-state.json');
