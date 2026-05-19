@@ -1291,6 +1291,164 @@ describe('jobs page', () => {
     expect(screen.queryByText('job-project-1')).not.toBeInTheDocument();
   });
 
+  it('uses a visible project jobId URL hint to select the target job and load its events and audit', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const requestUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/spaces')) {
+        return jsonResponse([
+          {
+            createdAt: '2026-05-11T00:00:00.000Z',
+            id: 'space-project-alpha',
+            kind: 'shared',
+            name: 'Alpha Governance Space',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/projects')) {
+        return jsonResponse([
+          {
+            membership: {
+              joinedAt: '2026-05-11T00:00:00.000Z',
+              projectId: 'project-alpha',
+              role: 'editor',
+              userId: 'user-alice',
+            },
+            project: {
+              createdAt: '2026-05-11T00:00:00.000Z',
+              createdByUserId: 'user-alice',
+              id: 'project-alpha',
+              name: 'Project Alpha',
+              spaceId: 'space-project-alpha',
+              status: 'active',
+              updatedAt: '2026-05-11T00:00:00.000Z',
+            },
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/credentials')) {
+        return jsonResponse([
+          {
+            createdAt: '2026-05-11T00:00:00.000Z',
+            credentialRef: 'cred-alice',
+            provider: 'openai',
+            userId: 'user-alice',
+          },
+        ]);
+      }
+
+      if (requestUrl.includes('/api/jobs?')) {
+        const url = new URL(requestUrl);
+        expect(url.searchParams.get('scopeType')).toBe('project');
+        expect(url.searchParams.get('scopeId')).toBe('project-alpha');
+        expect(url.searchParams.get('spaceId')).toBe('space-project-alpha');
+        expect(url.searchParams.get('jobId')).toBeNull();
+        expect(url.searchParams.get('actorUserId')).toBeNull();
+
+        return jsonResponse([
+          {
+            createdAt: '2026-05-11T00:03:00.000Z',
+            credentialRef: 'cred-alice',
+            id: 'job-project-newer',
+            kind: 'ai.summary',
+            scope: { id: 'project-alpha', type: 'project' },
+            scopeId: 'project-alpha',
+            scopeType: 'project',
+            spaceId: 'space-project-alpha',
+            status: 'queued',
+          },
+          {
+            createdAt: '2026-05-11T00:02:00.000Z',
+            credentialRef: 'cred-alice',
+            id: 'job-project-target',
+            kind: 'ai.summary',
+            scope: { id: 'project-alpha', type: 'project' },
+            scopeId: 'project-alpha',
+            scopeType: 'project',
+            spaceId: 'space-project-alpha',
+            status: 'succeeded',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/jobs/job-project-target/events')) {
+        return jsonResponse([
+          {
+            id: 'event-target-1',
+            jobId: 'job-project-target',
+            message: 'Target job event replayed.',
+            recordedAt: '2026-05-11T00:04:00.000Z',
+            status: 'succeeded',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/jobs/job-project-target/audit')) {
+        return jsonResponse([
+          {
+            action: 'job.completed',
+            actorUserId: 'user-alice',
+            detail: 'Target job audit loaded.',
+            id: 'audit-target-1',
+            jobId: 'job-project-target',
+            recordedAt: '2026-05-11T00:04:00.000Z',
+            spaceId: 'space-project-alpha',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/jobs/job-project-target/stream')) {
+        return new Response('', {
+          headers: {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+          },
+          status: 200,
+        });
+      }
+
+      if (
+        requestUrl.endsWith('/api/jobs/job-project-newer/events') ||
+        requestUrl.endsWith('/api/jobs/job-project-newer/audit') ||
+        requestUrl.endsWith('/api/jobs/job-project-newer/stream')
+      ) {
+        throw new Error('The newer job must not become active when jobId targets another visible job.');
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench('/jobs?scopeType=project&scopeId=project-alpha&jobId=job-project-target');
+
+    expect(await screen.findByRole('heading', { name: 'Jobs' })).toBeInTheDocument();
+    expect(await screen.findByText('Focused job · job-project-target')).toBeInTheDocument();
+    expect(await screen.findByText('Target job event replayed.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'job.completed' })).toBeInTheDocument();
+    expect(screen.getByText('Target job audit loaded.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Job id · job-project-target/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(window.location.search).toContain('scopeType=project');
+    expect(window.location.search).toContain('scopeId=project-alpha');
+    expect(window.location.search).toContain('jobId=job-project-target');
+  });
+
   it('ignores a stale scoped job run failure after the user switches scope', async () => {
     const user = userEvent.setup();
     const pendingCreateResponse = createDeferred<Response>();
