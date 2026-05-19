@@ -81,6 +81,12 @@ export interface PaperAssetRecord {
   title: string;
   abstractText?: string;
   createdAt: string;
+  /**
+   * Browser-safe file availability flag. A true value means the server owns a
+   * file for this asset and callers may use an authorized LibraryEntry file
+   * route; it never exposes storage keys, checksums, or filesystem paths.
+   */
+  hasFile?: boolean;
 }
 
 export interface LibraryEntryRecord {

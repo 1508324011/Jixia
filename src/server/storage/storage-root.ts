@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 import { toAssetStorageKey } from './asset-key';
 
@@ -20,5 +20,17 @@ export function resolveStoragePath(
   storageKey: string,
   env: StorageRootEnv = process.env,
 ): string {
-  return resolve(resolveStorageRoot(env), toAssetStorageKey(storageKey));
+  const storageRoot = resolveStorageRoot(env);
+  const storagePath = resolve(storageRoot, toAssetStorageKey(storageKey));
+  const relativePath = relative(storageRoot, storagePath);
+
+  if (
+    relativePath === '..' ||
+    relativePath.startsWith(`..${sep}`) ||
+    isAbsolute(relativePath)
+  ) {
+    throw new Error('Asset storage key must resolve under the storage root.');
+  }
+
+  return storagePath;
 }

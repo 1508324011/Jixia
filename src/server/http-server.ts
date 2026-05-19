@@ -215,6 +215,10 @@ function readSingleHeader(
   return value ?? null;
 }
 
+function decodePathSegment(segment: string): string {
+  return decodeURIComponent(segment);
+}
+
 function isWorkbenchHttpApiPath(pathname: string): boolean {
   return (
     pathname === "/api/discovery/today" ||
@@ -1350,13 +1354,13 @@ async function handleApiRequest(
     const libraryEntryFileMatch = pathname.match(/^\/api\/library\/([^/]+)\/file$/);
     if (libraryEntryFileMatch && (method === "GET" || method === "HEAD")) {
       const actor = await getActor(request, actorOptions);
-      const [, entryId] = libraryEntryFileMatch;
+      const [, encodedEntryId] = libraryEntryFileMatch;
       rejectLegacyIdentityQueryFields(actor, requestUrl);
       rejectLegacyActorSpaceContextField(requestUrl);
 
       const file = await app.library.getEntryFile({
         actorUserId: actor.userId,
-        entryId,
+        entryId: decodePathSegment(encodedEntryId),
       });
 
       sendBodyWithHeaders(
@@ -1375,7 +1379,7 @@ async function handleApiRequest(
 
     if (libraryEntryMatch && method === "GET") {
       const actor = await getActor(request, actorOptions);
-      const [, entryId] = libraryEntryMatch;
+      const [, encodedEntryId] = libraryEntryMatch;
       rejectLegacyIdentityQueryFields(actor, requestUrl);
       rejectLegacyActorSpaceContextField(requestUrl);
 
@@ -1384,7 +1388,7 @@ async function handleApiRequest(
         200,
         await app.library.getEntry({
           actorUserId: actor.userId,
-          entryId,
+          entryId: decodePathSegment(encodedEntryId),
         }),
         method,
       );
@@ -1415,6 +1419,38 @@ async function handleApiRequest(
             scope: body.scope,
             sourceLocator: body.sourceLocator,
             sourceType: body.sourceType,
+            spaceId: body.spaceId,
+            visibility: body.visibility,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    if (pathname === "/api/import/pdf" && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      const body = await readJsonBody<{
+        pdfContents: string;
+        projectId?: string;
+        requestedByUserId?: string;
+        scope?: { type: "project"; id: string } | { type: "user"; id: string };
+        spaceId: string;
+        visibility: "private" | "space_shared" | "published_to_project";
+      }>(request);
+
+      rejectLegacyIdentityBodyFields(actor, body);
+
+      sendJson(
+        response,
+        200,
+        await app.imports.uploadPdf(
+          {
+            pdfContents: body.pdfContents,
+            projectId: body.projectId,
+            scope: body.scope,
             spaceId: body.spaceId,
             visibility: body.visibility,
           },

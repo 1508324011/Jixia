@@ -601,6 +601,11 @@ function createBootstrappedLibraryRepository(
 
       return repository.findPaperAsset(assetId);
     },
+    async findPaperAssetByChecksum(checksum) {
+      await ensureBootstrapped();
+
+      return repository.findPaperAssetByChecksum(checksum);
+    },
     async getLibraryEntry(entryId) {
       await ensureBootstrapped();
 

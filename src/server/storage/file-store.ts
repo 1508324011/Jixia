@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { toAssetStorageKey } from './asset-key';
@@ -13,6 +13,7 @@ export interface FileStore {
   resolveAbsolutePath(storageKey: string): string;
   writeBuffer(storageKey: string, contents: Buffer): Promise<string>;
   readBuffer(storageKey: string): Promise<Buffer>;
+  deleteBuffer(storageKey: string): Promise<void>;
   writeText(storageKey: string, contents: string): Promise<string>;
   readText(storageKey: string): Promise<string>;
 }
@@ -36,6 +37,11 @@ export function createFileStore(env: StorageRootEnv = process.env): FileStore {
       const absolutePath = resolveStoragePath(storageKey, env);
 
       return readFile(absolutePath);
+    },
+    async deleteBuffer(storageKey: string): Promise<void> {
+      const absolutePath = resolveStoragePath(storageKey, env);
+
+      await rm(absolutePath, { force: true });
     },
     async writeText(storageKey: string, contents: string): Promise<string> {
       return this.writeBuffer(storageKey, Buffer.from(contents, 'utf8'));

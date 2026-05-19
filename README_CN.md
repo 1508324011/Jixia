@@ -47,7 +47,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 - `AI 对话`、`私人笔记`、`共享评论`、`关键信息` 四个 paper workspace 面板
 - 项目级 Project Docs 共享知识中心，以及可重新打开的 Project Doc 编辑器路径
 - Project 与 ProjectMember 继续由 Prisma/SQLite 作为权威状态，不依赖旧 JSON project 数组
-- 面向 discovery、settings、personal-library import/list、reading detail / mutation、notebook、project-doc 与 workbench 兼容端点的浏览器接口
+- 面向 discovery、settings、personal-library import/list、server-owned paper file access、reading detail / mutation、notebook、project-doc 与 workbench 兼容端点的浏览器接口
 - 继续保留 legacy `/spaces/...` 路由，用回归测试守住兼容性
 
 面向个人的 `/library` 等路由只是 workbench 层的快捷表达，底层仍然由服务端所有权、scope、权限与审计边界负责。
@@ -60,6 +60,8 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 - `GET /api/discovery/today` 与 `GET /api/discovery/search?query=...` 提供当前 discovery 切片。
 - `GET /api/settings/me` 与 `POST /api/settings/me` 会通过 Prisma-backed per-user workbench settings 与加密后的 provider credential secret 行持久化浏览器可见的 settings 状态，同时不把原始 API key 暴露到响应体或 settings 记录中。
 - `GET /api/library/personal` 与 `POST /api/library/personal/import` 由服务端托管个人导入归属。
+- `POST /api/import/pdf` 是登录用户的论文文件上传入口：服务端把文件字节写入 `JIXIA_STORAGE_ROOT`，计算 checksum，用 checksum 复用全局 file-backed `PaperAsset`，响应体只返回 `asset.hasFile` 这类浏览器安全的可用性字段，不返回 storage key 或 checksum。
+- `GET|HEAD /api/library/:entryId/file` 是浏览器唯一的论文文件读取入口。路径参数是带 scope 的 `LibraryEntry.id`，服务端从 `jixia_session` cookie 派生 actor，再按个人 / 项目成员权限授权；浏览器 DTO 不暴露原始 `storageKey`、`papers/...` key、绝对文件路径或 `JIXIA_STORAGE_ROOT`。
 - `GET /api/reading/:entryId`、`POST /api/reading/notes`、`POST /api/reading/:entryId/project-comments`、`POST /api/reading/:entryId/insights` 支撑 paper workspace；私人笔记与项目评论走分离的 server-authorized 写入路径。
 - `GET /api/projects/:projectId/writing/document` 与 `POST /api/projects/:projectId/writing/document` 是由 Project Docs 支撑的 project-first workbench 兼容端点；Project Docs 是项目共享知识中心的权威运行时。
 - `GET /api/writing/:spaceId/projects/:projectId/document` 与 `POST /api/writing/:spaceId/projects/:projectId/document` 只保留为 legacy deep link 的兼容 workbench 端点；Project Docs 仍然是项目写作的权威运行时。
@@ -99,6 +101,7 @@ Task 11 的目标是把已经验证过的 Web 交互层收敛成一个可重复�
 先将 `.env.example` 复制为 `.env`，再填写 operator 对应的值。
 
 - `JIXIA_STORAGE_ROOT` 用来控制 Jixia 的服务端持久化存储目录。在实验室服务器上，建议使用 `/var/lib/jixia/storage` 这样的持久盘路径。
+- 上传的论文文件同样保存在这个 storage root 下，且只使用服务端校验过的相对 key；Reader 只能通过 `GET|HEAD /api/library/:entryId/file` 访问这些文件。实验室服务器需要把该目录与 SQLite 数据库一起持久化，才能保证重启后文件字节与 `PaperAsset` metadata 仍然一致。
 - 当前运行时仍会把旧的非 Prisma beta 状态保存在 `JIXIA_STORAGE_ROOT/server-state.json`，但新的 credential secret material 与 workbench settings 不再写入这里。
 - `JIXIA_DATABASE_URL` 控制 Prisma-backed `Space`、`Project`、`ProjectMember`、library、notebook、Project Doc、provider credential secret 与 workbench settings 权威数据使用的 SQLite 数据库。建议放在 `file:/var/lib/jixia/data/jixia.db` 这样的持久路径。
 - `JIXIA_STORAGE_ROOT/credentials.key` 是 provider credential secret 的本地加密权威。可跨重启使用的加密凭据同时需要持久 SQLite 数据库与这个持久 key 文件；如果 key 丢失或被替换，已有 credential rows 会 fail closed，而不会静默重建或暴露明文。

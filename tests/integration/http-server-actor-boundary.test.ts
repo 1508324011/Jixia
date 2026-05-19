@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -147,6 +148,10 @@ async function createJob(
   return (await response.json()) as { id: string };
 }
 
+function sha256(contents: string): string {
+  return createHash('sha256').update(Buffer.from(contents, 'utf8')).digest('hex');
+}
+
 describe('http server actor boundary cleanup', () => {
   it('allows supported login selectors and rejects legacy login identity fields', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-login-authority-'));
@@ -278,6 +283,15 @@ describe('http server actor boundary cleanup', () => {
           fetch(`${server.url}/api/settings/me`),
           fetch(`${server.url}/api/library/personal`),
           fetch(`${server.url}/api/library/entry-1/file`),
+          fetch(`${server.url}/api/import/pdf`, {
+            body: JSON.stringify({
+              pdfContents: '%PDF-1.4 unauthenticated upload',
+              spaceId: 'space-1',
+              visibility: 'private',
+            }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/projects/project-1/library/adoptions`, {
             body: JSON.stringify({ sourceLibraryEntryId: 'entry-1' }),
             headers: { 'Content-Type': 'application/json' },
@@ -360,7 +374,9 @@ describe('http server actor boundary cleanup', () => {
         );
 
         expect(personalUpload.asset).not.toHaveProperty('storageKey');
+        expect(personalUpload.asset.hasFile).toBe(true);
         expect(projectUpload.asset).not.toHaveProperty('storageKey');
+        expect(projectUpload.asset.hasFile).toBe(true);
       } finally {
         await app.close();
       }
@@ -390,11 +406,28 @@ describe('http server actor boundary cleanup', () => {
           ),
         ).toBe(true);
 
+        const personalHeadResponse = await fetch(
+          `${server.url}/api/library/${personalUpload.entry.id}/file`,
+          { headers: withSessionCookie(aliceCookie), method: 'HEAD' },
+        );
+        expect(personalHeadResponse.status).toBe(200);
+        expect(personalHeadResponse.headers.get('content-type')).toBe('application/pdf');
+        expect(personalHeadResponse.headers.get('content-length')).toBe(
+          String(Buffer.byteLength(personalPdf)),
+        );
+        expect(await personalHeadResponse.text()).toBe('');
+
         const personalFileDenied = await fetch(
           `${server.url}/api/library/${personalUpload.entry.id}/file`,
           { headers: withSessionCookie(bobCookie) },
         );
         expect(personalFileDenied.status).toBe(403);
+
+        const personalHeadDenied = await fetch(
+          `${server.url}/api/library/${personalUpload.entry.id}/file`,
+          { headers: withSessionCookie(bobCookie), method: 'HEAD' },
+        );
+        expect(personalHeadDenied.status).toBe(403);
 
         const projectFileResponse = await fetch(
           `${server.url}/api/library/${projectUpload.entry.id}/file`,
@@ -417,14 +450,21 @@ describe('http server actor boundary cleanup', () => {
         );
         expect(projectFileDenied.status).toBe(403);
 
+        const matchingActorQueryResponse = await fetch(
+          `${server.url}/api/library/${personalUpload.entry.id}/file?actorUserId=user-alice`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        expect(matchingActorQueryResponse.status).toBe(400);
+
         const rawPathAttempt = await fetch(
           `${server.url}/api/library/${encodeURIComponent(`papers/${personalUpload.asset.id}/paper.pdf`)}/file`,
           { headers: withSessionCookie(aliceCookie) },
         );
+        const rawPathAttemptBody = await rawPathAttempt.json() as { error: string };
         expect(rawPathAttempt.status).toBe(400);
-        await expect(rawPathAttempt.json()).resolves.toMatchObject({
-          error: expect.stringMatching(/does not exist/i),
-        });
+        expect(rawPathAttemptBody.error).toMatch(/does not exist/i);
+        expect(rawPathAttemptBody.error).not.toContain('papers/');
+        expect(rawPathAttemptBody.error).not.toContain(storageRoot);
 
         const personalFilePath = join(
           storageRoot,
@@ -443,6 +483,79 @@ describe('http server actor boundary cleanup', () => {
         expect(missingFileBody.error).toMatch(/file is not available/i);
         expect(missingFileBody.error).not.toContain('papers/');
         expect(missingFileBody.error).not.toContain(storageRoot);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 30_000);
+
+  it('uploads paper files through the protected HTTP route without leaking storage internals', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-paper-upload-'));
+    const env = {
+      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-paper-upload.db')}`,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    const pdfContents = '%PDF-1.4 protected http upload';
+    const pdfChecksum = sha256(pdfContents);
+
+    try {
+      const server = await startTestServer(env);
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const sharedSpace = await createSharedSpace(server.url, aliceCookie, 'user-alice');
+        const uploadResponse = await fetch(`${server.url}/api/import/pdf`, {
+          body: JSON.stringify({
+            pdfContents,
+            scope: { id: 'user-alice', type: 'user' },
+            spaceId: sharedSpace.id,
+            visibility: 'private',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const uploadBody = await uploadResponse.json() as {
+          asset: {
+            checksum?: string;
+            hasFile?: boolean;
+            id: string;
+            storageKey?: string;
+          };
+          entry: { id: string; paperAssetId: string; scope: { id: string; type: string } };
+        };
+
+        expect(uploadResponse.status).toBe(200);
+        expect(uploadBody.asset.hasFile).toBe(true);
+        expect(uploadBody.asset).not.toHaveProperty('storageKey');
+        expect(uploadBody.asset).not.toHaveProperty('checksum');
+        expect(JSON.stringify(uploadBody)).not.toContain('papers/');
+        expect(JSON.stringify(uploadBody)).not.toContain(storageRoot);
+        expect(JSON.stringify(uploadBody)).not.toContain(pdfChecksum);
+        expect(uploadBody.entry.paperAssetId).toBe(uploadBody.asset.id);
+        expect(uploadBody.entry.scope).toEqual({ id: 'user-alice', type: 'user' });
+
+        const storedPdfPath = join(storageRoot, 'papers', uploadBody.asset.id, 'paper.pdf');
+        expect(existsSync(storedPdfPath)).toBe(true);
+        expect(readFileSync(storedPdfPath, 'utf8')).toBe(pdfContents);
+
+        const fileResponse = await fetch(
+          `${server.url}/api/library/${uploadBody.entry.id}/file`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        expect(fileResponse.status).toBe(200);
+        expect(fileResponse.headers.get('content-type')).toBe('application/pdf');
+        expect(fileResponse.headers.get('content-length')).toBe(
+          String(Buffer.byteLength(pdfContents)),
+        );
+        expect(
+          Buffer.from(await fileResponse.arrayBuffer()).equals(
+            Buffer.from(pdfContents, 'utf8'),
+          ),
+        ).toBe(true);
       } finally {
         await server.close();
       }
@@ -505,6 +618,18 @@ describe('http server actor boundary cleanup', () => {
               sourceType: 'doi',
               spaceId: createdSpace.id,
               visibility: 'space_shared',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/import/pdf`, {
+            body: JSON.stringify({
+              pdfContents: '%PDF-1.4 spoofed upload',
+              requestedByUserId: 'user-bob',
+              spaceId: createdSpace.id,
+              visibility: 'private',
             }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
@@ -843,6 +968,29 @@ describe('http server actor boundary cleanup', () => {
               sourceType: 'doi',
               spaceId: createdSpace.id,
               visibility: 'space_shared',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/import/pdf`, {
+            body: JSON.stringify({
+              pdfContents: '%PDF-1.4 matching upload',
+              requestedByUserId: 'user-alice',
+              spaceId: createdSpace.id,
+              visibility: 'private',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/import/pdf?actorUserId=user-alice`, {
+            body: JSON.stringify({
+              pdfContents: '%PDF-1.4 matching query upload',
+              spaceId: createdSpace.id,
+              visibility: 'private',
             }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',

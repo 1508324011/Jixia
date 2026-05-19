@@ -59,6 +59,7 @@ describe('paper workspace', () => {
         abstractText: 'Imported PMID metadata for 654321',
         canonicalId: 'pmid:654321',
         createdAt: '2026-03-23T00:00:00.000Z',
+        hasFile: true,
         id: 'asset-1',
         title: 'Tumor board biomarkers for rapid review',
       },
@@ -335,6 +336,11 @@ describe('paper workspace', () => {
     renderWorkbench('/projects/project-alpha/library/entry-1/reader');
 
     expect(await screen.findByText('Tumor board biomarkers for rapid review')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open server-owned paper file' })).toHaveAttribute(
+      'href',
+      '/api/library/entry-1/file',
+    );
+    expect(screen.queryByText(/storageKey|papers\/asset-1|JIXIA_STORAGE_ROOT/i)).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'AI 对话' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '私人笔记' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '共享评论' })).toBeInTheDocument();

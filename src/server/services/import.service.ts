@@ -135,6 +135,10 @@ async function resolveAuthorizedImportScopeContext(
     throw new Error("Access denied for the requested project library.");
   }
 
+  if (membership.role !== "owner" && membership.role !== "editor") {
+    throw new Error("Access denied for the requested project library mutation.");
+  }
+
   if (compatibilitySpaceId && project.spaceId !== compatibilitySpaceId) {
     // Deprecated space context can fail closed, but it cannot replace the
     // persisted Project.spaceId or bypass ProjectMember authority.
@@ -149,12 +153,25 @@ async function resolveAuthorizedImportScopeContext(
   };
 }
 
-function createPrismaOwnedAssetId(): string {
-  return `asset-${randomUUID()}`;
-}
-
 function calculateChecksum(contents: Buffer): string {
   return createHash("sha256").update(contents).digest("hex");
+}
+
+function createUploadedPaperAssetId(): string {
+  return `asset-upload-${randomUUID()}`;
+}
+
+function createUploadedPaperCanonicalId(assetId: string): string {
+  return `upload:${assetId}`;
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
 }
 
 function mapAsset(asset: PersistedPaperAssetRecord): PaperAssetRecord {
@@ -162,9 +179,59 @@ function mapAsset(asset: PersistedPaperAssetRecord): PaperAssetRecord {
     abstractText: asset.abstractText,
     canonicalId: asset.canonicalId,
     createdAt: asset.createdAt,
+    hasFile: Boolean(asset.storageKey),
     id: asset.id,
     title: asset.title,
   };
+}
+
+async function ensureExistingFileAssetBytes(
+  fileStore: FileStore,
+  asset: PersistedPaperAssetRecord,
+  contents: Buffer,
+  checksum: string,
+): Promise<void> {
+  if (!asset.storageKey) {
+    return;
+  }
+
+  const existingBytes = await fileStore.readBuffer(asset.storageKey).catch(() => null);
+
+  if (existingBytes && calculateChecksum(existingBytes) === checksum) {
+    return;
+  }
+
+  await fileStore.writeBuffer(asset.storageKey, contents);
+}
+
+async function adoptExistingFileAsset(
+  store: ImportStore,
+  asset: PersistedPaperAssetRecord,
+  input: {
+    actorUserId: string;
+    checksum: string;
+    pdfBytes: Buffer;
+    scopeContext: { compatibilitySpaceId?: string; scope: ScopeRef };
+  },
+): Promise<ImportedLibraryRecord> {
+  await ensureExistingFileAssetBytes(
+    store.fileStore,
+    asset,
+    input.pdfBytes,
+    input.checksum,
+  );
+
+  return mapPersistedLibraryEntryView(
+    (
+      await store.libraryRepository.adoptExistingPaperAsset({
+        addedByUserId: input.actorUserId,
+        legacySpaceId: input.scopeContext.compatibilitySpaceId,
+        legacyVisibility: compatibilityVisibilityForScope(input.scopeContext.scope),
+        paperAssetId: asset.id,
+        scope: input.scopeContext.scope,
+      })
+    ).view,
+  );
 }
 
 function compatibilitySpaceIdForEntry(
@@ -257,34 +324,71 @@ export function createImportService(store: ImportStore): ImportService {
         input.spaceId,
       );
 
-      const assetId = createPrismaOwnedAssetId();
       const pdfBytes = Buffer.from(input.pdfContents, "utf8");
+      const checksum = calculateChecksum(pdfBytes);
+      const existingFileAsset = await store.libraryRepository.findPaperAssetByChecksum(
+        checksum,
+      );
+
+      if (existingFileAsset?.storageKey) {
+        return adoptExistingFileAsset(store, existingFileAsset, {
+          actorUserId,
+          checksum,
+          pdfBytes,
+          scopeContext,
+        });
+      }
+
+      const assetId = createUploadedPaperAssetId();
       const storageKey = await store.fileStore.writeBuffer(
         createPaperPdfStorageKey(assetId),
         pdfBytes,
       );
       const visibility = compatibilityVisibilityForScope(scopeContext.scope);
 
-      return mapPersistedLibraryEntryView(
-        await store.libraryRepository.importScopedEntry({
-          asset: {
-            canonicalId: `upload:${assetId}`,
-            checksum: calculateChecksum(pdfBytes),
-            id: assetId,
-            importedByUserId: actorUserId,
-            sourceLocator: assetId,
-            sourceType: "upload",
-            storageKey,
-            title: `Uploaded paper ${assetId}`,
-          },
-          entry: {
-            addedByUserId: actorUserId,
-            legacySpaceId: scopeContext.compatibilitySpaceId,
-            legacyVisibility: visibility,
-            scope: scopeContext.scope,
-          },
-        }),
-      );
+      try {
+        return mapPersistedLibraryEntryView(
+          await store.libraryRepository.importScopedEntry({
+            asset: {
+              canonicalId: createUploadedPaperCanonicalId(assetId),
+              checksum,
+              id: assetId,
+              importedByUserId: actorUserId,
+              sourceLocator: assetId,
+              sourceType: "upload",
+              storageKey,
+              title: "Uploaded paper",
+            },
+            entry: {
+              addedByUserId: actorUserId,
+              legacySpaceId: scopeContext.compatibilitySpaceId,
+              legacyVisibility: visibility,
+              scope: scopeContext.scope,
+            },
+          }),
+        );
+      } catch (error) {
+        await store.fileStore.deleteBuffer(storageKey).catch(() => undefined);
+
+        if (!isUniqueConstraintError(error)) {
+          throw error;
+        }
+
+        const racedFileAsset = await store.libraryRepository.findPaperAssetByChecksum(
+          checksum,
+        );
+
+        if (!racedFileAsset?.storageKey) {
+          throw error;
+        }
+
+        return adoptExistingFileAsset(store, racedFileAsset, {
+          actorUserId,
+          checksum,
+          pdfBytes,
+          scopeContext,
+        });
+      }
     },
     async importToPersonalLibrary(
       input: {

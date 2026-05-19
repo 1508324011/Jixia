@@ -89,6 +89,10 @@ function resolveDownloadFileName(view: PersistedLibraryEntryView): string {
   return `${baseName}${extension}`;
 }
 
+function createFileUnavailableError(): Error {
+  return new Error("Paper asset file is not available.");
+}
+
 function resolveQueryScope(
   input: {
     actorUserId: string;
@@ -384,18 +388,23 @@ export function createLibraryService(store: LibraryStore): LibraryService {
         input.entryId,
         input.actorUserId,
         input.actorSpaceId,
-      );
+      ).catch((error) => {
+        if (
+          error instanceof Error &&
+          /^Library entry .+ does not exist\.$/.test(error.message)
+        ) {
+          throw new Error("Library entry does not exist.");
+        }
+
+        throw error;
+      });
 
       if (!view.asset.storageKey) {
-        throw new Error(
-          `Paper asset file is not available for library entry ${input.entryId}.`,
-        );
+        throw createFileUnavailableError();
       }
 
       const body = await store.fileStore.readBuffer(view.asset.storageKey).catch(() => {
-        throw new Error(
-          `Paper asset file is not available for library entry ${input.entryId}.`,
-        );
+        throw createFileUnavailableError();
       });
       const fileName = resolveDownloadFileName(view);
 

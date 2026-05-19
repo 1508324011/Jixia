@@ -121,6 +121,13 @@ type ImportPaperPayload = {
   spaceId: string;
   visibility: LibraryEntryVisibility;
 };
+type UploadPdfToLibraryPayload = {
+  pdfContents: string;
+  projectId?: string;
+  scope?: ScopeRef;
+  spaceId: string;
+  visibility: LibraryEntryVisibility;
+};
 type SaveReadingInsightPayload = {
   evidenceSpans: Array<{
     endOffset: number;
@@ -496,6 +503,14 @@ export const apiClient = {
       method: "POST",
     });
   },
+  uploadPdfToLibrary(
+    input: UploadPdfToLibraryPayload,
+  ): Promise<LibraryEntryView> {
+    return requestJson("/api/import/pdf", {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
   getCurrentSession(): Promise<{ user: SessionUser }> {
     return requestJson("/api/session/me");
   },
@@ -529,6 +544,9 @@ export const apiClient = {
     entryId: string,
   ): Promise<ReadingDetail | null> {
     return requestJson(`/api/reading/${entryId}`);
+  },
+  getLibraryEntryFileUrl(entryId: string): string {
+    return buildUrl(`/api/library/${encodeURIComponent(entryId)}/file`);
   },
   runJob(jobId: string): Promise<JobRecord> {
     return requestJson(`/api/jobs/${jobId}/run`, {

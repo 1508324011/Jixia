@@ -31,6 +31,7 @@ describe('personal reader route', () => {
         abstractText: 'Imported PMID metadata for 654321',
         canonicalId: 'pmid:654321',
         createdAt: '2026-03-23T00:00:00.000Z',
+        hasFile: false,
         id: 'asset-1',
         title: 'Tumor board biomarkers for rapid review',
       },
@@ -199,6 +200,10 @@ describe('personal reader route', () => {
 
     expect(await screen.findByText('Tumor board biomarkers for rapid review')).toBeInTheDocument();
     expect(screen.getByText('Personal context')).toBeInTheDocument();
+    expect(
+      screen.getByText('Metadata-only asset · no server-owned file is available yet.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open server-owned paper file' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open writing' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Save project comment' }));

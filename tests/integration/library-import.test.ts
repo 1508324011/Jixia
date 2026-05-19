@@ -1,4 +1,5 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -40,6 +41,10 @@ function createStubPubmedConnector(): PubmedConnector {
   };
 }
 
+function sha256(contents: string): string {
+  return createHash('sha256').update(Buffer.from(contents, 'utf8')).digest('hex');
+}
+
 describe('library import', () => {
   it('creates asset and entry separately', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-import-'));
@@ -60,8 +65,10 @@ describe('library import', () => {
         'user-alice',
       );
 
+      const pdfContents = '%PDF-1.4 demo paper';
+      const pdfChecksum = sha256(pdfContents);
       const uploaded = await app.imports.uploadPdf({
-        pdfContents: '%PDF-1.4 demo paper',
+        pdfContents,
         scope: { id: 'user-alice', type: 'user' },
         requestedByUserId: 'user-alice',
         spaceId: sharedSpace.id,
@@ -71,10 +78,48 @@ describe('library import', () => {
       const storedPdfPath = join(storageRoot, 'papers', uploaded.asset.id, 'paper.pdf');
 
       expect(uploaded.asset).not.toHaveProperty('storageKey');
+      expect(uploaded.asset).not.toHaveProperty('checksum');
+      expect(uploaded.asset.hasFile).toBe(true);
       expect(existsSync(storedPdfPath)).toBe(true);
-      expect(readFileSync(storedPdfPath, 'utf8')).toBe('%PDF-1.4 demo paper');
+      expect(readFileSync(storedPdfPath, 'utf8')).toBe(pdfContents);
+      expect(JSON.stringify(uploaded)).not.toContain(pdfChecksum);
       expect(uploaded.entry.paperAssetId).toBe(uploaded.asset.id);
       expect(uploaded.entry.scope).toEqual({ id: 'user-alice', type: 'user' });
+
+      unlinkSync(storedPdfPath);
+      expect(existsSync(storedPdfPath)).toBe(false);
+
+      const duplicatePersonalUpload = await app.imports.uploadPdf({
+        pdfContents,
+        scope: { id: 'user-alice', type: 'user' },
+        requestedByUserId: 'user-alice',
+        spaceId: sharedSpace.id,
+        visibility: 'private',
+      }, 'user-alice');
+      const projectUploadSameBytes = await app.imports.uploadPdf({
+        pdfContents,
+        scope: { id: project.project.id, type: 'project' },
+        requestedByUserId: 'user-alice',
+        spaceId: sharedSpace.id,
+        visibility: 'published_to_project',
+      }, 'user-alice');
+
+      expect(duplicatePersonalUpload.asset).not.toHaveProperty('storageKey');
+      expect(duplicatePersonalUpload.asset).not.toHaveProperty('checksum');
+      expect(JSON.stringify(duplicatePersonalUpload)).not.toContain(pdfChecksum);
+      expect(JSON.stringify(projectUploadSameBytes)).not.toContain(pdfChecksum);
+      expect(duplicatePersonalUpload.asset.id).toBe(uploaded.asset.id);
+      expect(duplicatePersonalUpload.entry.id).toBe(uploaded.entry.id);
+      expect(existsSync(storedPdfPath)).toBe(true);
+      expect(readFileSync(storedPdfPath, 'utf8')).toBe(pdfContents);
+      expect(projectUploadSameBytes.asset.id).toBe(uploaded.asset.id);
+      expect(projectUploadSameBytes.entry.id).not.toBe(uploaded.entry.id);
+      expect(projectUploadSameBytes.entry.scope).toEqual({
+        id: project.project.id,
+        type: 'project',
+      });
+      expect(projectUploadSameBytes.entry.spaceId).toBe(sharedSpace.id);
+      expect(readdirSync(join(storageRoot, 'papers'))).toEqual([uploaded.asset.id]);
 
       const firstImported = await app.imports.importPaper({
         scope: { id: project.project.id, type: 'project' },
@@ -102,6 +147,7 @@ describe('library import', () => {
       }, 'user-alice');
 
       expect(firstImported.asset.id).toBe(secondImported.asset.id);
+      expect(firstImported.asset.hasFile).toBe(false);
       expect(firstImported.entry.id).not.toBe(secondImported.entry.id);
       expect(firstImported.entry.spaceId).toBe(sharedSpace.id);
       expect(firstImported.entry.scope).toEqual({
@@ -135,6 +181,86 @@ describe('library import', () => {
       rmSync(storageRoot, { recursive: true, force: true });
     }
   }, 20_000);
+
+  it('requires project owner or editor role for project library imports and uploads', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-project-role-'));
+
+    try {
+      const app = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env: createLibraryEnv(storageRoot),
+      });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Role Guard Space' },
+        'user-alice',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Role Guard Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        project.project.id,
+        { role: 'editor', userId: 'user-editor' },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        project.project.id,
+        { role: 'viewer', userId: 'user-viewer' },
+        'user-alice',
+      );
+
+      const editorImport = await app.imports.importPaper({
+        scope: { id: project.project.id, type: 'project' },
+        requestedByUserId: 'user-editor',
+        sourceLocator: '10.1000/editor-project-import',
+        sourceType: 'doi',
+        spaceId: sharedSpace.id,
+        visibility: 'published_to_project',
+      }, 'user-editor');
+      const editorUpload = await app.imports.uploadPdf({
+        pdfContents: '%PDF-1.4 editor project upload',
+        scope: { id: project.project.id, type: 'project' },
+        requestedByUserId: 'user-editor',
+        spaceId: sharedSpace.id,
+        visibility: 'published_to_project',
+      }, 'user-editor');
+
+      expect(editorImport.entry.scope).toEqual({
+        id: project.project.id,
+        type: 'project',
+      });
+      expect(editorUpload.entry.scope).toEqual({
+        id: project.project.id,
+        type: 'project',
+      });
+      expect(editorUpload.asset.hasFile).toBe(true);
+
+      await expect(
+        app.imports.importPaper({
+          scope: { id: project.project.id, type: 'project' },
+          requestedByUserId: 'user-viewer',
+          sourceLocator: '10.1000/viewer-project-import',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        }, 'user-viewer'),
+      ).rejects.toThrow(/project library mutation|access denied/i);
+
+      await expect(
+        app.imports.uploadPdf({
+          pdfContents: '%PDF-1.4 viewer project upload',
+          scope: { id: project.project.id, type: 'project' },
+          requestedByUserId: 'user-viewer',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        }, 'user-viewer'),
+      ).rejects.toThrow(/project library mutation|access denied/i);
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
 
   it('uses project membership instead of stale legacy space mirrors for project library reads', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-prisma-space-'));

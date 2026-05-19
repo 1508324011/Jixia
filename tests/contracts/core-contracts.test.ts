@@ -360,6 +360,7 @@ describe('core contracts', () => {
       title: 'Jixia as a server-first research platform',
       abstractText: 'A platform bootstrap paper.',
       createdAt: '2026-03-21T00:00:00.000Z',
+      hasFile: false,
     };
     const entry: LibraryEntryRecord = {
       addedByUserId: 'user_001',
@@ -457,6 +458,7 @@ describe('core contracts', () => {
       asset: {
         id: 'asset_001',
         canonicalId: 'doi:10.1000/j.jixia.2026.01',
+        hasFile: true,
         title: 'Jixia as a server-first research platform',
         createdAt: '2026-03-21T00:00:00.000Z',
       },
