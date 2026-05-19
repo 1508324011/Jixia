@@ -35,6 +35,19 @@ export interface CommandSearchStore {
 
 const MAX_RESULTS = 40;
 
+function encodeRouteSegment(value: string): string {
+  return encodeURIComponent(value);
+}
+
+function routeWithSearchParams(
+  pathname: string,
+  params: Record<string, string>,
+): string {
+  const searchParams = new URLSearchParams(params);
+
+  return `${pathname}?${searchParams.toString()}`;
+}
+
 function normalizeQuery(query: string): string {
   return query.trim().replace(/\s+/g, ' ').toLowerCase();
 }
@@ -198,7 +211,7 @@ function notebookResult(
   return {
     id: `notebook:${document.id}`,
     kind: 'notebook',
-    route: '/notebook',
+    route: `/notebook/${encodeRouteSegment(document.id)}`,
     scope: {
       id: document.ownerId,
       type: 'user',
@@ -219,7 +232,11 @@ function jobResult(job: JobRecord): CommandSearchResult {
       kind: job.kind,
       status: job.status,
     },
-    route: '/jobs',
+    route: routeWithSearchParams('/jobs', {
+      scopeType: job.scope.type,
+      scopeId: job.scope.id,
+      jobId: job.id,
+    }),
     scope: {
       id: job.scope.id,
       projectId: isProjectScope ? job.scope.id : undefined,

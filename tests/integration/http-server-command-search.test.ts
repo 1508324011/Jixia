@@ -171,6 +171,7 @@ describe('http server command search api', () => {
         expect(bobMembershipResponse.status).toBe(200);
 
         const prisma = createPrismaClient({ url: databaseUrl });
+        let notebookDocumentId = '';
         let projectDocId = '';
 
         try {
@@ -245,10 +246,11 @@ describe('http server command search api', () => {
               scope: { id: bobProject.project.id, type: 'project' },
             },
           });
-          await notebookRepository.createDocument({
+          const notebookDocument = await notebookRepository.createDocument({
             ownerId: 'user-alice',
             title: 'Command Private Notebook',
           });
+          notebookDocumentId = notebookDocument.id;
           await notebookRepository.createDocument({
             ownerId: 'user-bob',
             title: 'Hidden Bob Command Notebook',
@@ -324,6 +326,22 @@ describe('http server command search api', () => {
             route: `/projects/${project.project.id}/writing/${projectDocId}`,
           }),
         );
+        expect(payload.results).toContainEqual(
+          expect.objectContaining({
+            kind: 'notebook',
+            route: `/notebook/${encodeURIComponent(notebookDocumentId)}`,
+          }),
+        );
+        const jobRoute = payload.results.find((result) => result.kind === 'job')?.route;
+        expect(jobRoute).toBeTruthy();
+        const jobUrl = new URL(jobRoute ?? '', server.url);
+        expect(jobUrl.pathname).toBe('/jobs');
+        expect(jobUrl.searchParams.get('scopeType')).toBe('project');
+        expect(jobUrl.searchParams.get('scopeId')).toBe(project.project.id);
+        expect(jobUrl.searchParams.get('jobId')).toBe('job-command-alice');
+        expect(jobUrl.searchParams.has('actorUserId')).toBe(false);
+        expect(jobUrl.searchParams.has('requestedByUserId')).toBe(false);
+        expect(jobUrl.searchParams.has('userId')).toBe(false);
         const serializedPayload = JSON.stringify(payload);
         expect(serializedPayload).not.toContain('Hidden Bob Command');
         expect(serializedPayload).not.toContain('private-storage-key-command.pdf');
