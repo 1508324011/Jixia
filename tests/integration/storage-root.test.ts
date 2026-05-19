@@ -45,5 +45,13 @@ describe('asset storage keys', () => {
     expect(() => toAssetStorageKey('../demo.pdf')).toThrow(
       /relative storage key/i,
     );
+    expect(() => toAssetStorageKey('papers/../../demo.pdf')).toThrow(
+      /relative storage key/i,
+    );
+    expect(() =>
+      resolveStoragePath('papers/../../demo.pdf', {
+        JIXIA_STORAGE_ROOT: mkdtempSync(join(tmpdir(), 'jixia-storage-root-')),
+      }),
+    ).toThrow(/relative storage key|storage root/i);
   });
 });

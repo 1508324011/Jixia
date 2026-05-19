@@ -91,6 +91,8 @@ describe('deployment and operator scaffolding', () => {
     expect(readme).toContain('JIXIA_STORAGE_ROOT');
     expect(readme).toContain('JIXIA_DATABASE_URL');
     expect(readme).toContain('/var/lib/jixia/storage');
+    expect(readme).toContain('POST /api/import/pdf');
+    expect(readme).toContain('GET|HEAD /api/library/:entryId/file');
     expect(readme).toContain('server-state.json');
     expect(readme).toContain('Prisma-backed project collaboration');
   });
@@ -104,6 +106,8 @@ describe('deployment and operator scaffolding', () => {
     expect(readmeCn).toContain('/health');
     expect(readmeCn).toContain('JIXIA_STORAGE_ROOT');
     expect(readmeCn).toContain('JIXIA_DATABASE_URL');
+    expect(readmeCn).toContain('POST /api/import/pdf');
+    expect(readmeCn).toContain('GET|HEAD /api/library/:entryId/file');
     expect(readmeCn).toContain('server-state.json');
     expect(readmeCn).toContain('Prisma-backed Project 协作数据');
     expect(ciWorkflow).toContain('npm run build');

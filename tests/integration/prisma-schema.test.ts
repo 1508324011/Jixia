@@ -38,6 +38,16 @@ describe('prisma schema', () => {
       /model LibraryEntry[\s\S]*@@unique\(\[scopeType, scopeId, paperAssetId\]/,
     );
     expect(schema).toMatch(/model PaperAsset[\s\S]*\n\s+canonicalId\s+String\s+@unique/);
+    expect(schema).toMatch(/model PaperAsset[\s\S]*@@index\(\[checksum\]\)/);
+    expect(
+      existsSync('prisma/migrations/20260519000000_paper_asset_checksum_index/migration.sql'),
+    ).toBe(true);
+    expect(
+      readFileSync(
+        'prisma/migrations/20260519000000_paper_asset_checksum_index/migration.sql',
+        'utf8',
+      ),
+    ).toContain('PaperAsset_checksum_idx');
     expect(schema).toMatch(
       /model ProjectMember[\s\S]*@@unique\(\[projectId, userId\]\)/,
     );

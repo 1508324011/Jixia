@@ -36,6 +36,9 @@ describe('workbench beta runbook contract', () => {
     expect(runbook).toContain('检索 PubMed');
     expect(runbook).toContain('导入到个人 Library');
     expect(runbook).toContain('Open reader');
+    expect(runbook).toContain('metadata-only asset');
+    expect(runbook).toContain('POST /api/import/pdf');
+    expect(runbook).toContain('GET|HEAD /api/library/:entryId/file');
     expect(runbook).toContain('Save private note');
     expect(runbook).toContain('Save project comment');
     expect(runbook).toContain('Save insight');

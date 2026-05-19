@@ -24,6 +24,13 @@ are Prisma/SQLite authority now; durable Settings API keys require the same
 If that key is missing or replaced, existing encrypted credential rows fail closed
 instead of being exposed or silently recreated.
 
+Paper uploads use the same server-owned storage boundary. `POST /api/import/pdf`
+writes uploaded paper bytes under `JIXIA_STORAGE_ROOT`, computes the checksum on
+the server, deduplicates global file-backed `PaperAsset` rows by checksum, and
+returns only browser-safe availability such as `asset.hasFile`. Reader file access
+must go through `GET|HEAD /api/library/:entryId/file`; the browser never receives
+raw storage keys, `papers/...` paths, checksums, or filesystem locations.
+
 ## Native startup on the current host
 
 ```bash
@@ -60,7 +67,7 @@ workbench entry -> settings ready -> PubMed search -> personal import -> Reader 
 9. In **检索主题**, enter `tumor board biomarkers`, then click **检索 PubMed**.
 10. Wait for the PubMed-backed result card and click **导入到个人 Library**.
 11. Open **Library** and confirm the imported paper is present on the Personal shelf.
-12. Click **Open reader** on that imported paper.
+12. Click **Open reader** on that imported paper, and confirm the metadata-only asset message is shown when no server-owned file has been uploaded for that entry.
 13. In **Reader**, enter a short private note into **Private note**, then click **Save private note**.
 14. Enter a short project-visible comment into **Project comment**, then click **Save project comment**.
 15. Enter a short governed summary into **Insight summary**, then click **Save insight**.
@@ -84,6 +91,9 @@ workbench entry -> settings ready -> PubMed search -> personal import -> Reader 
 - settings persist through Prisma-backed workbench settings and encrypted credential
   secret rows without exposing raw API keys in browser payloads
 - PubMed-backed discovery can import into Personal Library through the real server path
+- Reader file availability is explicit: metadata-only imports do not pretend a
+  file exists, while uploaded PDFs are read only through the session-authorized
+  `GET|HEAD /api/library/:entryId/file` route
 - the paper workspace persists a private note separately from a project-visible comment
 - a governed insight can be promoted into Project Docs and reopened after reload and process restart
 

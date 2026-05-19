@@ -120,6 +120,9 @@ export interface LibraryRepository {
     input: AdoptExistingLibraryEntryParams,
   ): Promise<AdoptExistingLibraryEntryResult>;
   bootstrapLegacyLibrary(input: BootstrapLegacyLibraryInput): Promise<void>;
+  findPaperAssetByChecksum(
+    checksum: string,
+  ): Promise<PersistedPaperAssetRecord | null>;
   findPaperAsset(assetId: string): Promise<PersistedPaperAssetRecord | null>;
   getLibraryEntry(entryId: string): Promise<PersistedLibraryEntryView | null>;
   importScopedEntry(
@@ -343,6 +346,9 @@ export async function initializeLibraryPersistence(
     CREATE UNIQUE INDEX IF NOT EXISTS "PaperAsset_canonicalId_key" ON "PaperAsset"("canonicalId")
   `);
   await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "PaperAsset_checksum_idx" ON "PaperAsset"("checksum")
+  `);
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "LibraryEntry" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "scopeType" TEXT NOT NULL,
@@ -517,6 +523,27 @@ export function createLibraryRepository(
       await ensureInitialized();
 
       const asset = await prisma.paperAsset.findUnique({ where: { id: assetId } });
+
+      return asset ? mapPaperAsset(asset) : null;
+    },
+    async findPaperAssetByChecksum(
+      checksum: string,
+    ): Promise<PersistedPaperAssetRecord | null> {
+      await ensureInitialized();
+
+      const normalizedChecksum = checksum.trim();
+
+      if (!normalizedChecksum) {
+        return null;
+      }
+
+      const asset = await prisma.paperAsset.findFirst({
+        orderBy: { createdAt: 'asc' },
+        where: {
+          checksum: normalizedChecksum,
+          storageKey: { not: null },
+        },
+      });
 
       return asset ? mapPaperAsset(asset) : null;
     },

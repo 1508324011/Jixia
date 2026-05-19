@@ -47,7 +47,7 @@ The shipped product surface includes:
 - paper workspace panels for `AI 对话`, `私人笔记`, `共享评论`, and `关键信息`
 - project-level Project Docs shared knowledge center cues plus a reopenable Project Doc editor route
 - server-backed project routes using Prisma/SQLite `Project` and `ProjectMember` authority instead of legacy JSON project arrays
-- browser-facing `/api/*` routes for spaces, credentials, jobs, library/import, reading, notebooks, project docs, and the workbench compatibility endpoints
+- browser-facing `/api/*` routes for spaces, credentials, jobs, library/import, server-owned paper file access, reading, notebooks, project docs, and the workbench compatibility endpoints
 - preserved `/spaces/...` routes so deep-link regression tests still guard compatibility
 
 Personal-facing routes are workbench shorthand over server-side ownership and scope rules. Space remains governance context for routing and audit compatibility, while library/import ownership and access control are authoritative through server-normalized `ScopeRef` plus `Project`/`ProjectMember` checks; legacy `spaceId` and `visibility` fields in those payloads are compatibility mirrors only.
@@ -61,6 +61,8 @@ Personal-facing routes are workbench shorthand over server-side ownership and sc
 - `GET /api/discovery/today` and `GET /api/discovery/search?query=...` serve the discovery slice.
 - `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings through Prisma-backed per-user workbench settings and encrypted provider credential secret rows without exposing raw API keys in responses or stored settings records.
 - `GET /api/library/personal` and `POST /api/library/personal/import` keep personal import ownership on the server.
+- `POST /api/import/pdf` accepts authenticated paper-file uploads, stores bytes under `JIXIA_STORAGE_ROOT`, computes the server checksum, reuses duplicate file-backed `PaperAsset` rows by checksum, and returns only browser-safe asset availability such as `asset.hasFile` instead of storage keys or checksums.
+- `GET|HEAD /api/library/:entryId/file` is the only browser-facing paper file route. The path uses a scoped `LibraryEntry.id`, derives the actor from the `jixia_session` cookie, authorizes personal/project access on the server, and never exposes raw `storageKey`, `papers/...` keys, absolute paths, or `JIXIA_STORAGE_ROOT` in browser DTOs.
 - `GET /api/reading/:entryId`, `POST /api/reading/notes`, `POST /api/reading/:entryId/project-comments`, and `POST /api/reading/:entryId/insights` back the paper workspace; private notes and project comments are separate server-authorized paths.
 - `GET /api/projects/:projectId/writing-document` lets compatibility callers reopen the latest visible shared Project Doc, or truthfully report that the project has no shared Project Doc yet.
 - `GET /api/project-docs/:documentId` returns the latest Project Doc snapshot; when a document exists but has not been saved yet, the server returns an empty snapshot with `versionNumber: 0` instead of browser-authored fallback content.
@@ -102,6 +104,7 @@ Task 11 turns the verified web interaction shell into a reproducibly runnable la
 Copy `.env.example` to `.env` and fill in operator-specific values.
 
 - `JIXIA_STORAGE_ROOT` controls where Jixia persists server-managed storage assets. On a lab server, keep this on durable storage such as `/var/lib/jixia/storage`.
+- Uploaded paper files are stored below the same storage root with server-validated relative keys and are reachable to Readers only through `GET|HEAD /api/library/:entryId/file`; persist this directory across restarts together with the SQLite database so file bytes and `PaperAsset` metadata stay in sync.
 - The current runtime still keeps legacy non-Prisma beta state in `JIXIA_STORAGE_ROOT/server-state.json`, but new credential secret material and workbench settings are no longer written there.
 - `JIXIA_DATABASE_URL` controls the SQLite database used for Prisma-backed `Space`, `Project`, `ProjectMember`, library, notebook, Project Doc, provider credential secret, and workbench settings authority. Keep it on durable storage such as `file:/var/lib/jixia/data/jixia.db`.
 - `JIXIA_STORAGE_ROOT/credentials.key` is the local encryption authority for provider credential secrets. Durable encrypted credentials require both the durable SQLite database and this durable key file; losing or replacing the key makes existing credential rows unusable rather than silently recreating or exposing them.

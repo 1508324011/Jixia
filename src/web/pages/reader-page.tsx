@@ -96,6 +96,9 @@ export function ReaderPage() {
   const workbenchWritingPath = promotedDocumentId
     ? `/projects/${projectId}/writing/${promotedDocumentId}`
     : null;
+  const personalFileRoute = detail?.asset.hasFile
+    ? apiClient.getLibraryEntryFileUrl(detail.entry.id)
+    : null;
 
   async function promoteInsightToWriter(
     targetProjectId: string,
@@ -331,6 +334,9 @@ export function ReaderPage() {
     const projectWritingPath = promotedDocumentId
       ? `/projects/${contextProjectId}/writing/${promotedDocumentId}`
       : null;
+    const projectFileRoute = asset?.hasFile && entry
+      ? apiClient.getLibraryEntryFileUrl(entry.id)
+      : null;
 
     async function handleProjectPromoteLatestInsight(): Promise<void> {
       if (!project || !latestProjectInsight) {
@@ -427,6 +433,15 @@ export function ReaderPage() {
             </p>
             <p className="quiet-copy">Canonical id · {asset?.canonicalId ?? "No asset"}</p>
             <p className="quiet-copy">Visibility · {entry?.visibility ?? "No entry"}</p>
+            {projectFileRoute ? (
+              <a className="panel-link" href={projectFileRoute}>
+                Open server-owned paper file
+              </a>
+            ) : (
+              <p className="quiet-copy">
+                Metadata-only asset · no server-owned file is available yet.
+              </p>
+            )}
             <p className="quiet-copy">
               {asset?.abstractText ?? "Use project library imports before opening reader detail."}
             </p>
@@ -588,6 +603,15 @@ export function ReaderPage() {
                 {detail.asset.abstractText ?? "No abstract was imported for this paper asset."}
               </p>
               <p className="quiet-copy">Canonical source · {detail.asset.canonicalId}</p>
+              {personalFileRoute ? (
+                <a className="panel-link" href={personalFileRoute}>
+                  Open server-owned paper file
+                </a>
+              ) : (
+                <p className="quiet-copy">
+                  Metadata-only asset · no server-owned file is available yet.
+                </p>
+              )}
             </>
           ) : (
             <>

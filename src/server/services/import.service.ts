@@ -149,12 +149,16 @@ async function resolveAuthorizedImportScopeContext(
   };
 }
 
-function createPrismaOwnedAssetId(): string {
-  return `asset-${randomUUID()}`;
-}
-
 function calculateChecksum(contents: Buffer): string {
   return createHash("sha256").update(contents).digest("hex");
+}
+
+function createUploadedPaperAssetId(): string {
+  return `asset-upload-${randomUUID()}`;
+}
+
+function createUploadedPaperCanonicalId(assetId: string): string {
+  return `upload:${assetId}`;
 }
 
 function mapAsset(asset: PersistedPaperAssetRecord): PaperAssetRecord {
@@ -162,9 +166,29 @@ function mapAsset(asset: PersistedPaperAssetRecord): PaperAssetRecord {
     abstractText: asset.abstractText,
     canonicalId: asset.canonicalId,
     createdAt: asset.createdAt,
+    hasFile: Boolean(asset.storageKey),
     id: asset.id,
     title: asset.title,
   };
+}
+
+async function ensureExistingFileAssetBytes(
+  fileStore: FileStore,
+  asset: PersistedPaperAssetRecord,
+  contents: Buffer,
+  checksum: string,
+): Promise<void> {
+  if (!asset.storageKey) {
+    return;
+  }
+
+  const existingBytes = await fileStore.readBuffer(asset.storageKey).catch(() => null);
+
+  if (existingBytes && calculateChecksum(existingBytes) === checksum) {
+    return;
+  }
+
+  await fileStore.writeBuffer(asset.storageKey, contents);
 }
 
 function compatibilitySpaceIdForEntry(
@@ -257,8 +281,34 @@ export function createImportService(store: ImportStore): ImportService {
         input.spaceId,
       );
 
-      const assetId = createPrismaOwnedAssetId();
       const pdfBytes = Buffer.from(input.pdfContents, "utf8");
+      const checksum = calculateChecksum(pdfBytes);
+      const existingFileAsset = await store.libraryRepository.findPaperAssetByChecksum(
+        checksum,
+      );
+
+      if (existingFileAsset?.storageKey) {
+        await ensureExistingFileAssetBytes(
+          store.fileStore,
+          existingFileAsset,
+          pdfBytes,
+          checksum,
+        );
+
+        return mapPersistedLibraryEntryView(
+          (
+            await store.libraryRepository.adoptExistingPaperAsset({
+              addedByUserId: actorUserId,
+              legacySpaceId: scopeContext.compatibilitySpaceId,
+              legacyVisibility: compatibilityVisibilityForScope(scopeContext.scope),
+              paperAssetId: existingFileAsset.id,
+              scope: scopeContext.scope,
+            })
+          ).view,
+        );
+      }
+
+      const assetId = createUploadedPaperAssetId();
       const storageKey = await store.fileStore.writeBuffer(
         createPaperPdfStorageKey(assetId),
         pdfBytes,
@@ -268,14 +318,14 @@ export function createImportService(store: ImportStore): ImportService {
       return mapPersistedLibraryEntryView(
         await store.libraryRepository.importScopedEntry({
           asset: {
-            canonicalId: `upload:${assetId}`,
-            checksum: calculateChecksum(pdfBytes),
+            canonicalId: createUploadedPaperCanonicalId(assetId),
+            checksum,
             id: assetId,
             importedByUserId: actorUserId,
             sourceLocator: assetId,
             sourceType: "upload",
             storageKey,
-            title: `Uploaded paper ${assetId}`,
+            title: "Uploaded paper",
           },
           entry: {
             addedByUserId: actorUserId,

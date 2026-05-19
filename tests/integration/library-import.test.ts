@@ -1,4 +1,5 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -40,6 +41,10 @@ function createStubPubmedConnector(): PubmedConnector {
   };
 }
 
+function sha256(contents: string): string {
+  return createHash('sha256').update(Buffer.from(contents, 'utf8')).digest('hex');
+}
+
 describe('library import', () => {
   it('creates asset and entry separately', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-import-'));
@@ -60,8 +65,10 @@ describe('library import', () => {
         'user-alice',
       );
 
+      const pdfContents = '%PDF-1.4 demo paper';
+      const pdfChecksum = sha256(pdfContents);
       const uploaded = await app.imports.uploadPdf({
-        pdfContents: '%PDF-1.4 demo paper',
+        pdfContents,
         scope: { id: 'user-alice', type: 'user' },
         requestedByUserId: 'user-alice',
         spaceId: sharedSpace.id,
@@ -71,10 +78,48 @@ describe('library import', () => {
       const storedPdfPath = join(storageRoot, 'papers', uploaded.asset.id, 'paper.pdf');
 
       expect(uploaded.asset).not.toHaveProperty('storageKey');
+      expect(uploaded.asset).not.toHaveProperty('checksum');
+      expect(uploaded.asset.hasFile).toBe(true);
       expect(existsSync(storedPdfPath)).toBe(true);
-      expect(readFileSync(storedPdfPath, 'utf8')).toBe('%PDF-1.4 demo paper');
+      expect(readFileSync(storedPdfPath, 'utf8')).toBe(pdfContents);
+      expect(JSON.stringify(uploaded)).not.toContain(pdfChecksum);
       expect(uploaded.entry.paperAssetId).toBe(uploaded.asset.id);
       expect(uploaded.entry.scope).toEqual({ id: 'user-alice', type: 'user' });
+
+      unlinkSync(storedPdfPath);
+      expect(existsSync(storedPdfPath)).toBe(false);
+
+      const duplicatePersonalUpload = await app.imports.uploadPdf({
+        pdfContents,
+        scope: { id: 'user-alice', type: 'user' },
+        requestedByUserId: 'user-alice',
+        spaceId: sharedSpace.id,
+        visibility: 'private',
+      }, 'user-alice');
+      const projectUploadSameBytes = await app.imports.uploadPdf({
+        pdfContents,
+        scope: { id: project.project.id, type: 'project' },
+        requestedByUserId: 'user-alice',
+        spaceId: sharedSpace.id,
+        visibility: 'published_to_project',
+      }, 'user-alice');
+
+      expect(duplicatePersonalUpload.asset).not.toHaveProperty('storageKey');
+      expect(duplicatePersonalUpload.asset).not.toHaveProperty('checksum');
+      expect(JSON.stringify(duplicatePersonalUpload)).not.toContain(pdfChecksum);
+      expect(JSON.stringify(projectUploadSameBytes)).not.toContain(pdfChecksum);
+      expect(duplicatePersonalUpload.asset.id).toBe(uploaded.asset.id);
+      expect(duplicatePersonalUpload.entry.id).toBe(uploaded.entry.id);
+      expect(existsSync(storedPdfPath)).toBe(true);
+      expect(readFileSync(storedPdfPath, 'utf8')).toBe(pdfContents);
+      expect(projectUploadSameBytes.asset.id).toBe(uploaded.asset.id);
+      expect(projectUploadSameBytes.entry.id).not.toBe(uploaded.entry.id);
+      expect(projectUploadSameBytes.entry.scope).toEqual({
+        id: project.project.id,
+        type: 'project',
+      });
+      expect(projectUploadSameBytes.entry.spaceId).toBe(sharedSpace.id);
+      expect(readdirSync(join(storageRoot, 'papers'))).toEqual([uploaded.asset.id]);
 
       const firstImported = await app.imports.importPaper({
         scope: { id: project.project.id, type: 'project' },
@@ -102,6 +147,7 @@ describe('library import', () => {
       }, 'user-alice');
 
       expect(firstImported.asset.id).toBe(secondImported.asset.id);
+      expect(firstImported.asset.hasFile).toBe(false);
       expect(firstImported.entry.id).not.toBe(secondImported.entry.id);
       expect(firstImported.entry.spaceId).toBe(sharedSpace.id);
       expect(firstImported.entry.scope).toEqual({
