@@ -161,6 +161,15 @@ function createUploadedPaperCanonicalId(assetId: string): string {
   return `upload:${assetId}`;
 }
 
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
+}
+
 function mapAsset(asset: PersistedPaperAssetRecord): PaperAssetRecord {
   return {
     abstractText: asset.abstractText,
@@ -189,6 +198,36 @@ async function ensureExistingFileAssetBytes(
   }
 
   await fileStore.writeBuffer(asset.storageKey, contents);
+}
+
+async function adoptExistingFileAsset(
+  store: ImportStore,
+  asset: PersistedPaperAssetRecord,
+  input: {
+    actorUserId: string;
+    checksum: string;
+    pdfBytes: Buffer;
+    scopeContext: { compatibilitySpaceId?: string; scope: ScopeRef };
+  },
+): Promise<ImportedLibraryRecord> {
+  await ensureExistingFileAssetBytes(
+    store.fileStore,
+    asset,
+    input.pdfBytes,
+    input.checksum,
+  );
+
+  return mapPersistedLibraryEntryView(
+    (
+      await store.libraryRepository.adoptExistingPaperAsset({
+        addedByUserId: input.actorUserId,
+        legacySpaceId: input.scopeContext.compatibilitySpaceId,
+        legacyVisibility: compatibilityVisibilityForScope(input.scopeContext.scope),
+        paperAssetId: asset.id,
+        scope: input.scopeContext.scope,
+      })
+    ).view,
+  );
 }
 
 function compatibilitySpaceIdForEntry(
@@ -288,24 +327,12 @@ export function createImportService(store: ImportStore): ImportService {
       );
 
       if (existingFileAsset?.storageKey) {
-        await ensureExistingFileAssetBytes(
-          store.fileStore,
-          existingFileAsset,
-          pdfBytes,
+        return adoptExistingFileAsset(store, existingFileAsset, {
+          actorUserId,
           checksum,
-        );
-
-        return mapPersistedLibraryEntryView(
-          (
-            await store.libraryRepository.adoptExistingPaperAsset({
-              addedByUserId: actorUserId,
-              legacySpaceId: scopeContext.compatibilitySpaceId,
-              legacyVisibility: compatibilityVisibilityForScope(scopeContext.scope),
-              paperAssetId: existingFileAsset.id,
-              scope: scopeContext.scope,
-            })
-          ).view,
-        );
+          pdfBytes,
+          scopeContext,
+        });
       }
 
       const assetId = createUploadedPaperAssetId();
@@ -315,26 +342,49 @@ export function createImportService(store: ImportStore): ImportService {
       );
       const visibility = compatibilityVisibilityForScope(scopeContext.scope);
 
-      return mapPersistedLibraryEntryView(
-        await store.libraryRepository.importScopedEntry({
-          asset: {
-            canonicalId: createUploadedPaperCanonicalId(assetId),
-            checksum,
-            id: assetId,
-            importedByUserId: actorUserId,
-            sourceLocator: assetId,
-            sourceType: "upload",
-            storageKey,
-            title: "Uploaded paper",
-          },
-          entry: {
-            addedByUserId: actorUserId,
-            legacySpaceId: scopeContext.compatibilitySpaceId,
-            legacyVisibility: visibility,
-            scope: scopeContext.scope,
-          },
-        }),
-      );
+      try {
+        return mapPersistedLibraryEntryView(
+          await store.libraryRepository.importScopedEntry({
+            asset: {
+              canonicalId: createUploadedPaperCanonicalId(assetId),
+              checksum,
+              id: assetId,
+              importedByUserId: actorUserId,
+              sourceLocator: assetId,
+              sourceType: "upload",
+              storageKey,
+              title: "Uploaded paper",
+            },
+            entry: {
+              addedByUserId: actorUserId,
+              legacySpaceId: scopeContext.compatibilitySpaceId,
+              legacyVisibility: visibility,
+              scope: scopeContext.scope,
+            },
+          }),
+        );
+      } catch (error) {
+        await store.fileStore.deleteBuffer(storageKey).catch(() => undefined);
+
+        if (!isUniqueConstraintError(error)) {
+          throw error;
+        }
+
+        const racedFileAsset = await store.libraryRepository.findPaperAssetByChecksum(
+          checksum,
+        );
+
+        if (!racedFileAsset?.storageKey) {
+          throw error;
+        }
+
+        return adoptExistingFileAsset(store, racedFileAsset, {
+          actorUserId,
+          checksum,
+          pdfBytes,
+          scopeContext,
+        });
+      }
     },
     async importToPersonalLibrary(
       input: {
