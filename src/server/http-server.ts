@@ -841,6 +841,25 @@ async function handleApiRequest(
       return true;
     }
 
+    if (pathname === "/api/command-search" && method === "GET") {
+      const actor = await getActor(request, {
+        allowLegacyTestOverride: false,
+        sessionRoutes: app.session,
+      });
+      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      sendJson(
+        response,
+        200,
+        await app.commandSearch.search({
+          actorUserId: actor.userId,
+          projectId: optionalQueryParam(requestUrl, "projectId"),
+          query: optionalQueryParam(requestUrl, "query") ?? "",
+        }),
+        method,
+      );
+      return true;
+    }
+
     if (pathname === "/api/spaces" && method === "POST") {
       const actor = await getActor(request, actorOptions);
       rejectLegacyIdentityQueryFields(actor, requestUrl);

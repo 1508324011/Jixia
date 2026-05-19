@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
+import { CommandPalette } from "./command-palette";
 import { useSessionAuth } from "../lib/session-auth";
 import {
   deriveWorkbenchRouteContext,
@@ -220,6 +221,10 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2">
+            <CommandPalette
+              projectId={resolvedProjectId}
+              onNavigate={(route) => navigate(route)}
+            />
             {user ? (
               <span className="inline-flex items-center rounded-full bg-notion-sidebar-hover px-2.5 py-1 text-xs font-medium text-notion-text-secondary">
                 {user.displayName}
