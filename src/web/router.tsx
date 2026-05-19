@@ -38,6 +38,7 @@ export function AppRouter() {
           <Route path="/library" element={<LibraryPage mode="personal" />} />
           <Route path="/library/:entryId/reader" element={<ReaderPage />} />
           <Route path="/notebook" element={<NotebookPage />} />
+          <Route path="/notebook/:documentId" element={<NotebookPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:projectId" element={<ProjectPage />} />
           <Route path="/projects/:projectId/library" element={<LibraryPage />} />
