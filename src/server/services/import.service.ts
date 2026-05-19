@@ -135,6 +135,10 @@ async function resolveAuthorizedImportScopeContext(
     throw new Error("Access denied for the requested project library.");
   }
 
+  if (membership.role !== "owner" && membership.role !== "editor") {
+    throw new Error("Access denied for the requested project library mutation.");
+  }
+
   if (compatibilitySpaceId && project.spaceId !== compatibilitySpaceId) {
     // Deprecated space context can fail closed, but it cannot replace the
     // persisted Project.spaceId or bypass ProjectMember authority.

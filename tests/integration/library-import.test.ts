@@ -182,6 +182,86 @@ describe('library import', () => {
     }
   }, 20_000);
 
+  it('requires project owner or editor role for project library imports and uploads', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-project-role-'));
+
+    try {
+      const app = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env: createLibraryEnv(storageRoot),
+      });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Role Guard Space' },
+        'user-alice',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Role Guard Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        project.project.id,
+        { role: 'editor', userId: 'user-editor' },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        project.project.id,
+        { role: 'viewer', userId: 'user-viewer' },
+        'user-alice',
+      );
+
+      const editorImport = await app.imports.importPaper({
+        scope: { id: project.project.id, type: 'project' },
+        requestedByUserId: 'user-editor',
+        sourceLocator: '10.1000/editor-project-import',
+        sourceType: 'doi',
+        spaceId: sharedSpace.id,
+        visibility: 'published_to_project',
+      }, 'user-editor');
+      const editorUpload = await app.imports.uploadPdf({
+        pdfContents: '%PDF-1.4 editor project upload',
+        scope: { id: project.project.id, type: 'project' },
+        requestedByUserId: 'user-editor',
+        spaceId: sharedSpace.id,
+        visibility: 'published_to_project',
+      }, 'user-editor');
+
+      expect(editorImport.entry.scope).toEqual({
+        id: project.project.id,
+        type: 'project',
+      });
+      expect(editorUpload.entry.scope).toEqual({
+        id: project.project.id,
+        type: 'project',
+      });
+      expect(editorUpload.asset.hasFile).toBe(true);
+
+      await expect(
+        app.imports.importPaper({
+          scope: { id: project.project.id, type: 'project' },
+          requestedByUserId: 'user-viewer',
+          sourceLocator: '10.1000/viewer-project-import',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        }, 'user-viewer'),
+      ).rejects.toThrow(/project library mutation|access denied/i);
+
+      await expect(
+        app.imports.uploadPdf({
+          pdfContents: '%PDF-1.4 viewer project upload',
+          scope: { id: project.project.id, type: 'project' },
+          requestedByUserId: 'user-viewer',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        }, 'user-viewer'),
+      ).rejects.toThrow(/project library mutation|access denied/i);
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
+
   it('uses project membership instead of stale legacy space mirrors for project library reads', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-library-prisma-space-'));
     const databaseUrl = `file:${join(storageRoot, 'jixia-library-space.db')}`;
