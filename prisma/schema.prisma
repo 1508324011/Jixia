@@ -156,7 +156,7 @@ model PaperAsset {
   sourceType      String
   sourceLocator   String
   storageKey      String?
-  checksum        String?
+  checksum        String?        @unique
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   importedByUserId String
@@ -165,8 +165,6 @@ model PaperAsset {
   generatedInsightEvidenceSpans GeneratedInsightEvidenceSpan[]
   notebookCitations NotebookDocumentCitation[]
   projectDocCitations ProjectDocCitation[]
-
-  @@index([checksum])
 }
 
 model LibraryEntry {

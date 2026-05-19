@@ -346,7 +346,7 @@ export async function initializeLibraryPersistence(
     CREATE UNIQUE INDEX IF NOT EXISTS "PaperAsset_canonicalId_key" ON "PaperAsset"("canonicalId")
   `);
   await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "PaperAsset_checksum_idx" ON "PaperAsset"("checksum")
+    CREATE UNIQUE INDEX IF NOT EXISTS "PaperAsset_checksum_key" ON "PaperAsset"("checksum")
   `);
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "LibraryEntry" (
