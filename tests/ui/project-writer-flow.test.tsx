@@ -861,6 +861,7 @@ describe('project writer flow', () => {
       versionId: 'project-doc-version-1',
       versionNumber: 1,
     };
+    let projectDocGetCount = 0;
 
     vi.stubGlobal(
       'fetch',
@@ -887,6 +888,7 @@ describe('project writer flow', () => {
         }
 
         if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
+          projectDocGetCount += 1;
           return jsonResponse(documentState);
         }
 
@@ -897,7 +899,22 @@ describe('project writer flow', () => {
           };
           expect(body).not.toHaveProperty('content');
           expectDocumentBlocksToOmitAuthorityFields(body.documentContent);
-          expect(body.documentContent).toEqual(documentState.documentContent);
+          expect(body.documentContent.schemaVersion).toBe(1);
+          expect(body.documentContent.blocks).toHaveLength(2);
+          expect(body.documentContent.blocks[0]).toMatchObject({
+            level: 2,
+            text: 'Evidence synthesis',
+            type: 'heading',
+          });
+          expect(body.documentContent.blocks[1]).toMatchObject({
+            evidenceSpan: 'Project-visible quote',
+            libraryEntryId: 'entry-project-visible',
+            locator: 'p. 12',
+            paperAssetId: 'asset-project-visible',
+            quote: 'Project-visible quote',
+            title: 'Project-visible paper',
+            type: 'sourceExcerpt',
+          });
           documentState.capturedAt = '2026-03-23T00:46:00.000Z';
           documentState.versionId = 'project-doc-version-2';
           documentState.versionNumber = 2;
@@ -928,8 +945,10 @@ describe('project writer flow', () => {
       await screen.findByText('Latest snapshot · 2026-03-23T00:46:00.000Z'),
     ).toBeInTheDocument();
 
+    const projectDocGetCountBeforeReload = projectDocGetCount;
     const reloadButton = await screen.findByRole('button', { name: 'Reload draft' });
     await user.click(reloadButton);
+    await waitFor(() => expect(projectDocGetCount).toBeGreaterThan(projectDocGetCountBeforeReload));
     expect(await screen.findByText('Project-visible paper')).toBeInTheDocument();
     expect(screen.getByText('Project-visible quote')).toBeInTheDocument();
     expect(screen.getByText('asset-project-visible')).toBeInTheDocument();

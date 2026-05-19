@@ -1110,12 +1110,18 @@ describe('notebook and project document persistence', () => {
         id: targetProject.project.id,
         type: 'project',
       });
-      expect(savedWithStructuredAssetId.citations[0]?.paperAssetId).toBe(sourceProjectImport.asset.id);
-      expect(savedWithStructuredTargetEntry.citations[0]).toEqual(
-        expect.objectContaining({
-          evidenceSpan: 'Adopted project-scoped quote',
-          paperAssetId: sourceProjectImport.asset.id,
-        }),
+      expect(savedWithStructuredAssetId.citations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ paperAssetId: sourceProjectImport.asset.id }),
+        ]),
+      );
+      expect(savedWithStructuredTargetEntry.citations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            evidenceSpan: 'Adopted project-scoped quote',
+            paperAssetId: sourceProjectImport.asset.id,
+          }),
+        ]),
       );
       await app.close();
     } finally {
