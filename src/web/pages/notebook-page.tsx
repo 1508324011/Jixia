@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 import type { DocumentBlockDocument } from "@shared/contracts/document-content";
 import type {
@@ -17,7 +18,21 @@ const DEFAULT_NOTEBOOK_TITLE = "Private research notebook";
 
 type PageStatus = "idle" | "loading" | "saving";
 
+function decodeRouteDocumentId(documentId: string | undefined): string {
+  if (!documentId) {
+    return "";
+  }
+
+  try {
+    return decodeURIComponent(documentId);
+  } catch {
+    return documentId;
+  }
+}
+
 export function NotebookPage() {
+  const navigate = useNavigate();
+  const { documentId: routeDocumentId } = useParams<{ documentId?: string }>();
   const [documents, setDocuments] = useState<NotebookDocumentRecord[]>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [snapshot, setSnapshot] = useState<NotebookDocumentSnapshot | null>(null);
@@ -34,6 +49,8 @@ export function NotebookPage() {
     [documents, selectedDocumentId],
   );
 
+  const preferredRouteDocumentId = decodeRouteDocumentId(routeDocumentId);
+
   async function loadNotebookList(preferredDocumentId?: string): Promise<void> {
     setStatus("loading");
     setError(null);
@@ -41,8 +58,11 @@ export function NotebookPage() {
     try {
       const response = await apiClient.listNotebooks();
       setDocuments(response.documents);
+      const visiblePreferredDocument = response.documents.find((document) =>
+        document.id === preferredDocumentId
+      );
       const nextDocumentId =
-        preferredDocumentId || response.documents[0]?.id || "";
+        visiblePreferredDocument?.id || response.documents[0]?.id || "";
       setSelectedDocumentId(nextDocumentId);
 
       if (nextDocumentId) {
@@ -67,8 +87,8 @@ export function NotebookPage() {
   }
 
   useEffect(() => {
-    void loadNotebookList();
-  }, []);
+    void loadNotebookList(preferredRouteDocumentId);
+  }, [preferredRouteDocumentId]);
 
   async function handleSelectDocument(documentId: string): Promise<void> {
     setSelectedDocumentId(documentId);
@@ -184,7 +204,7 @@ export function NotebookPage() {
                   className="panel-link"
                   key={document.id}
                   type="button"
-                  onClick={() => void handleSelectDocument(document.id)}
+                  onClick={() => navigate(`/notebook/${encodeURIComponent(document.id)}`)}
                 >
                   {document.title}
                 </button>

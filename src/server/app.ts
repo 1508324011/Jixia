@@ -85,6 +85,8 @@ import {
   createHomeCockpitRoutes,
   type HomeCockpitRoutes,
 } from './routes/home-cockpit.routes';
+import { createCommandSearchService } from './services/command-search.service';
+import type { CommandSearchService } from './services/command-search.service';
 import {
   createProjectsRoutes,
   type ProjectsRoutes,
@@ -211,6 +213,7 @@ interface LegacyStoredLibraryEntry {
 
 export interface JixiaApp {
   close(): Promise<void>;
+  commandSearch: CommandSearchService;
   credentials: CredentialsRoutes;
   health: HealthRoutes;
   homeCockpit: HomeCockpitRoutes;
@@ -1056,6 +1059,13 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const spacesRoutes = createSpacesRoutes(spacesService);
   const credentialsRoutes = createCredentialsRoutes(credentialsService);
   const libraryRoutes = createLibraryRoutes(libraryService);
+  const commandSearchService = createCommandSearchService({
+    jobs: jobsRoutes,
+    library: libraryRoutes,
+    notebooks: notebooksRoutes,
+    projectDocRepository,
+    projects: projectsRoutes,
+  });
   let closePromise: Promise<void> | null = null;
 
   return {
@@ -1063,6 +1073,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       closePromise ??= prismaClient.$disconnect().catch(() => undefined);
       return closePromise;
     },
+    commandSearch: commandSearchService,
     credentials: credentialsRoutes,
     health: createHealthRoutes(),
     homeCockpit: createHomeCockpitRoutes(

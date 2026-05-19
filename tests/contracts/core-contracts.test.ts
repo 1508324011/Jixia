@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
+import * as commandSearch from '../../src/shared/contracts/command-search';
 import * as jobs from '../../src/shared/contracts/jobs';
 import * as library from '../../src/shared/contracts/library';
 import * as documentContent from '../../src/shared/contracts/document-content';
@@ -12,6 +13,12 @@ import * as reading from '../../src/shared/contracts/reading';
 import * as spaces from '../../src/shared/contracts/spaces';
 import * as writing from '../../src/shared/contracts/writing';
 
+import type {
+  CommandSearchObjectKind,
+  CommandSearchResponse,
+  CommandSearchResult,
+  CommandSearchResultScope,
+} from '../../src/shared/contracts/command-search';
 import type {
   CreateSpaceRequest,
   MembershipQuery,
@@ -876,6 +883,47 @@ describe('core contracts', () => {
 
     expectTypeOf<JobStatus>().toEqualTypeOf<
       'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+    >();
+  });
+
+  it('exports command search payloads for browser-safe internal object lookup', () => {
+    expect(commandSearch).toBeTruthy();
+
+    const scope: CommandSearchResultScope = {
+      id: 'project_001',
+      projectId: 'project_001',
+      type: 'project',
+    };
+    const result: CommandSearchResult = {
+      id: 'project-doc:doc_001',
+      kind: 'project-doc',
+      metadata: {
+        publishState: 'draft',
+        versionNumber: 2,
+      },
+      route: '/projects/project_001/writing/doc_001',
+      scope,
+      subtitle: 'Project Doc · draft',
+      title: 'Shared synthesis',
+      updatedAt: '2026-05-18T00:00:00.000Z',
+    };
+    const response: CommandSearchResponse = {
+      contract: commandSearch.commandSearchContract,
+      generatedAt: '2026-05-18T00:01:00.000Z',
+      projectId: 'project_001',
+      query: 'synthesis',
+      results: [result],
+      totalCount: 1,
+    };
+
+    expect(response.contract).toBe('jixia-command-search-contract');
+    expect(response.results[0]?.route).toBe('/projects/project_001/writing/doc_001');
+    expect(response.results[0]?.metadata?.versionNumber).toBe(2);
+    expectTypeOf<CommandSearchObjectKind>().toEqualTypeOf<
+      'project' | 'project-doc' | 'library-entry' | 'notebook' | 'job'
+    >();
+    expectTypeOf<CommandSearchResult['metadata']>().toMatchTypeOf<
+      Record<string, string | number | boolean | null> | undefined
     >();
   });
 });

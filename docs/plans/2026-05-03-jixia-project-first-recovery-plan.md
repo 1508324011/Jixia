@@ -398,6 +398,14 @@ Do not implement these before the recovery loop passes:
 - Offline-first clients or local database sync.
 - Public SaaS deployment, billing, or multi-tenant hosting beyond lab-controlled spaces.
 
+Current implementation note (2026-05-19): the internal command palette is no
+longer treated as the deferred global-search feature when it only queries the
+server-owned `/api/command-search` index for session-visible projects, library
+entries, private notebooks, Project Docs, and scoped jobs. This is allowed as a
+navigation affordance over already-authorized recovery-loop objects; external or
+cross-workspace global search, AI Workspace discovery, provider search, and any
+client-authored index remain deferred.
+
 ## ✅ Verification gates
 
 Every implementation phase must carry verification evidence.

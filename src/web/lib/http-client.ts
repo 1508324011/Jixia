@@ -1,4 +1,5 @@
 import type { CredentialRecord } from "@shared/contracts/credentials";
+import type { CommandSearchResponse } from "@shared/contracts/command-search";
 import type {
   DiscoverySearchResponse,
   DiscoveryTodayResponse,
@@ -94,6 +95,10 @@ type CreateNotebookPayload = {
 type CreateReadingNotePayload = {
   body: string;
   libraryEntryId: string;
+};
+type SearchCommandsInput = {
+  projectId?: string;
+  query: string;
 };
 type CreateReadingNoteForEntryPayload = {
   body: string;
@@ -322,6 +327,15 @@ export const apiClient = {
   searchDiscovery(query: string): Promise<DiscoverySearchResponse> {
     return requestJson("/api/discovery/search", {
       query: { query },
+    });
+  },
+  searchCommands(input: SearchCommandsInput): Promise<CommandSearchResponse> {
+    return requestJson("/api/command-search", {
+      credentials: "same-origin",
+      query: {
+        projectId: input.projectId,
+        query: input.query,
+      },
     });
   },
   importToPersonalLibrary(

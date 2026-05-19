@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 
 import type { CredentialRecord } from "@shared/contracts/credentials";
 import type {
@@ -196,12 +197,12 @@ function mergeJobAudits(
   );
 }
 
-function readRequestedScopeKey(): string {
-  if (typeof window === "undefined") {
+function readRequestedScopeKey(search?: string): string {
+  if (typeof search !== "string" && typeof window === "undefined") {
     return "";
   }
 
-  const searchParams = new URLSearchParams(window.location.search);
+  const searchParams = new URLSearchParams(search ?? window.location.search);
   const scopeType = searchParams.get("scopeType");
   const scopeId = searchParams.get("scopeId");
 
@@ -212,7 +213,21 @@ function readRequestedScopeKey(): string {
   return "";
 }
 
-function persistSelectedScopeKey(scopeKey: string): void {
+function readRequestedJobId(search?: string): string | null {
+  if (typeof search !== "string" && typeof window === "undefined") {
+    return null;
+  }
+
+  const searchParams = new URLSearchParams(search ?? window.location.search);
+  const jobId = searchParams.get("jobId")?.trim();
+
+  return jobId || null;
+}
+
+function persistJobsUrlSelection(
+  scopeKey: string,
+  jobId: string | null,
+): void {
   if (typeof window === "undefined") {
     return;
   }
@@ -228,10 +243,17 @@ function persistSelectedScopeKey(scopeKey: string): void {
     nextUrl.searchParams.delete("scopeId");
   }
 
-  window.history.replaceState({}, "", `${nextUrl.pathname}${nextUrl.search}`);
+  if (jobId) {
+    nextUrl.searchParams.set("jobId", jobId);
+  } else {
+    nextUrl.searchParams.delete("jobId");
+  }
+
+  window.history.replaceState({}, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
 }
 
 export function useJobsPresenter(): JobsViewModel {
+  const location = useLocation();
   const { user } = useSessionAuth();
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
@@ -244,7 +266,7 @@ export function useJobsPresenter(): JobsViewModel {
   const [isRunningJob, setIsRunningJob] = useState(false);
   const [selectedScopeKey, setSelectedScopeKeyState] = useState(readRequestedScopeKey);
   const [selectedCredentialRef, setSelectedCredentialRefState] = useState("");
-  const [selectedJobId, setSelectedJobIdState] = useState<string | null>(null);
+  const [selectedJobId, setSelectedJobIdState] = useState<string | null>(readRequestedJobId);
   const [selectedUserSpaceId, setSelectedUserSpaceIdState] = useState("");
   const subscriptionRef = useRef<{ close(): void } | null>(null);
   const isMountedRef = useRef(false);
@@ -252,6 +274,7 @@ export function useJobsPresenter(): JobsViewModel {
   const activityGenerationRef = useRef(0);
   const runGenerationRef = useRef(0);
   const selectedScopeKeyRef = useRef(selectedScopeKey);
+  const lastLocationSearchRef = useRef(location.search);
 
   const canCommitRefresh = useCallback((generation: number) => {
     return isMountedRef.current && refreshGenerationRef.current === generation;
@@ -382,7 +405,10 @@ export function useJobsPresenter(): JobsViewModel {
     }
   }, [canCommitActivity]);
 
-  const refresh = useCallback(async (requestedScopeKey?: string) => {
+  const refresh = useCallback(async (
+    requestedScopeKey?: string,
+    requestedJobId?: string | null,
+  ) => {
     if (!user?.id) {
       return;
     }
@@ -438,11 +464,11 @@ export function useJobsPresenter(): JobsViewModel {
       const nextScope = findScope(nextAvailableScopes, nextScopeKey);
       selectedScopeKeyRef.current = nextScopeKey;
       setSelectedScopeKeyState(nextScopeKey);
-      persistSelectedScopeKey(nextScopeKey);
 
       if (!nextScope) {
         setJobs([]);
         setSelectedJobIdState(null);
+        persistJobsUrlSelection(nextScopeKey, null);
         setEvents([]);
         setAudits([]);
         return;
@@ -458,8 +484,17 @@ export function useJobsPresenter(): JobsViewModel {
 
       setJobs(nextJobs);
 
-      const nextSelectedJobId = resolveSelectedJobId(nextJobs, selectedJobId);
+      const selectedJobHint = requestedJobId === undefined
+        ? selectedJobId
+        : requestedJobId;
+      const nextSelectedJobId = resolveSelectedJobId(nextJobs, selectedJobHint);
       setSelectedJobIdState(nextSelectedJobId);
+      persistJobsUrlSelection(
+        nextScopeKey,
+        selectedJobHint && selectedJobHint === nextSelectedJobId
+          ? nextSelectedJobId
+          : null,
+      );
 
       if (!nextSelectedJobId) {
         activityGenerationRef.current += 1;
@@ -474,6 +509,7 @@ export function useJobsPresenter(): JobsViewModel {
 
       setJobs([]);
       setSelectedJobIdState(null);
+      persistJobsUrlSelection(selectedScopeKey, null);
       setEvents([]);
       setAudits([]);
       setError(
@@ -495,6 +531,24 @@ export function useJobsPresenter(): JobsViewModel {
 
     void refresh();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || location.search === lastLocationSearchRef.current) {
+      return;
+    }
+
+    lastLocationSearchRef.current = location.search;
+    const requestedScopeKey = readRequestedScopeKey(location.search);
+    const requestedJobId = readRequestedJobId(location.search);
+
+    selectedScopeKeyRef.current = requestedScopeKey;
+    setSelectedScopeKeyState(requestedScopeKey);
+    setSelectedJobIdState(requestedJobId);
+    setJobs([]);
+    setEvents([]);
+    setAudits([]);
+    void refresh(requestedScopeKey, requestedJobId);
+  }, [location.search, refresh, user?.id]);
 
   useEffect(() => {
     if (selectedScope?.type !== "user") {
@@ -575,16 +629,23 @@ export function useJobsPresenter(): JobsViewModel {
   const setSelectedScopeKey = useCallback((nextScopeKey: string) => {
     selectedScopeKeyRef.current = nextScopeKey;
     setSelectedScopeKeyState(nextScopeKey);
-    persistSelectedScopeKey(nextScopeKey);
+    persistJobsUrlSelection(nextScopeKey, null);
     setSelectedJobIdState(null);
+    setJobs([]);
     setEvents([]);
     setAudits([]);
-    void refresh(nextScopeKey);
+    void refresh(nextScopeKey, null);
   }, [refresh]);
 
   const setSelectedJobId = useCallback((jobId: string) => {
+    if (!jobs.some((job) => job.id === jobId)) {
+      persistJobsUrlSelection(resolvedSelectedScopeKey, null);
+      return;
+    }
+
     setSelectedJobIdState(jobId);
-  }, []);
+    persistJobsUrlSelection(resolvedSelectedScopeKey, jobId);
+  }, [jobs, resolvedSelectedScopeKey]);
 
   const setSelectedCredentialRef = useCallback((credentialRef: string) => {
     setSelectedCredentialRefState(credentialRef);
@@ -643,6 +704,7 @@ export function useJobsPresenter(): JobsViewModel {
         sortJobs([createdJob, ...currentJobs.filter((job) => job.id !== createdJob.id)])
       );
       setSelectedJobIdState(createdJob.id);
+      persistJobsUrlSelection(runScopeKey, createdJob.id);
       setEvents([]);
       setAudits([]);
 
@@ -652,7 +714,7 @@ export function useJobsPresenter(): JobsViewModel {
         return;
       }
 
-      await refresh(runScopeKey);
+      await refresh(runScopeKey, createdJob.id);
     } catch (presenterError) {
       if (!canCommitRun(runGeneration, runScopeKey)) {
         return;
@@ -701,6 +763,7 @@ export function useJobsPresenter(): JobsViewModel {
         ))
       );
       setSelectedJobIdState(cancelledJob.id);
+      persistJobsUrlSelection(cancelScopeKey, cancelledJob.id);
       await loadJobActivity(cancelledJob.id);
     } catch (presenterError) {
       if (!canCommitRun(runGeneration, cancelScopeKey)) {
