@@ -76,7 +76,9 @@ export function WritingPage() {
       await presenter.save({
         citations: presenter.citations.map((citation) => ({
           evidenceSpan: citation.evidenceSpan,
+          libraryEntryId: citation.libraryEntryId,
           paperAssetId: citation.paperAssetId,
+          readerExcerptId: citation.readerExcerptId,
         })),
         documentContent: draftDocumentContentRef.current,
       });

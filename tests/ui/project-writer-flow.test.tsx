@@ -751,10 +751,21 @@ describe('project writer flow', () => {
 
         if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
           const body = JSON.parse(String(init.body)) as {
+            citations: Array<{
+              evidenceSpan?: string;
+              paperAssetId: string;
+              readerExcerptId?: string;
+            }>;
             content?: string;
             documentContent: typeof documentState.documentContent;
           };
           expect(body).not.toHaveProperty('content');
+          expect(body.citations).toEqual([
+            {
+              evidenceSpan: 'Tumor board evidence',
+              paperAssetId: 'asset-1',
+            },
+          ]);
           expectDocumentBlocksToOmitAuthorityFields(body.documentContent);
           expect(body.documentContent).toEqual({
             blocks: [
@@ -953,6 +964,182 @@ describe('project writer flow', () => {
     expect(screen.getByText('Project-visible quote')).toBeInTheDocument();
     expect(screen.getByText('asset-project-visible')).toBeInTheDocument();
     expect(screen.getByText('entry-project-visible')).toBeInTheDocument();
+  });
+
+  it('writing page preserves readerExcerpt-backed citation fields in the save payload', async () => {
+    const user = userEvent.setup();
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'space-project-1',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+    };
+    const documentState = {
+      capturedAt: '2026-03-23T00:40:00.000Z',
+      citations: [
+        {
+          createdAt: '2026-03-23T00:40:00.000Z',
+          evidenceSpan: 'Quoted reader excerpt evidence',
+          id: 'citation-1',
+          libraryEntryId: 'entry-project-visible',
+          paperAssetId: 'asset-project-visible',
+          projectDocVersionId: 'project-doc-version-1',
+          readerExcerptId: 'excerpt-project-visible',
+        },
+      ],
+      content: 'Quoted reader excerpt evidence',
+      documentContent: {
+        blocks: [
+          {
+            evidenceSpan: 'Quoted reader excerpt evidence',
+            libraryEntryId: 'entry-project-visible',
+            paperAssetId: 'asset-project-visible',
+            quote: 'Quoted reader excerpt evidence',
+            readerExcerptId: 'excerpt-project-visible',
+            type: 'sourceExcerpt',
+          },
+          {
+            evidenceSpan: 'Citation block evidence',
+            label: 'Reader excerpt citation',
+            libraryEntryId: 'entry-project-visible',
+            paperAssetId: 'asset-project-visible',
+            readerExcerptId: 'excerpt-project-visible',
+            type: 'citation',
+          },
+          {
+            attribution: 'Reader excerpt',
+            evidenceSpan: 'Editable quote evidence',
+            libraryEntryId: 'entry-project-visible',
+            paperAssetId: 'asset-project-visible',
+            readerExcerptId: 'excerpt-project-visible',
+            text: 'Editable quote evidence',
+            type: 'quote',
+          },
+        ],
+        schemaVersion: 1,
+      },
+      document: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'doc-project-1',
+        projectId: 'project-1',
+        publishState: 'draft',
+        title: 'Tumor board literature synthesis',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+      versionId: 'project-doc-version-1',
+      versionNumber: 1,
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([projectFixture]);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
+          return jsonResponse(documentState);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            citations: Array<{
+              evidenceSpan?: string;
+              libraryEntryId?: string;
+              paperAssetId: string;
+              readerExcerptId?: string;
+            }>;
+            content?: string;
+            documentContent: typeof documentState.documentContent;
+          };
+          expect(body).not.toHaveProperty('content');
+          expect(body.citations).toEqual([
+            {
+              evidenceSpan: 'Quoted reader excerpt evidence',
+              libraryEntryId: 'entry-project-visible',
+              paperAssetId: 'asset-project-visible',
+              readerExcerptId: 'excerpt-project-visible',
+            },
+          ]);
+          expectDocumentBlocksToOmitAuthorityFields(body.documentContent);
+          expect(body.documentContent.blocks[0]).toMatchObject({
+            evidenceSpan: 'Quoted reader excerpt evidence',
+            libraryEntryId: 'entry-project-visible',
+            paperAssetId: 'asset-project-visible',
+            quote: 'Quoted reader excerpt evidence',
+            readerExcerptId: 'excerpt-project-visible',
+            type: 'sourceExcerpt',
+          });
+          expect(body.documentContent.blocks[1]).toMatchObject({
+            evidenceSpan: 'Citation block evidence',
+            label: 'Reader excerpt citation',
+            libraryEntryId: 'entry-project-visible',
+            paperAssetId: 'asset-project-visible',
+            readerExcerptId: 'excerpt-project-visible',
+            type: 'citation',
+          });
+          expect(body.documentContent.blocks[2]).toMatchObject({
+            attribution: 'Reader excerpt',
+            evidenceSpan: 'Editable quote evidence',
+            libraryEntryId: 'entry-project-visible',
+            paperAssetId: 'asset-project-visible',
+            readerExcerptId: 'excerpt-project-visible',
+            text: 'Edited reader excerpt quote',
+            type: 'quote',
+          });
+          documentState.capturedAt = '2026-03-23T00:47:00.000Z';
+          documentState.versionId = 'project-doc-version-2';
+          documentState.versionNumber = 2;
+
+          return jsonResponse(documentState);
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-1/writing/doc-project-1');
+
+    expect(await screen.findAllByText('entry-project-visible')).toHaveLength(3);
+
+    const quoteEditor = await screen.findByLabelText('Quote block 3');
+    await user.clear(quoteEditor);
+    await user.type(quoteEditor, 'Edited reader excerpt quote');
+
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(
+      await screen.findByText('Latest snapshot · 2026-03-23T00:47:00.000Z'),
+    ).toBeInTheDocument();
   });
 
   it('writer page keeps reload locked while a save is still pending', async () => {

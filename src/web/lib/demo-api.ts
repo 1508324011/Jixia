@@ -165,6 +165,7 @@ export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
         evidenceSpan?: string;
         libraryEntryId?: string;
         paperAssetId: string;
+        readerExcerptId?: string;
       }>;
       content?: string;
       documentContent?: DocumentBlockDocument;

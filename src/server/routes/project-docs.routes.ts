@@ -40,6 +40,7 @@ export interface ProjectDocsRoutes {
         evidenceSpan?: string;
         libraryEntryId?: string;
         paperAssetId: string;
+        readerExcerptId?: string;
       }>;
       content?: string;
       documentContent?: DocumentBlockDocument;

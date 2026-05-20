@@ -22,6 +22,7 @@ export interface CitationLinkRecord {
   docVersionId: string;
   paperAssetId: string;
   evidenceSpan?: string;
+  readerExcerptId?: string;
 }
 
 export interface WritingDocSnapshot {
