@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 
 import {
+  createHttpTestPubmedConnector,
   loginAs,
   startTestServer,
   withSessionCookie,
@@ -15,7 +16,10 @@ describe("http server phase 3 library slice", () => {
     const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-phase3-"));
 
     try {
-      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
+      const server = await startTestServer(
+        { JIXIA_STORAGE_ROOT: storageRoot },
+        { connectors: { pubmed: createHttpTestPubmedConnector() } },
+      );
 
       try {
         const aliceCookie = await loginAs(server.url, "user-alice");
@@ -98,7 +102,7 @@ describe("http server phase 3 library slice", () => {
       const server = await startTestServer({
         JIXIA_DATABASE_URL: `file:${join(storageRoot, "jixia-http-phase3-scope.db")}`,
         JIXIA_STORAGE_ROOT: storageRoot,
-      });
+      }, { connectors: { pubmed: createHttpTestPubmedConnector() } });
 
       try {
         const aliceCookie = await loginAs(server.url, "user-alice");

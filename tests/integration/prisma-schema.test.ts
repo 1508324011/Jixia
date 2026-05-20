@@ -269,8 +269,13 @@ describe('prisma schema', () => {
     expect(appWiring).toContain('ensureCredentialAuthorityUsable');
     expect(appWiring).not.toContain('credentials: state.credentials');
     expect(appWiring).not.toContain('workbenchSettings: state.workbenchSettings');
-    expect(serializedStateBlock).not.toContain('credentials: state.legacyCredentials');
-    expect(serializedStateBlock).not.toContain('workbenchSettings: state.legacyWorkbenchSettings');
+    expect(appWiring).toContain('Compatibility-only bootstrap input');
+    expect(serializedStateBlock).toContain('pending one-time');
+    expect(serializedStateBlock).toContain('clearLegacyCredentialState removes these fields');
+    expect(serializedStateBlock).toContain('state.legacyCredentials.length > 0');
+    expect(serializedStateBlock).toContain('? state.legacyCredentials');
+    expect(serializedStateBlock).toContain('state.legacyWorkbenchSettings.length > 0');
+    expect(serializedStateBlock).toContain('? state.legacyWorkbenchSettings');
   });
 
   it('keeps project service authority out of legacy json project arrays', () => {
@@ -286,8 +291,18 @@ describe('prisma schema', () => {
   });
 
   it('keeps space service authority out of legacy json space arrays', () => {
+    const appWiring = readFileSync('src/server/app.ts', 'utf8');
     const spaceService = readFileSync('src/server/services/spaces.service.ts', 'utf8');
 
+    expect(appWiring).not.toContain('legacyMirror');
+    expect(appWiring).not.toContain('state.memberships');
+    expect(appWiring).not.toContain('state.spaces');
+    expect(appWiring).not.toContain('parsed.memberships');
+    expect(appWiring).not.toContain('parsed.spaces');
+    expect(appWiring).not.toContain('memberships: state.legacy');
+    expect(appWiring).not.toContain('spaces: state.legacy');
+    expect(spaceService).not.toContain('SpacesLegacyMirror');
+    expect(spaceService).not.toContain('legacyMirror');
     expect(spaceService).not.toContain('store.spaces.push');
     expect(spaceService).not.toContain('store.memberships.push');
     expect(spaceService).not.toContain('store.spaces.filter');
@@ -452,11 +467,20 @@ describe('prisma schema', () => {
       'src/db/repositories/library.repository.ts',
       'utf8',
     );
+    const mapLibraryEntryBlock = libraryRepository.slice(
+      libraryRepository.indexOf('function mapLibraryEntry'),
+      libraryRepository.indexOf('function mapLibraryEntryView'),
+    );
 
     expect(libraryRepository).toContain('scopeType');
     expect(libraryRepository).toContain('LibraryEntry_scope_asset_unique');
     expect(libraryRepository).toContain('PRAGMA foreign_keys = ON');
+    expect(libraryRepository).toContain('Deprecated migration-only columns kept inert');
     expect(libraryRepository).not.toContain('update: {}');
+    expect(libraryRepository).not.toContain('legacySpaceId:');
+    expect(libraryRepository).not.toContain('legacyVisibility:');
+    expect(mapLibraryEntryBlock).not.toContain('legacySpaceId');
+    expect(mapLibraryEntryBlock).not.toContain('legacyVisibility');
 
     expect(appWiring).toContain('createBootstrappedLibraryRepository');
     expect(appWiring).toContain('resolveLegacyLibraryBootstrapInput');
@@ -470,16 +494,24 @@ describe('prisma schema', () => {
     expect(appWiring).not.toContain('libraryEntries: state.libraryEntries');
     expect(appWiring).not.toContain('projectMembers: state.projectMembers');
     expect(appWiring).not.toContain('projects: state.projects');
+    expect(appWiring).toContain('legacyCredentials');
+    expect(appWiring).toContain('legacyWorkbenchSettings');
+    expect(appWiring).not.toContain('state.credentials');
+    expect(appWiring).not.toContain('state.workbenchSettings');
 
     expect(importService).toContain('libraryRepository.importScopedEntry');
     expect(importService).not.toContain('store.paperAssets');
     expect(importService).not.toContain('store.libraryEntries');
     expect(importService).not.toContain('storageKey: asset.storageKey');
+    expect(importService).not.toContain('legacySpaceId');
+    expect(importService).not.toContain('legacyVisibility');
 
     expect(libraryService).toContain('libraryRepository.listLibraryEntriesForScope');
     expect(libraryService).toContain('fileStore.readBuffer');
     expect(libraryService).not.toContain('store.paperAssets');
     expect(libraryService).not.toContain('store.libraryEntries');
+    expect(libraryService).not.toContain('legacySpaceId');
+    expect(libraryService).not.toContain('legacyVisibility');
 
     expect(readingService).toContain('libraryService.assertCanAccessEntry');
     expect(readingService).toContain('readingRepository.listProjectCommentsForEntry');
@@ -505,6 +537,22 @@ describe('prisma schema', () => {
     expect(libraryContract).not.toContain('storageKey?: string');
     expect(httpServer).toContain('const libraryEntryFileMatch = pathname.match');
     expect(httpServer).toContain('^\\/api\\/library\\/([^/]+)\\/file$');
+  });
+
+  it('does not synthesize PubMed records in the production connector', () => {
+    const pubmedConnector = readFileSync('src/server/connectors/pubmed.connector.ts', 'utf8');
+
+    expect(pubmedConnector).not.toContain('fallbackDiscoveryRecords');
+    expect(pubmedConnector).not.toContain('buildFallbackLookup');
+    expect(pubmedConnector).not.toContain('buildFallbackSearch');
+    expect(pubmedConnector).not.toContain('Tumor board biomarkers for rapid review');
+    expect(pubmedConnector).not.toContain('pmid:654321');
+    expect(pubmedConnector).not.toContain('return fallbackResults');
+    expect(pubmedConnector).not.toContain('return buildFallbackLookup');
+    expect(pubmedConnector).not.toContain('Imported PMID paper');
+    expect(pubmedConnector).not.toContain('Imported DOI paper');
+    expect(pubmedConnector).not.toContain('PubMed result ${pmid}');
+    expect(pubmedConnector).toContain('searchLivePubmed(trimmedQuery)');
   });
 
   it('keeps reading comments on explicit project authority instead of visibility-based sharing', () => {

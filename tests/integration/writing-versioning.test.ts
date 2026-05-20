@@ -12,7 +12,8 @@ import {
   createProjectDocRepository,
   createSpaceRepository,
 } from '../../src/db';
-import { createJixiaApp } from '../../src/server/app';
+import { createJixiaApp, type CreateJixiaAppOptions } from '../../src/server/app';
+import type { PubmedConnector } from '../../src/server/connectors/pubmed.connector';
 
 const EMPTY_DOCUMENT_CONTENT: DocumentBlockDocument = {
   blocks: [],
@@ -49,13 +50,38 @@ function createWritingEnv(storageRoot: string) {
   };
 }
 
+function createWritingPubmedConnector(): PubmedConnector {
+  return {
+    async lookup(locator, sourceType) {
+      return {
+        abstractText: `Writing fixture ${sourceType.toUpperCase()} abstract for ${locator}.`,
+        canonicalId: `${sourceType}:${locator}`,
+        title: `Writing fixture ${sourceType.toUpperCase()} paper ${locator}`,
+      };
+    },
+    async search() {
+      return [];
+    },
+  };
+}
+
+function createWritingTestApp(options: CreateJixiaAppOptions) {
+  return createJixiaApp({
+    ...options,
+    connectors: {
+      ...options.connectors,
+      pubmed: options.connectors?.pubmed ?? createWritingPubmedConnector(),
+    },
+  });
+}
+
 describe('notebook and project document persistence', () => {
   it('creates owner-only notebook snapshots and persists them across restarts', async () => {
     const storageRoot = createStorageRoot('jixia-notebook-versioning-');
 
     try {
       const env = createWritingEnv(storageRoot);
-      const firstApp = createJixiaApp({ env });
+      const firstApp = createWritingTestApp({ env });
       const personalSpace = await firstApp.spaces.createSpace(
         { kind: 'personal', name: 'Alice Notebook Space' },
         'user-alice',
@@ -117,7 +143,7 @@ describe('notebook and project document persistence', () => {
 
       await firstApp.close();
 
-      const secondApp = createJixiaApp({ env });
+      const secondApp = createWritingTestApp({ env });
       const secondSnapshot = await secondApp.notebooks.saveDocument(
         {
           citations: [
@@ -153,7 +179,7 @@ describe('notebook and project document persistence', () => {
     const spaceRepository = createSpaceRepository(prisma);
 
     try {
-      const firstApp = createJixiaApp({ env });
+      const firstApp = createWritingTestApp({ env });
       const sharedSpace = await firstApp.spaces.createSpace(
         { kind: 'shared', name: 'Project Writing Space' },
         'user-alice',
@@ -278,7 +304,7 @@ describe('notebook and project document persistence', () => {
 
       await firstApp.close();
 
-      const secondApp = createJixiaApp({ env });
+      const secondApp = createWritingTestApp({ env });
       const secondSnapshot = await secondApp.projectDocs.saveDocument(
         {
           citations: [{ paperAssetId: imported.asset.id }],
@@ -308,7 +334,7 @@ describe('notebook and project document persistence', () => {
     const env = createWritingEnv(storageRoot);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createWritingTestApp({ env });
       const canonicalSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Canonical Citation Space' },
         'user-alice',
@@ -396,7 +422,7 @@ describe('notebook and project document persistence', () => {
     const env = createWritingEnv(storageRoot);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createWritingTestApp({ env });
       const personalSpace = await app.spaces.createSpace(
         { kind: 'personal', name: 'Structured Notebook Space' },
         'user-alice',
@@ -532,7 +558,7 @@ describe('notebook and project document persistence', () => {
     const env = createWritingEnv(storageRoot);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createWritingTestApp({ env });
       const sharedSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Structured Project Space' },
         'user-alice',
@@ -720,7 +746,7 @@ describe('notebook and project document persistence', () => {
     const projectDocRepository = createProjectDocRepository(prisma);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createWritingTestApp({ env });
       const notebook = await app.notebooks.createDocument(
         { title: 'Legacy Plain Notebook' },
         'user-alice',
@@ -783,7 +809,7 @@ describe('notebook and project document persistence', () => {
     const env = createWritingEnv(storageRoot);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createWritingTestApp({ env });
       const targetSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Target Citation Space' },
         'user-alice',
@@ -879,7 +905,7 @@ describe('notebook and project document persistence', () => {
     const env = createWritingEnv(storageRoot);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createWritingTestApp({ env });
       const targetSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Adopted Citation Space' },
         'user-alice',
@@ -956,7 +982,7 @@ describe('notebook and project document persistence', () => {
     const env = createWritingEnv(storageRoot);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createWritingTestApp({ env });
       const sharedSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Reference Pair Space' },
         'user-alice',
@@ -1171,7 +1197,7 @@ describe('notebook and project document persistence', () => {
         ),
       );
 
-      const app = createJixiaApp({ env: createWritingEnv(storageRoot) });
+      const app = createWritingTestApp({ env: createWritingEnv(storageRoot) });
       const persistedState = readFileSync(statePath, 'utf8');
 
       expect(persistedState).not.toContain('legacy-doc');
@@ -1199,7 +1225,7 @@ describe('notebook and project document persistence', () => {
     const env = createWritingEnv(storageRoot);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createWritingTestApp({ env });
       const sharedSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Workbench Writer Space' },
         'user-alice',
@@ -1252,7 +1278,7 @@ describe('notebook and project document persistence', () => {
 
       await app.close();
 
-      const reopenedApp = createJixiaApp({ env });
+      const reopenedApp = createWritingTestApp({ env });
       const reopenedDocument = await reopenedApp.projectDocs.getDocument(
         { documentId: document.id },
         'user-alice',

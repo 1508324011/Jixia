@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createPrismaClient, createSpaceRepository } from '../../src/db';
 import type { PubmedConnector } from '../../src/server/connectors/pubmed.connector';
-import { createJixiaApp } from '../../src/server/app';
+import { createJixiaApp, type CreateJixiaAppOptions } from '../../src/server/app';
 
 function createLibraryEnv(storageRoot: string) {
   return {
@@ -39,6 +39,16 @@ function createStubPubmedConnector(): PubmedConnector {
       ];
     },
   };
+}
+
+function createLibraryTestApp(options: CreateJixiaAppOptions) {
+  return createJixiaApp({
+    ...options,
+    connectors: {
+      ...options.connectors,
+      pubmed: options.connectors?.pubmed ?? createStubPubmedConnector(),
+    },
+  });
 }
 
 function sha256(contents: string): string {
@@ -277,7 +287,7 @@ describe('library import', () => {
         { id: 'space-persisted', kind: 'shared', name: 'Persisted Space' },
         'user-alice',
       );
-      const app = createJixiaApp({ env });
+      const app = createLibraryTestApp({ env });
       const project = await app.projects.createProject(
         { name: 'Persisted Library Project', spaceId: persistedSpace.id },
         'user-alice',
@@ -347,7 +357,7 @@ describe('library import', () => {
         { id: 'space-authoritative', kind: 'shared', name: 'Authoritative Space' },
         'user-alice',
       );
-      const appForProject = createJixiaApp({ env });
+      const appForProject = createLibraryTestApp({ env });
       const project = await appForProject.projects.createProject(
         { name: 'Authoritative Project', spaceId: persistedSpace.id },
         'user-alice',
@@ -395,7 +405,7 @@ describe('library import', () => {
         ),
       );
 
-      const app = createJixiaApp({ env });
+      const app = createLibraryTestApp({ env });
 
       await expect(
         app.imports.importPaper(
@@ -444,7 +454,7 @@ describe('library import', () => {
     const env = createLibraryEnv(storageRoot);
 
     try {
-      const firstApp = createJixiaApp({ env });
+      const firstApp = createLibraryTestApp({ env });
       const space = await firstApp.spaces.createSpace(
         { kind: 'shared', name: 'Restart Library Space' },
         'user-alice',
@@ -497,7 +507,7 @@ describe('library import', () => {
         ),
       );
 
-      const secondApp = createJixiaApp({ env });
+      const secondApp = createLibraryTestApp({ env });
       const bobProjectEntries = await secondApp.library.listEntries({
         actorSpaceId: space.id,
         actorUserId: 'user-bob',
@@ -533,7 +543,7 @@ describe('library import', () => {
     const env = createLibraryEnv(storageRoot);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createLibraryTestApp({ env });
       const sharedSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Adoption Space' },
         'user-alice',
@@ -698,7 +708,7 @@ describe('library import', () => {
 
       await app.close();
 
-      const restartedApp = createJixiaApp({ env });
+      const restartedApp = createLibraryTestApp({ env });
       const restartedAdoption = await restartedApp.library.adoptProjectLibraryEntry({
         actorUserId: 'user-alice',
         projectId: targetProject.project.id,
@@ -750,7 +760,7 @@ describe('library import', () => {
         ),
       );
 
-      const firstApp = createJixiaApp({ env });
+      const firstApp = createLibraryTestApp({ env });
       const firstEntries = await firstApp.library.listEntries({
         actorUserId: 'user-alice',
         scope: { id: 'user-alice', type: 'user' },
@@ -783,7 +793,7 @@ describe('library import', () => {
       expect(scrubbedState.libraryEntries ?? []).toEqual([]);
       expect(scrubbedState.paperAssets ?? []).toEqual([]);
 
-      const restartedApp = createJixiaApp({ env });
+      const restartedApp = createLibraryTestApp({ env });
       const restartedEntries = await restartedApp.library.listEntries({
         actorUserId: 'user-alice',
         scope: { id: 'user-alice', type: 'user' },
@@ -813,7 +823,7 @@ describe('library import', () => {
     const statePath = join(storageRoot, 'server-state.json');
 
     try {
-      const firstApp = createJixiaApp({ env });
+      const firstApp = createLibraryTestApp({ env });
       const space = await firstApp.spaces.createSpace(
         { kind: 'shared', name: 'Bootstrap Marker Space' },
         'user-alice',
@@ -855,7 +865,7 @@ describe('library import', () => {
         ),
       );
 
-      const restartedApp = createJixiaApp({ env });
+      const restartedApp = createLibraryTestApp({ env });
       const persistedState = JSON.parse(readFileSync(statePath, 'utf8')) as {
         libraryEntries?: Array<unknown>;
         paperAssets?: Array<unknown>;
@@ -884,7 +894,7 @@ describe('library import', () => {
     const env = createLibraryEnv(storageRoot);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createLibraryTestApp({ env });
       const projectSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Project Space' },
         'user-alice',
@@ -921,7 +931,7 @@ describe('library import', () => {
     const env = createLibraryEnv(storageRoot);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createLibraryTestApp({ env });
       const sharedSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Legacy Project-like Space' },
         'user-alice',
@@ -991,7 +1001,7 @@ describe('library import', () => {
     const env = createLibraryEnv(storageRoot);
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createLibraryTestApp({ env });
       const firstSpace = await app.spaces.createSpace(
         { kind: 'shared', name: 'Canonical Project Space' },
         'user-alice',
@@ -1042,13 +1052,6 @@ describe('library import', () => {
         scope: { id: canonicalProject.project.id, type: 'project' },
         spaceId: firstSpace.id,
       });
-      const canonicalEntriesWithStaleSpaceMirror = await app.library.listEntries({
-        actorSpaceId: firstSpace.id,
-        actorUserId: 'user-bob',
-        projectId: staleProject.project.id,
-        scope: { id: canonicalProject.project.id, type: 'project' },
-        spaceId: secondSpace.id,
-      });
       const staleProjectEntries = await app.library.listEntries({
         actorSpaceId: secondSpace.id,
         actorUserId: 'user-alice',
@@ -1059,9 +1062,15 @@ describe('library import', () => {
       expect(canonicalEntries.map((entry) => entry.entry.id)).toContain(
         imported.entry.id,
       );
-      expect(
-        canonicalEntriesWithStaleSpaceMirror.map((entry) => entry.entry.id),
-      ).toContain(imported.entry.id);
+      await expect(
+        app.library.listEntries({
+          actorSpaceId: firstSpace.id,
+          actorUserId: 'user-bob',
+          projectId: staleProject.project.id,
+          scope: { id: canonicalProject.project.id, type: 'project' },
+          spaceId: secondSpace.id,
+        }),
+      ).rejects.toThrow(/space context/i);
       expect(staleProjectEntries.map((entry) => entry.entry.id)).not.toContain(
         imported.entry.id,
       );
@@ -1118,7 +1127,12 @@ describe('library import', () => {
 
       expect(discovered).toHaveLength(1);
       expect(discovered[0]).toMatchObject({
+        abstractText: 'PubMed search result for tumor board biomarkers',
         canonicalId: 'pmid:654321',
+        id: 'pmid:654321',
+        imported: false,
+        reason: 'PubMed query matched tumor-board biomarker curation work.',
+        sourceLabel: 'PubMed',
         sourceLocator: '654321',
         sourceType: 'pmid',
         title: 'Tumor board biomarkers for rapid review',

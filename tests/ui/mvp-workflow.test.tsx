@@ -295,8 +295,12 @@ describe('mvp workflow shell', () => {
     await waitFor(() =>
       expect(screen.getByText('Project · Project-first Recovery')).toBeInTheDocument(),
     );
-    expect(screen.getByText('Loading state placeholder')).toBeInTheDocument();
-    expect(screen.getByText('Empty shelf placeholder')).toBeInTheDocument();
+    expect(
+      screen.getByText('Project library · server-owned collaboration context'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Review imported literature entries, metadata, and reading readiness/),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Open reader' }));
 

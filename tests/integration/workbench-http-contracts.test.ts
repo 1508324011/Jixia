@@ -9,7 +9,52 @@ import { createHttpServer } from '../../src/server/http-server';
 import { createPrismaClient } from '../../src/db';
 import { createSecretBox } from '../../src/server/security/secret-box';
 import { createJixiaApp } from '../../src/server/app';
+import type { PubmedConnector } from '../../src/server/connectors/pubmed.connector';
 import { loginAs, withSessionCookie } from './http-session-test-helpers';
+
+const workbenchDiscoveryFixture = {
+  abstractText: 'Biomarker-driven tumor board reviews need fast evidence triage before project handoff.',
+  canonicalId: 'pmid:654321',
+  reason: 'PubMed result for today\'s tumor-board queue.',
+  sourceLabel: 'PubMed',
+  sourceLocator: '654321',
+  sourceType: 'pmid' as const,
+  title: 'Tumor board biomarkers for rapid review',
+};
+
+function createWorkbenchPubmedConnector(): PubmedConnector {
+  return {
+    async lookup(locator, sourceType) {
+      if (sourceType === 'pmid' && locator === workbenchDiscoveryFixture.sourceLocator) {
+        return {
+          abstractText: workbenchDiscoveryFixture.abstractText,
+          canonicalId: workbenchDiscoveryFixture.canonicalId,
+          title: workbenchDiscoveryFixture.title,
+        };
+      }
+
+      return {
+        abstractText: `Fixture ${sourceType.toUpperCase()} metadata for ${locator}`,
+        canonicalId: `${sourceType}:${locator}`,
+        title: `Fixture ${sourceType.toUpperCase()} paper ${locator}`,
+      };
+    },
+    async search() {
+      return [workbenchDiscoveryFixture];
+    },
+  };
+}
+
+function createUnavailablePubmedConnector(): PubmedConnector {
+  return {
+    async lookup(): Promise<never> {
+      throw new Error('PubMed fixture unavailable.');
+    },
+    async search(): Promise<never> {
+      throw new Error('PubMed fixture unavailable.');
+    },
+  };
+}
 
 async function listenOnEphemeralPort(server: ReturnType<typeof createHttpServer>['server']) {
   await new Promise<void>((resolve, reject) => {
@@ -49,6 +94,9 @@ describe('workbench http contracts', () => {
   it('exposes discovery publicly and protects personal/settings workbench APIs behind session cookies', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-http-'));
     const httpServer = createHttpServer({
+      connectors: {
+        pubmed: createWorkbenchPubmedConnector(),
+      },
       env: {
         JIXIA_HOST: '127.0.0.1',
         JIXIA_STORAGE_ROOT: storageRoot,
@@ -499,6 +547,32 @@ describe('workbench http contracts', () => {
     }
   }, 15_000);
 
+  it('surfaces PubMed provider failure without synthetic discovery records', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-discovery-failure-'));
+    const httpServer = createHttpServer({
+      connectors: {
+        pubmed: createUnavailablePubmedConnector(),
+      },
+      env: {
+        JIXIA_HOST: '127.0.0.1',
+        JIXIA_STORAGE_ROOT: storageRoot,
+      },
+    });
+
+    try {
+      const baseUrl = await listenOnEphemeralPort(httpServer.server);
+      const searchResponse = await fetch(`${baseUrl}/api/discovery/search?query=oncology`);
+
+      expect(searchResponse.status).toBe(400);
+      await expect(searchResponse.json()).resolves.toMatchObject({
+        error: expect.stringMatching(/PubMed fixture unavailable/i),
+      });
+    } finally {
+      await closeServer(httpServer.server);
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('rejects matching legacy identity fields on workbench compatibility APIs', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-identity-'));
     const httpServer = createHttpServer({
@@ -772,6 +846,10 @@ describe('workbench http contracts', () => {
 
     try {
       const firstApp = createJixiaApp({ env });
+      const preBootstrapState = readFileSync(join(storageRoot, 'server-state.json'), 'utf8');
+
+      expect(preBootstrapState).toContain('cred-legacy');
+      expect(preBootstrapState).not.toContain('nextSequence');
 
       await expect(
         firstApp.credentials.getWorkbenchSettings('user-alice'),
@@ -893,8 +971,18 @@ describe('workbench http contracts', () => {
         apiKeyConfigured: false,
         defaultImportTarget: 'project-workspace',
       });
+      const savedWorkbenchSettings = await prisma.workbenchSettings.findUniqueOrThrow({
+        where: { userId: 'user-alice' },
+      });
+      const savedCredentialRef = savedWorkbenchSettings.credentialRef;
+
+      expect(savedCredentialRef).toEqual(expect.stringMatching(/^cred-/));
+      if (!savedCredentialRef) {
+        throw new Error('Expected durable workbench settings to reference a credential.');
+      }
+
       await expect(
-        wrongKeyApp.credentials.getStoredCredential('cred-1', 'user-alice'),
+        wrongKeyApp.credentials.getStoredCredential(savedCredentialRef, 'user-alice'),
       ).resolves.toBeNull();
       await expect(
         wrongKeyApp.credentials.saveWorkbenchSettings(
@@ -1021,8 +1109,8 @@ describe('workbench http contracts', () => {
   });
 
   it('persists credential ids across restart and scopes stored credential access to the owner', async () => {
-    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-credential-sequence-'));
-    const databaseUrl = `file:${join(storageRoot, 'jixia-credential-sequence.db')}`;
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-credential-uuid-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-credential-uuid.db')}`;
     const env = {
       JIXIA_DATABASE_URL: databaseUrl,
       JIXIA_STORAGE_ROOT: storageRoot,
@@ -1039,14 +1127,15 @@ describe('workbench http contracts', () => {
         'user-alice',
       );
 
-      expect(firstCredential.credentialRef).toBe('cred-1');
+      expect(firstCredential.credentialRef).toMatch(/^cred-[0-9a-f-]{36}$/);
       await firstApp.close();
 
-      const persistedState = JSON.parse(
-        readFileSync(join(storageRoot, 'server-state.json'), 'utf8'),
-      ) as { nextSequence?: number };
+      const persistedStatePath = join(storageRoot, 'server-state.json');
+      const persistedStateText = existsSync(persistedStatePath)
+        ? readFileSync(persistedStatePath, 'utf8')
+        : '';
 
-      expect(persistedState.nextSequence).toBeGreaterThanOrEqual(1);
+      expect(persistedStateText).not.toContain('nextSequence');
 
       const secondApp = createJixiaApp({ env });
       const secondCredential = await secondApp.credentials.createCredential(
@@ -1057,14 +1146,15 @@ describe('workbench http contracts', () => {
         'user-alice',
       );
 
-      expect(secondCredential.credentialRef).toBe('cred-2');
+      expect(secondCredential.credentialRef).toMatch(/^cred-[0-9a-f-]{36}$/);
+      expect(secondCredential.credentialRef).not.toBe(firstCredential.credentialRef);
       await expect(
         secondApp.credentials.getStoredCredential(firstCredential.credentialRef, 'user-bob'),
       ).resolves.toBeNull();
       await expect(
         secondApp.credentials.getStoredCredential(firstCredential.credentialRef, 'user-alice'),
       ).resolves.toMatchObject({
-        credentialRef: 'cred-1',
+        credentialRef: firstCredential.credentialRef,
         provider: 'openai',
         userId: 'user-alice',
       });
@@ -1074,10 +1164,12 @@ describe('workbench http contracts', () => {
         orderBy: [{ id: 'asc' }],
       });
 
-      expect(persistedCredentials.map((credential) => credential.id)).toEqual([
-        'cred-1',
-        'cred-2',
-      ]);
+      expect(persistedCredentials.map((credential) => credential.id)).toEqual(
+        expect.arrayContaining([
+          firstCredential.credentialRef,
+          secondCredential.credentialRef,
+        ]),
+      );
     } finally {
       await prisma.$disconnect();
       rmSync(storageRoot, { force: true, recursive: true });

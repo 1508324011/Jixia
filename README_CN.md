@@ -88,7 +88,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 
 ## Task 11 运维启动手册
 
-Task 11 的目标是把已经验证过的 Web 交互层收敛成一个可重复启动的实验室服务器包。当前运行时会启动一个 Node 22 HTTP 服务，托管构建后的浏览器应用，暴露 `/health`，并把服务端状态持久化到配置存储根目录下，同时由 Prisma/SQLite 支撑项目协作、provider credential secrets 与 workbench settings。这是 Prisma-backed Project 协作数据 的实验室服务器路径。
+Task 11 的目标是把已经验证过的 Web 交互层收敛成一个可重复启动的实验室服务器包。当前运行时会启动一个 Node 22 HTTP 服务，托管构建后的浏览器应用，暴露 `/health`，并把上传论文文件与本地密钥材料持久化到配置存储根目录下，同时由 Prisma/SQLite 支撑项目协作、provider credential secrets 与 workbench settings。这是 Prisma-backed Project 协作数据 的实验室服务器路径。
 
 ### 前置条件
 
@@ -102,7 +102,7 @@ Task 11 的目标是把已经验证过的 Web 交互层收敛成一个可重复�
 
 - `JIXIA_STORAGE_ROOT` 用来控制 Jixia 的服务端持久化存储目录。在实验室服务器上，建议使用 `/var/lib/jixia/storage` 这样的持久盘路径。
 - 上传的论文文件同样保存在这个 storage root 下，且只使用服务端校验过的相对 key；Reader 只能通过 `GET|HEAD /api/library/:entryId/file` 访问这些文件。实验室服务器需要把该目录与 SQLite 数据库一起持久化，才能保证重启后文件字节与 `PaperAsset` metadata 仍然一致。
-- 当前运行时仍会把旧的非 Prisma beta 状态保存在 `JIXIA_STORAGE_ROOT/server-state.json`，但新的 credential secret material 与 workbench settings 不再写入这里。
+- 正常协作运行时的权威数据来自 Prisma/SQLite，而不是 `JIXIA_STORAGE_ROOT/server-state.json`。全新部署可以在没有该文件的情况下启动；剩余 legacy JSON 处理仅作为显式的一次性兼容 bootstrap 路径，而不是正常运行时持久化。
 - `JIXIA_DATABASE_URL` 控制 Prisma-backed `Space`、`Project`、`ProjectMember`、library、notebook、Project Doc、provider credential secret 与 workbench settings 权威数据使用的 SQLite 数据库。建议放在 `file:/var/lib/jixia/data/jixia.db` 这样的持久路径。
 - `JIXIA_STORAGE_ROOT/credentials.key` 是 provider credential secret 的本地加密权威。可跨重启使用的加密凭据同时需要持久 SQLite 数据库与这个持久 key 文件；如果 key 丢失或被替换，已有 credential rows 会 fail closed，而不会静默重建或暴露明文。
 - `JIXIA_HOST` 控制绑定地址。本地仅自用时可使用 `127.0.0.1`；在 Docker 或需要对实验室网络提供服务时使用 `0.0.0.0`。
@@ -130,6 +130,6 @@ cp .env.example .env
 docker compose up --build
 ```
 
-仓库内置的 `docker-compose.yml` 会映射运行端口，把 `JIXIA_STORAGE_ROOT` 固定到挂载后的 `/var/lib/jixia/storage`，并把 `JIXIA_DATABASE_URL` 指向挂载后的 `/var/lib/jixia/data`，用于 Prisma-backed Project 协作数据，同时继续将 legacy beta 状态文件持久化到 `/var/lib/jixia/storage/server-state.json`，并把 credential encryption key material 放在同一个持久 storage root 下。
+仓库内置的 `docker-compose.yml` 会映射运行端口，把 `JIXIA_STORAGE_ROOT` 固定到挂载后的 `/var/lib/jixia/storage`，并把 `JIXIA_DATABASE_URL` 指向挂载后的 `/var/lib/jixia/data`，用于 Prisma-backed Project 协作数据，同时把 credential encryption key material 放在同一个持久 storage root 下。正常启动不要求预先存在 `/var/lib/jixia/storage/server-state.json`。
 
 Docker 镜像也把同一个 `/health` 运行时约定编码为容器 health check，因此 `docker compose ps` 看到的健康状态代表的是应用已经真正可响应，而不只是 Node 进程被拉起。

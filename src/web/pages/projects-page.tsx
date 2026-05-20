@@ -4,7 +4,6 @@ import { useProjectsPresenter } from "../presenters/projects-presenter";
 
 export function ProjectsPage() {
   const {
-    addSampleProjectMember,
     createProject,
     error,
     isCreating,
@@ -74,13 +73,6 @@ export function ProjectsPage() {
             <Link className="panel-link" to={`/projects/${item.project.id}/library`}>
               Open project library
             </Link>
-            <button
-              className="panel-link"
-              type="button"
-              onClick={() => void addSampleProjectMember(item.project.id)}
-            >
-              Add Bob as viewer
-            </button>
           </article>
         ))}
 

@@ -17,12 +17,14 @@ Use a user-owned local runtime path on the current host. One concrete example:
 - `JIXIA_HOST=127.0.0.1`
 - `JIXIA_PORT=3000`
 
-The current runtime still persists legacy non-Prisma beta state to `server-state.json`
-under `JIXIA_STORAGE_ROOT`. Credential secret material and per-user workbench settings
-are Prisma/SQLite authority now; durable Settings API keys require the same
-`JIXIA_DATABASE_URL` plus the durable `JIXIA_STORAGE_ROOT/credentials.key` file.
-If that key is missing or replaced, existing encrypted credential rows fail closed
-instead of being exposed or silently recreated.
+Normal runtime authority lives in Prisma/SQLite, not `server-state.json`. A
+missing `JIXIA_STORAGE_ROOT/server-state.json` is expected on a fresh host and
+does not block startup or collaborative persistence. Any remaining legacy JSON
+handling is a one-time compatibility bootstrap path; after bootstrap, durable
+Settings API keys require the same `JIXIA_DATABASE_URL` plus the durable
+`JIXIA_STORAGE_ROOT/credentials.key` file. If that key is missing or replaced,
+existing encrypted credential rows fail closed instead of being exposed or
+silently recreated.
 
 Paper uploads use the same server-owned storage boundary. `POST /api/import/pdf`
 writes uploaded paper bytes under `JIXIA_STORAGE_ROOT`, computes the checksum on
@@ -52,9 +54,20 @@ Node runtime is up before validating workbench behavior.
 
 ## Truthful beta acceptance flow
 
-The required flow is:
+The full happy path, when the upstream PubMed request returns at least one result, is:
 
 workbench entry -> settings ready -> PubMed search -> personal import -> Reader persistence -> Project Docs promotion -> Project Doc reopen -> restart -> reopen persisted state
+
+Live PubMed is intentionally not backed by a synthetic fallback on `main`. Success
+depends on upstream PubMed availability, current network access, and the runtime
+configuration of the host. If **检索 PubMed** returns an empty result set or a
+provider error, that is an acceptable degraded pass for the discovery slice as
+long as the UI truthfully shows the empty/error state and does not fabricate a
+paper. In that degraded path, record the failure/empty-result behavior, skip the
+import/Reader/Project Doc subsequence that requires a real discovered source, and
+continue validating startup, login, Settings persistence, `/health`, and restart
+behavior. When PubMed later returns a real result, rerun the import persistence
+steps below to validate the full vertical slice.
 
 1. Open `http://127.0.0.1:3000` and confirm the browser is redirected to **登录**.
 2. Keep the default lab user or choose another lab user, then click **进入工作台**.
@@ -65,8 +78,11 @@ workbench entry -> settings ready -> PubMed search -> personal import -> Reader 
 7. Confirm the page reports **Settings saved**.
 8. Open **搜索**.
 9. In **检索主题**, enter `tumor board biomarkers`, then click **检索 PubMed**.
-10. Wait for the PubMed-backed result card and click **导入到个人 Library**.
-11. Open **Library** and confirm the imported paper is present on the Personal shelf.
+10. If PubMed returns a real result card, click **导入到个人 Library**. If the
+    page instead shows an empty-result or provider-failure message, treat that as
+    the truthful no-fallback degraded path described above rather than a blocker
+    for startup/runtime acceptance.
+11. When a result was imported, open **Library** and confirm the imported paper is present on the Personal shelf.
 12. Click **Open reader** on that imported paper, and confirm the metadata-only asset message is shown when no server-owned file has been uploaded for that entry.
 13. In **Reader**, enter a short private note into **Private note**, then click **Save private note**.
 14. Enter a short project-visible comment into **Project comment**, then click **Save project comment**.
@@ -90,7 +106,7 @@ workbench entry -> settings ready -> PubMed search -> personal import -> Reader 
 - the workbench can start natively on the current host without Docker
 - settings persist through Prisma-backed workbench settings and encrypted credential
   secret rows without exposing raw API keys in browser payloads
-- PubMed-backed discovery can import into Personal Library through the real server path
+- PubMed-backed discovery can import into Personal Library through the real server path when the upstream provider returns results; empty-result/provider-failure states are acceptable degraded outcomes and must not synthesize fallback papers
 - Reader file availability is explicit: metadata-only imports do not pretend a
   file exists, while uploaded PDFs are read only through the session-authorized
   `GET|HEAD /api/library/:entryId/file` route
@@ -113,7 +129,7 @@ If you need those conveniences, switch to `demo-native-showcase`. If you need th
 Current-host pass completed on 2026-03-23 with `JIXIA_STORAGE_ROOT=/home/zhurui/.local/share/jixia-beta/storage` and the built app served from `npm run start:server`.
 
 - The root route still redirects straight to `/home`, but unauthenticated browsers are now redirected into `/login?redirect=/home` and establish a real `jixia_session` cookie before entering the workbench.
-- Live PubMed search returned a real result set for `tumor board biomarkers`; the first rendered identifier in this pass was `PubMed · pmid:38181798`, so the current-host experience is no longer tied to the deterministic fallback titles used in tests.
+- Live PubMed search returned a real result set for `tumor board biomarkers` during this manual pass; the first rendered identifier was `PubMed · pmid:38181798`. Future current-host passes may instead see an empty-result or provider-failure state depending on upstream/network conditions, and that degraded state is acceptable when the UI remains truthful and does not synthesize fallback titles.
 - The top-level **Projects** page now loads real server-visible projects and links into canonical `/projects/:projectId` routes.
 - Reopened Project Doc routes now stay on canonical `/projects/:projectId/writing/:docId` paths for the main workbench flow, while legacy `/spaces/...` routes remain compatibility-only deep links.
 - Persistence itself worked cleanly after restart: the imported paper, private note, project comment, governed insight, and reopened Project Doc were all still present after the app process restarted.

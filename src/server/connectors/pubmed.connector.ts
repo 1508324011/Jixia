@@ -23,39 +23,6 @@ function shouldSkipLivePubmedRequests(): boolean {
   return process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
 }
 
-const fallbackDiscoveryRecords: PubmedDiscoveryRecord[] = [
-  {
-    abstractText:
-      'Biomarker-driven tumor board reviews need fast evidence triage before project handoff.',
-    canonicalId: 'pmid:654321',
-    reason: 'Useful for today\'s tumor-board biomarker review queue.',
-    sourceLabel: 'PubMed',
-    sourceLocator: '654321',
-    sourceType: 'pmid',
-    title: 'Tumor board biomarkers for rapid review',
-  },
-  {
-    abstractText:
-      'Shared multidisciplinary review loops benefit from explicit evidence curation and import ownership.',
-    canonicalId: 'pmid:123456',
-    reason: 'Matches the shared review flow already demonstrated in the workbench.',
-    sourceLabel: 'PubMed',
-    sourceLocator: '123456',
-    sourceType: 'pmid',
-    title: 'Signal pathways in shared tumor boards',
-  },
-  {
-    abstractText:
-      'Clinical literature triage improves when import, annotation, and synthesis stay in one browser workflow.',
-    canonicalId: 'pmid:789012',
-    reason: 'Strong fit for a personal-library-first literature import lane.',
-    sourceLabel: 'PubMed',
-    sourceLocator: '789012',
-    sourceType: 'pmid',
-    title: 'Personal literature triage for governed oncology workflows',
-  },
-];
-
 interface PubmedESearchResponse {
   esearchresult?: {
     idlist?: string[];
@@ -73,59 +40,24 @@ interface PubmedESummaryResponse {
   };
 }
 
-function buildFallbackLookup(locator: string, sourceType: 'doi' | 'pmid'): ImportedPaperMetadata {
-  const fallbackMatch =
-    sourceType === 'pmid'
-      ? fallbackDiscoveryRecords.find((record) => record.sourceLocator === locator)
-      : undefined;
-
-  if (fallbackMatch) {
-    return {
-      abstractText: fallbackMatch.abstractText,
-      canonicalId: fallbackMatch.canonicalId,
-      title: fallbackMatch.title,
-    };
-  }
-
-  return {
-    abstractText: `Imported ${sourceType.toUpperCase()} metadata for ${locator}`,
-    canonicalId: `${sourceType}:${locator}`,
-    title: `Imported ${sourceType.toUpperCase()} paper ${locator}`,
-  };
-}
-
-function buildFallbackSearch(query: string): PubmedDiscoveryRecord[] {
-  const searchTerms = query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
-
-  const matches = fallbackDiscoveryRecords.filter((record) => {
-    if (searchTerms.length === 0) {
-      return true;
-    }
-
-    const haystack = `${record.title} ${record.abstractText ?? ''} ${record.reason}`.toLowerCase();
-
-    return searchTerms.every((term) => haystack.includes(term));
-  });
-
-  return (matches.length > 0 ? matches : fallbackDiscoveryRecords).slice(0, 5);
-}
-
 function mapSummaryToDiscoveryRecord(
   pmid: string,
   summary: PubmedESummaryEntry | undefined,
   query: string,
-): PubmedDiscoveryRecord {
+): PubmedDiscoveryRecord | null {
+  const title = summary?.title?.trim();
+
+  if (!title) {
+    return null;
+  }
+
   return {
-    abstractText: `PubMed result for ${query}`,
     canonicalId: `pmid:${pmid}`,
     reason: `PubMed matched “${query}”.`,
     sourceLabel: 'PubMed',
     sourceLocator: pmid,
     sourceType: 'pmid',
-    title: summary?.title?.trim() || `PubMed result ${pmid}`,
+    title,
   };
 }
 
@@ -163,13 +95,15 @@ async function fetchSummaryByPmids(pmids: string[], query: string): Promise<Pubm
   });
   const summaries = summaryResponse.result;
 
-  return pmids.map((pmid) =>
-    mapSummaryToDiscoveryRecord(
+  return (summaries?.uids ?? []).flatMap((pmid) => {
+    const record = mapSummaryToDiscoveryRecord(
       pmid,
       summaries?.[pmid] as PubmedESummaryEntry | undefined,
       query,
-    ),
-  );
+    );
+
+    return record ? [record] : [];
+  });
 }
 
 async function searchLivePubmed(query: string): Promise<PubmedDiscoveryRecord[]> {
@@ -188,10 +122,14 @@ async function lookupLivePubmed(locator: string, sourceType: 'doi' | 'pmid'): Pr
   if (sourceType === 'pmid') {
     const [record] = await fetchSummaryByPmids([locator], locator);
 
+    if (!record) {
+      throw new Error(`PubMed could not resolve PMID ${locator}`);
+    }
+
     return {
       abstractText: record?.abstractText,
-      canonicalId: record?.canonicalId ?? `pmid:${locator}`,
-      title: record?.title ?? `Imported PMID paper ${locator}`,
+      canonicalId: record.canonicalId,
+      title: record.title,
     };
   }
 
@@ -209,10 +147,14 @@ async function lookupLivePubmed(locator: string, sourceType: 'doi' | 'pmid'): Pr
 
   const [record] = await fetchSummaryByPmids([resolvedPmid], locator);
 
+  if (!record) {
+    throw new Error(`PubMed could not summarize DOI ${locator}`);
+  }
+
   return {
     abstractText: record?.abstractText,
     canonicalId: `doi:${locator}`,
-    title: record?.title ?? `Imported DOI paper ${locator}`,
+    title: record.title,
   };
 }
 
@@ -225,14 +167,10 @@ export function createPubmedConnector(): PubmedConnector {
       sourceType: 'doi' | 'pmid',
     ): Promise<ImportedPaperMetadata> {
       if (shouldSkipLivePubmedRequests()) {
-        return buildFallbackLookup(locator, sourceType);
+        throw new Error('PubMed live lookup is unavailable in this runtime. Use an explicit fixture connector for deterministic test records.');
       }
 
-      try {
-        return await lookupLivePubmed(locator, sourceType);
-      } catch {
-        return buildFallbackLookup(locator, sourceType);
-      }
+      return lookupLivePubmed(locator, sourceType);
     },
     async search(query: string): Promise<PubmedDiscoveryRecord[]> {
       const trimmedQuery = query.trim();
@@ -248,27 +186,13 @@ export function createPubmedConnector(): PubmedConnector {
       }
 
       if (shouldSkipLivePubmedRequests()) {
-        const fallbackResults = buildFallbackSearch(trimmedQuery);
-        discoveryCache.set(trimmedQuery, fallbackResults);
-
-        return fallbackResults.map((record) => ({ ...record }));
+        return [];
       }
 
-      try {
-        const liveResults = await searchLivePubmed(trimmedQuery);
-        const resolvedResults = liveResults.length > 0
-          ? liveResults
-          : buildFallbackSearch(trimmedQuery);
+      const liveResults = await searchLivePubmed(trimmedQuery);
+      discoveryCache.set(trimmedQuery, liveResults);
 
-        discoveryCache.set(trimmedQuery, resolvedResults);
-
-        return resolvedResults.map((record) => ({ ...record }));
-      } catch {
-        const fallbackResults = buildFallbackSearch(trimmedQuery);
-        discoveryCache.set(trimmedQuery, fallbackResults);
-
-        return fallbackResults.map((record) => ({ ...record }));
-      }
+      return liveResults.map((record) => ({ ...record }));
     },
   };
 }

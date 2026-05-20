@@ -24,11 +24,6 @@ export interface SpaceAccessRequest {
   visibility: LibraryEntryVisibility;
 }
 
-export interface SpacesLegacyMirror {
-  syncMembership(record: SpaceMembership): void;
-  syncSpace(record: StoredSpace): void;
-}
-
 export interface SpacesService {
   assertCanReadResource(request: SpaceAccessRequest): Promise<void>;
   createSpace(
@@ -72,13 +67,11 @@ async function requireOwnerUserId(
 }
 
 export interface SpacesStore {
-  legacyMirror?: SpacesLegacyMirror;
-  nextId?(prefix: string): string;
   repository: SpaceRepository;
 }
 
 export function createSpacesService(store: SpacesStore): SpacesService {
-  const { legacyMirror, nextId, repository } = store;
+  const { repository } = store;
 
   return {
     async createSpace(
@@ -86,10 +79,7 @@ export function createSpacesService(store: SpacesStore): SpacesService {
       actorUserId: string,
     ): Promise<SpaceSummary> {
       const space = await repository.createSpace(
-        {
-          ...input,
-          id: nextId?.("space"),
-        },
+        input,
         actorUserId,
       );
       const ownerMembership = await repository.getMembership(space.id, actorUserId);
@@ -97,16 +87,6 @@ export function createSpacesService(store: SpacesStore): SpacesService {
       if (!ownerMembership) {
         throw new Error("Created space is missing its owner membership.");
       }
-
-      legacyMirror?.syncSpace({
-        createdAt: space.createdAt,
-        description: space.description,
-        id: space.id,
-        kind: space.kind,
-        name: space.name,
-        ownerUserId: actorUserId,
-      });
-      legacyMirror?.syncMembership(mapMembership(ownerMembership));
 
       return {
         createdAt: space.createdAt,

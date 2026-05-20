@@ -86,7 +86,7 @@ export function SpacesPage() {
             <h2 className="panel-title">No visible spaces</h2>
             <p className="quiet-copy">
               Create a governance space before creating projects. The UI no
-              longer substitutes a fake shared-space lane when the server has no
+              longer substitutes a fake shared collaboration lane when the server has no
               data.
             </p>
           </article>

@@ -7,11 +7,9 @@ import { useSettingsPresenter } from "../presenters/settings-presenter";
 export function SettingsPage() {
   const {
     apiKeyConfigured,
-    createSampleCredential,
     credentials,
     defaultImportTarget,
     error,
-    isMutating,
     loadingState,
     refresh,
     saveSettings,
@@ -102,14 +100,6 @@ export function SettingsPage() {
 
       <section aria-label="settings actions" className="context-bar">
         <span>Known credentials · {credentials.length}</span>
-        <button
-          className="panel-link"
-          type="button"
-          onClick={() => void createSampleCredential()}
-          disabled={isMutating}
-        >
-          {isMutating ? "Creating credential…" : "Create sample credential"}
-        </button>
         <button className="panel-link" type="button" onClick={() => void refresh()}>
           Refresh
         </button>
@@ -129,8 +119,8 @@ export function SettingsPage() {
           <h2 className="panel-title">Provider credentials</h2>
           {credentials.length === 0 ? (
             <p className="quiet-copy">
-              No credentials are configured yet. Create a sample credential to
-              exercise the typed client and server-backed settings presenter.
+              No provider credentials are configured for the current session actor.
+              Save an API key above to create a server-owned credential reference.
             </p>
           ) : (
             <div className="shell-grid">
@@ -149,8 +139,9 @@ export function SettingsPage() {
         <article className="panel">
           <h2 className="panel-title">Operator controls</h2>
           <p className="quiet-copy">
-            Phase 1 focuses on page chrome. Operator-specific runtime controls
-            will attach here once the shell integration is stable.
+            Runtime controls are loaded from the server-backed settings and credential
+            authority. Credential plaintext is accepted only through the save form and
+            is never rendered back to the browser.
           </p>
         </article>
       </section>

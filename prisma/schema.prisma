@@ -173,6 +173,9 @@ model LibraryEntry {
   scopeId        String
   paperAssetId   String
   addedByUserId  String
+  // Deprecated migration-only compatibility columns. They are retained so old
+  // SQLite databases can migrate, but normal repository DTOs/writes must never
+  // read or update them as ownership, space, or visibility authority.
   legacySpaceId  String?
   legacyVisibility String?
   createdAt      DateTime               @default(now())

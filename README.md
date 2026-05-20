@@ -91,7 +91,7 @@ The handoff note in `docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md` 
 
 ## Task 11 Operator Runbook
 
-Task 11 turns the verified web interaction shell into a reproducibly runnable lab-server package. The current runtime starts a Node 22 HTTP server, serves the built browser app from `dist/`, exposes `/health`, and persists server-managed state under the configured storage root while Prisma/SQLite backs project collaboration, provider credential secrets, and workbench settings. This is the Prisma-backed project collaboration path for lab-server operation.
+Task 11 turns the verified web interaction shell into a reproducibly runnable lab-server package. The current runtime starts a Node 22 HTTP server, serves the built browser app from `dist/`, exposes `/health`, and persists uploaded paper bytes plus local key material under the configured storage root while Prisma/SQLite backs project collaboration, provider credential secrets, and workbench settings. This is the Prisma-backed project collaboration path for lab-server operation.
 
 ### Prerequisites
 
@@ -105,7 +105,7 @@ Copy `.env.example` to `.env` and fill in operator-specific values.
 
 - `JIXIA_STORAGE_ROOT` controls where Jixia persists server-managed storage assets. On a lab server, keep this on durable storage such as `/var/lib/jixia/storage`.
 - Uploaded paper files are stored below the same storage root with server-validated relative keys and are reachable to Readers only through `GET|HEAD /api/library/:entryId/file`; persist this directory across restarts together with the SQLite database so file bytes and `PaperAsset` metadata stay in sync.
-- The current runtime still keeps legacy non-Prisma beta state in `JIXIA_STORAGE_ROOT/server-state.json`, but new credential secret material and workbench settings are no longer written there.
+- Normal collaborative runtime authority is Prisma/SQLite, not `JIXIA_STORAGE_ROOT/server-state.json`. Fresh deployments may start without that file; any remaining legacy JSON handling is an explicit one-time compatibility bootstrap path rather than normal runtime persistence.
 - `JIXIA_DATABASE_URL` controls the SQLite database used for Prisma-backed `Space`, `Project`, `ProjectMember`, library, notebook, Project Doc, provider credential secret, and workbench settings authority. Keep it on durable storage such as `file:/var/lib/jixia/data/jixia.db`.
 - `JIXIA_STORAGE_ROOT/credentials.key` is the local encryption authority for provider credential secrets. Durable encrypted credentials require both the durable SQLite database and this durable key file; losing or replacing the key makes existing credential rows unusable rather than silently recreating or exposing them.
 - `JIXIA_HOST` controls the bind host. Use `127.0.0.1` for local-only runs and `0.0.0.0` when the process is containerized or needs to listen on the lab network.
@@ -133,6 +133,6 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The included `docker-compose.yml` maps the runtime port, pins `JIXIA_STORAGE_ROOT` to the mounted `/var/lib/jixia/storage` path, points `JIXIA_DATABASE_URL` at the mounted `/var/lib/jixia/data` path for Prisma-backed collaboration, persists legacy beta state at `/var/lib/jixia/storage/server-state.json`, and keeps credential encryption key material under the same durable storage root.
+The included `docker-compose.yml` maps the runtime port, pins `JIXIA_STORAGE_ROOT` to the mounted `/var/lib/jixia/storage` path, points `JIXIA_DATABASE_URL` at the mounted `/var/lib/jixia/data` path for Prisma-backed collaboration, and keeps credential encryption key material under the same durable storage root. It does not require a pre-existing `/var/lib/jixia/storage/server-state.json` for normal startup.
 
 The Docker image also encodes the same `/health` runtime contract with a container health check against the in-container Node server, so `docker compose ps` can report when the packaged runtime is actually ready instead of only when the process has started.

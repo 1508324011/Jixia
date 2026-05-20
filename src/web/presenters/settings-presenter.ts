@@ -10,11 +10,9 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 
 export interface SettingsViewModel {
   apiKeyConfigured: boolean;
-  createSampleCredential(): Promise<void>;
   credentials: CredentialRecord[];
   defaultImportTarget: DefaultImportTarget;
   error: string | null;
-  isMutating: boolean;
   loadingState: LoadingState;
   refresh(): Promise<void>;
   saveSettings(input: {
@@ -32,7 +30,6 @@ export function useSettingsPresenter(): SettingsViewModel {
     useState<DefaultImportTarget>("personal-library");
   const [error, setError] = useState<string | null>(null);
   const [loadingState, setLoadingState] = useState<LoadingState>("idle");
-  const [isMutating, setIsMutating] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
@@ -91,26 +88,6 @@ export function useSettingsPresenter(): SettingsViewModel {
     };
   }, []);
 
-  const createSampleCredential = useCallback(async () => {
-    try {
-      setIsMutating(true);
-      setError(null);
-      await apiClient.createCredential({
-        provider: "openai",
-        rawSecret: "local-settings-credential-placeholder",
-      });
-      await refresh();
-    } catch (presenterError) {
-      setError(
-        presenterError instanceof Error
-          ? presenterError.message
-          : "Failed to create credential.",
-      );
-    } finally {
-      setIsMutating(false);
-    }
-  }, [refresh]);
-
   const saveSettings = useCallback(
     async (input: {
       apiKey?: string;
@@ -143,11 +120,9 @@ export function useSettingsPresenter(): SettingsViewModel {
   return useMemo(
     () => ({
       apiKeyConfigured,
-      createSampleCredential,
       credentials,
       defaultImportTarget,
       error,
-      isMutating,
       loadingState,
       refresh,
       saveSettings,
@@ -156,11 +131,9 @@ export function useSettingsPresenter(): SettingsViewModel {
     }),
     [
       apiKeyConfigured,
-      createSampleCredential,
       credentials,
       defaultImportTarget,
       error,
-      isMutating,
       loadingState,
       refresh,
       saveSettings,

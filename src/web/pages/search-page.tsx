@@ -22,10 +22,10 @@ export function SearchPage() {
     setSelectedSpaceId,
     spaces,
   } = useSearchPresenter();
-  const [sourceLocator, setSourceLocator] = useState("10.1000/jixia-demo");
+  const [sourceLocator, setSourceLocator] = useState("");
   const [sourceType, setSourceType] =
     useState<Exclude<ImportSourceType, "upload">>("doi");
-  const [query, setQuery] = useState("tumor board");
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<TodayRecommendation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -93,6 +93,12 @@ export function SearchPage() {
         <p className="quiet-copy">当前优先接入一个稳定来源：PubMed 检索与导入。</p>
         {isLoading ? <p className="quiet-copy">Searching PubMed…</p> : null}
         {errorMessage ? <p className="quiet-copy">{errorMessage}</p> : null}
+        {!isLoading && !errorMessage && query.trim() && results.length === 0 ? (
+          <p className="quiet-copy">
+            No PubMed results were returned for this query. Try a different term or
+            import a known DOI/PMID/arXiv identifier below.
+          </p>
+        ) : null}
       </section>
 
       <section aria-label="search results" className="panel-grid">
@@ -192,6 +198,7 @@ export function SearchPage() {
           </label>
           <input
             id="search-source-locator"
+            placeholder="Enter DOI, PMID, or arXiv identifier"
             value={sourceLocator}
             onChange={(event) => setSourceLocator(event.target.value)}
           />
@@ -217,7 +224,7 @@ export function SearchPage() {
         </article>
 
         <article className="panel">
-          <h2 className="panel-title">Connector staging</h2>
+          <h2 className="panel-title">Import status</h2>
           {importedRecord ? (
             <>
               <p className="quiet-copy">Imported title · {importedRecord.asset.title}</p>
@@ -235,9 +242,9 @@ export function SearchPage() {
             </>
           ) : (
             <p className="quiet-copy">
-              PMID, DOI, and arXiv import flows are now live through the
-              browser-facing runtime without replacing Jixia’s `PaperAsset` +
-              `LibraryEntry` semantics.
+              Enter a DOI, PMID, or arXiv identifier to import metadata through the
+              server. Imports create or reuse scoped LibraryEntry records without
+              letting the browser choose ownership.
             </p>
           )}
         </article>

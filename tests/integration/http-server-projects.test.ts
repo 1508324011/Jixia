@@ -377,8 +377,6 @@ describe('http server project api', () => {
             },
             entry: {
               addedByUserId: 'user-alice',
-              legacySpaceId: createdSpace.id,
-              legacyVisibility: 'private',
               scope: { id: 'user-alice', type: 'user' },
             },
           });

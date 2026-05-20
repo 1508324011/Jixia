@@ -112,7 +112,7 @@ async function resolveAuthorizedImportScopeContext(
   scope: ScopeRef,
   actorUserId: string,
   compatibilitySpaceId?: string,
-): Promise<{ compatibilitySpaceId?: string; scope: ScopeRef }> {
+): Promise<{ projectSpaceId?: string; scope: ScopeRef }> {
   if (scope.type === "user") {
     // Personal scope is actor-owned. Deprecated spaceId is not an authority
     // input and is intentionally not persisted as the response mirror.
@@ -148,7 +148,7 @@ async function resolveAuthorizedImportScopeContext(
   }
 
   return {
-    compatibilitySpaceId: project.spaceId,
+    projectSpaceId: project.spaceId,
     scope,
   };
 }
@@ -211,7 +211,7 @@ async function adoptExistingFileAsset(
     actorUserId: string;
     checksum: string;
     pdfBytes: Buffer;
-    scopeContext: { compatibilitySpaceId?: string; scope: ScopeRef };
+    scopeContext: { projectSpaceId?: string; scope: ScopeRef };
   },
 ): Promise<ImportedLibraryRecord> {
   await ensureExistingFileAssetBytes(
@@ -225,27 +225,17 @@ async function adoptExistingFileAsset(
     (
       await store.libraryRepository.adoptExistingPaperAsset({
         addedByUserId: input.actorUserId,
-        legacySpaceId: input.scopeContext.compatibilitySpaceId,
-        legacyVisibility: compatibilityVisibilityForScope(input.scopeContext.scope),
         paperAssetId: asset.id,
         scope: input.scopeContext.scope,
       })
     ).view,
+    { projectSpaceId: input.scopeContext.projectSpaceId },
   );
-}
-
-function compatibilitySpaceIdForEntry(
-  entry: PersistedLibraryEntryRecord,
-): string {
-  if (entry.scope.type === "user") {
-    return "";
-  }
-
-  return entry.legacySpaceId ?? "";
 }
 
 function mapEntry(
   entry: PersistedLibraryEntryRecord,
+  projectSpaceId?: string,
 ): LibraryEntryView["entry"] {
   const visibility = compatibilityVisibilityForScope(entry.scope);
 
@@ -258,38 +248,29 @@ function mapEntry(
     scope: entry.scope,
     scopeId: entry.scope.id,
     scopeType: entry.scope.type,
-    spaceId: compatibilitySpaceIdForEntry(entry),
+    spaceId: entry.scope.type === "project" ? projectSpaceId ?? "" : "",
     visibility,
   };
 }
 
 export function mapPersistedLibraryEntryView(
   view: PersistedLibraryEntryView,
+  options: { projectSpaceId?: string } = {},
 ): LibraryEntryView {
   return {
     asset: mapAsset(view.asset),
-    entry: mapEntry(view.entry),
+    entry: mapEntry(view.entry, options.projectSpaceId),
   };
 }
 
 
 function toDiscoveryRecommendation(
-  metadata: ImportedPaperMetadata,
+  record: Omit<TodayRecommendation, "id" | "imported">,
 ): TodayRecommendation {
   return {
-    abstractText: metadata.abstractText,
-    canonicalId: metadata.canonicalId,
-    id: metadata.canonicalId,
+    ...record,
+    id: record.canonicalId,
     imported: false,
-    reason: metadata.abstractText ?? "Matched by external discovery search.",
-    sourceLabel: metadata.canonicalId,
-    sourceLocator: metadata.canonicalId.replace(/^(doi|pmid|arxiv):/i, ""),
-    sourceType: metadata.canonicalId.startsWith("arxiv:")
-      ? "arxiv"
-      : metadata.canonicalId.startsWith("pmid:")
-        ? "pmid"
-        : "doi",
-    title: metadata.title,
   };
 }
 
@@ -344,7 +325,6 @@ export function createImportService(store: ImportStore): ImportService {
         createPaperPdfStorageKey(assetId),
         pdfBytes,
       );
-      const visibility = compatibilityVisibilityForScope(scopeContext.scope);
 
       try {
         return mapPersistedLibraryEntryView(
@@ -361,11 +341,10 @@ export function createImportService(store: ImportStore): ImportService {
             },
             entry: {
               addedByUserId: actorUserId,
-              legacySpaceId: scopeContext.compatibilitySpaceId,
-              legacyVisibility: visibility,
               scope: scopeContext.scope,
             },
           }),
+          { projectSpaceId: scopeContext.projectSpaceId },
         );
       } catch (error) {
         await store.fileStore.deleteBuffer(storageKey).catch(() => undefined);
@@ -437,7 +416,6 @@ export function createImportService(store: ImportStore): ImportService {
       );
 
       const metadata = await resolveImportedMetadata(store, input);
-      const visibility = compatibilityVisibilityForScope(scopeContext.scope);
 
       return mapPersistedLibraryEntryView(
         await store.libraryRepository.importScopedEntry({
@@ -451,11 +429,10 @@ export function createImportService(store: ImportStore): ImportService {
           },
           entry: {
             addedByUserId: actorUserId,
-            legacySpaceId: scopeContext.compatibilitySpaceId,
-            legacyVisibility: visibility,
             scope: scopeContext.scope,
           },
         }),
+        { projectSpaceId: scopeContext.projectSpaceId },
       );
     },
   };

@@ -1,16 +1,23 @@
 import { once } from "node:events";
 
 import type { RuntimeConfigEnv } from "../../src/server/runtime-config";
+import type { CreateJixiaAppOptions } from "../../src/server/app";
+import type { PubmedConnector } from "../../src/server/connectors/pubmed.connector";
 import { createHttpServer } from "../../src/server/http-server";
 import { resolveDefaultLoginProfileKeyForUserId } from "../../src/server/services/session.service";
 
+interface StartTestServerOptions {
+  connectors?: CreateJixiaAppOptions["connectors"];
+}
+
 export async function startTestServer(
   env: RuntimeConfigEnv,
+  options: StartTestServerOptions = {},
 ): Promise<{
   close: () => Promise<void>;
   url: string;
 }> {
-  const httpServer = createHttpServer({ env });
+  const httpServer = createHttpServer({ connectors: options.connectors, env });
 
   httpServer.server.listen(0, "127.0.0.1");
   await once(httpServer.server, "listening");
@@ -61,5 +68,30 @@ export function withSessionCookie(
   return {
     ...headers,
     Cookie: cookie,
+  };
+}
+
+export function createHttpTestPubmedConnector(): PubmedConnector {
+  return {
+    async lookup(locator, sourceType) {
+      return {
+        abstractText: `HTTP ${sourceType.toUpperCase()} abstract for ${locator}`,
+        canonicalId: `${sourceType}:${locator}`,
+        title: `HTTP ${sourceType.toUpperCase()} paper ${locator}`,
+      };
+    },
+    async search(query) {
+      return [
+        {
+          abstractText: `HTTP PubMed fixture search for ${query}`,
+          canonicalId: "pmid:246810",
+          reason: "HTTP integration fixture matched the query.",
+          sourceLabel: "PubMed",
+          sourceLocator: "246810",
+          sourceType: "pmid",
+          title: "HTTP integration fixture paper",
+        },
+      ];
+    },
   };
 }

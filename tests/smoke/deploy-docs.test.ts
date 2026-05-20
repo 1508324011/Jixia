@@ -94,6 +94,8 @@ describe('deployment and operator scaffolding', () => {
     expect(readme).toContain('POST /api/import/pdf');
     expect(readme).toContain('GET|HEAD /api/library/:entryId/file');
     expect(readme).toContain('server-state.json');
+    expect(readme).toContain('explicit one-time compatibility bootstrap path');
+    expect(readme).toContain('rather than normal runtime persistence');
     expect(readme).toContain('Prisma-backed project collaboration');
   });
 
@@ -109,6 +111,8 @@ describe('deployment and operator scaffolding', () => {
     expect(readmeCn).toContain('POST /api/import/pdf');
     expect(readmeCn).toContain('GET|HEAD /api/library/:entryId/file');
     expect(readmeCn).toContain('server-state.json');
+    expect(readmeCn).toContain('显式的一次性兼容 bootstrap 路径');
+    expect(readmeCn).toContain('而不是正常运行时持久化');
     expect(readmeCn).toContain('Prisma-backed Project 协作数据');
     expect(ciWorkflow).toContain('npm run build');
   });
