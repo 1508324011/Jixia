@@ -63,13 +63,14 @@ export interface NotebookService {
 export interface NotebookStore {
   libraryService: LibraryService;
   notebookRepository: NotebookRepository;
-  readingService: Pick<ReadingService, 'getGeneratedInsightSource'>;
+  readingService: Pick<ReadingService, 'getGeneratedInsightSource' | 'getReaderExcerptSource'>;
 }
 
 interface NotebookCitationInput {
   evidenceSpan?: string;
   libraryEntryId?: string;
   paperAssetId: string;
+  readerExcerptId?: string;
 }
 
 function mapCitation(citation: {
@@ -78,6 +79,7 @@ function mapCitation(citation: {
   id: string;
   notebookDocumentVersionId: string;
   paperAssetId: string;
+  readerExcerptId?: string;
 }): NotebookCitationRecord {
   return {
     createdAt: citation.createdAt,
@@ -85,6 +87,7 @@ function mapCitation(citation: {
     id: citation.id,
     notebookDocumentVersionId: citation.notebookDocumentVersionId,
     paperAssetId: citation.paperAssetId,
+    readerExcerptId: citation.readerExcerptId,
   };
 }
 
@@ -112,6 +115,7 @@ function mapSnapshot(snapshot: {
     id: string;
     notebookDocumentVersionId: string;
     paperAssetId: string;
+    readerExcerptId?: string;
   }>;
   content: string;
   document: {
@@ -194,6 +198,7 @@ function referenceToCitationInput(
     evidenceSpan: reference.evidenceSpan,
     libraryEntryId: reference.libraryEntryId,
     paperAssetId: reference.paperAssetId,
+    readerExcerptId: reference.readerExcerptId,
   };
 }
 
@@ -208,40 +213,77 @@ function mergeCitationInputs(
 }
 
 function dedupeNormalizedCitations(
-  citations: Array<{ evidenceSpan?: string; paperAssetId: string }>,
-): Array<{ evidenceSpan?: string; paperAssetId: string }> {
-  const byAsset = new Map<string, string[]>();
+  citations: Array<{ evidenceSpan?: string; paperAssetId: string; readerExcerptId?: string }>,
+): Array<{ evidenceSpan?: string; paperAssetId: string; readerExcerptId?: string }> {
+  const byKey = new Map<string, { evidenceSpans: string[]; paperAssetId: string; readerExcerptId?: string }>();
 
   for (const citation of citations) {
-    const spans = byAsset.get(citation.paperAssetId) ?? [];
+    const key = citation.readerExcerptId
+      ? `excerpt:${citation.readerExcerptId}`
+      : `asset:${citation.paperAssetId}`;
+    const record = byKey.get(key) ?? {
+      evidenceSpans: [],
+      paperAssetId: citation.paperAssetId,
+      readerExcerptId: citation.readerExcerptId,
+    };
     const evidenceSpan = citation.evidenceSpan?.trim();
 
-    if (evidenceSpan && !spans.includes(evidenceSpan)) {
-      spans.push(evidenceSpan);
+    if (evidenceSpan && !record.evidenceSpans.includes(evidenceSpan)) {
+      record.evidenceSpans.push(evidenceSpan);
     }
 
-    byAsset.set(citation.paperAssetId, spans);
+    byKey.set(key, record);
   }
 
-  return [...byAsset.entries()].map(([paperAssetId, evidenceSpans]) => ({
-    evidenceSpan: evidenceSpans.length ? evidenceSpans.join('\n\n') : undefined,
-    paperAssetId,
+  return [...byKey.values()].map((record) => ({
+    evidenceSpan: record.evidenceSpans.length
+      ? record.evidenceSpans.join('\n\n')
+      : undefined,
+    paperAssetId: record.paperAssetId,
+    readerExcerptId: record.readerExcerptId,
   }));
 }
 
 async function normalizeAuthorizedCitations(
-  libraryService: LibraryService,
+  store: Pick<NotebookStore, 'libraryService' | 'readingService'>,
   citations: NotebookCitationInput[],
   actorUserId: string,
-): Promise<Array<{ evidenceSpan?: string; paperAssetId: string }>> {
+): Promise<Array<{ evidenceSpan?: string; paperAssetId: string; readerExcerptId?: string }>> {
   const normalizedCitations: Array<{
     evidenceSpan?: string;
     paperAssetId: string;
+    readerExcerptId?: string;
   }> = [];
 
   for (const citation of citations) {
+    if (citation.readerExcerptId) {
+      const source = await store.readingService.getReaderExcerptSource({
+        actorUserId,
+        readerExcerptId: citation.readerExcerptId,
+      });
+
+      if (citation.libraryEntryId && citation.libraryEntryId !== source.excerpt.libraryEntryId) {
+        throw new Error(
+          `Document reference ${citation.readerExcerptId} does not match library entry ${citation.libraryEntryId}.`,
+        );
+      }
+
+      if (citation.paperAssetId && citation.paperAssetId !== source.excerpt.paperAssetId) {
+        throw new Error(
+          `Document reference ${citation.paperAssetId} does not match reader excerpt ${citation.readerExcerptId}.`,
+        );
+      }
+
+      normalizedCitations.push({
+        evidenceSpan: citation.evidenceSpan ?? source.excerpt.quote,
+        paperAssetId: source.excerpt.paperAssetId,
+        readerExcerptId: source.excerpt.id,
+      });
+      continue;
+    }
+
     if (citation.libraryEntryId) {
-      const authorizedEntry = await libraryService.assertCanAccessEntry(
+      const authorizedEntry = await store.libraryService.assertCanAccessEntry(
         citation.libraryEntryId,
         actorUserId,
       );
@@ -259,7 +301,7 @@ async function normalizeAuthorizedCitations(
       continue;
     }
 
-    const authorizedView = await libraryService
+    const authorizedView = await store.libraryService
       .assertCanAccessEntry(citation.paperAssetId, actorUserId)
       .catch((error) => {
         if (
@@ -268,7 +310,7 @@ async function normalizeAuthorizedCitations(
             error.message,
           )
         ) {
-          return libraryService.assertCanAccessPaperAsset(
+          return store.libraryService.assertCanAccessPaperAsset(
             citation.paperAssetId,
             actorUserId,
           );
@@ -449,7 +491,7 @@ export function createNotebookService(store: NotebookStore): NotebookService {
         },
       );
       const citations = await normalizeAuthorizedCitations(
-        store.libraryService,
+        store,
         mergeCitationInputs(createCapturedCitations(insight), documentContent),
         actorUserId,
       );
@@ -520,7 +562,7 @@ export function createNotebookService(store: NotebookStore): NotebookService {
       );
       const documentContent = normalizeSaveDocumentContent(input);
       const citations = await normalizeAuthorizedCitations(
-        store.libraryService,
+        store,
         mergeCitationInputs(input.citations, documentContent),
         actorUserId,
       );

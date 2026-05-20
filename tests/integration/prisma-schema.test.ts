@@ -1,6 +1,47 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import {
+  createPrismaClient,
+  initializeNotebookPersistence,
+  initializeProjectDocPersistence,
+  initializeReadingPersistence,
+  type JixiaPrismaClient,
+} from '../../src/db';
+
+interface SqliteForeignKeyRow {
+  from: string;
+  on_delete: string;
+  on_update: string;
+  table: string;
+  to: string;
+}
+
+async function foreignKeyList(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+): Promise<SqliteForeignKeyRow[]> {
+  return prisma.$queryRawUnsafe<SqliteForeignKeyRow[]>(
+    `PRAGMA foreign_key_list("${tableName}")`,
+  );
+}
+
+function expectReaderExcerptForeignKey(foreignKeys: SqliteForeignKeyRow[]): void {
+  expect(foreignKeys).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        from: 'readerExcerptId',
+        on_delete: 'SET NULL',
+        on_update: 'CASCADE',
+        table: 'ReaderExcerpt',
+        to: 'id',
+      }),
+    ]),
+  );
+}
 
 describe('prisma schema', () => {
   it('declares core bounded-context models', () => {
@@ -16,6 +57,7 @@ describe('prisma schema', () => {
     expect(schema).toContain('model Note');
     expect(schema).toContain('model ProjectReadingComment');
     expect(schema).toContain('model ReadingState');
+    expect(schema).toContain('model ReaderExcerpt');
     expect(schema).toContain('model Conversation');
     expect(schema).toContain('model NotebookDocument');
     expect(schema).toContain('model NotebookDocumentVersion');
@@ -72,12 +114,50 @@ describe('prisma schema', () => {
     expect(schema).toMatch(
       /model Conversation[\s\S]*\n\s+libraryEntryId\s+String/,
     );
+    expect(schema).toMatch(
+      /model ReaderExcerpt[\s\S]*\n\s+libraryEntryId\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ReaderExcerpt[\s\S]*\n\s+paperAssetId\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ReaderExcerpt[\s\S]*\n\s+createdByUserId\s+String/,
+    );
+    expect(schema).toMatch(/model ReaderExcerpt[\s\S]*\n\s+quote\s+String/);
+    expect(schema).toMatch(/model ReaderExcerpt[\s\S]*\n\s+startOffset\s+Int/);
+    expect(schema).toMatch(/model ReaderExcerpt[\s\S]*\n\s+endOffset\s+Int/);
+    expect(schema).toMatch(/model ReaderExcerpt[\s\S]*\n\s+locator\s+String\?/);
+    expect(schema).toMatch(/model ReaderExcerpt[\s\S]*\n\s+note\s+String\?/);
+    expect(schema).toMatch(
+      /model ReaderExcerpt[\s\S]*@@index\(\[libraryEntryId, createdAt\]\)/,
+    );
+    expect(schema).toMatch(
+      /model ReaderExcerpt[\s\S]*@@index\(\[paperAssetId\]\)/,
+    );
+    expect(schema).toMatch(
+      /model ReaderExcerpt[\s\S]*@@index\(\[createdByUserId\]\)/,
+    );
+    const readerExcerptModel = schema.slice(
+      schema.indexOf('model ReaderExcerpt'),
+      schema.indexOf('model Conversation'),
+    );
+    expect(readerExcerptModel).not.toContain('visibility');
+    expect(readerExcerptModel).not.toContain('spaceId');
+    expect(readerExcerptModel).not.toContain('projectId');
+    expect(readerExcerptModel).not.toContain('scopeType');
+    expect(readerExcerptModel).not.toContain('scopeId');
     expect(schema).toMatch(/model NotebookDocument[\s\S]*\n\s+ownerId\s+String/);
     expect(schema).toMatch(
       /model NotebookDocumentVersion[\s\S]*@@unique\(\[notebookDocumentId, versionNumber\]\)/,
     );
     expect(schema).toMatch(
       /model NotebookDocumentCitation[\s\S]*\n\s+notebookDocumentVersionId\s+String/,
+    );
+    expect(schema).toMatch(
+      /model NotebookDocumentCitation[\s\S]*\n\s+readerExcerptId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model NotebookDocumentCitation[\s\S]*@@index\(\[readerExcerptId\]\)/,
     );
     expect(schema).toMatch(/model ProjectDoc[\s\S]*\n\s+projectId\s+String/);
     expect(schema).toMatch(
@@ -88,6 +168,27 @@ describe('prisma schema', () => {
     );
     expect(schema).toMatch(
       /model ProjectDocCitation[\s\S]*\n\s+projectDocVersionId\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+readerExcerptId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*@@index\(\[readerExcerptId\]\)/,
+    );
+    expect(
+      existsSync(
+        'prisma/migrations/20260520000000_reader_excerpts_evidence_anchors/migration.sql',
+      ),
+    ).toBe(true);
+    const readerExcerptMigration = readFileSync(
+      'prisma/migrations/20260520000000_reader_excerpts_evidence_anchors/migration.sql',
+      'utf8',
+    );
+    expect(readerExcerptMigration).toContain(
+      'CONSTRAINT "NotebookDocumentCitation_readerExcerptId_fkey" FOREIGN KEY ("readerExcerptId") REFERENCES "ReaderExcerpt" ("id") ON DELETE SET NULL ON UPDATE CASCADE',
+    );
+    expect(readerExcerptMigration).toContain(
+      'CONSTRAINT "ProjectDocCitation_readerExcerptId_fkey" FOREIGN KEY ("readerExcerptId") REFERENCES "ReaderExcerpt" ("id") ON DELETE SET NULL ON UPDATE CASCADE',
     );
     expect(schema).toMatch(/model Job[\s\S]*\n\s+credentialRef\s+String/);
     expect(schema).toMatch(
@@ -122,6 +223,107 @@ describe('prisma schema', () => {
     );
     expect(schema).toMatch(/model JobEvent[\s\S]*@@index\(\[jobId\]\)/);
     expect(schema).toMatch(/model AuditLog[\s\S]*@@index\(\[jobId\]\)/);
+  });
+
+  it('repairs upgraded citation tables with reader excerpt foreign keys', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'jixia-schema-'));
+    const prisma = createPrismaClient({
+      url: `file:${join(tempRoot, 'schema.db')}`,
+    });
+
+    try {
+      await initializeReadingPersistence(prisma);
+
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE "NotebookDocument" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "ownerId" TEXT NOT NULL,
+          "title" TEXT NOT NULL,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE "NotebookDocumentVersion" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "notebookDocumentId" TEXT NOT NULL,
+          "versionNumber" INTEGER NOT NULL,
+          "snapshot" TEXT NOT NULL,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "NotebookDocumentVersion_notebookDocumentId_fkey" FOREIGN KEY ("notebookDocumentId") REFERENCES "NotebookDocument" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE "NotebookDocumentCitation" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "notebookDocumentVersionId" TEXT NOT NULL,
+          "paperAssetId" TEXT NOT NULL,
+          "evidenceSpan" TEXT,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "NotebookDocumentCitation_notebookDocumentVersionId_fkey" FOREIGN KEY ("notebookDocumentVersionId") REFERENCES "NotebookDocumentVersion" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+          CONSTRAINT "NotebookDocumentCitation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE "ProjectDoc" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "projectId" TEXT NOT NULL,
+          "createdByUserId" TEXT NOT NULL,
+          "title" TEXT NOT NULL,
+          "publishState" TEXT NOT NULL DEFAULT 'draft',
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE "ProjectDocVersion" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "projectDocId" TEXT NOT NULL,
+          "versionNumber" INTEGER NOT NULL,
+          "snapshot" TEXT NOT NULL,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "ProjectDocVersion_projectDocId_fkey" FOREIGN KEY ("projectDocId") REFERENCES "ProjectDoc" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE "ProjectDocCitation" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "projectDocVersionId" TEXT NOT NULL,
+          "paperAssetId" TEXT NOT NULL,
+          "evidenceSpan" TEXT,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "ProjectDocCitation_projectDocVersionId_fkey" FOREIGN KEY ("projectDocVersionId") REFERENCES "ProjectDocVersion" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+          CONSTRAINT "ProjectDocCitation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `);
+
+      expect(
+        await foreignKeyList(prisma, 'NotebookDocumentCitation'),
+      ).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ from: 'readerExcerptId' }),
+        ]),
+      );
+      expect(await foreignKeyList(prisma, 'ProjectDocCitation')).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ from: 'readerExcerptId' }),
+        ]),
+      );
+
+      await initializeNotebookPersistence(prisma);
+      await initializeProjectDocPersistence(prisma);
+
+      expectReaderExcerptForeignKey(
+        await foreignKeyList(prisma, 'NotebookDocumentCitation'),
+      );
+      expectReaderExcerptForeignKey(
+        await foreignKeyList(prisma, 'ProjectDocCitation'),
+      );
+    } finally {
+      await prisma.$disconnect();
+      rmSync(tempRoot, { force: true, recursive: true });
+    }
   });
 
   it('creates typed database entrypoints and repositories', () => {

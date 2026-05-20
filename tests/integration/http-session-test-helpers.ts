@@ -19,6 +19,9 @@ export async function startTestServer(
 }> {
   const httpServer = createHttpServer({ connectors: options.connectors, env });
 
+  httpServer.server.keepAliveTimeout = 60_000;
+  httpServer.server.headersTimeout = 65_000;
+
   httpServer.server.listen(0, "127.0.0.1");
   await once(httpServer.server, "listening");
   const address = httpServer.server.address();

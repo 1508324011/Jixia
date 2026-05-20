@@ -67,6 +67,7 @@ model User {
   readingStates       ReadingState[]
   conversations       Conversation[]
   generatedInsights   GeneratedInsight[]
+  readerExcerpts      ReaderExcerpt[]      @relation("ReaderExcerptCreatedBy")
   notebookDocuments   NotebookDocument[]
   providerCredentials ProviderCredential[]
   workbenchSettings   WorkbenchSettings?
@@ -163,6 +164,7 @@ model PaperAsset {
   importedBy      User           @relation("PaperAssetImportedBy", fields: [importedByUserId], references: [id], onDelete: Restrict)
   libraryEntries  LibraryEntry[]
   generatedInsightEvidenceSpans GeneratedInsightEvidenceSpan[]
+  readerExcerpts ReaderExcerpt[]
   notebookCitations NotebookDocumentCitation[]
   projectDocCitations ProjectDocCitation[]
 }
@@ -186,6 +188,7 @@ model LibraryEntry {
   projectReadingComments ProjectReadingComment[]
   conversations  Conversation[]
   generatedInsights GeneratedInsight[]
+  readerExcerpts ReaderExcerpt[]
   readingStates  ReadingState[]
 
   @@unique([scopeType, scopeId, paperAssetId], name: "LibraryEntry_scope_asset_unique")
@@ -281,6 +284,29 @@ model GeneratedInsightEvidenceSpan {
   @@index([paperAssetId])
 }
 
+model ReaderExcerpt {
+  id              String       @id @default(cuid())
+  libraryEntryId  String
+  paperAssetId    String
+  createdByUserId String
+  quote           String
+  startOffset     Int
+  endOffset       Int
+  locator         String?
+  note            String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  libraryEntry    LibraryEntry @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
+  paperAsset      PaperAsset   @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+  createdBy       User         @relation("ReaderExcerptCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  notebookCitations NotebookDocumentCitation[]
+  projectDocCitations ProjectDocCitation[]
+
+  @@index([libraryEntryId, createdAt])
+  @@index([paperAssetId])
+  @@index([createdByUserId])
+}
+
 model NotebookDocument {
   id        String                    @id @default(cuid())
   ownerId   String
@@ -307,12 +333,15 @@ model NotebookDocumentCitation {
   id                        String                  @id @default(cuid())
   notebookDocumentVersionId String
   paperAssetId              String
+  readerExcerptId           String?
   evidenceSpan              String?
   createdAt                 DateTime                @default(now())
   notebookDocumentVersion   NotebookDocumentVersion @relation(fields: [notebookDocumentVersionId], references: [id], onDelete: Cascade)
   paperAsset                PaperAsset              @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+  readerExcerpt             ReaderExcerpt?          @relation(fields: [readerExcerptId], references: [id], onDelete: SetNull)
 
-  @@unique([notebookDocumentVersionId, paperAssetId])
+  @@index([notebookDocumentVersionId, paperAssetId])
+  @@index([readerExcerptId])
 }
 
 model ProjectDoc {
@@ -344,12 +373,15 @@ model ProjectDocCitation {
   id                  String            @id @default(cuid())
   projectDocVersionId String
   paperAssetId        String
+  readerExcerptId     String?
   evidenceSpan        String?
   createdAt           DateTime          @default(now())
   projectDocVersion   ProjectDocVersion @relation(fields: [projectDocVersionId], references: [id], onDelete: Cascade)
   paperAsset          PaperAsset        @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+  readerExcerpt       ReaderExcerpt?    @relation(fields: [readerExcerptId], references: [id], onDelete: SetNull)
 
-  @@unique([projectDocVersionId, paperAssetId])
+  @@index([projectDocVersionId, paperAssetId])
+  @@index([readerExcerptId])
 }
 
 model ProviderCredential {

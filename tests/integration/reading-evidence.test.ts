@@ -76,6 +76,7 @@ describe('reading evidence', () => {
       });
       expect(detail?.entry.id).toBe(imported.entry.id);
       expect(detail?.asset.canonicalId).toBe('doi:10.1000/reading-demo');
+      expect(detail?.excerpts).toEqual([]);
 
       await expect(
         app.reading.createProjectComment({
@@ -98,6 +99,31 @@ describe('reading evidence', () => {
       expect(comment.libraryEntryId).toBe(imported.entry.id);
       expect(comment.kind).toBe('project_comment');
       expect(comment.projectId).toBe(project.project.id);
+
+      const excerpt = await app.reading.createReaderExcerpt({
+        actorSpaceId: aliceShared.id,
+        actorUserId: 'user-alice',
+        endOffset: 23,
+        libraryEntryId: imported.entry.id,
+        locator: 'p. 4',
+        note: 'Durable excerpt for later citation.',
+        quote: 'shared durable evidence',
+        startOffset: 1,
+      });
+
+      expect(excerpt).toMatchObject({
+        createdByUserId: 'user-alice',
+        libraryEntryId: imported.entry.id,
+        paperAssetId: imported.asset.id,
+        quote: 'shared durable evidence',
+      });
+      expect(
+        await app.reading.listReaderExcerpts({
+          actorSpaceId: aliceShared.id,
+          actorUserId: 'user-alice',
+          libraryEntryId: imported.entry.id,
+        }),
+      ).toEqual([excerpt]);
 
       const insight = await app.reading.saveGeneratedInsight({
         actorUserId: 'user-alice',
@@ -124,6 +150,7 @@ describe('reading evidence', () => {
       });
       expect(updatedDetail?.notes).toHaveLength(0);
       expect(updatedDetail?.projectComments).toHaveLength(1);
+      expect(updatedDetail?.excerpts).toEqual([excerpt]);
       expect(updatedDetail?.insights).toHaveLength(1);
       expect(updatedDetail?.insights[0].summary).toContain('shared review');
 
@@ -206,6 +233,14 @@ describe('reading evidence', () => {
         'user-alice',
       );
 
+      expect(
+        await app.reading.listReaderExcerpts({
+          actorSpaceId: aliceShared.id,
+          actorUserId: 'user-bob',
+          libraryEntryId: imported.entry.id,
+        }),
+      ).toEqual([excerpt]);
+
       await expect(
         app.notebooks.getDocument({ documentId: captured.document.id }, 'user-bob'),
       ).rejects.toThrow(/access denied/i);
@@ -218,6 +253,13 @@ describe('reading evidence', () => {
           },
           'user-bob',
         ),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.reading.listReaderExcerpts({
+          actorSpaceId: bobPersonal.id,
+          actorUserId: 'user-charlie',
+          libraryEntryId: imported.entry.id,
+        }),
       ).rejects.toThrow(/access denied/i);
       await expect(
         app.notebooks.captureEvidence(

@@ -32,6 +32,7 @@ export interface DocumentQuoteBlock extends DocumentBlockBase {
   libraryEntryId?: string;
   locator?: string;
   paperAssetId?: string;
+  readerExcerptId?: string;
   text: string;
   type: 'quote';
 }
@@ -48,6 +49,7 @@ export interface DocumentCitationBlock extends DocumentBlockBase {
   libraryEntryId?: string;
   locator?: string;
   paperAssetId: string;
+  readerExcerptId?: string;
   type: 'citation';
 }
 
@@ -59,6 +61,7 @@ export interface DocumentSourceExcerptBlock extends DocumentBlockBase {
   note?: string;
   paperAssetId: string;
   quote: string;
+  readerExcerptId?: string;
   title?: string;
   type: 'sourceExcerpt';
 }
@@ -76,6 +79,7 @@ export interface DocumentAiSuggestionBlock extends DocumentBlockBase {
   libraryEntryId?: string;
   paperAssetId?: string;
   rationale?: string;
+  readerExcerptId?: string;
   status: 'proposed';
   targetBlockId?: string;
   text: string;
@@ -103,6 +107,7 @@ export interface DocumentBlockReference {
   evidenceSpan?: string;
   libraryEntryId?: string;
   paperAssetId: string;
+  readerExcerptId?: string;
   sourceBlockId?: string;
   sourceType:
     | 'aiSuggestion'
@@ -230,9 +235,14 @@ function normalizeBlock(block: unknown, index: number): DocumentBlock {
     case 'quote': {
       const paperAssetId = optionalString(block.paperAssetId, `${path}.paperAssetId`)?.trim();
       const libraryEntryId = optionalString(block.libraryEntryId, `${path}.libraryEntryId`)?.trim();
+      const readerExcerptId = optionalString(block.readerExcerptId, `${path}.readerExcerptId`)?.trim();
 
       if (libraryEntryId && !paperAssetId) {
         throw new Error(`${path}.paperAssetId is required when libraryEntryId is provided.`);
+      }
+
+      if (readerExcerptId && !paperAssetId) {
+        throw new Error(`${path}.paperAssetId is required when readerExcerptId is provided.`);
       }
 
       return {
@@ -242,6 +252,7 @@ function normalizeBlock(block: unknown, index: number): DocumentBlock {
         libraryEntryId: libraryEntryId || undefined,
         locator: optionalString(block.locator, `${path}.locator`),
         paperAssetId: paperAssetId || undefined,
+        readerExcerptId: readerExcerptId || undefined,
         text: requiredString(block.text, `${path}.text`),
         type: 'quote',
       };
@@ -265,6 +276,7 @@ function normalizeBlock(block: unknown, index: number): DocumentBlock {
         libraryEntryId: optionalString(block.libraryEntryId, `${path}.libraryEntryId`)?.trim() || undefined,
         locator: optionalString(block.locator, `${path}.locator`),
         paperAssetId: nonEmptyString(block.paperAssetId, `${path}.paperAssetId`),
+        readerExcerptId: optionalString(block.readerExcerptId, `${path}.readerExcerptId`)?.trim() || undefined,
         type: 'citation',
       };
     case 'sourceExcerpt':
@@ -277,6 +289,7 @@ function normalizeBlock(block: unknown, index: number): DocumentBlock {
         note: optionalString(block.note, `${path}.note`),
         paperAssetId: nonEmptyString(block.paperAssetId, `${path}.paperAssetId`),
         quote: requiredString(block.quote, `${path}.quote`),
+        readerExcerptId: optionalString(block.readerExcerptId, `${path}.readerExcerptId`)?.trim() || undefined,
         title: optionalString(block.title, `${path}.title`),
         type: 'sourceExcerpt',
       };
@@ -292,9 +305,14 @@ function normalizeBlock(block: unknown, index: number): DocumentBlock {
     case 'aiSuggestion': {
       const paperAssetId = optionalString(block.paperAssetId, `${path}.paperAssetId`)?.trim();
       const libraryEntryId = optionalString(block.libraryEntryId, `${path}.libraryEntryId`)?.trim();
+      const readerExcerptId = optionalString(block.readerExcerptId, `${path}.readerExcerptId`)?.trim();
 
       if (libraryEntryId && !paperAssetId) {
         throw new Error(`${path}.paperAssetId is required when libraryEntryId is provided.`);
+      }
+
+      if (readerExcerptId && !paperAssetId) {
+        throw new Error(`${path}.paperAssetId is required when readerExcerptId is provided.`);
       }
 
       if (block.status !== 'proposed') {
@@ -307,6 +325,7 @@ function normalizeBlock(block: unknown, index: number): DocumentBlock {
         libraryEntryId: libraryEntryId || undefined,
         paperAssetId: paperAssetId || undefined,
         rationale: optionalString(block.rationale, `${path}.rationale`),
+        readerExcerptId: readerExcerptId || undefined,
         status: 'proposed',
         targetBlockId: optionalString(block.targetBlockId, `${path}.targetBlockId`)?.trim() || undefined,
         text: requiredString(block.text, `${path}.text`),
@@ -441,6 +460,7 @@ export function extractDocumentBlockReferences(
           evidenceSpan: block.evidenceSpan,
           libraryEntryId: block.libraryEntryId,
           paperAssetId: block.paperAssetId,
+          readerExcerptId: block.readerExcerptId,
           sourceBlockId: block.id,
           sourceType: 'citation',
         });
@@ -450,6 +470,7 @@ export function extractDocumentBlockReferences(
           evidenceSpan: block.evidenceSpan ?? block.quote,
           libraryEntryId: block.libraryEntryId,
           paperAssetId: block.paperAssetId,
+          readerExcerptId: block.readerExcerptId,
           sourceBlockId: block.id,
           sourceType: 'sourceExcerpt',
         });
@@ -468,6 +489,7 @@ export function extractDocumentBlockReferences(
             evidenceSpan: block.evidenceSpan ?? block.text,
             libraryEntryId: block.libraryEntryId,
             paperAssetId: block.paperAssetId,
+            readerExcerptId: block.readerExcerptId,
             sourceBlockId: block.id,
             sourceType: 'quote',
           });
@@ -479,6 +501,7 @@ export function extractDocumentBlockReferences(
             evidenceSpan: block.evidenceSpan,
             libraryEntryId: block.libraryEntryId,
             paperAssetId: block.paperAssetId,
+            readerExcerptId: block.readerExcerptId,
             sourceBlockId: block.id,
             sourceType: 'aiSuggestion',
           });

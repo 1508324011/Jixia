@@ -1,6 +1,7 @@
 import type { GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type {
   PrivateReadingNoteRecord,
+  ReaderExcerptRecord,
   ProjectReadingCommentRecord,
   ReadingDetail,
 } from "@shared/contracts/reading";
@@ -8,12 +9,17 @@ import type {
 import type {
   CreateNoteRequest,
   CreateProjectCommentRequest,
+  CreateReaderExcerptServiceRequest,
   GetReadingDetailRequest,
+  ListReaderExcerptsRequest,
   ReadingService,
   SaveGeneratedInsightRequest,
 } from "../services/reading.service";
 
 export interface ReadingRoutes {
+  createReaderExcerpt(
+    input: CreateReaderExcerptServiceRequest,
+  ): Promise<ReaderExcerptRecord>;
   createNote(input: CreateNoteRequest): Promise<PrivateReadingNoteRecord>;
   createProjectComment(
     input: CreateProjectCommentRequest,
@@ -22,7 +28,9 @@ export interface ReadingRoutes {
   createWorkbenchProjectComment: ReadingService["createWorkbenchProjectComment"];
   getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
   getGeneratedInsightSource: ReadingService["getGeneratedInsightSource"];
+  getReaderExcerptSource: ReadingService["getReaderExcerptSource"];
   getWorkbenchDetail: ReadingService["getWorkbenchDetail"];
+  listReaderExcerpts(input: ListReaderExcerptsRequest): Promise<ReaderExcerptRecord[]>;
   saveGeneratedInsight(
     input: SaveGeneratedInsightRequest,
   ): Promise<GeneratedInsightRecord>;
@@ -31,6 +39,11 @@ export interface ReadingRoutes {
 
 export function createReadingRoutes(service: ReadingService): ReadingRoutes {
   return {
+    createReaderExcerpt(
+      input: CreateReaderExcerptServiceRequest,
+    ): Promise<ReaderExcerptRecord> {
+      return service.createReaderExcerpt(input);
+    },
     createNote(input: CreateNoteRequest): Promise<PrivateReadingNoteRecord> {
       return service.createNote(input);
     },
@@ -51,8 +64,16 @@ export function createReadingRoutes(service: ReadingService): ReadingRoutes {
     getGeneratedInsightSource(input) {
       return service.getGeneratedInsightSource(input);
     },
+    getReaderExcerptSource(input) {
+      return service.getReaderExcerptSource(input);
+    },
     getWorkbenchDetail(input) {
       return service.getWorkbenchDetail(input);
+    },
+    listReaderExcerpts(
+      input: ListReaderExcerptsRequest,
+    ): Promise<ReaderExcerptRecord[]> {
+      return service.listReaderExcerpts(input);
     },
     saveGeneratedInsight(
       input: SaveGeneratedInsightRequest,

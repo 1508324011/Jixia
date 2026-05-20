@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import type { DocumentBlockDocument } from "@shared/contracts/document-content";
 import type { LoginSessionRequest } from "@shared/contracts/session";
 import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
+import type { CreateReaderExcerptRequest } from "@shared/contracts/reading";
 
 import { createJixiaApp, type CreateJixiaAppOptions } from "./app";
 import { resolveHttpApi } from "./http-api";
@@ -390,6 +391,47 @@ function rejectProjectLibraryAdoptionAuthorityQueryFields(
   );
 }
 
+function rejectReaderExcerptAuthorityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "createdByUserId"),
+    "createdByUserId",
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scope"),
+    "scope",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeType"),
+    "scopeType",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeId"),
+    "scopeId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "spaceId"),
+    "spaceId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "projectId"),
+    "projectId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "visibility"),
+    "visibility",
+  );
+}
+
 function rejectLegacyIdentityBodyFields(
   actor: { userId: string },
   requestBody: unknown,
@@ -442,6 +484,28 @@ function rejectProjectLibraryAdoptionAuthorityBodyFields(
   assertNoClientActorContextField(body.scope, "scope");
   assertNoClientActorContextField(body.visibility, "visibility");
   assertNoClientActorContextField(body.projectId, "projectId");
+}
+
+function rejectReaderExcerptAuthorityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
+  assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+  assertNoClientActorContextField(body.scope, "scope");
+  assertNoClientActorContextField(body.scopeType, "scopeType");
+  assertNoClientActorContextField(body.scopeId, "scopeId");
+  assertNoClientActorContextField(body.spaceId, "spaceId");
+  assertNoClientActorContextField(body.projectId, "projectId");
+  assertNoClientActorContextField(body.visibility, "visibility");
 }
 
 function assertStringField(
@@ -499,12 +563,39 @@ function assertOptionalDocumentContentField(
   return value as DocumentBlockDocument;
 }
 
+function parseCreateReaderExcerptBody(
+  requestBody: unknown,
+): CreateReaderExcerptRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Reader excerpt payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  if (typeof body.startOffset !== "number") {
+    throw new Error("startOffset is required.");
+  }
+
+  if (typeof body.endOffset !== "number") {
+    throw new Error("endOffset is required.");
+  }
+
+  return {
+    endOffset: body.endOffset,
+    locator: assertOptionalStringField(body.locator, "locator"),
+    note: assertOptionalTextField(body.note, "note"),
+    quote: assertStringField(body.quote, "quote"),
+    startOffset: body.startOffset,
+  };
+}
+
 function parseDocumentCitationInputs(
   value: unknown,
 ): Array<{
   evidenceSpan?: string;
   libraryEntryId?: string;
   paperAssetId: string;
+  readerExcerptId?: string;
 }> {
   if (!Array.isArray(value)) {
     throw new Error("citations must be an array.");
@@ -530,6 +621,10 @@ function parseDocumentCitationInputs(
         citationRecord.paperAssetId,
         `citations[${index}].paperAssetId`,
       ),
+      readerExcerptId: assertOptionalStringField(
+        citationRecord.readerExcerptId,
+        `citations[${index}].readerExcerptId`,
+      ),
     };
   });
 }
@@ -539,6 +634,7 @@ function parseDocumentVersionBody(requestBody: unknown): {
     evidenceSpan?: string;
     libraryEntryId?: string;
     paperAssetId: string;
+    readerExcerptId?: string;
   }>;
   content?: string;
   documentContent?: DocumentBlockDocument;
@@ -567,6 +663,7 @@ function parseWorkbenchWritingBody(requestBody: unknown): {
     evidenceSpan?: string;
     libraryEntryId?: string;
     paperAssetId: string;
+    readerExcerptId?: string;
   }>;
   content?: string;
   documentContent?: DocumentBlockDocument;
@@ -1475,6 +1572,53 @@ async function handleApiRequest(
           actorUserId: actor.userId,
           libraryEntryId: entryId,
         }),
+        method,
+      );
+      return true;
+    }
+
+    const readingExcerptsMatch = pathname.match(/^\/api\/reading\/([^/]+)\/excerpts$/);
+    if (readingExcerptsMatch && method === "GET") {
+      const actor = await getActor(request, actorOptions);
+      const [, entryId] = readingExcerptsMatch;
+      rejectReaderExcerptAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        {
+          excerpts: await app.reading.listReaderExcerpts({
+            actorUserId: actor.userId,
+            libraryEntryId: decodePathSegment(entryId),
+          }),
+        },
+        method,
+      );
+      return true;
+    }
+
+    if (readingExcerptsMatch && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      const [, entryId] = readingExcerptsMatch;
+      rejectReaderExcerptAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectReaderExcerptAuthorityBodyFields(actor, requestBody);
+      const body = parseCreateReaderExcerptBody(requestBody);
+
+      sendJson(
+        response,
+        201,
+        {
+          excerpt: await app.reading.createReaderExcerpt({
+            actorUserId: actor.userId,
+            endOffset: body.endOffset,
+            libraryEntryId: decodePathSegment(entryId),
+            locator: body.locator,
+            note: body.note,
+            quote: body.quote,
+            startOffset: body.startOffset,
+          }),
+        },
         method,
       );
       return true;

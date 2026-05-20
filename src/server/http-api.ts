@@ -68,6 +68,7 @@ interface ParsedSaveWritingDocumentRequest {
     evidenceSpan?: string;
     libraryEntryId?: string;
     paperAssetId: string;
+    readerExcerptId?: string;
   }>;
   content?: string;
   documentContent?: DocumentBlockDocument;
@@ -305,7 +306,7 @@ function parseSaveWritingDocumentRequest(
         throw new Error(`citations[${index}] must be an object.`);
       }
 
-      const { evidenceSpan, libraryEntryId, paperAssetId } = citation as Record<string, unknown>;
+      const { evidenceSpan, libraryEntryId, paperAssetId, readerExcerptId } = citation as Record<string, unknown>;
 
       if (typeof paperAssetId !== 'string' || !paperAssetId.trim()) {
         throw new Error(`citations[${index}].paperAssetId is required.`);
@@ -319,10 +320,15 @@ function parseSaveWritingDocumentRequest(
         throw new Error(`citations[${index}].libraryEntryId must be a string when provided.`);
       }
 
+      if (typeof readerExcerptId !== 'undefined' && typeof readerExcerptId !== 'string') {
+        throw new Error(`citations[${index}].readerExcerptId must be a string when provided.`);
+      }
+
       return {
         evidenceSpan,
         libraryEntryId: libraryEntryId?.trim() || undefined,
         paperAssetId: paperAssetId.trim(),
+        readerExcerptId: readerExcerptId?.trim() || undefined,
       };
     }),
     content,

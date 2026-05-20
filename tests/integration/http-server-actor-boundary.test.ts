@@ -322,6 +322,16 @@ describe('http server actor boundary cleanup', () => {
             headers: { 'Content-Type': 'application/json' },
             method: 'POST',
           }),
+          fetch(`${server.url}/api/reading/entry-1/excerpts`),
+          fetch(`${server.url}/api/reading/entry-1/excerpts`, {
+            body: JSON.stringify({
+              endOffset: 12,
+              quote: 'Unauthenticated reader excerpt',
+              startOffset: 0,
+            }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/jobs`),
           fetch(`${server.url}/api/jobs/job-1/cancel`, { method: 'POST' }),
           fetch(`${server.url}/api/jobs/job-1/stream`),
@@ -786,6 +796,48 @@ describe('http server actor boundary cleanup', () => {
             }),
             method: 'POST',
           }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts`, {
+            body: JSON.stringify({
+              endOffset: 22,
+              quote: 'Spoofed excerpt actor should be rejected.',
+              requestedByUserId: 'user-bob',
+              startOffset: 0,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts`, {
+            body: JSON.stringify({
+              createdByUserId: 'user-bob',
+              endOffset: 23,
+              quote: 'Spoofed excerpt creator should be rejected.',
+              startOffset: 0,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts`, {
+            body: JSON.stringify({
+              endOffset: 24,
+              projectId: importedRecord.projectId,
+              quote: 'Spoofed excerpt scope should be rejected.',
+              startOffset: 0,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts?scopeType=project`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts?createdByUserId=user-bob`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
           fetch(`${server.url}/api/credentials?userId=user-bob`, {
             headers: withSessionCookie(aliceCookie),
           }),
@@ -1212,6 +1264,63 @@ describe('http server actor boundary cleanup', () => {
             }),
             method: 'POST',
           }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts?actorUserId=user-alice`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts?visibility=published_to_project`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts?createdByUserId=user-alice`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts`, {
+            body: JSON.stringify({
+              endOffset: 22,
+              quote: 'Matching excerpt actor should be rejected.',
+              startOffset: 0,
+              userId: 'user-alice',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts`, {
+            body: JSON.stringify({
+              createdByUserId: 'user-alice',
+              endOffset: 23,
+              quote: 'Matching excerpt creator should be rejected.',
+              startOffset: 0,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts`, {
+            body: JSON.stringify({
+              endOffset: 24,
+              ownerId: 'user-alice',
+              quote: 'Matching excerpt owner should be rejected.',
+              startOffset: 0,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/excerpts`, {
+            body: JSON.stringify({
+              endOffset: 25,
+              quote: 'Matching excerpt scope should be rejected.',
+              scope: { id: importedRecord.projectId, type: 'project' },
+              startOffset: 0,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/reading/insights`, {
             body: JSON.stringify({
               evidenceSpans: [],
@@ -1351,6 +1460,118 @@ describe('http server actor boundary cleanup', () => {
           expect(response.status).toBe(400);
           expect(payload.error).toMatch(/not accepted for protected routes/i);
         }
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 30_000);
+
+  it('creates and lists reader excerpts through session actor authority only', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-reader-excerpts-'));
+
+    try {
+      const server = await startTestServer(
+        { JIXIA_STORAGE_ROOT: storageRoot },
+        { connectors: { pubmed: createActorBoundaryPubmedConnector() } },
+      );
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+        const charlieCookie = await loginAs(server.url, 'user-charlie');
+        const sharedSpace = await createSharedSpace(server.url, aliceCookie, 'user-alice');
+        const importedRecord = await importPaper(
+          server.url,
+          aliceCookie,
+          'user-alice',
+          sharedSpace.id,
+        );
+
+        const bobMemberResponse = await fetch(
+          `${server.url}/api/projects/${importedRecord.projectId}/members`,
+          {
+            body: JSON.stringify({ role: 'viewer', userId: 'user-bob' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        expect(bobMemberResponse.status).toBe(200);
+
+        const createdResponse = await fetch(
+          `${server.url}/api/reading/${importedRecord.entry.id}/excerpts`,
+          {
+            body: JSON.stringify({
+              endOffset: 32,
+              locator: 'p. 3',
+              note: 'Traceable HTTP reader evidence.',
+              quote: 'HTTP durable reader evidence',
+              startOffset: 4,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const createdBody = await createdResponse.json() as {
+          excerpt: {
+            createdByUserId: string;
+            id: string;
+            libraryEntryId: string;
+            locator?: string;
+            projectId?: string;
+            quote: string;
+            scopeType?: string;
+            visibility?: string;
+          };
+        };
+
+        expect(createdResponse.status).toBe(201);
+        expect(createdBody.excerpt).toMatchObject({
+          createdByUserId: 'user-alice',
+          libraryEntryId: importedRecord.entry.id,
+          locator: 'p. 3',
+          quote: 'HTTP durable reader evidence',
+        });
+        expect(createdBody.excerpt).not.toHaveProperty('visibility');
+        expect(createdBody.excerpt).not.toHaveProperty('projectId');
+        expect(createdBody.excerpt).not.toHaveProperty('scopeType');
+
+        const aliceListResponse = await fetch(
+          `${server.url}/api/reading/${importedRecord.entry.id}/excerpts`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const bobListResponse = await fetch(
+          `${server.url}/api/reading/${importedRecord.entry.id}/excerpts`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        const charlieListResponse = await fetch(
+          `${server.url}/api/reading/${importedRecord.entry.id}/excerpts`,
+          { headers: withSessionCookie(charlieCookie) },
+        );
+
+        expect(aliceListResponse.status).toBe(200);
+        await expect(aliceListResponse.json()).resolves.toMatchObject({
+          excerpts: [
+            expect.objectContaining({
+              id: createdBody.excerpt.id,
+              quote: 'HTTP durable reader evidence',
+            }),
+          ],
+        });
+        expect(bobListResponse.status).toBe(200);
+        await expect(bobListResponse.json()).resolves.toMatchObject({
+          excerpts: [
+            expect.objectContaining({
+              id: createdBody.excerpt.id,
+            }),
+          ],
+        });
+        expect(charlieListResponse.status).toBe(403);
       } finally {
         await server.close();
       }

@@ -6,7 +6,7 @@ import {
 } from '@prisma/client';
 
 import type { JixiaPrismaClient } from '../client';
-import { initializeLibraryPersistence } from './library.repository';
+import { initializeReadingPersistence } from './reading.repository';
 
 export interface CreateNotebookDocumentParams {
   id?: string;
@@ -18,6 +18,7 @@ export interface CreateNotebookDocumentVersionParams {
   citations: Array<{
     evidenceSpan?: string;
     paperAssetId: string;
+    readerExcerptId?: string;
   }>;
   content: string;
   documentId: string;
@@ -37,6 +38,7 @@ export interface PersistedNotebookCitationRecord {
   id: string;
   notebookDocumentVersionId: string;
   paperAssetId: string;
+  readerExcerptId?: string;
 }
 
 export interface PersistedNotebookDocumentSnapshot {
@@ -106,6 +108,7 @@ function mapCitation(
     id: citation.id,
     notebookDocumentVersionId: citation.notebookDocumentVersionId,
     paperAssetId: citation.paperAssetId,
+    readerExcerptId: citation.readerExcerptId ?? undefined,
   };
 }
 
@@ -160,10 +163,97 @@ async function getLatestVersion(
   });
 }
 
+interface SqliteForeignKeyRow {
+  from: string;
+  on_delete: string;
+  on_update: string;
+  table: string;
+  to: string;
+}
+
+async function hasNotebookCitationReaderExcerptForeignKey(
+  prisma: JixiaPrismaClient,
+): Promise<boolean> {
+  const foreignKeys = await prisma.$queryRawUnsafe<SqliteForeignKeyRow[]>(
+    'PRAGMA foreign_key_list("NotebookDocumentCitation")',
+  );
+
+  return foreignKeys.some(
+    (foreignKey) =>
+      foreignKey.from === 'readerExcerptId' &&
+      foreignKey.table === 'ReaderExcerpt' &&
+      foreignKey.to === 'id' &&
+      foreignKey.on_delete === 'SET NULL' &&
+      foreignKey.on_update === 'CASCADE',
+  );
+}
+
+async function rebuildNotebookCitationReaderExcerptForeignKey(
+  prisma: JixiaPrismaClient,
+): Promise<void> {
+  if (await hasNotebookCitationReaderExcerptForeignKey(prisma)) {
+    return;
+  }
+
+  await prisma.$executeRawUnsafe('PRAGMA foreign_keys = OFF');
+
+  try {
+    await prisma.$executeRawUnsafe(
+      'DROP TABLE IF EXISTS "NotebookDocumentCitation__rebuild"',
+    );
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE "NotebookDocumentCitation__rebuild" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "notebookDocumentVersionId" TEXT NOT NULL,
+        "paperAssetId" TEXT NOT NULL,
+        "readerExcerptId" TEXT,
+        "evidenceSpan" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "NotebookDocumentCitation_notebookDocumentVersionId_fkey" FOREIGN KEY ("notebookDocumentVersionId") REFERENCES "NotebookDocumentVersion" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "NotebookDocumentCitation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "NotebookDocumentCitation_readerExcerptId_fkey" FOREIGN KEY ("readerExcerptId") REFERENCES "ReaderExcerpt" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "NotebookDocumentCitation__rebuild" (
+        "id",
+        "notebookDocumentVersionId",
+        "paperAssetId",
+        "readerExcerptId",
+        "evidenceSpan",
+        "createdAt"
+      )
+      SELECT
+        "NotebookDocumentCitation"."id",
+        "NotebookDocumentCitation"."notebookDocumentVersionId",
+        "NotebookDocumentCitation"."paperAssetId",
+        CASE
+          WHEN "NotebookDocumentCitation"."readerExcerptId" IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM "ReaderExcerpt"
+              WHERE "ReaderExcerpt"."id" = "NotebookDocumentCitation"."readerExcerptId"
+            )
+          THEN "NotebookDocumentCitation"."readerExcerptId"
+          ELSE NULL
+        END AS "readerExcerptId",
+        "NotebookDocumentCitation"."evidenceSpan",
+        "NotebookDocumentCitation"."createdAt"
+      FROM "NotebookDocumentCitation"
+    `);
+    await prisma.$executeRawUnsafe('DROP TABLE "NotebookDocumentCitation"');
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE "NotebookDocumentCitation__rebuild" RENAME TO "NotebookDocumentCitation"',
+    );
+  } finally {
+    await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON');
+  }
+}
+
 export async function initializeNotebookPersistence(
   prisma: JixiaPrismaClient,
 ): Promise<void> {
-  await initializeLibraryPersistence(prisma);
+  await initializeReadingPersistence(prisma);
   await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON');
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "NotebookDocument" (
@@ -193,14 +283,35 @@ export async function initializeNotebookPersistence(
       "id" TEXT NOT NULL PRIMARY KEY,
       "notebookDocumentVersionId" TEXT NOT NULL,
       "paperAssetId" TEXT NOT NULL,
+      "readerExcerptId" TEXT,
       "evidenceSpan" TEXT,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "NotebookDocumentCitation_notebookDocumentVersionId_fkey" FOREIGN KEY ("notebookDocumentVersionId") REFERENCES "NotebookDocumentVersion" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-      CONSTRAINT "NotebookDocumentCitation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      CONSTRAINT "NotebookDocumentCitation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "NotebookDocumentCitation_readerExcerptId_fkey" FOREIGN KEY ("readerExcerptId") REFERENCES "ReaderExcerpt" ("id") ON DELETE SET NULL ON UPDATE CASCADE
     )
   `);
   await prisma.$executeRawUnsafe(`
-    CREATE UNIQUE INDEX IF NOT EXISTS "NotebookDocumentCitation_notebookDocumentVersionId_paperAssetId_key" ON "NotebookDocumentCitation"("notebookDocumentVersionId", "paperAssetId")
+    ALTER TABLE "NotebookDocumentCitation" ADD COLUMN "readerExcerptId" TEXT
+  `).catch((error) => {
+    if (
+      error instanceof Error &&
+      /duplicate column name|already exists/i.test(error.message)
+    ) {
+      return;
+    }
+
+    throw error;
+  });
+  await prisma.$executeRawUnsafe(`
+    DROP INDEX IF EXISTS "NotebookDocumentCitation_notebookDocumentVersionId_paperAssetId_key"
+  `);
+  await rebuildNotebookCitationReaderExcerptForeignKey(prisma);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "NotebookDocumentCitation_notebookDocumentVersionId_paperAssetId_idx" ON "NotebookDocumentCitation"("notebookDocumentVersionId", "paperAssetId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "NotebookDocumentCitation_readerExcerptId_idx" ON "NotebookDocumentCitation"("readerExcerptId")
   `);
 }
 
@@ -308,6 +419,7 @@ export function createNotebookRepository(
               create: input.citations.map((citation) => ({
                 evidenceSpan: citation.evidenceSpan,
                 paperAssetId: citation.paperAssetId,
+                readerExcerptId: citation.readerExcerptId,
               })),
             },
             notebookDocumentId: input.documentId,
