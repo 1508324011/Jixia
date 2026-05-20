@@ -208,8 +208,6 @@ describe('http server command search api', () => {
             },
             entry: {
               addedByUserId: 'user-alice',
-              legacySpaceId: createdSpace.id,
-              legacyVisibility: 'private',
               scope: { id: 'user-alice', type: 'user' },
             },
           });
@@ -225,8 +223,6 @@ describe('http server command search api', () => {
             },
             entry: {
               addedByUserId: 'user-alice',
-              legacySpaceId: createdSpace.id,
-              legacyVisibility: 'published_to_project',
               scope: { id: project.project.id, type: 'project' },
             },
           });
@@ -241,8 +237,6 @@ describe('http server command search api', () => {
             },
             entry: {
               addedByUserId: 'user-bob',
-              legacySpaceId: bobSpace.id,
-              legacyVisibility: 'published_to_project',
               scope: { id: bobProject.project.id, type: 'project' },
             },
           });

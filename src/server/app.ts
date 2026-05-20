@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
@@ -6,7 +7,6 @@ import type {
   ConversationRecord,
   NoteRecord,
 } from '@shared/contracts/reading';
-import type { SpaceMembership } from '@shared/contracts/spaces';
 
 import {
   createPrismaClient,
@@ -115,7 +115,6 @@ import {
 import { createProjectWorkspaceService } from './services/project-workspace.service';
 import {
   createSpacesService,
-  type StoredSpace,
 } from './services/spaces.service';
 import { createFileStore } from './storage/file-store';
 import {
@@ -158,9 +157,6 @@ export interface JixiaAppState {
   legacyReadingStates: LegacyReadingStateRecord[];
   legacyPaperAssets: LegacyStoredPaperAsset[];
   legacyWorkbenchSettings: LegacyWorkbenchSettingsBootstrapInput[];
-  memberships: SpaceMembership[];
-  nextSequence: number;
-  spaces: StoredSpace[];
 }
 
 type SerializedJixiaAppState = Partial<
@@ -176,13 +172,23 @@ type SerializedJixiaAppState = Partial<
   docVersions?: unknown;
   libraryEntries?: LegacyStoredLibraryEntry[];
   conversations?: ConversationRecord[];
+  /**
+   * Compatibility-only bootstrap input for the pre-Prisma credential authority.
+   * New runtime credential/settings state is never mirrored here; startup reads
+   * these arrays once, bootstraps Prisma rows, writes the bootstrap marker, and
+   * scrubs the arrays back out of server-state.json.
+   */
   credentials?: LegacyCredentialBootstrapInput[];
   insights?: GeneratedInsightRecord[];
   notes?: NoteRecord[];
   readingStates?: LegacyReadingStateRecord[];
   paperAssets?: LegacyStoredPaperAsset[];
+  memberships?: unknown;
+  nextSequence?: unknown;
   projectMembers?: unknown;
   projects?: unknown;
+  spaces?: unknown;
+  /** Compatibility-only bootstrap input; see credentials above. */
   workbenchSettings?: LegacyWorkbenchSettingsBootstrapInput[];
   writingDocs?: unknown;
 };
@@ -240,9 +246,6 @@ function createState(): JixiaAppState {
     legacyReadingStates: [],
     legacyPaperAssets: [],
     legacyWorkbenchSettings: [],
-    memberships: [],
-    nextSequence: 0,
-    spaces: [],
   };
 }
 
@@ -285,6 +288,9 @@ function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
   const hadLegacyCollaborativeKeys =
     hasOwnProperty(parsed, 'projects') ||
     hasOwnProperty(parsed, 'projectMembers') ||
+    hasOwnProperty(parsed, 'spaces') ||
+    hasOwnProperty(parsed, 'memberships') ||
+    hasOwnProperty(parsed, 'nextSequence') ||
     hasOwnProperty(parsed, 'writingDocs') ||
     hasOwnProperty(parsed, 'docVersions') ||
     hasOwnProperty(parsed, 'citationLinks');
@@ -311,9 +317,6 @@ function loadState(env: StorageRootEnv = process.env): LoadedJixiaAppState {
       legacyPaperAssets: parsed.paperAssets ?? initialState.legacyPaperAssets,
       legacyWorkbenchSettings:
         parsed.workbenchSettings ?? initialState.legacyWorkbenchSettings,
-      memberships: parsed.memberships ?? initialState.memberships,
-      nextSequence: parsed.nextSequence ?? initialState.nextSequence,
-      spaces: parsed.spaces ?? initialState.spaces,
     },
   };
 }
@@ -323,20 +326,24 @@ function persistState(
   env: StorageRootEnv = process.env,
 ): void {
   const rootDirectory = resolveStorageRoot(env);
-  const memberships = state.memberships;
-  const spaces = state.spaces;
 
   mkdirSync(rootDirectory, { recursive: true });
   const serializedState: SerializedJixiaAppState = {
     conversations: state.legacyConversations,
+    // Preserve credential/settings arrays only while they are pending one-time
+    // Prisma bootstrap. Live settings/credential writes go through repositories;
+    // clearLegacyCredentialState removes these fields after the marker exists.
+    credentials: state.legacyCredentials.length > 0
+      ? state.legacyCredentials
+      : undefined,
     insights: state.legacyInsights,
     libraryEntries: state.legacyLibraryEntries,
-    memberships,
-    nextSequence: state.nextSequence,
     notes: state.legacyNotes,
     paperAssets: state.legacyPaperAssets,
     readingStates: state.legacyReadingStates,
-    spaces,
+    workbenchSettings: state.legacyWorkbenchSettings.length > 0
+      ? state.legacyWorkbenchSettings
+      : undefined,
   };
 
   writeFileSync(resolveAppStatePath(env), JSON.stringify(serializedState, null, 2));
@@ -366,10 +373,8 @@ function markCredentialAuthorityBootstrapComplete(
   );
 }
 
-function nextId(state: JixiaAppState, prefix: string): string {
-  state.nextSequence += 1;
-
-  return `${prefix}-${state.nextSequence}`;
+function createRuntimeId(prefix: string): string {
+  return `${prefix}-${randomUUID()}`;
 }
 
 function resolveAppDatabaseUrl(env: JixiaAppEnv = process.env): string {
@@ -454,6 +459,15 @@ function clearLegacyReadingState(
   return true;
 }
 
+function hasLegacyConversationAttribution(
+  conversation: ConversationRecord | undefined,
+): conversation is ConversationRecord {
+  return (
+    typeof conversation?.startedByUserId === 'string' &&
+    conversation.startedByUserId.trim().length > 0
+  );
+}
+
 function hasLegacyCredentialBootstrapInput(
   state: Pick<JixiaAppState, 'legacyCredentials' | 'legacyWorkbenchSettings'>,
 ): boolean {
@@ -506,6 +520,13 @@ async function bootstrapLegacyReadingState(
   }
 
   for (const conversation of state.legacyConversations) {
+    if (!hasLegacyConversationAttribution(conversation)) {
+      // Pre-Prisma JSON is compatibility input, not authority. A conversation
+      // without explicit actor attribution cannot safely own generated insight
+      // rows, so skip it instead of inventing an owner.
+      continue;
+    }
+
     await readingRepository.createConversation({
       createdAt: conversation.createdAt,
       id: conversation.id,
@@ -542,13 +563,22 @@ async function bootstrapLegacyReadingState(
   }
 
   for (const insight of state.legacyInsights) {
+    const sourceConversation = state.legacyConversations.find(
+      (conversation) => conversation.id === insight.conversationId,
+    );
+
+    if (!hasLegacyConversationAttribution(sourceConversation)) {
+      // Legacy insight rows require a real legacy conversation because that row
+      // is the only pre-Prisma source of author attribution. Skipping orphaned
+      // compatibility rows is safer than synthesizing an actor and persisting a
+      // false GeneratedInsight.createdByUserId.
+      continue;
+    }
+
     await readingRepository.saveGeneratedInsight({
       conversationId: insight.conversationId,
       createdAt: insight.createdAt,
-      createdByUserId:
-        state.legacyConversations.find(
-          (conversation) => conversation.id === insight.conversationId,
-        )?.startedByUserId ?? 'user-alice',
+      createdByUserId: sourceConversation.startedByUserId,
       evidenceSpans: insight.evidenceSpans.map((span, index) => ({
         ...span,
         orderIndex: index,
@@ -788,13 +818,6 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const persist = (): void => {
     persistState(state, options.env);
   };
-  const persistedNextId = (prefix: string): string => {
-    const id = nextId(state, prefix);
-
-    persist();
-
-    return id;
-  };
 
   if (loadedState.hadLegacyCollaborativeKeys) {
     persist();
@@ -807,30 +830,6 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const prismaClient = createPrismaClient({ url: resolveAppDatabaseUrl(options.env) });
   const spaceRepository = createSpaceRepository(prismaClient);
   const spacesService = createSpacesService({
-    legacyMirror: {
-      syncMembership(record): void {
-        const existingMembership = state.memberships.find(
-          (membership) =>
-            membership.spaceId === record.spaceId && membership.userId === record.userId,
-        );
-
-        if (!existingMembership) {
-          state.memberships.push(record);
-          persist();
-        }
-      },
-      syncSpace(record): void {
-        const existingSpace = state.spaces.find((space) => space.id === record.id);
-
-        if (!existingSpace) {
-          state.spaces.push(record);
-          persist();
-        }
-      },
-    },
-    nextId(prefix: string): string {
-      return nextId(state, prefix);
-    },
     repository: spaceRepository,
   });
   const projectRepository = createProjectRepository(prismaClient);
@@ -1024,9 +1023,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     readingService,
   });
   const credentialsService = createCredentialsService({
-    nextId(prefix: string): string {
-      return persistedNextId(prefix);
-    },
+    nextId: createRuntimeId,
     repository: credentialsRepository,
     async resolveSecretBox() {
       await ensureCredentialAuthorityUsable(credentialsRepository, options.env);
@@ -1040,21 +1037,21 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const sessionRoutes = createSessionRoutes(sessionService);
   const auditService = createAuditService({
     jobRepository,
-    nextId: persistedNextId,
+    nextId: createRuntimeId,
   });
   const jobBus = createJobBus();
   const jobRunner = createJobRunner({
     executor: options.jobExecutor,
     jobBus,
     jobRepository,
-    nextId: persistedNextId,
+    nextId: createRuntimeId,
   });
   const jobsRoutes = createJobsRoutes({
     auditService,
     jobBus,
     jobRepository,
     jobRunner,
-    nextId: persistedNextId,
+    nextId: createRuntimeId,
     projectRepository,
     spaceRepository,
   });

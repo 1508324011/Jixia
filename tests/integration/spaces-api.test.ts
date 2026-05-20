@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -51,8 +51,10 @@ describe('spaces api', () => {
 
       expect(personal.kind).toBe('personal');
       expect(shared.kind).toBe('shared');
-      expect(personal.id).toMatch(/^space-/);
-      expect(shared.id).toMatch(/^space-/);
+      expect(personal.id).toEqual(expect.any(String));
+      expect(shared.id).toEqual(expect.any(String));
+      expect(personal.id).not.toHaveLength(0);
+      expect(shared.id).not.toHaveLength(0);
 
       const memberships = await app.spaces.listMemberships(
         { spaceId: shared.id },
@@ -65,21 +67,16 @@ describe('spaces api', () => {
         userId: 'user-alice',
       });
 
-      const persistedState = JSON.parse(
-        readFileSync(join(storageRoot, 'server-state.json'), 'utf8'),
-      ) as {
-        memberships: Array<{ spaceId: string; userId: string }>;
-        spaces: Array<{ id: string }>;
-      };
-      expect(persistedState.spaces.map((space) => space.id)).toEqual(
-        expect.arrayContaining([personal.id, shared.id]),
-      );
-      expect(
-        persistedState.memberships.filter(
-          (membership) =>
-            membership.spaceId === shared.id && membership.userId === 'user-alice',
-        ),
-      ).toHaveLength(1);
+      const statePath = join(storageRoot, 'server-state.json');
+      if (existsSync(statePath)) {
+        const persistedState = JSON.parse(readFileSync(statePath, 'utf8')) as {
+          memberships?: unknown;
+          spaces?: unknown;
+        };
+
+        expect(persistedState.spaces).toBeUndefined();
+        expect(persistedState.memberships).toBeUndefined();
+      }
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
@@ -124,20 +121,16 @@ describe('spaces api', () => {
         'user-alice',
       );
       const statePath = join(storageRoot, 'server-state.json');
-      const serverState = JSON.parse(readFileSync(statePath, 'utf8')) as {
-        memberships: Array<{
-          joinedAt: string;
-          role: 'owner' | 'editor' | 'viewer';
-          spaceId: string;
-          userId: string;
-        }>;
+      const serverState = {
+        memberships: [
+          {
+            joinedAt: new Date().toISOString(),
+            role: 'viewer',
+            spaceId: sharedSpace.id,
+            userId: 'user-charlie',
+          },
+        ],
       };
-      serverState.memberships.push({
-        joinedAt: new Date().toISOString(),
-        role: 'viewer',
-        spaceId: sharedSpace.id,
-        userId: 'user-charlie',
-      });
       writeFileSync(statePath, JSON.stringify(serverState, null, 2));
 
       const secondApp = createJixiaApp({ env });

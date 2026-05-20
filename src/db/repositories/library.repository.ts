@@ -37,8 +37,6 @@ export interface UpsertPaperAssetParams {
 export interface UpsertLibraryEntryParams {
   addedByUserId: string;
   id?: string;
-  legacySpaceId?: string;
-  legacyVisibility?: PersistedLibraryEntryVisibility;
   paperAssetId: string;
   scope: PersistedLibraryScopeRef;
 }
@@ -50,8 +48,6 @@ export interface ImportScopedLibraryEntryParams {
 
 export interface AdoptExistingLibraryEntryParams {
   addedByUserId: string;
-  legacySpaceId?: string;
-  legacyVisibility?: PersistedLibraryEntryVisibility;
   paperAssetId: string;
   scope: PersistedLibraryScopeRef;
 }
@@ -103,8 +99,6 @@ export interface PersistedLibraryEntryRecord {
   addedByUserId: string;
   createdAt: string;
   id: string;
-  legacySpaceId?: string;
-  legacyVisibility?: PersistedLibraryEntryVisibility;
   paperAssetId: string;
   scope: PersistedLibraryScopeRef;
   updatedAt: string;
@@ -176,10 +170,6 @@ function mapLibraryEntry(
     addedByUserId: entry.addedByUserId,
     createdAt: toIsoString(entry.createdAt),
     id: entry.id,
-    legacySpaceId: entry.legacySpaceId ?? undefined,
-    legacyVisibility:
-      (entry.legacyVisibility as PersistedLibraryEntryVisibility | null) ??
-      undefined,
     paperAssetId: entry.paperAssetId,
     scope: {
       id: entry.scopeId,
@@ -299,15 +289,11 @@ async function upsertLibraryEntry(
     create: {
       addedByUserId: input.addedByUserId,
       id: input.id,
-      legacySpaceId: input.legacySpaceId,
-      legacyVisibility: input.legacyVisibility,
       paperAssetId: input.paperAssetId,
       scopeId: input.scope.id,
       scopeType: input.scope.type,
     },
     update: {
-      legacySpaceId: input.legacySpaceId,
-      legacyVisibility: input.legacyVisibility,
       updatedAt: new Date(),
     },
     where: {
@@ -355,6 +341,9 @@ export async function initializeLibraryPersistence(
       "scopeId" TEXT NOT NULL,
       "paperAssetId" TEXT NOT NULL,
       "addedByUserId" TEXT NOT NULL,
+      -- Deprecated migration-only columns kept inert for old SQLite files.
+      -- Runtime scope/space/visibility authority comes exclusively from
+      -- scopeType/scopeId plus Project.spaceId resolved in services.
       "legacySpaceId" TEXT,
       "legacyVisibility" TEXT,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -420,8 +409,6 @@ export function createLibraryRepository(
           const createdEntry = await transaction.libraryEntry.create({
             data: {
               addedByUserId: input.addedByUserId,
-              legacySpaceId: input.legacySpaceId,
-              legacyVisibility: input.legacyVisibility,
               paperAssetId: input.paperAssetId,
               scopeId: input.scope.id,
               scopeType: input.scope.type,
@@ -465,8 +452,8 @@ export function createLibraryRepository(
 
       // Legacy JSON entries only carried spaceId + visibility, so they cannot
       // identify a real Project. Backfill them conservatively as personal
-      // library adoptions for the asset importer while retaining legacySpaceId
-      // and legacyVisibility as non-authoritative compatibility metadata.
+      // library adoptions for the asset importer without preserving the legacy
+      // ownership mirrors in normal repository DTOs or writes.
 
       const assetsByLegacyId = new Map(
         input.assets.map((asset) => [asset.id, asset]),
@@ -506,8 +493,6 @@ export function createLibraryRepository(
           await upsertLibraryEntry(transaction, {
             addedByUserId: legacyAsset.importedByUserId,
             id: legacyEntry.id,
-            legacySpaceId: legacyEntry.spaceId,
-            legacyVisibility: legacyEntry.visibility,
             paperAssetId: importedAsset.id,
             scope: {
               id: legacyAsset.importedByUserId,

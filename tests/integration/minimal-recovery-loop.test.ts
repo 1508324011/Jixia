@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import { createPrismaClient } from '../../src/db';
+import type { PubmedConnector } from '../../src/server/connectors/pubmed.connector';
 import {
   startTestServer,
   loginAs,
@@ -137,6 +138,21 @@ function createMinimalRecoveryEnv(storageRoot: string) {
   };
 }
 
+function createMinimalRecoveryPubmedConnector(): PubmedConnector {
+  return {
+    async lookup(locator, sourceType) {
+      return {
+        abstractText: `Minimal recovery fixture abstract for ${locator}.`,
+        canonicalId: `${sourceType}:${locator}`,
+        title: `Minimal recovery fixture ${locator}`,
+      };
+    },
+    async search() {
+      return [];
+    },
+  };
+}
+
 async function expectJson<T>(response: Response): Promise<T> {
   const rawBody = await response.text();
 
@@ -187,7 +203,10 @@ describe('minimal recovery loop server truth smoke', () => {
     ];
 
     try {
-      const firstServer = await startTestServer(env);
+      const testConnectors = {
+        pubmed: createMinimalRecoveryPubmedConnector(),
+      };
+      const firstServer = await startTestServer(env, { connectors: testConnectors });
       let aliceCookie = '';
       let bobCookie = '';
       let charlieCookie = '';
@@ -624,7 +643,7 @@ describe('minimal recovery loop server truth smoke', () => {
       expect(persistedStateText).not.toContain('jobEvents');
       expect(persistedStateText).not.toContain('auditLogs');
 
-      const restartedServer = await startTestServer(env);
+      const restartedServer = await startTestServer(env, { connectors: testConnectors });
 
       try {
         const restoredSession = await expectJson<{ user: { id: string } }>(

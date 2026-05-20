@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -72,20 +72,16 @@ describe('projects api', () => {
         'user-alice',
       );
       const statePath = join(storageRoot, 'server-state.json');
-      const serverState = JSON.parse(readFileSync(statePath, 'utf8')) as {
-        memberships: Array<{
-          joinedAt: string;
-          role: 'owner' | 'editor' | 'viewer';
-          spaceId: string;
-          userId: string;
-        }>;
+      const serverState = {
+        memberships: [
+          {
+            joinedAt: new Date().toISOString(),
+            role: 'viewer',
+            spaceId: sharedSpace.id,
+            userId: 'user-charlie',
+          },
+        ],
       };
-      serverState.memberships.push({
-        joinedAt: new Date().toISOString(),
-        role: 'viewer',
-        spaceId: sharedSpace.id,
-        userId: 'user-charlie',
-      });
       writeFileSync(statePath, JSON.stringify(serverState, null, 2));
 
       await app.projects.addProjectMember(

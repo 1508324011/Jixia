@@ -14,7 +14,6 @@ import type {
   ReadingRepository,
 } from "../../db";
 
-import { mapPersistedLibraryEntryView } from "./import.service";
 import type { LibraryService } from "./library.service";
 
 export interface CreateNoteRequest
@@ -166,7 +165,21 @@ export function createReadingService(store: ReadingStore): ReadingService {
         userId: input.actorUserId,
       });
 
-      const mappedView = mapPersistedLibraryEntryView(view);
+      // Repository LibraryEntry rows intentionally no longer carry live legacy
+      // space/visibility mirrors. Reuse the library service HTTP/transport
+      // mapper so project-scoped reader details get their compatibility
+      // `entry.spaceId` from the authoritative Project.scope boundary instead
+      // of from request fields or deprecated LibraryEntry columns.
+      const mappedView = await store.libraryService.getEntry({
+        actorSpaceId: input.actorSpaceId,
+        actorUserId: input.actorUserId,
+        entryId: input.libraryEntryId,
+      });
+
+      if (!mappedView) {
+        return null;
+      }
+
       const notes = await store.readingRepository.listPrivateNotesForEntry({
         actorUserId: input.actorUserId,
         libraryEntryId: input.libraryEntryId,

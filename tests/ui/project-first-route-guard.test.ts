@@ -11,6 +11,20 @@ const bannedTokens = [
   'entry-1',
 ];
 
+const bannedProductionAffordances = [
+  'Add Bob as viewer',
+  'addSampleProjectMember',
+  'defaultProjectMemberUserId',
+  'user-bob',
+  'Create sample credential',
+  'Creating credential…',
+  'local-settings-credential-placeholder',
+  '10.1000/jixia-demo',
+  'Connector staging',
+  'Loading state placeholder',
+  'Empty shelf placeholder',
+];
+
 const bannedProductionPageImports = [
   'createDemoApi',
   '../lib/demo-api',
@@ -19,6 +33,7 @@ const bannedProductionPageImports = [
 
 const productionFiles = [
   'src/web/pages/project-page.tsx',
+  'src/web/pages/projects-page.tsx',
   'src/web/pages/reader-page.tsx',
   'src/web/pages/writing-page.tsx',
   'src/web/pages/library-page.tsx',
@@ -29,6 +44,8 @@ const productionFiles = [
   'src/web/components/project-writer-list.tsx',
   'src/web/components/app-shell.tsx',
   'src/web/components/workbench-layout.tsx',
+  'src/web/presenters/projects-presenter.ts',
+  'src/web/presenters/runtime-context.ts',
   'src/web/lib/workbench-navigation.ts',
   'src/web/lib/recent-opened-store.ts',
 ];
@@ -58,6 +75,16 @@ describe('project-first route static guard', () => {
 
       for (const bannedImport of bannedProductionPageImports) {
         expect(fileText).not.toContain(bannedImport);
+      }
+    }
+  });
+
+  it('rejects demo credentials, demo import defaults, and shell placeholder copy in production files', () => {
+    for (const relativePath of productionFiles) {
+      const fileText = readFileSync(join(process.cwd(), relativePath), 'utf8');
+
+      for (const bannedAffordance of bannedProductionAffordances) {
+        expect(fileText).not.toContain(bannedAffordance);
       }
     }
   });

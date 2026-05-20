@@ -27,7 +27,8 @@ describe("http server phase 2 api", () => {
           }),
           method: "POST",
         }).then((response) => response.json() as Promise<{ id: string }>);
-        expect(createdSpace.id).toMatch(/^space/);
+        expect(createdSpace.id).toEqual(expect.any(String));
+        expect(createdSpace.id).not.toHaveLength(0);
 
         const listedSpaces = await fetch(`${server.url}/api/spaces`, {
           headers: withSessionCookie(aliceCookie),

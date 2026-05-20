@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 
 import {
+  createHttpTestPubmedConnector,
   loginAs,
   startTestServer,
   withSessionCookie,
@@ -15,7 +16,10 @@ describe("http server phase 4 reader slice", () => {
     const storageRoot = mkdtempSync(join(tmpdir(), "jixia-http-phase4-"));
 
     try {
-      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
+      const server = await startTestServer(
+        { JIXIA_STORAGE_ROOT: storageRoot },
+        { connectors: { pubmed: createHttpTestPubmedConnector() } },
+      );
 
       try {
         const aliceCookie = await loginAs(server.url, "user-alice");
@@ -63,12 +67,21 @@ describe("http server phase 4 reader slice", () => {
           (response) =>
             response.json() as Promise<{
               asset: { canonicalId: string };
+              entry: {
+                scope: { id: string; type: string };
+                spaceId: string;
+              };
               insights: unknown[];
               notes: unknown[];
               projectComments: unknown[];
             }>,
         );
         expect(detail.asset.canonicalId).toBe("doi:10.1000/reading-demo");
+        expect(detail.entry.scope).toEqual({
+          id: project.project.id,
+          type: "project",
+        });
+        expect(detail.entry.spaceId).toBe(createdSpace.id);
         expect(detail.notes).toHaveLength(0);
         expect(detail.projectComments).toHaveLength(0);
         expect(detail.insights).toHaveLength(0);

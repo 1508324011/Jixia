@@ -48,6 +48,10 @@ describe('workbench beta runbook contract', () => {
     expect(runbook).toContain('Reload draft');
     expect(runbook).toContain('restart the app process');
     expect(runbook).toContain('server-state.json');
+    expect(runbook).toContain('one-time compatibility bootstrap path');
+    expect(runbook).toContain('provider-failure');
+    expect(runbook).toContain('does not fabricate a');
+    expect(runbook).toContain('paper');
     expect(runbook).toContain('demo-native-showcase');
     expect(runbook).toContain('demo-only convenience');
 

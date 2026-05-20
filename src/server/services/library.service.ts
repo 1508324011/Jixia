@@ -185,24 +185,6 @@ function assertProjectSpaceContextMatches(
   }
 }
 
-function withCanonicalProjectCompatibilitySpace(
-  view: PersistedLibraryEntryView,
-  projectSpaceId: string | undefined,
-): PersistedLibraryEntryView {
-  if (view.entry.scope.type !== "project" || !projectSpaceId) {
-    return view;
-  }
-
-  return {
-    asset: view.asset,
-    entry: {
-      ...view.entry,
-      legacySpaceId: projectSpaceId,
-      legacyVisibility: "published_to_project",
-    },
-  };
-}
-
 export function createLibraryService(store: LibraryStore): LibraryService {
   return {
     async adoptProjectLibraryEntry(
@@ -241,16 +223,14 @@ export function createLibraryService(store: LibraryStore): LibraryService {
 
       const adoption = await store.libraryRepository.adoptExistingPaperAsset({
         addedByUserId: input.actorUserId,
-        legacySpaceId: project.spaceId,
-        legacyVisibility: "published_to_project",
         paperAssetId: sourceView.asset.id,
         scope: { id: input.projectId, type: "project" },
       });
 
       return {
-        entry: mapPersistedLibraryEntryView(
-          withCanonicalProjectCompatibilitySpace(adoption.view, project.spaceId),
-        ),
+        entry: mapPersistedLibraryEntryView(adoption.view, {
+          projectSpaceId: project.spaceId,
+        }),
         reused: adoption.reused,
       };
     },
@@ -275,10 +255,7 @@ export function createLibraryService(store: LibraryStore): LibraryService {
         actorSpaceId,
       );
 
-      return withCanonicalProjectCompatibilitySpace(
-        view,
-        scopeContext.projectSpaceId,
-      );
+      return view;
     },
     async assertCanAccessPaperAsset(
       paperAssetId: string,
@@ -301,10 +278,7 @@ export function createLibraryService(store: LibraryStore): LibraryService {
             actorSpaceId,
           );
 
-          return withCanonicalProjectCompatibilitySpace(
-            view,
-            scopeContext.projectSpaceId,
-          );
+          return view;
         } catch (error) {
           if (
             error instanceof Error &&
@@ -331,24 +305,20 @@ export function createLibraryService(store: LibraryStore): LibraryService {
         input.actorUserId,
       );
 
-      // The request field is a deprecated mirror. When canonical scope is
-      // present (or scopeType/scopeId has been normalized), only the
-      // server-derived actorSpaceId compatibility context may fail a project
-      // request closed; stale request spaceId never chooses or validates the
-      // listing namespace.
+      // The request fields are deprecated mirrors. They can only fail a
+      // project-scope request closed against the canonical Project.spaceId;
+      // they never choose or validate the listing namespace.
       assertProjectSpaceContextMatches(
         scopeContext.projectSpaceId,
         input.actorSpaceId,
       );
+      assertProjectSpaceContextMatches(scopeContext.projectSpaceId, input.spaceId);
 
       return (await store.libraryRepository.listLibraryEntriesForScope(scope))
         .map((view) =>
-          mapPersistedLibraryEntryView(
-            withCanonicalProjectCompatibilitySpace(
-              view,
-              scopeContext.projectSpaceId,
-            ),
-          ),
+          mapPersistedLibraryEntryView(view, {
+            projectSpaceId: scopeContext.projectSpaceId,
+          }),
         );
     },
     async listPersonalEntries(actorUserId: string): Promise<LibraryEntryView[]> {
@@ -377,9 +347,9 @@ export function createLibraryService(store: LibraryStore): LibraryService {
         input.actorSpaceId,
       );
 
-      return mapPersistedLibraryEntryView(
-        withCanonicalProjectCompatibilitySpace(view, scopeContext.projectSpaceId),
-      );
+      return mapPersistedLibraryEntryView(view, {
+        projectSpaceId: scopeContext.projectSpaceId,
+      });
     },
     async getEntryFile(
       input: GetLibraryEntryRequest,

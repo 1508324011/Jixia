@@ -12,7 +12,6 @@ export interface ProjectCardView {
 }
 
 export interface ProjectsViewModel {
-  addSampleProjectMember(projectId: string): Promise<void>;
   createProject(): Promise<void>;
   error: string | null;
   isCreating: boolean;
@@ -103,29 +102,8 @@ export function useProjectsPresenter(): ProjectsViewModel {
     }
   }, [refresh, spaces]);
 
-  const addSampleProjectMember = useCallback(
-    async (projectId: string) => {
-      try {
-        setError(null);
-        await apiClient.addProjectMember(
-          projectId,
-          { role: "viewer", userId: runtimeContext.defaultProjectMemberUserId },
-        );
-        await refresh();
-      } catch (presenterError) {
-        setError(
-          presenterError instanceof Error
-            ? presenterError.message
-            : "Failed to add project member.",
-        );
-      }
-    },
-    [refresh],
-  );
-
   return useMemo(
     () => ({
-      addSampleProjectMember,
       createProject,
       error,
       isCreating,
@@ -135,7 +113,6 @@ export function useProjectsPresenter(): ProjectsViewModel {
       spaces,
     }),
     [
-      addSampleProjectMember,
       createProject,
       error,
       isCreating,

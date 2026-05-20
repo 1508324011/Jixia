@@ -298,23 +298,25 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
             ))}
 
         {!isPersonalMode ? (
-          <article className="panel">
-            <h2 className="panel-title">Loading state placeholder</h2>
+          <article className="panel" aria-live="polite">
+            <h2 className="panel-title">
+              {isLoading ? "Loading project library…" : "Project library status"}
+            </h2>
             <p className="quiet-copy">
               {isLoading
-                ? "Loading library entries from the browser-facing runtime."
-                : "Import queue and reading-state activity will settle here."}
+                ? "Loading scoped LibraryEntry records from the server."
+                : `${projectEntries.length} server-owned project source${projectEntries.length === 1 ? "" : "s"} available.`}
             </p>
           </article>
         ) : null}
 
-        {!isPersonalMode ? (
+        {!isPersonalMode && !isLoading && !error && projectEntries.length === 0 ? (
           <article className="panel">
-            <h2 className="panel-title">Empty shelf placeholder</h2>
+            <h2 className="panel-title">No project literature yet</h2>
             <p className="quiet-copy">
-              {projectEntries.length === 0
-                ? "Use DOI, PMID, or arXiv import paths when a space has no entries yet."
-                : "Search can now keep landing new imports into this project-scoped library list."}
+              Use Search to import a DOI, PMID, or arXiv source into this visible
+              project. The project library remains empty until the server returns
+              a scoped entry for this ProjectMember context.
             </p>
           </article>
         ) : null}

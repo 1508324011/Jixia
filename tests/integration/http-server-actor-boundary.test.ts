@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import { createJixiaApp } from '../../src/server/app';
+import type { PubmedConnector } from '../../src/server/connectors/pubmed.connector';
 import {
   loginAs,
   startTestServer,
@@ -150,6 +151,21 @@ async function createJob(
 
 function sha256(contents: string): string {
   return createHash('sha256').update(Buffer.from(contents, 'utf8')).digest('hex');
+}
+
+function createActorBoundaryPubmedConnector(): PubmedConnector {
+  return {
+    async lookup(locator, sourceType) {
+      return {
+        abstractText: `Actor-boundary fixture abstract for ${locator}.`,
+        canonicalId: `${sourceType}:${locator}`,
+        title: `Actor-boundary fixture ${locator}`,
+      };
+    },
+    async search() {
+      return [];
+    },
+  };
 }
 
 describe('http server actor boundary cleanup', () => {
@@ -568,7 +584,10 @@ describe('http server actor boundary cleanup', () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-actor-400-'));
 
     try {
-      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
+      const server = await startTestServer(
+        { JIXIA_STORAGE_ROOT: storageRoot },
+        { connectors: { pubmed: createActorBoundaryPubmedConnector() } },
+      );
 
       try {
         const aliceCookie = await loginAs(server.url, 'user-alice');
@@ -872,7 +891,10 @@ describe('http server actor boundary cleanup', () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-actor-matching-'));
 
     try {
-      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
+      const server = await startTestServer(
+        { JIXIA_STORAGE_ROOT: storageRoot },
+        { connectors: { pubmed: createActorBoundaryPubmedConnector() } },
+      );
 
       try {
         const aliceCookie = await loginAs(server.url, 'user-alice');
@@ -1341,7 +1363,10 @@ describe('http server actor boundary cleanup', () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-library-adoption-'));
 
     try {
-      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
+      const server = await startTestServer(
+        { JIXIA_STORAGE_ROOT: storageRoot },
+        { connectors: { pubmed: createActorBoundaryPubmedConnector() } },
+      );
 
       try {
         const aliceCookie = await loginAs(server.url, 'user-alice');

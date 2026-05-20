@@ -518,6 +518,102 @@ describe('reading evidence', () => {
     }
   });
 
+  it('skips orphaned legacy generated insights instead of synthesizing actor attribution', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-reading-orphan-insight-'));
+    const env = {
+      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-reading-orphan-insight.db')}`,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+    const statePath = join(storageRoot, 'server-state.json');
+    const now = new Date().toISOString();
+    let seededApp: ReturnType<typeof createJixiaApp> | null = null;
+    let restartedApp: ReturnType<typeof createJixiaApp> | null = null;
+
+    try {
+      seededApp = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env,
+      });
+      const imported = await seededApp.imports.importToPersonalLibrary(
+        {
+          requestedByUserId: 'user-bob',
+          sourceLocator: '777002',
+          sourceType: 'pmid',
+        },
+        'user-bob',
+      );
+
+      writeFileSync(
+        statePath,
+        JSON.stringify(
+          {
+            insights: [
+              {
+                conversationId: 'missing-legacy-conversation',
+                createdAt: now,
+                evidenceSpans: [
+                  {
+                    endOffset: 23,
+                    paperAssetId: imported.asset.id,
+                    quote: 'orphaned legacy evidence',
+                    startOffset: 0,
+                  },
+                ],
+                id: 'insight-orphaned-legacy-bootstrap',
+                libraryEntryId: imported.entry.id,
+                summary: 'This orphaned insight must not be attributed to Alice.',
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      );
+
+      await seededApp.close();
+      seededApp = null;
+
+      restartedApp = createJixiaApp({
+        connectors: {
+          pubmed: createStubPubmedConnector(),
+        },
+        env,
+      });
+      const reopenedDetail = await restartedApp.reading.getWorkbenchDetail({
+        actorUserId: 'user-bob',
+        libraryEntryId: imported.entry.id,
+      });
+
+      expect(reopenedDetail?.insights).toEqual([]);
+
+      const scrubbedState = JSON.parse(readFileSync(statePath, 'utf8')) as {
+        insights?: Array<unknown>;
+      };
+      expect(scrubbedState.insights ?? []).toEqual([]);
+
+      const prisma = createPrismaClient({ url: env.JIXIA_DATABASE_URL });
+      try {
+        const generatedInsight = await prisma.generatedInsight.findUnique({
+          where: { id: 'insight-orphaned-legacy-bootstrap' },
+        });
+        const syntheticAlice = await prisma.user.findUnique({
+          where: { id: 'user-alice' },
+        });
+
+        expect(generatedInsight).toBeNull();
+        expect(syntheticAlice).toBeNull();
+      } finally {
+        await prisma.$disconnect().catch(() => undefined);
+      }
+    } finally {
+      await restartedApp?.close();
+      await seededApp?.close();
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('keeps private notes owner-only while sharing project comments with project members', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-reading-authority-split-'));
     const env = {
