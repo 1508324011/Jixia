@@ -6,6 +6,7 @@ import type { ProjectListItem } from "@shared/contracts/projects";
 import type {
   PrivateReadingNoteRecord,
   ProjectReadingCommentRecord,
+  ReaderExcerptRecord,
   ReadingDetail,
 } from "@shared/contracts/reading";
 
@@ -21,7 +22,15 @@ export interface ReaderViewModel {
   isMutating: boolean;
   notes: PrivateReadingNoteRecord[];
   projectComments: ProjectReadingCommentRecord[];
+  excerpts: ReaderExcerptRecord[];
   project: ProjectListItem | null;
+  createExcerpt(input: {
+    endOffset: number;
+    locator?: string;
+    note?: string;
+    quote: string;
+    startOffset: number;
+  }): Promise<void>;
   saveProjectComment(body: string): Promise<void>;
   refresh(): Promise<void>;
   saveGeneratedInsight(summary?: string, title?: string): Promise<void>;
@@ -176,17 +185,54 @@ export function useReaderPresenter(
     [detail, entryId, projectContext.project, refresh],
   );
 
+  const createExcerpt = useCallback(
+    async (input: {
+      endOffset: number;
+      locator?: string;
+      note?: string;
+      quote: string;
+      startOffset: number;
+    }) => {
+      if (!projectContext.project || !detail) {
+        setError("No visible project is available for reader excerpt storage.");
+        return;
+      }
+
+      try {
+        setIsMutating(true);
+        setError(null);
+        await apiClient.createReaderExcerpt({
+          ...input,
+          entryId,
+        });
+        await refresh();
+      } catch (presenterError) {
+        setError(
+          presenterError instanceof Error
+            ? presenterError.message
+            : "Failed to save reader excerpt.",
+        );
+        throw presenterError;
+      } finally {
+        setIsMutating(false);
+      }
+    },
+    [detail, entryId, projectContext.project, refresh],
+  );
+
   return useMemo(
     () => ({
       asset: detail?.asset ?? null,
       entry: detail?.entry ?? null,
       error: error ?? projectContext.error,
+      excerpts: detail?.excerpts ?? [],
       insights: detail?.insights ?? [],
       isLoading: isLoading || projectContext.isLoading,
       isMutating,
       notes: detail?.notes ?? [],
       projectComments: detail?.projectComments ?? [],
       project: projectContext.project,
+      createExcerpt,
       refresh,
       saveGeneratedInsight,
       saveNote,
@@ -198,6 +244,7 @@ export function useReaderPresenter(
       isLoading,
       isMutating,
       projectContext,
+      createExcerpt,
       refresh,
       saveGeneratedInsight,
       saveNote,

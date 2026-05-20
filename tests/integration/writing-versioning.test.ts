@@ -172,6 +172,296 @@ describe('notebook and project document persistence', () => {
     }
   }, 60_000);
 
+  it('persists notebook citations that reference durable reader excerpts', async () => {
+    const storageRoot = createStorageRoot('jixia-notebook-reader-excerpt-citations-');
+
+    try {
+      const env = createWritingEnv(storageRoot);
+      const app = createWritingTestApp({ env });
+      const imported = await app.imports.importToPersonalLibrary(
+        {
+          sourceLocator: '10.1000/notebook-reader-excerpt',
+          sourceType: 'doi',
+        },
+        'user-alice',
+      );
+      const excerpt = await app.reading.createReaderExcerpt({
+        actorUserId: 'user-alice',
+        endOffset: 24,
+        libraryEntryId: imported.entry.id,
+        quote: 'notebook reader excerpt',
+        startOffset: 1,
+      });
+      const notebook = await app.notebooks.createDocument(
+        { title: 'Excerpt Notebook' },
+        'user-alice',
+      );
+
+      const snapshot = await app.notebooks.saveDocument(
+        {
+          citations: [
+            {
+              paperAssetId: imported.asset.id,
+              readerExcerptId: excerpt.id,
+            },
+          ],
+          content: 'Notebook cites a durable reader excerpt.',
+          documentId: notebook.id,
+        },
+        'user-alice',
+      );
+
+      expect(snapshot.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: excerpt.quote,
+          paperAssetId: imported.asset.id,
+          readerExcerptId: excerpt.id,
+        }),
+      ]);
+      await expect(
+        app.notebooks.saveDocument(
+          {
+            citations: [
+              {
+                paperAssetId: imported.asset.id,
+                readerExcerptId: excerpt.id,
+              },
+            ],
+            content: 'Bob must not cite Alice personal excerpt.',
+            documentId: notebook.id,
+          },
+          'user-bob',
+        ),
+      ).rejects.toThrow(/access denied/i);
+      await app.close();
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('persists project-doc reader excerpt citations only when the source is project-available', async () => {
+    const storageRoot = createStorageRoot('jixia-project-doc-reader-excerpt-citations-');
+
+    try {
+      const env = createWritingEnv(storageRoot);
+      const app = createWritingTestApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Reader Excerpt Project Space' },
+        'user-alice',
+      );
+      const targetProject = await app.projects.createProject(
+        { name: 'Reader Excerpt Target Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      const sourceProject = await app.projects.createProject(
+        { name: 'Reader Excerpt Source Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        targetProject.project.id,
+        { role: 'editor', userId: 'user-bob' },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        sourceProject.project.id,
+        { role: 'editor', userId: 'user-bob' },
+        'user-alice',
+      );
+
+      const targetProjectImport = await app.imports.importPaper(
+        {
+          scope: { id: targetProject.project.id, type: 'project' },
+          sourceLocator: '10.1000/project-reader-excerpt-target',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+      const targetProjectExcerpt = await app.reading.createReaderExcerpt({
+        actorUserId: 'user-alice',
+        endOffset: 31,
+        libraryEntryId: targetProjectImport.entry.id,
+        locator: 'p. 2',
+        quote: 'target project reader excerpt',
+        startOffset: 3,
+      });
+      const sourceProjectImport = await app.imports.importPaper(
+        {
+          scope: { id: sourceProject.project.id, type: 'project' },
+          sourceLocator: '10.1000/project-reader-excerpt-adopted',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'published_to_project',
+        },
+        'user-alice',
+      );
+      const sourceProjectExcerpt = await app.reading.createReaderExcerpt({
+        actorUserId: 'user-alice',
+        endOffset: 34,
+        libraryEntryId: sourceProjectImport.entry.id,
+        quote: 'source project adopted excerpt',
+        startOffset: 5,
+      });
+      const personalOnlyImport = await app.imports.importPaper(
+        {
+          scope: { id: 'user-alice', type: 'user' },
+          sourceLocator: '10.1000/project-reader-excerpt-personal-only',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'private',
+        },
+        'user-alice',
+      );
+      const personalOnlyExcerpt = await app.reading.createReaderExcerpt({
+        actorUserId: 'user-alice',
+        endOffset: 29,
+        libraryEntryId: personalOnlyImport.entry.id,
+        quote: 'personal only reader excerpt',
+        startOffset: 2,
+      });
+      const projectDoc = await app.projectDocs.createDocument(
+        {
+          projectId: targetProject.project.id,
+          title: 'Project excerpt citation draft',
+        },
+        'user-alice',
+      );
+
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [
+              {
+                paperAssetId: personalOnlyImport.asset.id,
+                readerExcerptId: personalOnlyExcerpt.id,
+              },
+            ],
+            content: 'Personal-only excerpt is not target project evidence.',
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/not available in project/i);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [
+              {
+                paperAssetId: sourceProjectImport.asset.id,
+                readerExcerptId: sourceProjectExcerpt.id,
+              },
+            ],
+            content: 'Other-project excerpt needs target adoption.',
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/not available in project/i);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [
+              {
+                paperAssetId: targetProjectImport.asset.id,
+                readerExcerptId: personalOnlyExcerpt.id,
+              },
+            ],
+            content: 'Mismatched excerpt asset should fail closed.',
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/does not match reader excerpt/i);
+
+      const targetProjectSnapshot = await app.projectDocs.saveDocument(
+        {
+          citations: [
+            {
+              paperAssetId: targetProjectImport.asset.id,
+              readerExcerptId: targetProjectExcerpt.id,
+            },
+          ],
+          content: 'Target project excerpt citation succeeds.',
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+      const targetProjectStructuredSnapshot = await app.projectDocs.saveDocument(
+        {
+          citations: [],
+          documentContent: {
+            blocks: [
+              {
+                evidenceSpan: 'explicit override evidence',
+                libraryEntryId: targetProjectImport.entry.id,
+                paperAssetId: targetProjectImport.asset.id,
+                quote: 'explicit override evidence',
+                readerExcerptId: targetProjectExcerpt.id,
+                type: 'sourceExcerpt',
+              },
+            ],
+            schemaVersion: 1,
+          },
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+      const adoption = await app.library.adoptProjectLibraryEntry({
+        actorUserId: 'user-alice',
+        projectId: targetProject.project.id,
+        sourceLibraryEntryId: sourceProjectImport.entry.id,
+      });
+      const adoptedSourceSnapshot = await app.projectDocs.saveDocument(
+        {
+          citations: [
+            {
+              paperAssetId: sourceProjectImport.asset.id,
+              readerExcerptId: sourceProjectExcerpt.id,
+            },
+          ],
+          content: 'Adopted source project excerpt citation succeeds.',
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+      const bobVisibleSnapshot = await app.projectDocs.getDocument(
+        { documentId: projectDoc.id },
+        'user-bob',
+      );
+
+      expect(targetProjectSnapshot.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: targetProjectExcerpt.quote,
+          paperAssetId: targetProjectImport.asset.id,
+          readerExcerptId: targetProjectExcerpt.id,
+        }),
+      ]);
+      expect(targetProjectStructuredSnapshot.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: 'explicit override evidence',
+          paperAssetId: targetProjectImport.asset.id,
+          readerExcerptId: targetProjectExcerpt.id,
+        }),
+      ]);
+      expect(adoption.entry.asset.id).toBe(sourceProjectImport.asset.id);
+      expect(adoptedSourceSnapshot.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: sourceProjectExcerpt.quote,
+          paperAssetId: sourceProjectImport.asset.id,
+          readerExcerptId: sourceProjectExcerpt.id,
+        }),
+      ]);
+      expect(bobVisibleSnapshot.citations[0]?.readerExcerptId).toBe(sourceProjectExcerpt.id);
+      await expect(
+        app.projectDocs.getDocument({ documentId: projectDoc.id }, 'user-charlie'),
+      ).rejects.toThrow(/access denied/i);
+      await app.close();
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('enforces ProjectMember-gated project docs and persists versions/citations', async () => {
     const storageRoot = createStorageRoot('jixia-project-doc-versioning-');
     const env = createWritingEnv(storageRoot);

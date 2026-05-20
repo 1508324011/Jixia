@@ -5,6 +5,7 @@ import {
   type Note,
   type Prisma,
   type ProjectReadingComment,
+  type ReaderExcerpt,
   type ReadingState,
 } from '@prisma/client';
 
@@ -56,6 +57,20 @@ export interface PersistedGeneratedInsightRecord {
   id: string;
   libraryEntryId: string;
   summary: string;
+}
+
+export interface PersistedReaderExcerptRecord {
+  createdAt: string;
+  createdByUserId: string;
+  endOffset: number;
+  id: string;
+  libraryEntryId: string;
+  locator?: string;
+  note?: string;
+  paperAssetId: string;
+  quote: string;
+  startOffset: number;
+  updatedAt: string;
 }
 
 export interface PersistedReadingStateRecord {
@@ -110,6 +125,19 @@ export interface SavePersistedGeneratedInsightParams {
   summary: string;
 }
 
+export interface CreatePersistedReaderExcerptParams {
+  createdAt?: string;
+  createdByUserId: string;
+  endOffset: number;
+  id?: string;
+  libraryEntryId: string;
+  locator?: string;
+  note?: string;
+  paperAssetId: string;
+  quote: string;
+  startOffset: number;
+}
+
 export interface TouchReadingStateParams {
   lastReadAt?: string;
   libraryEntryId: string;
@@ -136,6 +164,9 @@ export interface ReadingRepository {
   createProjectComment(
     input: CreatePersistedProjectReadingCommentParams,
   ): Promise<PersistedProjectReadingCommentRecord>;
+  createReaderExcerpt(
+    input: CreatePersistedReaderExcerptParams,
+  ): Promise<PersistedReaderExcerptRecord>;
   getGeneratedInsight(
     query: {
       generatedInsightId: string;
@@ -146,9 +177,15 @@ export interface ReadingRepository {
     libraryEntryId: string,
     userId: string,
   ): Promise<PersistedReadingStateRecord | null>;
+  getReaderExcerpt(
+    excerptId: string,
+  ): Promise<PersistedReaderExcerptRecord | null>;
   listGeneratedInsightsForEntry(
     libraryEntryId: string,
   ): Promise<PersistedGeneratedInsightRecord[]>;
+  listReaderExcerptsForEntry(
+    libraryEntryId: string,
+  ): Promise<PersistedReaderExcerptRecord[]>;
   listNotesForEntry(input: ListEntryNotesQuery): Promise<PersistedNoteRecord[]>;
   listPrivateNotesForEntry(input: ListEntryNotesQuery): Promise<PersistedNoteRecord[]>;
   listProjectCommentsForEntry(
@@ -238,6 +275,22 @@ function mapGeneratedInsight(
     id: insight.id,
     libraryEntryId: insight.libraryEntryId,
     summary: insight.summary,
+  };
+}
+
+function mapReaderExcerpt(excerpt: ReaderExcerpt): PersistedReaderExcerptRecord {
+  return {
+    createdAt: toIsoString(excerpt.createdAt),
+    createdByUserId: excerpt.createdByUserId,
+    endOffset: excerpt.endOffset,
+    id: excerpt.id,
+    libraryEntryId: excerpt.libraryEntryId,
+    locator: excerpt.locator ?? undefined,
+    note: excerpt.note ?? undefined,
+    paperAssetId: excerpt.paperAssetId,
+    quote: excerpt.quote,
+    startOffset: excerpt.startOffset,
+    updatedAt: toIsoString(excerpt.updatedAt),
   };
 }
 
@@ -447,47 +500,31 @@ async function initializeReadingPersistenceTables(
     CREATE INDEX IF NOT EXISTS "GeneratedInsightEvidenceSpan_paperAssetId_idx" ON "GeneratedInsightEvidenceSpan"("paperAssetId")
   `);
   await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "ProjectReadingComment" (
+    CREATE TABLE IF NOT EXISTS "ReaderExcerpt" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "libraryEntryId" TEXT NOT NULL,
-      "projectId" TEXT NOT NULL,
-      "authorUserId" TEXT NOT NULL,
-      "body" TEXT NOT NULL,
+      "paperAssetId" TEXT NOT NULL,
+      "createdByUserId" TEXT NOT NULL,
+      "quote" TEXT NOT NULL,
+      "startOffset" INTEGER NOT NULL,
+      "endOffset" INTEGER NOT NULL,
+      "locator" TEXT,
+      "note" TEXT,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      CONSTRAINT "ProjectReadingComment_libraryEntryId_fkey" FOREIGN KEY ("libraryEntryId") REFERENCES "LibraryEntry" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-      CONSTRAINT "ProjectReadingComment_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-      CONSTRAINT "ProjectReadingComment_authorUserId_fkey" FOREIGN KEY ("authorUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      CONSTRAINT "ReaderExcerpt_libraryEntryId_fkey" FOREIGN KEY ("libraryEntryId") REFERENCES "LibraryEntry" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "ReaderExcerpt_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "ReaderExcerpt_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
     )
   `);
   await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "ProjectReadingComment_libraryEntryId_projectId_idx" ON "ProjectReadingComment"("libraryEntryId", "projectId")
+    CREATE INDEX IF NOT EXISTS "ReaderExcerpt_libraryEntryId_createdAt_idx" ON "ReaderExcerpt"("libraryEntryId", "createdAt")
   `);
   await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "ProjectReadingComment_projectId_createdAt_idx" ON "ProjectReadingComment"("projectId", "createdAt")
+    CREATE INDEX IF NOT EXISTS "ReaderExcerpt_paperAssetId_idx" ON "ReaderExcerpt"("paperAssetId")
   `);
   await prisma.$executeRawUnsafe(`
-    INSERT OR IGNORE INTO "ProjectReadingComment" (
-      "id",
-      "libraryEntryId",
-      "projectId",
-      "authorUserId",
-      "body",
-      "createdAt",
-      "updatedAt"
-    )
-    SELECT
-      'project-comment-' || "Note"."id",
-      "Note"."libraryEntryId",
-      "LibraryEntry"."scopeId",
-      "Note"."authorUserId",
-      "Note"."body",
-      "Note"."createdAt",
-      "Note"."updatedAt"
-    FROM "Note"
-    JOIN "LibraryEntry" ON "LibraryEntry"."id" = "Note"."libraryEntryId"
-    WHERE "Note"."visibility" = 'space_shared'
-      AND "LibraryEntry"."scopeType" = 'project'
+    CREATE INDEX IF NOT EXISTS "ReaderExcerpt_createdByUserId_idx" ON "ReaderExcerpt"("createdByUserId")
   `);
 }
 
@@ -620,6 +657,39 @@ export function createReadingRepository(
 
       return mapProjectReadingComment(comment);
     },
+    async createReaderExcerpt(
+      input: CreatePersistedReaderExcerptParams,
+    ): Promise<PersistedReaderExcerptRecord> {
+      await ensureInitialized();
+      await ensureUser(prisma, input.createdByUserId);
+
+      if (input.id) {
+        const existingExcerpt = await prisma.readerExcerpt.findUnique({
+          where: { id: input.id },
+        });
+
+        if (existingExcerpt) {
+          return mapReaderExcerpt(existingExcerpt);
+        }
+      }
+
+      const excerpt = await prisma.readerExcerpt.create({
+        data: {
+          createdAt: optionalDate(input.createdAt),
+          createdByUserId: input.createdByUserId,
+          endOffset: input.endOffset,
+          id: input.id,
+          libraryEntryId: input.libraryEntryId,
+          locator: input.locator,
+          note: input.note,
+          paperAssetId: input.paperAssetId,
+          quote: input.quote,
+          startOffset: input.startOffset,
+        },
+      });
+
+      return mapReaderExcerpt(excerpt);
+    },
     async getGeneratedInsight(query: {
       generatedInsightId: string;
       libraryEntryId: string;
@@ -655,6 +725,17 @@ export function createReadingRepository(
 
       return readingState ? mapReadingState(readingState) : null;
     },
+    async getReaderExcerpt(
+      excerptId: string,
+    ): Promise<PersistedReaderExcerptRecord | null> {
+      await ensureInitialized();
+
+      const excerpt = await prisma.readerExcerpt.findUnique({
+        where: { id: excerptId },
+      });
+
+      return excerpt ? mapReaderExcerpt(excerpt) : null;
+    },
     async listGeneratedInsightsForEntry(
       libraryEntryId: string,
     ): Promise<PersistedGeneratedInsightRecord[]> {
@@ -669,6 +750,18 @@ export function createReadingRepository(
       return insights.map((insight) =>
         mapGeneratedInsight(insight as GeneratedInsightWithEvidence),
       );
+    },
+    async listReaderExcerptsForEntry(
+      libraryEntryId: string,
+    ): Promise<PersistedReaderExcerptRecord[]> {
+      await ensureInitialized();
+
+      const excerpts = await prisma.readerExcerpt.findMany({
+        orderBy: { createdAt: 'asc' },
+        where: { libraryEntryId },
+      });
+
+      return excerpts.map(mapReaderExcerpt);
     },
     async listNotesForEntry(input: ListEntryNotesQuery): Promise<PersistedNoteRecord[]> {
       return this.listPrivateNotesForEntry(input);

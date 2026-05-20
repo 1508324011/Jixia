@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { ReaderExcerptRecord } from '../../src/shared/contracts/reading';
 import { App } from '../../src/web/app';
 
 import { expectDocumentBlocksToOmitAuthorityFields } from './document-block-assertions';
@@ -74,6 +75,21 @@ describe('paper workspace', () => {
         spaceId: 'space-alpha',
         visibility: 'space_shared',
       },
+      excerpts: [
+        {
+          createdAt: '2026-03-23T00:05:00.000Z',
+          createdByUserId: 'user-alice',
+          endOffset: 24,
+          id: 'excerpt-1',
+          libraryEntryId: 'entry-1',
+          locator: 'figure 1',
+          note: 'Existing project excerpt note.',
+          paperAssetId: 'asset-1',
+          quote: 'Existing project reader excerpt',
+          startOffset: 0,
+          updatedAt: '2026-03-23T00:05:00.000Z',
+        },
+      ] as ReaderExcerptRecord[],
       insights: [] as Array<{
         conversationId: string;
         createdAt: string;
@@ -132,6 +148,48 @@ describe('paper workspace', () => {
 
         if (requestUrl.endsWith('/api/reading/entry-1') && (!init?.method || init.method === 'GET')) {
           return jsonResponse(readingDetail);
+        }
+
+        if (requestUrl.endsWith('/api/reading/entry-1/excerpts') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            actorUserId?: string;
+            endOffset: number;
+            locator?: string;
+            note?: string;
+            projectId?: string;
+            quote: string;
+            scope?: unknown;
+            startOffset: number;
+            visibility?: string;
+          };
+          expect(body).toEqual({
+            endOffset: 49,
+            locator: 'figure 2',
+            note: 'Project durable note',
+            quote: 'Project durable reader excerpt',
+            startOffset: 9,
+          });
+          expect(body).not.toHaveProperty('actorUserId');
+          expect(body).not.toHaveProperty('scope');
+          expect(body).not.toHaveProperty('projectId');
+          expect(body).not.toHaveProperty('visibility');
+
+          const excerpt = {
+            createdAt: '2026-03-23T00:08:00.000Z',
+            createdByUserId: 'user-alice',
+            endOffset: body.endOffset,
+            id: `excerpt-${readingDetail.excerpts.length + 1}`,
+            libraryEntryId: 'entry-1',
+            locator: body.locator,
+            note: body.note,
+            paperAssetId: 'asset-1',
+            quote: body.quote,
+            startOffset: body.startOffset,
+            updatedAt: '2026-03-23T00:08:00.000Z',
+          };
+          readingDetail.excerpts.push(excerpt);
+
+          return jsonResponse({ excerpt }, 201);
         }
 
         if (requestUrl.endsWith('/api/reading/notes') && init?.method === 'POST') {
@@ -345,6 +403,34 @@ describe('paper workspace', () => {
     expect(screen.getByRole('tab', { name: '私人笔记' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '共享评论' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '关键信息' })).toBeInTheDocument();
+    expect(screen.getByText('Existing project reader excerpt')).toBeInTheDocument();
+    expect(screen.getByText('figure 1')).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Reader excerpt quote'));
+    await user.type(screen.getByLabelText('Reader excerpt quote'), 'Project durable reader excerpt');
+    await user.clear(screen.getByLabelText('Start offset'));
+    await user.type(screen.getByLabelText('Start offset'), '9');
+    await user.clear(screen.getByLabelText('End offset'));
+    await user.type(screen.getByLabelText('End offset'), '49');
+    await user.type(screen.getByLabelText('Excerpt locator'), 'figure 2');
+    await user.type(screen.getByLabelText('Excerpt note'), 'Project durable note');
+    await user.click(screen.getByRole('button', { name: 'Save reader excerpt' }));
+
+    expect(await screen.findByText('Saved reader excerpt.')).toBeInTheDocument();
+    expect(screen.getByText('Project durable reader excerpt')).toBeInTheDocument();
+    expect(screen.getByText('Offsets · 9-49')).toBeInTheDocument();
+
+    const excerptRequest = vi.mocked(fetch).mock.calls.find(([input, init]) =>
+      String(input).endsWith('/api/reading/entry-1/excerpts') && init?.method === 'POST',
+    );
+    expect(excerptRequest).toBeDefined();
+    expect(JSON.parse(String(excerptRequest?.[1]?.body))).toEqual({
+      endOffset: 49,
+      locator: 'figure 2',
+      note: 'Project durable note',
+      quote: 'Project durable reader excerpt',
+      startOffset: 9,
+    });
 
     await user.type(screen.getByRole('textbox', { name: 'Private note draft' }), 'Private note for later synthesis.');
     await user.click(screen.getByRole('button', { name: 'Save private note' }));

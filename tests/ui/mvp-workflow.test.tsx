@@ -167,6 +167,7 @@ function installFetchMock() {
     if (requestUrl.pathname === '/api/reading/entry-recovery') {
       return Response.json({
         ...importedEntryFixture,
+        excerpts: [],
         insights: readingInsights,
         notes: [],
         projectComments: [],

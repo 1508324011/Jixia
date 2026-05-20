@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { ReaderExcerptRecord } from '../../src/shared/contracts/reading';
 import { App } from '../../src/web/app';
 
 function renderWorkbench(pathname: string) {
@@ -46,6 +47,21 @@ describe('personal reader route', () => {
         spaceId: 'personal-space-user-alice',
         visibility: 'private',
       },
+      excerpts: [
+        {
+          createdAt: '2026-03-23T00:05:00.000Z',
+          createdByUserId: 'user-alice',
+          endOffset: 24,
+          id: 'excerpt-1',
+          libraryEntryId: 'entry-1',
+          locator: 'p. 1',
+          note: 'Existing excerpt note.',
+          paperAssetId: 'asset-1',
+          quote: 'Existing reader excerpt',
+          startOffset: 0,
+          updatedAt: '2026-03-23T00:05:00.000Z',
+        },
+      ] as ReaderExcerptRecord[],
       insights: [] as Array<{
         conversationId: string;
         createdAt: string;
@@ -113,6 +129,48 @@ describe('personal reader route', () => {
           readingDetail.notes.push(note);
 
           return jsonResponse({ note }, 201);
+        }
+
+        if (requestUrl.endsWith('/api/reading/entry-1/excerpts') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            actorUserId?: string;
+            endOffset: number;
+            locator?: string;
+            note?: string;
+            projectId?: string;
+            quote: string;
+            scope?: unknown;
+            startOffset: number;
+            visibility?: string;
+          };
+          expect(body).toEqual({
+            endOffset: 44,
+            locator: 'p. 7',
+            note: 'Durable note',
+            quote: 'Durable reader excerpt',
+            startOffset: 7,
+          });
+          expect(body).not.toHaveProperty('actorUserId');
+          expect(body).not.toHaveProperty('scope');
+          expect(body).not.toHaveProperty('projectId');
+          expect(body).not.toHaveProperty('visibility');
+
+          const excerpt = {
+            createdAt: '2026-03-23T00:08:00.000Z',
+            createdByUserId: 'user-alice',
+            endOffset: body.endOffset,
+            id: `excerpt-${readingDetail.excerpts.length + 1}`,
+            libraryEntryId: 'entry-1',
+            locator: body.locator,
+            note: body.note,
+            paperAssetId: 'asset-1',
+            quote: body.quote,
+            startOffset: body.startOffset,
+            updatedAt: '2026-03-23T00:08:00.000Z',
+          };
+          readingDetail.excerpts.push(excerpt);
+
+          return jsonResponse({ excerpt }, 201);
         }
 
         if (requestUrl.endsWith('/api/reading/entry-1/insights') && init?.method === 'POST') {
@@ -205,6 +263,34 @@ describe('personal reader route', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open server-owned paper file' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open writing' })).not.toBeInTheDocument();
+    expect(screen.getByText('Existing reader excerpt')).toBeInTheDocument();
+    expect(screen.getByText('p. 1')).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Reader excerpt quote'));
+    await user.type(screen.getByLabelText('Reader excerpt quote'), 'Durable reader excerpt');
+    await user.clear(screen.getByLabelText('Start offset'));
+    await user.type(screen.getByLabelText('Start offset'), '7');
+    await user.clear(screen.getByLabelText('End offset'));
+    await user.type(screen.getByLabelText('End offset'), '44');
+    await user.type(screen.getByLabelText('Excerpt locator'), 'p. 7');
+    await user.type(screen.getByLabelText('Excerpt note'), 'Durable note');
+    await user.click(screen.getByRole('button', { name: 'Save reader excerpt' }));
+
+    expect(await screen.findByText('Saved reader excerpt.')).toBeInTheDocument();
+    expect(screen.getByText('Durable reader excerpt')).toBeInTheDocument();
+    expect(screen.getByText('Offsets · 7-44')).toBeInTheDocument();
+
+    const excerptRequest = vi.mocked(fetch).mock.calls.find(([input, init]) =>
+      String(input).endsWith('/api/reading/entry-1/excerpts') && init?.method === 'POST',
+    );
+    expect(excerptRequest).toBeDefined();
+    expect(JSON.parse(String(excerptRequest?.[1]?.body))).toEqual({
+      endOffset: 44,
+      locator: 'p. 7',
+      note: 'Durable note',
+      quote: 'Durable reader excerpt',
+      startOffset: 7,
+    });
 
     await user.click(screen.getByRole('button', { name: 'Save project comment' }));
     expect(

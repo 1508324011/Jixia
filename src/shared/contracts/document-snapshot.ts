@@ -20,6 +20,7 @@ export interface DocumentCitationRecordBase {
   evidenceSpan?: string;
   id: string;
   paperAssetId: string;
+  readerExcerptId?: string;
 }
 
 export interface DocumentSnapshot<

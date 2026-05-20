@@ -939,18 +939,6 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     await readingBootstrap;
   }
   const projectDocRepository = createProjectDocRepository(prismaClient);
-  const projectDocsService = createProjectDocsService({
-    libraryRepository,
-    libraryService,
-    projectDocRepository,
-    projectRepository,
-  });
-  const projectWorkspaceRoutes = createProjectWorkspaceRoutes(
-    createProjectWorkspaceService({
-      projectDocRepository,
-      projectRepository,
-    }),
-  );
   const readingService = createReadingService({
     libraryService,
     readingRepository: {
@@ -974,6 +962,11 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
 
         return readingRepository.createProjectComment(input);
       },
+      async createReaderExcerpt(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.createReaderExcerpt(input);
+      },
       async getGeneratedInsight(query) {
         await ensureReadingBootstrap();
 
@@ -984,10 +977,20 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
 
         return readingRepository.getReadingState(libraryEntryId, userId);
       },
+      async getReaderExcerpt(excerptId) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.getReaderExcerpt(excerptId);
+      },
       async listGeneratedInsightsForEntry(libraryEntryId) {
         await ensureReadingBootstrap();
 
         return readingRepository.listGeneratedInsightsForEntry(libraryEntryId);
+      },
+      async listReaderExcerptsForEntry(libraryEntryId) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.listReaderExcerptsForEntry(libraryEntryId);
       },
       async listNotesForEntry(input) {
         await ensureReadingBootstrap();
@@ -1016,6 +1019,19 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       },
     },
   });
+  const projectDocsService = createProjectDocsService({
+    libraryRepository,
+    libraryService,
+    projectDocRepository,
+    projectRepository,
+    readingService,
+  });
+  const projectWorkspaceRoutes = createProjectWorkspaceRoutes(
+    createProjectWorkspaceService({
+      projectDocRepository,
+      projectRepository,
+    }),
+  );
   const notebookRepository = createNotebookRepository(prismaClient);
   const notebookService = createNotebookService({
     libraryService,

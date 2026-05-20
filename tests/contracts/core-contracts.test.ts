@@ -49,10 +49,12 @@ import type {
 import type {
   ConversationRecord,
   CreateProjectReadingCommentRequest,
+  CreateReaderExcerptRequest,
   CreateReadingNoteRequest,
   NoteRecord,
   PrivateReadingNoteRecord,
   ProjectReadingCommentRecord,
+  ReaderExcerptRecord,
   ReadingDetailView,
   ReadingStateRecord,
 } from '../../src/shared/contracts/reading';
@@ -454,6 +456,26 @@ describe('core contracts', () => {
       libraryEntryId: 'entry_001',
       projectId: 'project_001',
     };
+    const createExcerptRequest: CreateReaderExcerptRequest = {
+      endOffset: 32,
+      locator: 'p. 4',
+      note: 'Durable evidence note.',
+      quote: 'durable quoted reader evidence',
+      startOffset: 4,
+    };
+    const excerpt: ReaderExcerptRecord = {
+      createdAt: '2026-03-21T00:00:00.000Z',
+      createdByUserId: 'user_001',
+      endOffset: 32,
+      id: 'excerpt_001',
+      libraryEntryId: 'entry_001',
+      locator: 'p. 4',
+      note: 'Durable evidence note.',
+      paperAssetId: 'asset_001',
+      quote: 'durable quoted reader evidence',
+      startOffset: 4,
+      updatedAt: '2026-03-21T00:00:00.000Z',
+    };
     const readingDetail: ReadingDetailView = {
       asset: {
         id: 'asset_001',
@@ -474,6 +496,7 @@ describe('core contracts', () => {
         spaceId: 'space_001',
         visibility: 'published_to_project',
       },
+      excerpts: [excerpt],
       insights: [],
       notes: [privateNote],
       projectComments: [projectComment],
@@ -483,8 +506,21 @@ describe('core contracts', () => {
     expect(privateNote.kind).toBe('private_note');
     expect(projectComment.projectId).toBe('project_001');
     expect(projectComment.kind).toBe('project_comment');
+    expect(createExcerptRequest).toEqual({
+      endOffset: 32,
+      locator: 'p. 4',
+      note: 'Durable evidence note.',
+      quote: 'durable quoted reader evidence',
+      startOffset: 4,
+    });
+    expect(createExcerptRequest).not.toHaveProperty('actorUserId');
+    expect(createExcerptRequest).not.toHaveProperty('scope');
+    expect(excerpt).not.toHaveProperty('visibility');
+    expect(excerpt).not.toHaveProperty('spaceId');
+    expect(excerpt).not.toHaveProperty('projectId');
     expect(createNoteRequest).not.toHaveProperty('visibility');
     expect(createProjectCommentRequest.projectId).toBe('project_001');
+    expect(readingDetail.excerpts[0]?.paperAssetId).toBe('asset_001');
     expect(readingDetail.notes).toHaveLength(1);
     expect(readingDetail.projectComments).toHaveLength(1);
     expect(conversation.title).toContain('Summarize');
@@ -596,6 +632,7 @@ describe('core contracts', () => {
             evidenceSpan: 'quoted evidence',
             libraryEntryId: 'entry_001',
             paperAssetId: 'asset_001',
+            readerExcerptId: 'excerpt_001',
             text: 'quoted evidence',
             type: 'quote',
           },
@@ -615,6 +652,7 @@ describe('core contracts', () => {
         evidenceSpan: 'quoted evidence',
         libraryEntryId: 'entry_001',
         paperAssetId: 'asset_001',
+        readerExcerptId: 'excerpt_001',
         sourceType: 'quote',
       },
       {
@@ -649,6 +687,18 @@ describe('core contracts', () => {
           {
             libraryEntryId: 'entry_001',
             text: 'quote with incomplete source metadata',
+            type: 'quote',
+          },
+        ],
+        schemaVersion: 1,
+      }),
+    ).toThrow(/paperAssetId is required/);
+    expect(() =>
+      documentContent.normalizeDocumentBlockDocument({
+        blocks: [
+          {
+            readerExcerptId: 'excerpt_001',
+            text: 'quote with excerpt but no asset metadata',
             type: 'quote',
           },
         ],
@@ -724,6 +774,7 @@ describe('core contracts', () => {
       id: 'notebook_citation_001',
       notebookDocumentVersionId: 'notebook_version_001',
       paperAssetId: 'asset_001',
+      readerExcerptId: 'excerpt_001',
     };
     const notebookSnapshot: NotebookDocumentSnapshot = {
       capturedAt: '2026-03-21T00:00:00.000Z',
@@ -784,6 +835,7 @@ describe('core contracts', () => {
       id: 'project_doc_citation_001',
       paperAssetId: 'asset_001',
       projectDocVersionId: 'project_doc_version_001',
+      readerExcerptId: 'excerpt_001',
     };
     const projectDocSnapshot: ProjectDocSnapshot = {
       capturedAt: '2026-03-21T00:00:00.000Z',
@@ -806,6 +858,7 @@ describe('core contracts', () => {
 
     expect(notebookSnapshot.document.ownerId).toBe('user_001');
     expect(notebookSnapshot.citations[0]?.evidenceSpan).toBe('p. 4');
+    expect(notebookSnapshot.citations[0]?.readerExcerptId).toBe('excerpt_001');
     expect(notebookSnapshot.documentContent?.schemaVersion).toBe(1);
     expect(notebookList.documents).toHaveLength(1);
     expect(sourceExcerpt.type).toBe('sourceExcerpt');
@@ -816,6 +869,7 @@ describe('core contracts', () => {
     expect(projectDocSnapshot.citations[0]?.projectDocVersionId).toBe(
       'project_doc_version_001',
     );
+    expect(projectDocSnapshot.citations[0]?.readerExcerptId).toBe('excerpt_001');
     expect(notebook.notebookContract).toBe('jixia-notebook-contract');
     expect(projectDocs.projectDocsContract).toBe('jixia-project-docs-contract');
     expect(documentSnapshot.documentSnapshotContract).toBe(

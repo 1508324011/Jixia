@@ -7,8 +7,8 @@ import {
 } from '@prisma/client';
 
 import type { JixiaPrismaClient } from '../client';
-import { initializeLibraryPersistence } from './library.repository';
 import { initializeProjectPersistence } from './project.repository';
+import { initializeReadingPersistence } from './reading.repository';
 
 export interface CreateProjectDocParams {
   createdByUserId: string;
@@ -22,6 +22,7 @@ export interface CreateProjectDocVersionParams {
   citations: Array<{
     evidenceSpan?: string;
     paperAssetId: string;
+    readerExcerptId?: string;
   }>;
   content: string;
   documentId: string;
@@ -45,6 +46,7 @@ export interface PersistedProjectDocCitationRecord {
   id: string;
   paperAssetId: string;
   projectDocVersionId: string;
+  readerExcerptId?: string;
 }
 
 export interface PersistedProjectDocSnapshot {
@@ -138,6 +140,7 @@ function mapCitation(citation: ProjectDocCitation): PersistedProjectDocCitationR
     id: citation.id,
     paperAssetId: citation.paperAssetId,
     projectDocVersionId: citation.projectDocVersionId,
+    readerExcerptId: citation.readerExcerptId ?? undefined,
   };
 }
 
@@ -209,11 +212,98 @@ async function getLatestVersion(
   });
 }
 
+interface SqliteForeignKeyRow {
+  from: string;
+  on_delete: string;
+  on_update: string;
+  table: string;
+  to: string;
+}
+
+async function hasProjectDocCitationReaderExcerptForeignKey(
+  prisma: JixiaPrismaClient,
+): Promise<boolean> {
+  const foreignKeys = await prisma.$queryRawUnsafe<SqliteForeignKeyRow[]>(
+    'PRAGMA foreign_key_list("ProjectDocCitation")',
+  );
+
+  return foreignKeys.some(
+    (foreignKey) =>
+      foreignKey.from === 'readerExcerptId' &&
+      foreignKey.table === 'ReaderExcerpt' &&
+      foreignKey.to === 'id' &&
+      foreignKey.on_delete === 'SET NULL' &&
+      foreignKey.on_update === 'CASCADE',
+  );
+}
+
+async function rebuildProjectDocCitationReaderExcerptForeignKey(
+  prisma: JixiaPrismaClient,
+): Promise<void> {
+  if (await hasProjectDocCitationReaderExcerptForeignKey(prisma)) {
+    return;
+  }
+
+  await prisma.$executeRawUnsafe('PRAGMA foreign_keys = OFF');
+
+  try {
+    await prisma.$executeRawUnsafe(
+      'DROP TABLE IF EXISTS "ProjectDocCitation__rebuild"',
+    );
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE "ProjectDocCitation__rebuild" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "projectDocVersionId" TEXT NOT NULL,
+        "paperAssetId" TEXT NOT NULL,
+        "readerExcerptId" TEXT,
+        "evidenceSpan" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "ProjectDocCitation_projectDocVersionId_fkey" FOREIGN KEY ("projectDocVersionId") REFERENCES "ProjectDocVersion" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "ProjectDocCitation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "ProjectDocCitation_readerExcerptId_fkey" FOREIGN KEY ("readerExcerptId") REFERENCES "ReaderExcerpt" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "ProjectDocCitation__rebuild" (
+        "id",
+        "projectDocVersionId",
+        "paperAssetId",
+        "readerExcerptId",
+        "evidenceSpan",
+        "createdAt"
+      )
+      SELECT
+        "ProjectDocCitation"."id",
+        "ProjectDocCitation"."projectDocVersionId",
+        "ProjectDocCitation"."paperAssetId",
+        CASE
+          WHEN "ProjectDocCitation"."readerExcerptId" IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM "ReaderExcerpt"
+              WHERE "ReaderExcerpt"."id" = "ProjectDocCitation"."readerExcerptId"
+            )
+          THEN "ProjectDocCitation"."readerExcerptId"
+          ELSE NULL
+        END AS "readerExcerptId",
+        "ProjectDocCitation"."evidenceSpan",
+        "ProjectDocCitation"."createdAt"
+      FROM "ProjectDocCitation"
+    `);
+    await prisma.$executeRawUnsafe('DROP TABLE "ProjectDocCitation"');
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE "ProjectDocCitation__rebuild" RENAME TO "ProjectDocCitation"',
+    );
+  } finally {
+    await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON');
+  }
+}
+
 export async function initializeProjectDocPersistence(
   prisma: JixiaPrismaClient,
 ): Promise<void> {
   await initializeProjectPersistence(prisma);
-  await initializeLibraryPersistence(prisma);
+  await initializeReadingPersistence(prisma);
   await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON');
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "ProjectDoc" (
@@ -246,14 +336,35 @@ export async function initializeProjectDocPersistence(
       "id" TEXT NOT NULL PRIMARY KEY,
       "projectDocVersionId" TEXT NOT NULL,
       "paperAssetId" TEXT NOT NULL,
+      "readerExcerptId" TEXT,
       "evidenceSpan" TEXT,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "ProjectDocCitation_projectDocVersionId_fkey" FOREIGN KEY ("projectDocVersionId") REFERENCES "ProjectDocVersion" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-      CONSTRAINT "ProjectDocCitation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      CONSTRAINT "ProjectDocCitation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "ProjectDocCitation_readerExcerptId_fkey" FOREIGN KEY ("readerExcerptId") REFERENCES "ReaderExcerpt" ("id") ON DELETE SET NULL ON UPDATE CASCADE
     )
   `);
   await prisma.$executeRawUnsafe(`
-    CREATE UNIQUE INDEX IF NOT EXISTS "ProjectDocCitation_projectDocVersionId_paperAssetId_key" ON "ProjectDocCitation"("projectDocVersionId", "paperAssetId")
+    ALTER TABLE "ProjectDocCitation" ADD COLUMN "readerExcerptId" TEXT
+  `).catch((error) => {
+    if (
+      error instanceof Error &&
+      /duplicate column name|already exists/i.test(error.message)
+    ) {
+      return;
+    }
+
+    throw error;
+  });
+  await prisma.$executeRawUnsafe(`
+    DROP INDEX IF EXISTS "ProjectDocCitation_projectDocVersionId_paperAssetId_key"
+  `);
+  await rebuildProjectDocCitationReaderExcerptForeignKey(prisma);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProjectDocCitation_projectDocVersionId_paperAssetId_idx" ON "ProjectDocCitation"("projectDocVersionId", "paperAssetId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProjectDocCitation_readerExcerptId_idx" ON "ProjectDocCitation"("readerExcerptId")
   `);
 }
 
@@ -381,6 +492,7 @@ export function createProjectDocRepository(
               create: input.citations.map((citation) => ({
                 evidenceSpan: citation.evidenceSpan,
                 paperAssetId: citation.paperAssetId,
+                readerExcerptId: citation.readerExcerptId,
               })),
             },
             projectDocId: input.documentId,

@@ -1,9 +1,11 @@
 import type { EvidenceSpanRecord, GeneratedInsightRecord } from "@shared/contracts/evidence";
 import type {
+  CreateReaderExcerptRequest,
   CreateProjectReadingCommentRequest,
   CreateReadingNoteRequest,
   GetReadingDetailQuery,
   PrivateReadingNoteRecord,
+  ReaderExcerptRecord,
   ProjectReadingCommentRecord,
   ReadingDetail,
   SaveReadingInsightRequest,
@@ -41,6 +43,23 @@ export interface SaveGeneratedInsightRequest
   startedByUserId?: string;
 }
 
+export interface CreateReaderExcerptServiceRequest extends CreateReaderExcerptRequest {
+  actorSpaceId?: string;
+  actorUserId: string;
+  libraryEntryId: string;
+}
+
+export interface ListReaderExcerptsRequest {
+  actorSpaceId?: string;
+  actorUserId: string;
+  libraryEntryId: string;
+}
+
+export interface ReaderExcerptSource {
+  excerpt: ReaderExcerptRecord;
+  sourceEntry: PersistedLibraryEntryView;
+}
+
 export interface GetReadingDetailRequest extends GetReadingDetailQuery {
   actorSpaceId?: string;
   actorUserId: string;
@@ -53,6 +72,9 @@ export interface ReadingStore {
 }
 
 export interface ReadingService {
+  createReaderExcerpt(
+    input: CreateReaderExcerptServiceRequest,
+  ): Promise<ReaderExcerptRecord>;
   createNote(input: CreateNoteRequest): Promise<PrivateReadingNoteRecord>;
   createProjectComment(
     input: CreateProjectCommentRequest,
@@ -76,10 +98,16 @@ export interface ReadingService {
     generatedInsightId: string;
     libraryEntryId: string;
   }): Promise<GeneratedInsightRecord>;
+  getReaderExcerptSource(input: {
+    actorSpaceId?: string;
+    actorUserId: string;
+    readerExcerptId: string;
+  }): Promise<ReaderExcerptSource>;
   getWorkbenchDetail(input: {
     actorUserId: string;
     libraryEntryId: string;
   }): Promise<ReadingDetail | null>;
+  listReaderExcerpts(input: ListReaderExcerptsRequest): Promise<ReaderExcerptRecord[]>;
   saveGeneratedInsight(
     input: SaveGeneratedInsightRequest,
   ): Promise<GeneratedInsightRecord>;
@@ -138,8 +166,39 @@ function assertProjectCommentCompatibility(
   }
 }
 
+function assertValidExcerptInput(input: CreateReaderExcerptServiceRequest): void {
+  if (!input.quote.trim()) {
+    throw new Error("Reader excerpt quote is required.");
+  }
+
+  if (!Number.isInteger(input.startOffset) || input.startOffset < 0) {
+    throw new Error("Reader excerpt startOffset must be a non-negative integer.");
+  }
+
+  if (!Number.isInteger(input.endOffset) || input.endOffset < input.startOffset) {
+    throw new Error("Reader excerpt endOffset must be an integer greater than or equal to startOffset.");
+  }
+}
+
 export function createReadingService(store: ReadingStore): ReadingService {
   return {
+    async createReaderExcerpt(
+      input: CreateReaderExcerptServiceRequest,
+    ): Promise<ReaderExcerptRecord> {
+      assertValidExcerptInput(input);
+      const view = await getAuthorizedLibraryContext(store, input);
+
+      return store.readingRepository.createReaderExcerpt({
+        createdByUserId: input.actorUserId,
+        endOffset: input.endOffset,
+        libraryEntryId: input.libraryEntryId,
+        locator: input.locator?.trim() || undefined,
+        note: input.note?.trim() || undefined,
+        paperAssetId: view.asset.id,
+        quote: input.quote.trim(),
+        startOffset: input.startOffset,
+      });
+    },
     async getDetail(
       input: GetReadingDetailRequest,
     ): Promise<ReadingDetail | null> {
@@ -193,10 +252,14 @@ export function createReadingService(store: ReadingStore): ReadingService {
       const insights = await store.readingRepository.listGeneratedInsightsForEntry(
         input.libraryEntryId,
       );
+      const excerpts = await store.readingRepository.listReaderExcerptsForEntry(
+        input.libraryEntryId,
+      );
 
       return {
         asset: mappedView.asset,
         entry: mappedView.entry,
+        excerpts,
         insights,
         notes: notes.map(({ visibility: _visibility, ...note }) => note),
         projectComments,
@@ -227,6 +290,40 @@ export function createReadingService(store: ReadingStore): ReadingService {
       }
 
       return insight;
+    },
+    async getReaderExcerptSource(input: {
+      actorSpaceId?: string;
+      actorUserId: string;
+      readerExcerptId: string;
+    }): Promise<ReaderExcerptSource> {
+      const excerpt = await store.readingRepository.getReaderExcerpt(
+        input.readerExcerptId,
+      );
+
+      if (!excerpt) {
+        throw new Error(`Reader excerpt ${input.readerExcerptId} does not exist.`);
+      }
+
+      const sourceEntry = await getAuthorizedLibraryContext(store, {
+        actorSpaceId: input.actorSpaceId,
+        actorUserId: input.actorUserId,
+        libraryEntryId: excerpt.libraryEntryId,
+      });
+
+      if (sourceEntry.asset.id !== excerpt.paperAssetId) {
+        throw new Error(
+          `Reader excerpt ${input.readerExcerptId} does not match its source library entry.`,
+        );
+      }
+
+      return { excerpt, sourceEntry };
+    },
+    async listReaderExcerpts(
+      input: ListReaderExcerptsRequest,
+    ): Promise<ReaderExcerptRecord[]> {
+      await getAuthorizedLibraryContext(store, input);
+
+      return store.readingRepository.listReaderExcerptsForEntry(input.libraryEntryId);
     },
     async createNote(input: CreateNoteRequest): Promise<PrivateReadingNoteRecord> {
       assertPrivateNoteCompatibility(input);

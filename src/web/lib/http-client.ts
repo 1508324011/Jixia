@@ -42,8 +42,12 @@ import type {
 import type {
   PrivateReadingNoteRecord,
   ReadingInsightResponse,
+  ReaderExcerptRecord,
+  ReaderExcerptResponse,
   ReadingNoteResponse,
   ProjectReadingCommentRecord,
+  CreateReaderExcerptRequest,
+  ListReaderExcerptsResponse,
   ReadingDetail,
 } from "@shared/contracts/reading";
 import type {
@@ -104,6 +108,9 @@ type CreateReadingNoteForEntryPayload = {
   body: string;
   entryId: string;
 };
+type CreateReaderExcerptPayload = CreateReaderExcerptRequest & {
+  entryId: string;
+};
 type CreateProjectReadingCommentPayload = {
   body: string;
   libraryEntryId: string;
@@ -157,6 +164,7 @@ type SaveProjectDocVersionPayload = {
     evidenceSpan?: string;
     libraryEntryId?: string;
     paperAssetId: string;
+    readerExcerptId?: string;
   }>;
   content?: string;
   documentContent?: DocumentBlockDocument;
@@ -166,6 +174,7 @@ type SaveNotebookVersionPayload = {
     evidenceSpan?: string;
     libraryEntryId?: string;
     paperAssetId: string;
+    readerExcerptId?: string;
   }>;
   content?: string;
   documentContent?: DocumentBlockDocument;
@@ -421,6 +430,20 @@ export const apiClient = {
       method: "POST",
     });
   },
+  createReaderExcerpt(
+    input: CreateReaderExcerptPayload,
+  ): Promise<ReaderExcerptRecord> {
+    return requestJson<ReaderExcerptResponse>(`/api/reading/${input.entryId}/excerpts`, {
+      body: JSON.stringify({
+        endOffset: input.endOffset,
+        locator: input.locator,
+        note: input.note,
+        quote: input.quote,
+        startOffset: input.startOffset,
+      }),
+      method: "POST",
+    }).then((response) => response.excerpt);
+  },
   createProjectReadingComment(
     input: CreateProjectReadingCommentPayload,
   ): Promise<ProjectReadingCommentRecord> {
@@ -478,6 +501,9 @@ export const apiClient = {
   },
   listNotebooks(): Promise<ListNotebookDocumentsResponse> {
     return requestJson("/api/notebooks");
+  },
+  listReaderExcerpts(entryId: string): Promise<ListReaderExcerptsResponse> {
+    return requestJson(`/api/reading/${entryId}/excerpts`);
   },
   listProjectMembers(
     projectId: string,
@@ -564,6 +590,7 @@ export const apiClient = {
         evidenceSpan?: string;
         libraryEntryId?: string;
         paperAssetId: string;
+        readerExcerptId?: string;
       }>;
       content?: string;
       documentContent?: DocumentBlockDocument;

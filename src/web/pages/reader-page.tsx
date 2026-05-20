@@ -25,12 +25,18 @@ export function ReaderPage() {
   const [isWorkbenchLoading, setIsWorkbenchLoading] = useState(isPersonalReaderRoute);
   const [privateNoteBody, setPrivateNoteBody] = useState("");
   const [projectCommentBody, setProjectCommentBody] = useState("");
+  const [excerptQuote, setExcerptQuote] = useState("");
+  const [excerptStartOffset, setExcerptStartOffset] = useState("0");
+  const [excerptEndOffset, setExcerptEndOffset] = useState("0");
+  const [excerptLocator, setExcerptLocator] = useState("");
+  const [excerptNote, setExcerptNote] = useState("");
   const [insightSummary, setInsightSummary] = useState("");
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [promotedDocumentId, setPromotedDocumentId] = useState<string | null>(null);
   const [capturedNotebookId, setCapturedNotebookId] = useState<string | null>(null);
   const [isSavingPrivateNote, setIsSavingPrivateNote] = useState(false);
+  const [isSavingExcerpt, setIsSavingExcerpt] = useState(false);
   const [isSavingInsight, setIsSavingInsight] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
   const [projectReaderCommentBody, setProjectReaderCommentBody] = useState(
@@ -90,6 +96,10 @@ export function ReaderPage() {
   );
   const projectComments = useMemo(
     () => detail?.projectComments ?? [],
+    [detail],
+  );
+  const excerpts = useMemo(
+    () => detail?.excerpts ?? [],
     [detail],
   );
   const latestInsight = detail?.insights.at(-1) ?? null;
@@ -229,6 +239,65 @@ export function ReaderPage() {
     );
   }
 
+  function parseExcerptOffsets(): { endOffset: number; startOffset: number } | null {
+    const startOffset = Number(excerptStartOffset);
+    const endOffset = Number(excerptEndOffset);
+
+    if (!Number.isInteger(startOffset) || !Number.isInteger(endOffset)) {
+      setMutationError("Reader excerpt offsets must be whole numbers.");
+      return null;
+    }
+
+    return { endOffset, startOffset };
+  }
+
+  async function handleSaveExcerpt(): Promise<void> {
+    if (!detail || !excerptQuote.trim()) {
+      return;
+    }
+
+    const offsets = parseExcerptOffsets();
+
+    if (!offsets) {
+      return;
+    }
+
+    setIsSavingExcerpt(true);
+    setMutationError(null);
+    setSuccessMessage(null);
+
+    try {
+      const excerpt = await apiClient.createReaderExcerpt({
+        endOffset: offsets.endOffset,
+        entryId,
+        locator: excerptLocator.trim() || undefined,
+        note: excerptNote.trim() || undefined,
+        quote: excerptQuote.trim(),
+        startOffset: offsets.startOffset,
+      });
+
+      setDetail((current) => current
+        ? {
+            ...current,
+            excerpts: [...current.excerpts, excerpt],
+          }
+        : current,
+      );
+      setExcerptQuote("");
+      setExcerptStartOffset("0");
+      setExcerptEndOffset("0");
+      setExcerptLocator("");
+      setExcerptNote("");
+      setSuccessMessage("Saved reader excerpt.");
+    } catch (error) {
+      setMutationError(
+        error instanceof Error ? error.message : "Failed to save the reader excerpt.",
+      );
+    } finally {
+      setIsSavingExcerpt(false);
+    }
+  }
+
   async function handleSaveInsight(): Promise<void> {
     if (!insightSummary.trim()) {
       return;
@@ -320,8 +389,10 @@ export function ReaderPage() {
       isLoading,
       isMutating,
       notes,
+      excerpts: projectExcerpts,
       projectComments,
       project,
+      createExcerpt: createProjectExcerpt,
       refresh,
       saveGeneratedInsight,
       saveNote,
@@ -394,6 +465,41 @@ export function ReaderPage() {
       }
     }
 
+    async function handleSaveProjectExcerpt(): Promise<void> {
+      if (!excerptQuote.trim()) {
+        return;
+      }
+
+      const offsets = parseExcerptOffsets();
+
+      if (!offsets) {
+        return;
+      }
+
+      setMutationError(null);
+      setSuccessMessage(null);
+
+      try {
+        await createProjectExcerpt({
+          endOffset: offsets.endOffset,
+          locator: excerptLocator.trim() || undefined,
+          note: excerptNote.trim() || undefined,
+          quote: excerptQuote.trim(),
+          startOffset: offsets.startOffset,
+        });
+        setExcerptQuote("");
+        setExcerptStartOffset("0");
+        setExcerptEndOffset("0");
+        setExcerptLocator("");
+        setExcerptNote("");
+        setSuccessMessage("Saved reader excerpt.");
+      } catch (error) {
+        setMutationError(
+          error instanceof Error ? error.message : "Failed to save the reader excerpt.",
+        );
+      }
+    }
+
     return (
       <main className="page-shell">
         <header className="page-header">
@@ -457,6 +563,58 @@ export function ReaderPage() {
             </p>
             <p className="quiet-copy">Governed action source · queued → running → succeeded</p>
             <PaperWorkspaceTabs />
+            <label className="quiet-copy" htmlFor="project-reader-excerpt-quote">
+              Reader excerpt quote
+            </label>
+            <textarea
+              id="project-reader-excerpt-quote"
+              value={excerptQuote}
+              onChange={(event) => setExcerptQuote(event.target.value)}
+            />
+            <div className="context-bar" aria-label="reader excerpt offsets">
+              <label className="quiet-copy" htmlFor="project-reader-excerpt-start">
+                Start offset
+              </label>
+              <input
+                id="project-reader-excerpt-start"
+                type="number"
+                value={excerptStartOffset}
+                onChange={(event) => setExcerptStartOffset(event.target.value)}
+              />
+              <label className="quiet-copy" htmlFor="project-reader-excerpt-end">
+                End offset
+              </label>
+              <input
+                id="project-reader-excerpt-end"
+                type="number"
+                value={excerptEndOffset}
+                onChange={(event) => setExcerptEndOffset(event.target.value)}
+              />
+            </div>
+            <label className="quiet-copy" htmlFor="project-reader-excerpt-locator">
+              Excerpt locator
+            </label>
+            <input
+              id="project-reader-excerpt-locator"
+              value={excerptLocator}
+              onChange={(event) => setExcerptLocator(event.target.value)}
+            />
+            <label className="quiet-copy" htmlFor="project-reader-excerpt-note">
+              Excerpt note
+            </label>
+            <textarea
+              id="project-reader-excerpt-note"
+              value={excerptNote}
+              onChange={(event) => setExcerptNote(event.target.value)}
+            />
+            <button
+              className="panel-link"
+              type="button"
+              disabled={isMutating || excerptQuote.trim().length === 0}
+              onClick={() => void handleSaveProjectExcerpt()}
+            >
+              {isMutating ? "Saving excerpt…" : "Save reader excerpt"}
+            </button>
             <label className="quiet-copy" htmlFor="reader-private-note-input">
               Private note draft
             </label>
@@ -551,6 +709,17 @@ export function ReaderPage() {
                   <p className="quiet-copy">{comment.body}</p>
                 </div>
               ))}
+              {projectExcerpts.map((excerpt) => (
+                <div key={excerpt.id} className="hero-card">
+                  <h3 className="panel-title">Reader excerpt</h3>
+                  <p className="quiet-copy">{excerpt.quote}</p>
+                  <p className="quiet-copy">
+                    Offsets · {excerpt.startOffset}-{excerpt.endOffset}
+                  </p>
+                  {excerpt.locator ? <p className="quiet-copy">{excerpt.locator}</p> : null}
+                  {excerpt.note ? <p className="quiet-copy">{excerpt.note}</p> : null}
+                </div>
+              ))}
               {insights.map((insight) => (
                 <div key={insight.id} className="hero-card">
                   <h3 className="panel-title">Insight</h3>
@@ -581,6 +750,7 @@ export function ReaderPage() {
         <span>Entry · {entryId}</span>
         {detail ? <span>Space context · {detail.entry.spaceId}</span> : null}
         <span className="status-badge">{privateNotes.length} private notes</span>
+        <span className="status-badge">{excerpts.length} reader excerpts</span>
         <span className="status-badge">{projectComments.length} project comments</span>
       </section>
 
@@ -645,6 +815,7 @@ export function ReaderPage() {
                 className="action-button"
                 disabled={
                   isSavingPrivateNote ||
+                  isSavingExcerpt ||
                   isSavingInsight ||
                   isPromoting ||
                   isCapturingNotebook
@@ -656,6 +827,70 @@ export function ReaderPage() {
                 }
               >
                 {isSavingPrivateNote ? "Saving private note…" : "Save private note"}
+              </button>
+
+              <label className="quiet-copy" htmlFor="reader-excerpt-quote">
+                Reader excerpt quote
+              </label>
+              <textarea
+                id="reader-excerpt-quote"
+                className="draft-editor"
+                rows={3}
+                value={excerptQuote}
+                onChange={(event) => setExcerptQuote(event.target.value)}
+              />
+              <div className="context-bar" aria-label="reader excerpt offsets">
+                <label className="quiet-copy" htmlFor="reader-excerpt-start">
+                  Start offset
+                </label>
+                <input
+                  id="reader-excerpt-start"
+                  type="number"
+                  value={excerptStartOffset}
+                  onChange={(event) => setExcerptStartOffset(event.target.value)}
+                />
+                <label className="quiet-copy" htmlFor="reader-excerpt-end">
+                  End offset
+                </label>
+                <input
+                  id="reader-excerpt-end"
+                  type="number"
+                  value={excerptEndOffset}
+                  onChange={(event) => setExcerptEndOffset(event.target.value)}
+                />
+              </div>
+              <label className="quiet-copy" htmlFor="reader-excerpt-locator">
+                Excerpt locator
+              </label>
+              <input
+                id="reader-excerpt-locator"
+                value={excerptLocator}
+                onChange={(event) => setExcerptLocator(event.target.value)}
+              />
+              <label className="quiet-copy" htmlFor="reader-excerpt-note">
+                Excerpt note
+              </label>
+              <textarea
+                id="reader-excerpt-note"
+                className="draft-editor"
+                rows={2}
+                value={excerptNote}
+                onChange={(event) => setExcerptNote(event.target.value)}
+              />
+              <button
+                type="button"
+                className="action-button"
+                disabled={
+                  excerptQuote.trim().length === 0 ||
+                  isSavingPrivateNote ||
+                  isSavingExcerpt ||
+                  isSavingInsight ||
+                  isPromoting ||
+                  isCapturingNotebook
+                }
+                onClick={() => void handleSaveExcerpt()}
+              >
+                {isSavingExcerpt ? "Saving excerpt…" : "Save reader excerpt"}
               </button>
 
               <label className="quiet-copy" htmlFor="project-comment-body">
@@ -673,6 +908,7 @@ export function ReaderPage() {
                 className="action-button"
                 disabled={
                   isSavingPrivateNote ||
+                  isSavingExcerpt ||
                   isSavingInsight ||
                   isPromoting ||
                   isCapturingNotebook
@@ -697,6 +933,7 @@ export function ReaderPage() {
                 className="action-button"
                 disabled={
                   isSavingPrivateNote ||
+                  isSavingExcerpt ||
                   isSavingInsight ||
                   isPromoting ||
                   isCapturingNotebook
@@ -712,6 +949,7 @@ export function ReaderPage() {
                 disabled={
                   !latestInsight ||
                   isSavingPrivateNote ||
+                  isSavingExcerpt ||
                   isSavingInsight ||
                   isPromoting ||
                   isCapturingNotebook
@@ -727,6 +965,7 @@ export function ReaderPage() {
                 disabled={
                   !latestInsight ||
                   isSavingPrivateNote ||
+                  isSavingExcerpt ||
                   isSavingInsight ||
                   isPromoting ||
                   isCapturingNotebook
@@ -746,6 +985,24 @@ export function ReaderPage() {
               <p className="quiet-copy">
                 Personal reader does not invent a project. Open a real project workspace before Writer promotion.
               </p>
+
+              <div className="stack-xs">
+                <h3 className="panel-title">Reader excerpts</h3>
+                {excerpts.length > 0 ? (
+                  excerpts.map((excerpt) => (
+                    <div key={excerpt.id} className="hero-card">
+                      <p className="quiet-copy">{excerpt.quote}</p>
+                      <p className="quiet-copy">
+                        Offsets · {excerpt.startOffset}-{excerpt.endOffset}
+                      </p>
+                      {excerpt.locator ? <p className="quiet-copy">{excerpt.locator}</p> : null}
+                      {excerpt.note ? <p className="quiet-copy">{excerpt.note}</p> : null}
+                    </div>
+                  ))
+                ) : (
+                  <p className="quiet-copy">No reader excerpts yet.</p>
+                )}
+              </div>
 
               <div className="stack-xs">
                 <h3 className="panel-title">Private notes</h3>

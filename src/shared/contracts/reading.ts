@@ -47,9 +47,24 @@ export interface ReadingStateRecord {
   lastReadAt: string;
 }
 
+export interface ReaderExcerptRecord {
+  createdAt: string;
+  createdByUserId: string;
+  endOffset: number;
+  id: string;
+  libraryEntryId: string;
+  locator?: string;
+  note?: string;
+  paperAssetId: string;
+  quote: string;
+  startOffset: number;
+  updatedAt: string;
+}
+
 export interface ReadingDetailView {
   asset: PaperAssetRecord;
   entry: LibraryEntryRecord;
+  excerpts: ReaderExcerptRecord[];
   insights: GeneratedInsightRecord[];
   notes: PrivateReadingNoteRecord[];
   projectComments: ProjectReadingCommentRecord[];
@@ -90,6 +105,14 @@ export interface CreateProjectReadingCommentRequest {
   projectId?: string;
 }
 
+export interface CreateReaderExcerptRequest {
+  endOffset: number;
+  locator?: string;
+  note?: string;
+  quote: string;
+  startOffset: number;
+}
+
 export interface SaveReadingInsightRequest {
   /** @deprecated Protected HTTP routes derive access context from the authenticated actor. */
   actorSpaceId?: string;
@@ -107,6 +130,14 @@ export interface ReadingNoteResponse {
 
 export interface ProjectReadingCommentResponse {
   comment: ProjectReadingCommentRecord;
+}
+
+export interface ReaderExcerptResponse {
+  excerpt: ReaderExcerptRecord;
+}
+
+export interface ListReaderExcerptsResponse {
+  excerpts: ReaderExcerptRecord[];
 }
 
 /** @deprecated Use ProjectReadingCommentResponse. */
