@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { DocumentBlockDocument } from "@shared/contracts/document-content";
+import {
+  extractDocumentBlockReferences,
+} from "@shared/contracts/document-content";
+import type {
+  DocumentBlockDocument,
+  DocumentBlockReference,
+} from "@shared/contracts/document-content";
 import type {
   ProjectDocCitationRecord,
   ProjectDocRecord,
@@ -16,13 +22,18 @@ interface SaveProjectDocInput {
     evidenceSpan?: string;
     libraryEntryId?: string;
     paperAssetId: string;
+    readerExcerptId?: string;
   }>;
   content?: string;
   documentContent: DocumentBlockDocument;
 }
 
+export interface ProjectDocPresenterCitation extends ProjectDocCitationRecord {
+  libraryEntryId?: string;
+}
+
 export interface ProjectDocPresenterViewModel {
-  citations: ProjectDocCitationRecord[];
+  citations: ProjectDocPresenterCitation[];
   content: string;
   documentContent: DocumentBlockDocument;
   document: ProjectDocRecord | null;
@@ -43,6 +54,87 @@ function buildProjectDocMismatchError(
   resolvedProjectId: string,
 ): string {
   return `Document ${documentId} belongs to project ${resolvedProjectId}, not route project ${routeProjectId}.`;
+}
+
+function buildProjectDocCitationKey(input: {
+  paperAssetId: string;
+  readerExcerptId?: string;
+}): string {
+  return input.readerExcerptId
+    ? `excerpt:${input.readerExcerptId}`
+    : `asset:${input.paperAssetId}`;
+}
+
+function buildProjectDocCitationEvidenceKey(input: {
+  evidenceSpan?: string;
+  paperAssetId: string;
+}): string | null {
+  return input.evidenceSpan
+    ? `asset:${input.paperAssetId}:evidence:${input.evidenceSpan}`
+    : null;
+}
+
+function readRuntimeCitationLibraryEntryId(
+  citation: ProjectDocCitationRecord,
+): string | undefined {
+  const libraryEntryId = (
+    citation as ProjectDocCitationRecord & { libraryEntryId?: unknown }
+  ).libraryEntryId;
+
+  return typeof libraryEntryId === "string" && libraryEntryId.trim()
+    ? libraryEntryId.trim()
+    : undefined;
+}
+
+function createProjectDocPresenterCitations(
+  snapshot: ProjectDocSnapshot | null,
+  documentContent: DocumentBlockDocument,
+): ProjectDocPresenterCitation[] {
+  if (!snapshot) {
+    return [];
+  }
+
+  const referencesByKey = new Map<string, DocumentBlockReference>();
+  const referencesByEvidenceKey = new Map<string, DocumentBlockReference>();
+  const referencesByAssetKey = new Map<string, DocumentBlockReference>();
+
+  for (const reference of extractDocumentBlockReferences(documentContent)) {
+    const referenceKey = buildProjectDocCitationKey(reference);
+    const evidenceKey = buildProjectDocCitationEvidenceKey(reference);
+    const assetKey = `asset:${reference.paperAssetId}`;
+
+    if (!referencesByKey.has(referenceKey)) {
+      referencesByKey.set(referenceKey, reference);
+    }
+
+    if (evidenceKey && !referencesByEvidenceKey.has(evidenceKey)) {
+      referencesByEvidenceKey.set(evidenceKey, reference);
+    }
+
+    if (!referencesByAssetKey.has(assetKey)) {
+      referencesByAssetKey.set(assetKey, reference);
+    }
+  }
+
+  return snapshot.citations.map((citation) => {
+    const citationEvidenceKey = buildProjectDocCitationEvidenceKey(citation);
+    const matchingReference =
+      referencesByKey.get(buildProjectDocCitationKey(citation)) ??
+      (citationEvidenceKey
+        ? referencesByEvidenceKey.get(citationEvidenceKey)
+        : undefined) ??
+      referencesByAssetKey.get(`asset:${citation.paperAssetId}`);
+
+    return {
+      ...citation,
+      evidenceSpan: citation.evidenceSpan ?? matchingReference?.evidenceSpan,
+      libraryEntryId:
+        readRuntimeCitationLibraryEntryId(citation) ??
+        matchingReference?.libraryEntryId,
+      readerExcerptId:
+        citation.readerExcerptId ?? matchingReference?.readerExcerptId,
+    };
+  });
 }
 
 export function useProjectDocPresenter(
@@ -202,6 +294,10 @@ export function useProjectDocPresenter(
     () => createEditableDocumentContent(snapshot),
     [snapshot],
   );
+  const citations = useMemo(
+    () => createProjectDocPresenterCitations(snapshot, documentContent),
+    [documentContent, snapshot],
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -230,7 +326,7 @@ export function useProjectDocPresenter(
 
   return useMemo(
     () => ({
-      citations: snapshot?.citations ?? [],
+      citations,
       content: snapshot?.content ?? "",
       documentContent,
       document: snapshot?.document ?? null,
@@ -244,6 +340,6 @@ export function useProjectDocPresenter(
       save,
       snapshot,
     }),
-    [documentContent, error, isLoading, isSaving, projectContext.error, projectContext.isLoading, projectContext.project, refresh, save, snapshot],
+    [citations, documentContent, error, isLoading, isSaving, projectContext.error, projectContext.isLoading, projectContext.project, refresh, save, snapshot],
   );
 }
