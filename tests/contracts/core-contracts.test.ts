@@ -798,11 +798,13 @@ describe('core contracts', () => {
     };
     const sourceExcerpt: NotebookSourceExcerptBlock = {
       capturedAt: '2026-03-21T00:00:00.000Z',
+      evidenceSpan: 'source-backed quote',
       libraryEntryId: 'entry_001',
       locator: 'offsets 0-12',
       note: 'Private interpretation stays editable outside the quote.',
       paperAssetId: 'asset_001',
       quote: 'source-backed quote',
+      readerExcerptId: 'excerpt_001',
       title: 'Jixia as a server-first research platform',
       type: 'sourceExcerpt',
     };
@@ -813,6 +815,15 @@ describe('core contracts', () => {
         libraryEntryId: 'entry_001',
         note: 'Capture this for private synthesis.',
         type: 'generatedInsight',
+      },
+    };
+    const readerExcerptCaptureRequest: CaptureNotebookEvidenceRequest = {
+      notebookTitle: 'Reader evidence notebook',
+      source: {
+        libraryEntryId: 'entry_001',
+        note: 'Capture this reader-selected evidence for private synthesis.',
+        readerExcerptId: 'excerpt_001',
+        type: 'readerExcerpt',
       },
     };
     const captureResponse: CaptureNotebookEvidenceResponse = {
@@ -862,7 +873,13 @@ describe('core contracts', () => {
     expect(notebookSnapshot.documentContent?.schemaVersion).toBe(1);
     expect(notebookList.documents).toHaveLength(1);
     expect(sourceExcerpt.type).toBe('sourceExcerpt');
+    expect(sourceExcerpt.readerExcerptId).toBe('excerpt_001');
+    expect(sourceExcerpt.evidenceSpan).toBe('source-backed quote');
     expect(captureRequest.source.type).toBe('generatedInsight');
+    expect(readerExcerptCaptureRequest.source.type).toBe('readerExcerpt');
+    expect(readerExcerptCaptureRequest.source).not.toHaveProperty('ownerId');
+    expect(readerExcerptCaptureRequest.source).not.toHaveProperty('projectId');
+    expect(readerExcerptCaptureRequest.source).not.toHaveProperty('visibility');
     expect(captureResponse.snapshot.document.id).toBe(notebookDoc.id);
     expect(projectDocSnapshot.document.publishState).toBe('draft');
     expect(projectDocSnapshot.documentContent?.schemaVersion).toBe(1);
