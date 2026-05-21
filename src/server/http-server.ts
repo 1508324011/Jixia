@@ -9,6 +9,7 @@ import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { DocumentBlockDocument } from "@shared/contracts/document-content";
+import type { NotebookEvidenceCaptureSource } from "@shared/contracts/notebook";
 import type { LoginSessionRequest } from "@shared/contracts/session";
 import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
 import type { CreateReaderExcerptRequest } from "@shared/contracts/reading";
@@ -411,9 +412,34 @@ function rejectNotebookAuthorityQueryFields(
     optionalQueryParam(requestUrl, "ownerId"),
     "ownerId",
   );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "createdByUserId"),
+    "createdByUserId",
+  );
   assertNoClientActorContextField(
     optionalQueryParam(requestUrl, "spaceId"),
     "spaceId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scope"),
+    "scope",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeId"),
+    "scopeId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeType"),
+    "scopeType",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "visibility"),
+    "visibility",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "projectId"),
+    "projectId",
   );
 }
 
@@ -522,6 +548,47 @@ function rejectLegacyIdentityBodyFields(
   assertNoClientActorIdentityField(actor, body.authorUserId, "authorUserId");
   assertNoClientActorIdentityField(actor, body.startedByUserId, "startedByUserId");
   assertNoClientActorContextField(body.actorSpaceId, "actorSpaceId");
+}
+
+function rejectNotebookAuthorityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+  assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
+  assertNoClientActorContextField(body.spaceId, "spaceId");
+  assertNoClientActorContextField(body.scope, "scope");
+  assertNoClientActorContextField(body.scopeId, "scopeId");
+  assertNoClientActorContextField(body.scopeType, "scopeType");
+  assertNoClientActorContextField(body.visibility, "visibility");
+  assertNoClientActorContextField(body.projectId, "projectId");
+
+  if (body.source && typeof body.source === "object" && !Array.isArray(body.source)) {
+    const source = body.source as Record<string, unknown>;
+
+    assertNoClientActorIdentityField(actor, source.actorUserId, "source.actorUserId");
+    assertNoClientActorIdentityField(actor, source.requestedByUserId, "source.requestedByUserId");
+    assertNoClientActorIdentityField(actor, source.userId, "source.userId");
+    assertNoClientActorIdentityField(actor, source.authorUserId, "source.authorUserId");
+    assertNoClientActorIdentityField(actor, source.startedByUserId, "source.startedByUserId");
+    assertNoClientActorIdentityField(actor, source.ownerId, "source.ownerId");
+    assertNoClientActorIdentityField(actor, source.createdByUserId, "source.createdByUserId");
+    assertNoClientActorContextField(source.actorSpaceId, "source.actorSpaceId");
+    assertNoClientActorContextField(source.spaceId, "source.spaceId");
+    assertNoClientActorContextField(source.scope, "source.scope");
+    assertNoClientActorContextField(source.scopeId, "source.scopeId");
+    assertNoClientActorContextField(source.scopeType, "source.scopeType");
+    assertNoClientActorContextField(source.visibility, "source.visibility");
+    assertNoClientActorContextField(source.projectId, "source.projectId");
+  }
 }
 
 function rejectProjectDocAuthorityBodyFields(
@@ -760,13 +827,13 @@ function parseNotebookCaptureBody(requestBody: unknown): {
   notebookDocumentId?: string;
   notebookTitle?: string;
   ownerId?: string;
+  projectId?: unknown;
+  scope?: unknown;
+  scopeId?: unknown;
+  scopeType?: unknown;
   spaceId?: string;
-  source: {
-    generatedInsightId: string;
-    libraryEntryId: string;
-    note?: string;
-    type: "generatedInsight";
-  };
+  source: NotebookEvidenceCaptureSource;
+  visibility?: unknown;
 } {
   if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
     throw new Error("Notebook evidence capture payload must be a JSON object.");
@@ -781,9 +848,35 @@ function parseNotebookCaptureBody(requestBody: unknown): {
 
   const sourceRecord = source as Record<string, unknown>;
 
-  if (sourceRecord.type !== "generatedInsight") {
-    throw new Error("Notebook evidence capture source type must be generatedInsight.");
+  if (sourceRecord.type !== "generatedInsight" && sourceRecord.type !== "readerExcerpt") {
+    throw new Error("Notebook evidence capture source type must be generatedInsight or readerExcerpt.");
   }
+
+  const parsedSource: NotebookEvidenceCaptureSource = sourceRecord.type === "generatedInsight"
+    ? {
+        generatedInsightId: assertStringField(
+          sourceRecord.generatedInsightId,
+          "source.generatedInsightId",
+        ),
+        libraryEntryId: assertStringField(
+          sourceRecord.libraryEntryId,
+          "source.libraryEntryId",
+        ),
+        note: assertOptionalStringField(sourceRecord.note, "source.note"),
+        type: "generatedInsight",
+      }
+    : {
+        libraryEntryId: assertOptionalStringField(
+          sourceRecord.libraryEntryId,
+          "source.libraryEntryId",
+        ),
+        note: assertOptionalStringField(sourceRecord.note, "source.note"),
+        readerExcerptId: assertStringField(
+          sourceRecord.readerExcerptId,
+          "source.readerExcerptId",
+        ),
+        type: "readerExcerpt",
+      };
 
   return {
     notebookDocumentId: assertOptionalStringField(
@@ -792,19 +885,13 @@ function parseNotebookCaptureBody(requestBody: unknown): {
     ),
     notebookTitle: assertOptionalStringField(body.notebookTitle, "notebookTitle"),
     ownerId: assertOptionalStringField(body.ownerId, "ownerId"),
+    projectId: body.projectId,
+    scope: body.scope,
+    scopeId: body.scopeId,
+    scopeType: body.scopeType,
     spaceId: assertOptionalStringField(body.spaceId, "spaceId"),
-    source: {
-      generatedInsightId: assertStringField(
-        sourceRecord.generatedInsightId,
-        "source.generatedInsightId",
-      ),
-      libraryEntryId: assertStringField(
-        sourceRecord.libraryEntryId,
-        "source.libraryEntryId",
-      ),
-      note: assertOptionalStringField(sourceRecord.note, "source.note"),
-      type: "generatedInsight",
-    },
+    source: parsedSource,
+    visibility: body.visibility,
   };
 }
 
@@ -1306,12 +1393,15 @@ async function handleApiRequest(
       const body = await readJsonBody<{
         actorUserId?: string;
         ownerId?: string;
+        projectId?: unknown;
+        scope?: unknown;
+        scopeId?: unknown;
+        scopeType?: unknown;
         spaceId?: string;
         title: string;
+        visibility?: unknown;
       }>(request);
-      rejectLegacyIdentityBodyFields(actor, body);
-      assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
-      assertNoClientActorContextField(body.spaceId, "spaceId");
+      rejectNotebookAuthorityBodyFields(actor, body);
 
       sendJson(
         response,
@@ -1331,11 +1421,8 @@ async function handleApiRequest(
       const actor = await getActor(request, actorOptions);
       rejectNotebookAuthorityQueryFields(actor, requestUrl);
       const requestBody = await readJsonBody<unknown>(request);
+      rejectNotebookAuthorityBodyFields(actor, requestBody);
       const body = parseNotebookCaptureBody(requestBody);
-      rejectLegacyIdentityBodyFields(actor, requestBody);
-      rejectLegacyActorSpaceContextBodyField(requestBody);
-      assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
-      assertNoClientActorContextField(body.spaceId, "spaceId");
 
       sendJson(
         response,
@@ -1393,14 +1480,7 @@ async function handleApiRequest(
       const [, documentId] = notebookVersionsMatch;
       rejectNotebookAuthorityQueryFields(actor, requestUrl);
       const requestBody = await readJsonBody<unknown>(request);
-      rejectLegacyIdentityBodyFields(actor, requestBody);
-      rejectLegacyActorSpaceContextBodyField(requestBody);
-
-      if (requestBody && typeof requestBody === "object" && !Array.isArray(requestBody)) {
-        const rawBody = requestBody as Record<string, unknown>;
-        assertNoClientActorIdentityField(actor, rawBody.ownerId, "ownerId");
-        assertNoClientActorContextField(rawBody.spaceId, "spaceId");
-      }
+      rejectNotebookAuthorityBodyFields(actor, requestBody);
 
       const body = parseDocumentVersionBody(requestBody);
 
