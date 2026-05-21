@@ -103,6 +103,7 @@ export function ReaderPage() {
     [detail],
   );
   const latestInsight = detail?.insights.at(-1) ?? null;
+  const latestExcerpt = excerpts.at(-1) ?? null;
   const workbenchWritingPath = promotedDocumentId
     ? `/projects/${projectId}/writing/${promotedDocumentId}`
     : null;
@@ -380,6 +381,37 @@ export function ReaderPage() {
     }
   }
 
+  async function handleCapturePersonalExcerptToNotebook(): Promise<void> {
+    if (!latestExcerpt) {
+      return;
+    }
+
+    setIsCapturingNotebook(true);
+    setMutationError(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await apiClient.captureNotebookEvidence({
+        notebookTitle: "Reader evidence notebook",
+        source: {
+          libraryEntryId: latestExcerpt.libraryEntryId,
+          note: "Captured from personal Reader excerpt.",
+          readerExcerptId: latestExcerpt.id,
+          type: "readerExcerpt",
+        },
+      });
+
+      setCapturedNotebookId(response.document.id);
+      setSuccessMessage(`Sent latest reader excerpt to private Notebook ${response.document.title}.`);
+    } catch (error) {
+      setMutationError(
+        error instanceof Error ? error.message : "Failed to send reader excerpt to Notebook.",
+      );
+    } finally {
+      setIsCapturingNotebook(false);
+    }
+  }
+
   if (hasProjectRouteContext) {
     const {
       asset,
@@ -402,6 +434,7 @@ export function ReaderPage() {
     const projectLabel = project?.project.name ?? (projectId || "No project");
     const contextProjectId = project?.project.id ?? projectId;
     const latestProjectInsight = insights.at(-1) ?? null;
+    const latestProjectExcerpt = projectExcerpts.at(-1) ?? null;
     const projectWritingPath = promotedDocumentId
       ? `/projects/${contextProjectId}/writing/${promotedDocumentId}`
       : null;
@@ -459,6 +492,37 @@ export function ReaderPage() {
       } catch (error) {
         setMutationError(
           error instanceof Error ? error.message : "Failed to send evidence to Notebook.",
+        );
+      } finally {
+        setIsCapturingNotebook(false);
+      }
+    }
+
+    async function handleProjectCaptureExcerptToNotebook(): Promise<void> {
+      if (!latestProjectExcerpt) {
+        return;
+      }
+
+      setIsCapturingNotebook(true);
+      setMutationError(null);
+      setSuccessMessage(null);
+
+      try {
+        const response = await apiClient.captureNotebookEvidence({
+          notebookTitle: "Reader evidence notebook",
+          source: {
+            libraryEntryId: latestProjectExcerpt.libraryEntryId,
+            note: `Captured from project Reader ${projectLabel} excerpt.`,
+            readerExcerptId: latestProjectExcerpt.id,
+            type: "readerExcerpt",
+          },
+        });
+
+        setCapturedNotebookId(response.document.id);
+        setSuccessMessage(`Sent latest reader excerpt to private Notebook ${response.document.title}.`);
+      } catch (error) {
+        setMutationError(
+          error instanceof Error ? error.message : "Failed to send reader excerpt to Notebook.",
         );
       } finally {
         setIsCapturingNotebook(false);
@@ -679,6 +743,14 @@ export function ReaderPage() {
               onClick={() => void handleProjectCaptureInsightToNotebook()}
             >
               {isCapturingNotebook ? "Sending to Notebook…" : "Send latest insight to Notebook"}
+            </button>
+            <button
+              className="panel-link"
+              type="button"
+              disabled={!latestProjectExcerpt || isMutating || isPromoting || isCapturingNotebook}
+              onClick={() => void handleProjectCaptureExcerptToNotebook()}
+            >
+              {isCapturingNotebook ? "Sending excerpt to Notebook…" : "Send latest excerpt to Notebook"}
             </button>
             {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
             {successMessage ? <p className="quiet-copy">{successMessage}</p> : null}
@@ -973,6 +1045,22 @@ export function ReaderPage() {
                 onClick={() => void handleCapturePersonalInsightToNotebook()}
               >
                 {isCapturingNotebook ? "Sending to Notebook…" : "Send latest insight to Notebook"}
+              </button>
+
+              <button
+                type="button"
+                className="action-button action-button-secondary"
+                disabled={
+                  !latestExcerpt ||
+                  isSavingPrivateNote ||
+                  isSavingExcerpt ||
+                  isSavingInsight ||
+                  isPromoting ||
+                  isCapturingNotebook
+                }
+                onClick={() => void handleCapturePersonalExcerptToNotebook()}
+              >
+                {isCapturingNotebook ? "Sending excerpt to Notebook…" : "Send latest excerpt to Notebook"}
               </button>
 
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}

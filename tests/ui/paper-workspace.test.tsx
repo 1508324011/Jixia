@@ -284,18 +284,66 @@ describe('paper workspace', () => {
           const body = JSON.parse(String(init.body)) as {
             notebookTitle: string;
             source: {
-              generatedInsightId: string;
-              libraryEntryId: string;
-              type: 'generatedInsight';
+              generatedInsightId?: string;
+              libraryEntryId?: string;
+              readerExcerptId?: string;
+              type: 'generatedInsight' | 'readerExcerpt';
             };
           };
-          expect(body).toMatchObject({
-            notebookTitle: 'Reader evidence notebook',
-            source: {
-              generatedInsightId: 'insight-1',
+          expect(body.notebookTitle).toBe('Reader evidence notebook');
+          expect(body).not.toHaveProperty('ownerId');
+          expect(body).not.toHaveProperty('projectId');
+          expect(body).not.toHaveProperty('scope');
+          expect(body).not.toHaveProperty('visibility');
+
+          if (body.source.type === 'readerExcerpt') {
+            expect(body.source).toMatchObject({
               libraryEntryId: 'entry-1',
-              type: 'generatedInsight',
-            },
+              readerExcerptId: 'excerpt-2',
+              type: 'readerExcerpt',
+            });
+            expect(body.source).not.toHaveProperty('ownerId');
+            expect(body.source).not.toHaveProperty('projectId');
+            expect(body.source).not.toHaveProperty('visibility');
+
+            return jsonResponse({
+              document: {
+                createdAt: '2026-03-23T00:25:00.000Z',
+                id: 'notebook-alpha',
+                ownerId: 'user-alice',
+                title: 'Reader evidence notebook',
+                updatedAt: '2026-03-23T00:25:00.000Z',
+              },
+              snapshot: {
+                capturedAt: '2026-03-23T00:25:00.000Z',
+                citations: [
+                  {
+                    createdAt: '2026-03-23T00:25:00.000Z',
+                    evidenceSpan: 'Project durable reader excerpt',
+                    id: 'citation-excerpt-alpha',
+                    notebookDocumentVersionId: 'notebook-version-excerpt-alpha',
+                    paperAssetId: 'asset-1',
+                    readerExcerptId: 'excerpt-2',
+                  },
+                ],
+                content: 'Captured reader excerpt\n\n> Project durable reader excerpt',
+                document: {
+                  createdAt: '2026-03-23T00:25:00.000Z',
+                  id: 'notebook-alpha',
+                  ownerId: 'user-alice',
+                  title: 'Reader evidence notebook',
+                  updatedAt: '2026-03-23T00:25:00.000Z',
+                },
+                versionId: 'notebook-version-excerpt-alpha',
+                versionNumber: 1,
+              },
+            });
+          }
+
+          expect(body.source).toMatchObject({
+            generatedInsightId: 'insight-1',
+            libraryEntryId: 'entry-1',
+            type: 'generatedInsight',
           });
 
           return jsonResponse({
@@ -430,6 +478,33 @@ describe('paper workspace', () => {
       note: 'Project durable note',
       quote: 'Project durable reader excerpt',
       startOffset: 9,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Send latest excerpt to Notebook' }));
+
+    expect(
+      await screen.findByText('Sent latest reader excerpt to private Notebook Reader evidence notebook.'),
+    ).toBeInTheDocument();
+    const excerptCaptureRequest = vi.mocked(fetch).mock.calls.find(([input, init]) => {
+      if (!String(input).endsWith('/api/notebooks/capture') || init?.method !== 'POST') {
+        return false;
+      }
+
+      const body = JSON.parse(String(init.body)) as {
+        source?: { type?: string };
+      };
+
+      return body.source?.type === 'readerExcerpt';
+    });
+    expect(excerptCaptureRequest).toBeDefined();
+    expect(JSON.parse(String(excerptCaptureRequest?.[1]?.body))).toEqual({
+      notebookTitle: 'Reader evidence notebook',
+      source: {
+        libraryEntryId: 'entry-1',
+        note: 'Captured from project Reader Tumor board project excerpt.',
+        readerExcerptId: 'excerpt-2',
+        type: 'readerExcerpt',
+      },
     });
 
     await user.type(screen.getByRole('textbox', { name: 'Private note draft' }), 'Private note for later synthesis.');
