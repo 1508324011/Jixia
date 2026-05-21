@@ -699,6 +699,34 @@ describe('http server actor boundary cleanup', () => {
             }),
             method: 'POST',
           }),
+          fetch(`${server.url}/api/notebooks/capture`, {
+            body: JSON.stringify({
+              notebookTitle: 'Spoofed reader excerpt notebook',
+              source: {
+                ownerId: 'user-bob',
+                readerExcerptId: 'excerpt-spoofed',
+                type: 'readerExcerpt',
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/notebooks/capture`, {
+            body: JSON.stringify({
+              notebookTitle: 'Spoofed reader excerpt project notebook',
+              source: {
+                projectId: importedRecord.projectId,
+                readerExcerptId: 'excerpt-spoofed',
+                type: 'readerExcerpt',
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/project-docs`, {
             body: JSON.stringify({ createdByUserId: 'user-bob', projectId: importedRecord.projectId, title: 'Spoofed project doc' }),
             headers: withSessionCookie(aliceCookie, {
@@ -1115,6 +1143,13 @@ describe('http server actor boundary cleanup', () => {
             }),
             method: 'POST',
           }),
+          fetch(`${server.url}/api/notebooks/${notebook.id}/versions`, {
+            body: JSON.stringify({ citations: [], content: 'Matching visibility field', visibility: 'private' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/notebooks/capture`, {
             body: JSON.stringify({
               ownerId: 'user-alice',
@@ -1122,6 +1157,62 @@ describe('http server actor boundary cleanup', () => {
                 generatedInsightId: 'insight-matching',
                 libraryEntryId: importedRecord.entry.id,
                 type: 'generatedInsight',
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/notebooks/capture`, {
+            body: JSON.stringify({
+              notebookTitle: 'Matching reader excerpt notebook',
+              source: {
+                actorUserId: 'user-alice',
+                readerExcerptId: 'excerpt-matching',
+                type: 'readerExcerpt',
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/notebooks/capture`, {
+            body: JSON.stringify({
+              notebookTitle: 'Matching reader excerpt scope notebook',
+              source: {
+                readerExcerptId: 'excerpt-matching',
+                scopeType: 'project',
+                type: 'readerExcerpt',
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/notebooks/capture`, {
+            body: JSON.stringify({
+              notebookTitle: 'Matching nested capture owner',
+              source: {
+                ownerId: 'user-alice',
+                readerExcerptId: 'excerpt-matching',
+                type: 'readerExcerpt',
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/notebooks/capture`, {
+            body: JSON.stringify({
+              notebookTitle: 'Matching nested capture project',
+              source: {
+                projectId: importedRecord.projectId,
+                readerExcerptId: 'excerpt-matching',
+                type: 'readerExcerpt',
               },
             }),
             headers: withSessionCookie(aliceCookie, {
