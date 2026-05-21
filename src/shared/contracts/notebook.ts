@@ -23,7 +23,16 @@ export interface NotebookGeneratedInsightCaptureSource {
   type: 'generatedInsight';
 }
 
-export type NotebookEvidenceCaptureSource = NotebookGeneratedInsightCaptureSource;
+export interface NotebookReaderExcerptCaptureSource {
+  libraryEntryId?: string;
+  note?: string;
+  readerExcerptId: string;
+  type: 'readerExcerpt';
+}
+
+export type NotebookEvidenceCaptureSource =
+  | NotebookGeneratedInsightCaptureSource
+  | NotebookReaderExcerptCaptureSource;
 
 export interface CaptureNotebookEvidenceRequest {
   notebookDocumentId?: string;
@@ -33,11 +42,13 @@ export interface CaptureNotebookEvidenceRequest {
 
 export interface NotebookSourceExcerptBlock {
   capturedAt: string;
+  evidenceSpan?: string;
   libraryEntryId?: string;
   locator?: string;
   note?: string;
   paperAssetId: string;
   quote: string;
+  readerExcerptId?: string;
   title?: string;
   type: 'sourceExcerpt';
 }

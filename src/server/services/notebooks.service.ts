@@ -20,9 +20,12 @@ import type {
   NotebookDocumentLookup,
   NotebookDocumentRecord,
   NotebookDocumentSnapshot,
+  NotebookEvidenceCaptureSource,
   NotebookGeneratedInsightCaptureSource,
+  NotebookReaderExcerptCaptureSource,
 } from '@shared/contracts/notebook';
 import type { GeneratedInsightRecord } from '@shared/contracts/evidence';
+import type { ReaderExcerptRecord } from '@shared/contracts/reading';
 
 import type { NotebookRepository } from '../../db';
 
@@ -365,6 +368,7 @@ function appendCapturedInsightDocumentContent(
         type: 'paragraph',
       },
       ...input.insight.evidenceSpans.map((span, index) => ({
+        capturedAt: input.capturedAt,
         evidenceSpan: span.quote,
         libraryEntryId: input.insight.libraryEntryId,
         locator: formatEvidenceLocator(span),
@@ -374,6 +378,64 @@ function appendCapturedInsightDocumentContent(
         title: input.assetTitle,
         type: 'sourceExcerpt',
       })),
+    ],
+    schemaVersion: 1,
+  });
+}
+
+function formatReaderExcerptNote(input: {
+  captureNote?: string;
+  excerptNote?: string;
+}): string | undefined {
+  const notes = [
+    input.excerptNote ? `Reader note: ${input.excerptNote}` : undefined,
+    input.captureNote ? `Capture note: ${input.captureNote}` : undefined,
+  ].filter((note): note is string => Boolean(note));
+
+  return notes.length ? notes.join('\n') : undefined;
+}
+
+function appendCapturedReaderExcerptDocumentContent(
+  existingDocumentContent: DocumentBlockDocument,
+  input: {
+    assetTitle?: string;
+    capturedAt: string;
+    excerpt: ReaderExcerptRecord;
+    note?: string;
+  },
+): DocumentBlockDocument {
+  return normalizeDocumentBlockDocument({
+    blocks: [
+      ...existingDocumentContent.blocks,
+      {
+        level: 2,
+        text: 'Captured reader excerpt',
+        type: 'heading',
+      },
+      {
+        text: [
+          `Captured at: ${input.capturedAt}`,
+          `Library entry: ${input.excerpt.libraryEntryId}`,
+          '',
+          'Source evidence:',
+        ].join('\n'),
+        type: 'paragraph',
+      },
+      {
+        capturedAt: input.capturedAt,
+        evidenceSpan: input.excerpt.quote,
+        libraryEntryId: input.excerpt.libraryEntryId,
+        locator: input.excerpt.locator ?? formatEvidenceLocator(input.excerpt),
+        note: formatReaderExcerptNote({
+          captureNote: input.note,
+          excerptNote: input.excerpt.note,
+        }),
+        paperAssetId: input.excerpt.paperAssetId,
+        quote: input.excerpt.quote,
+        readerExcerptId: input.excerpt.id,
+        title: input.assetTitle,
+        type: 'sourceExcerpt',
+      },
     ],
     schemaVersion: 1,
   });
@@ -395,6 +457,24 @@ function createCapturedCitations(
     evidenceSpan: quotes.join('\n\n'),
     paperAssetId,
   }));
+}
+
+function createCapturedReaderExcerptCitations(
+  excerpt: ReaderExcerptRecord,
+): Array<{
+  evidenceSpan?: string;
+  libraryEntryId?: string;
+  paperAssetId: string;
+  readerExcerptId?: string;
+}> {
+  return [
+    {
+      evidenceSpan: excerpt.quote,
+      libraryEntryId: excerpt.libraryEntryId,
+      paperAssetId: excerpt.paperAssetId,
+      readerExcerptId: excerpt.id,
+    },
+  ];
 }
 
 function normalizeGeneratedInsightCaptureSource(
@@ -441,6 +521,72 @@ function normalizeGeneratedInsightCaptureSource(
   };
 }
 
+function normalizeReaderExcerptCaptureSource(
+  source: CaptureNotebookEvidenceRequest['source'],
+): NotebookReaderExcerptCaptureSource {
+  const candidate = source as unknown;
+
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new Error('Notebook evidence capture source must be a JSON object.');
+  }
+
+  const sourceRecord = candidate as Record<string, unknown>;
+
+  if (sourceRecord.type !== 'readerExcerpt') {
+    throw new Error('Notebook evidence capture source type must be readerExcerpt.');
+  }
+
+  if (
+    typeof sourceRecord.readerExcerptId !== 'string' ||
+    !sourceRecord.readerExcerptId.trim()
+  ) {
+    throw new Error('Notebook evidence capture source requires readerExcerptId.');
+  }
+
+  if (
+    typeof sourceRecord.libraryEntryId !== 'undefined' &&
+    typeof sourceRecord.libraryEntryId !== 'string'
+  ) {
+    throw new Error('Notebook evidence capture source libraryEntryId must be a string when provided.');
+  }
+
+  if (
+    typeof sourceRecord.note !== 'undefined' &&
+    typeof sourceRecord.note !== 'string'
+  ) {
+    throw new Error('Notebook evidence capture source note must be a string when provided.');
+  }
+
+  return {
+    libraryEntryId: sourceRecord.libraryEntryId?.trim() || undefined,
+    note: sourceRecord.note?.trim() || undefined,
+    readerExcerptId: sourceRecord.readerExcerptId.trim(),
+    type: 'readerExcerpt',
+  };
+}
+
+function normalizeNotebookEvidenceCaptureSource(
+  source: CaptureNotebookEvidenceRequest['source'],
+): NotebookEvidenceCaptureSource {
+  const candidate = source as unknown;
+
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new Error('Notebook evidence capture source must be a JSON object.');
+  }
+
+  const sourceRecord = candidate as Record<string, unknown>;
+
+  if (sourceRecord.type === 'generatedInsight') {
+    return normalizeGeneratedInsightCaptureSource(source);
+  }
+
+  if (sourceRecord.type === 'readerExcerpt') {
+    return normalizeReaderExcerptCaptureSource(source);
+  }
+
+  throw new Error('Notebook evidence capture source type must be generatedInsight or readerExcerpt.');
+}
+
 export function createNotebookService(store: NotebookStore): NotebookService {
   return {
     async captureEvidence(
@@ -451,7 +597,7 @@ export function createNotebookService(store: NotebookStore): NotebookService {
         throw new Error('Notebook evidence capture requires a target notebook or title.');
       }
 
-      const source = normalizeGeneratedInsightCaptureSource(input.source);
+      const source = normalizeNotebookEvidenceCaptureSource(input.source);
       const existingTargetDocument = input.notebookDocumentId
         ? await requireOwnedDocument(
             store.notebookRepository,
@@ -459,6 +605,64 @@ export function createNotebookService(store: NotebookStore): NotebookService {
             actorUserId,
           )
         : null;
+
+      if (source.type === 'readerExcerpt') {
+        const readerExcerptSource = await store.readingService.getReaderExcerptSource({
+          actorUserId,
+          readerExcerptId: source.readerExcerptId,
+        });
+
+        if (
+          source.libraryEntryId &&
+          source.libraryEntryId !== readerExcerptSource.excerpt.libraryEntryId
+        ) {
+          throw new Error(
+            `Reader excerpt ${source.readerExcerptId} does not match library entry ${source.libraryEntryId}.`,
+          );
+        }
+
+        const targetDocument = existingTargetDocument ?? mapDocument(
+          await store.notebookRepository.createDocument({
+            ownerId: actorUserId,
+            title: input.notebookTitle?.trim() || 'Notebook',
+          }),
+        );
+        const latestSnapshot = await store.notebookRepository.getLatestSnapshot(
+          targetDocument.id,
+        );
+        const capturedAt = new Date().toISOString();
+        const existingDocumentContent = latestSnapshot
+          ? normalizePersistedDocumentSnapshot(latestSnapshot.content)
+          : createEmptyDocumentBlockDocument();
+        const documentContent = appendCapturedReaderExcerptDocumentContent(
+          existingDocumentContent,
+          {
+            assetTitle: readerExcerptSource.sourceEntry.asset.title,
+            capturedAt,
+            excerpt: readerExcerptSource.excerpt,
+            note: source.note,
+          },
+        );
+        const citations = await normalizeAuthorizedCitations(
+          store,
+          mergeCitationInputs(
+            createCapturedReaderExcerptCitations(readerExcerptSource.excerpt),
+            documentContent,
+          ),
+          actorUserId,
+        );
+        const snapshot = await store.notebookRepository.saveVersion({
+          citations,
+          content: serializeDocumentBlockSnapshotPayload(documentContent),
+          documentId: targetDocument.id,
+        });
+
+        return {
+          document: mapDocument(snapshot.document),
+          snapshot: mapSnapshot(snapshot),
+        };
+      }
+
       const insight = await store.readingService.getGeneratedInsightSource({
         actorUserId,
         generatedInsightId: source.generatedInsightId,

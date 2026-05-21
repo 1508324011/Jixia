@@ -175,6 +175,176 @@ describe('http server notebook and project-doc api', () => {
     }
   });
 
+  it('captures reader excerpts into private notebooks over HTTP without caller authority fields', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-reader-excerpt-capture-'));
+
+    try {
+      const server = await startTestServer(
+        {
+          JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-reader-excerpt-capture.db')}`,
+          JIXIA_STORAGE_ROOT: storageRoot,
+        },
+        { connectors: { pubmed: createHttpTestPubmedConnector() } },
+      );
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+        const personalSource = await fetch(`${server.url}/api/import/paper`, {
+          body: JSON.stringify({
+            scope: { id: 'user-alice', type: 'user' },
+            sourceLocator: '10.1000/http-reader-excerpt-capture',
+            sourceType: 'doi',
+            spaceId: 'personal-space-user-alice',
+            visibility: 'private',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{
+            asset: { id: string };
+            entry: { id: string };
+          }>,
+        );
+        const readerExcerpt = await fetch(
+          `${server.url}/api/reading/${personalSource.entry.id}/excerpts`,
+          {
+            body: JSON.stringify({
+              endOffset: 34,
+              locator: 'p. 3',
+              note: 'Alice private reader note.',
+              quote: 'reader excerpt capture quote',
+              startOffset: 2,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        ).then(
+          (response) => response.json() as Promise<{
+            excerpt: { id: string; libraryEntryId: string; paperAssetId: string; quote: string };
+          }>,
+        );
+        const captureResponse = await fetch(`${server.url}/api/notebooks/capture`, {
+          body: JSON.stringify({
+            notebookTitle: 'HTTP reader excerpt notebook',
+            source: {
+              libraryEntryId: personalSource.entry.id,
+              note: 'HTTP capture request note.',
+              readerExcerptId: readerExcerpt.excerpt.id,
+              type: 'readerExcerpt',
+            },
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const capturePayload = await captureResponse.json() as {
+          document: { id: string; ownerId: string; title: string };
+          snapshot: {
+            citations: Array<{ evidenceSpan?: string; paperAssetId: string; readerExcerptId?: string }>;
+            content: string;
+            documentContent?: {
+              blocks?: Array<{
+                evidenceSpan?: string;
+                libraryEntryId?: string;
+                paperAssetId?: string;
+                quote?: string;
+                readerExcerptId?: string;
+                type?: string;
+              }>;
+              schemaVersion?: number;
+            };
+          };
+        };
+        const bobSnapshotRead = await fetch(
+          `${server.url}/api/notebooks/${capturePayload.document.id}/snapshot`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        const matchingOwnerCapture = await fetch(`${server.url}/api/notebooks/capture`, {
+          body: JSON.stringify({
+            notebookTitle: 'Rejected matching owner capture',
+            ownerId: 'user-alice',
+            source: {
+              readerExcerptId: readerExcerpt.excerpt.id,
+              type: 'readerExcerpt',
+            },
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const nestedProjectCapture = await fetch(`${server.url}/api/notebooks/capture`, {
+          body: JSON.stringify({
+            notebookTitle: 'Rejected nested project capture',
+            source: {
+              projectId: 'project-spoofed',
+              readerExcerptId: readerExcerpt.excerpt.id,
+              type: 'readerExcerpt',
+            },
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const mismatchedSource = await fetch(`${server.url}/api/notebooks/capture`, {
+          body: JSON.stringify({
+            notebookTitle: 'Rejected mismatched source',
+            source: {
+              libraryEntryId: 'entry-mismatch',
+              readerExcerptId: readerExcerpt.excerpt.id,
+              type: 'readerExcerpt',
+            },
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+
+        expect(captureResponse.status).toBe(200);
+        expect(capturePayload.document).toMatchObject({
+          ownerId: 'user-alice',
+          title: 'HTTP reader excerpt notebook',
+        });
+        expect(capturePayload.snapshot.content).toContain('reader excerpt capture quote');
+        expect(capturePayload.snapshot.citations).toEqual([
+          expect.objectContaining({
+            evidenceSpan: 'reader excerpt capture quote',
+            paperAssetId: personalSource.asset.id,
+            readerExcerptId: readerExcerpt.excerpt.id,
+          }),
+        ]);
+        expect(capturePayload.snapshot.documentContent?.blocks).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              evidenceSpan: 'reader excerpt capture quote',
+              libraryEntryId: personalSource.entry.id,
+              paperAssetId: personalSource.asset.id,
+              quote: 'reader excerpt capture quote',
+              readerExcerptId: readerExcerpt.excerpt.id,
+              type: 'sourceExcerpt',
+            }),
+          ]),
+        );
+        expect(bobSnapshotRead.status).toBe(403);
+        expect(matchingOwnerCapture.status).toBe(400);
+        expect(nestedProjectCapture.status).toBe(400);
+        expect(mismatchedSource.status).toBe(400);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('enforces ProjectMember-gated project-doc access and rejects impersonation', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-docs-'));
 

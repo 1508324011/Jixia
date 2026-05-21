@@ -200,6 +200,65 @@ describe('reading evidence', () => {
         ]),
       );
 
+      const capturedReaderExcerpt = await app.notebooks.captureEvidence(
+        {
+          notebookTitle: 'Reader excerpt notebook',
+          source: {
+            libraryEntryId: imported.entry.id,
+            note: 'Capture the reader-selected quote into private synthesis.',
+            readerExcerptId: excerpt.id,
+            type: 'readerExcerpt',
+          },
+        },
+        'user-alice',
+      );
+
+      expect(capturedReaderExcerpt.document).toMatchObject({
+        ownerId: 'user-alice',
+        title: 'Reader excerpt notebook',
+      });
+      expect(capturedReaderExcerpt.snapshot.content).toContain('Captured reader excerpt');
+      expect(capturedReaderExcerpt.snapshot.content).toContain('> shared durable evidence');
+      expect(capturedReaderExcerpt.snapshot.documentContent).toMatchObject({
+        blocks: expect.arrayContaining([
+          {
+            level: 2,
+            text: 'Captured reader excerpt',
+            type: 'heading',
+          },
+          expect.objectContaining({
+            evidenceSpan: 'shared durable evidence',
+            libraryEntryId: imported.entry.id,
+            paperAssetId: imported.asset.id,
+            quote: 'shared durable evidence',
+            readerExcerptId: excerpt.id,
+            type: 'sourceExcerpt',
+          }),
+        ]),
+        schemaVersion: 1,
+      });
+      expect(capturedReaderExcerpt.snapshot.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: 'shared durable evidence',
+          paperAssetId: imported.asset.id,
+          readerExcerptId: excerpt.id,
+        }),
+      ]);
+
+      await expect(
+        app.notebooks.captureEvidence(
+          {
+            notebookTitle: 'Mismatched reader excerpt notebook',
+            source: {
+              libraryEntryId: 'entry-mismatch',
+              readerExcerptId: excerpt.id,
+              type: 'readerExcerpt',
+            },
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/does not match library entry/i);
+
       await expect(
         app.notebooks.captureEvidence(
           {
@@ -245,6 +304,9 @@ describe('reading evidence', () => {
         app.notebooks.getDocument({ documentId: captured.document.id }, 'user-bob'),
       ).rejects.toThrow(/access denied/i);
       await expect(
+        app.notebooks.getDocument({ documentId: capturedReaderExcerpt.document.id }, 'user-bob'),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
         app.notebooks.saveDocument(
           {
             citations: [],
@@ -274,10 +336,67 @@ describe('reading evidence', () => {
           'user-bob',
         ),
       ).rejects.toThrow(/access denied/i);
+
+      const projectDoc = await app.projectDocs.createDocument(
+        {
+          projectId: project.project.id,
+          title: 'Reader excerpt shared synthesis',
+        },
+        'user-alice',
+      );
+      const projectDocSnapshot = await app.projectDocs.saveDocument(
+        {
+          citations: [
+            {
+              evidenceSpan: excerpt.quote,
+              libraryEntryId: imported.entry.id,
+              paperAssetId: imported.asset.id,
+              readerExcerptId: excerpt.id,
+            },
+          ],
+          documentContent: {
+            blocks: [
+              {
+                level: 2,
+                text: 'Reader evidence synthesis',
+                type: 'heading',
+              },
+              {
+                evidenceSpan: excerpt.quote,
+                libraryEntryId: imported.entry.id,
+                locator: excerpt.locator,
+                paperAssetId: imported.asset.id,
+                quote: excerpt.quote,
+                readerExcerptId: excerpt.id,
+                type: 'sourceExcerpt',
+              },
+            ],
+            schemaVersion: 1,
+          },
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+      const bobProjectDocSnapshot = await app.projectDocs.getDocument(
+        { documentId: projectDoc.id },
+        'user-bob',
+      );
+
+      expect(projectDocSnapshot.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: excerpt.quote,
+          paperAssetId: imported.asset.id,
+          readerExcerptId: excerpt.id,
+        }),
+      ]);
+      expect(bobProjectDocSnapshot.citations[0]?.readerExcerptId).toBe(excerpt.id);
+      await expect(
+        app.projectDocs.getDocument({ documentId: projectDoc.id }, 'user-charlie'),
+      ).rejects.toThrow(/access denied/i);
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   it('authorizes reading flows through persisted space memberships without legacy mirrors', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-reading-prisma-space-'));
