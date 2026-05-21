@@ -13,17 +13,20 @@ import {
 } from '@shared/contracts/document-content';
 import type {
   CreateProjectDocRequest,
+  ProjectDocCitationSourceUnavailableDetails,
   ProjectDocCitationRecord,
   ProjectDocLookup,
   ProjectDocRecord,
   ProjectDocSnapshot,
 } from '@shared/contracts/project-docs';
+import { PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE } from '@shared/contracts/project-docs';
 import type { WritingDocumentView, WritingDocSnapshot } from '@shared/contracts/writing';
 
 import type {
   LibraryRepository,
   ProjectDocRepository,
   ProjectRepository,
+  ReadingRepository,
 } from '../../db';
 
 import type { LibraryService } from './library.service';
@@ -83,6 +86,7 @@ export interface ProjectDocsStore {
   libraryService: LibraryService;
   projectDocRepository: ProjectDocRepository;
   projectRepository: ProjectRepository;
+  readingRepository: Pick<ReadingRepository, 'getReaderExcerpt'>;
   readingService: Pick<ReadingService, 'getReaderExcerptSource'>;
 }
 
@@ -91,6 +95,19 @@ interface ProjectDocCitationInput {
   libraryEntryId?: string;
   paperAssetId: string;
   readerExcerptId?: string;
+}
+
+export class ProjectDocCitationSourceUnavailableError extends Error {
+  readonly code = PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE;
+  readonly details: ProjectDocCitationSourceUnavailableDetails;
+
+  constructor(details: ProjectDocCitationSourceUnavailableDetails) {
+    super(
+      `Paper asset ${details.paperAssetId} is not available in project ${details.projectId}.`,
+    );
+    this.name = 'ProjectDocCitationSourceUnavailableError';
+    this.details = details;
+  }
 }
 
 function mapCitation(citation: {
@@ -382,10 +399,32 @@ async function assertPaperAssetAvailableInProject(
   input: {
     actorSpaceId: string;
     actorUserId: string;
+    evidenceSpan?: string;
+    libraryEntryId?: string;
     paperAssetId: string;
     projectId: string;
+    readerExcerptId?: string;
+    sourceLibraryEntryId?: string;
   },
 ): Promise<string> {
+  const authorizedView = await resolveAuthorizedProjectScopedEntryForAsset(store, input);
+
+  return authorizedView.asset.id;
+}
+
+async function resolveAuthorizedProjectScopedEntryForAsset(
+  store: ProjectDocsStore,
+  input: {
+    actorSpaceId: string;
+    actorUserId: string;
+    evidenceSpan?: string;
+    libraryEntryId?: string;
+    paperAssetId: string;
+    projectId: string;
+    readerExcerptId?: string;
+    sourceLibraryEntryId?: string;
+  },
+): Promise<Awaited<ReturnType<LibraryService['assertCanAccessEntry']>>> {
   const projectScopedView = (
     await store.libraryRepository.listLibraryEntriesForAsset(input.paperAssetId)
   ).find(
@@ -403,9 +442,14 @@ async function assertPaperAssetAvailableInProject(
       throw new Error(`Paper asset ${input.paperAssetId} does not exist.`);
     }
 
-    throw new Error(
-      `Paper asset ${input.paperAssetId} is not available in project ${input.projectId}.`,
-    );
+    throw new ProjectDocCitationSourceUnavailableError({
+      evidenceSpan: input.evidenceSpan,
+      libraryEntryId: input.libraryEntryId,
+      paperAssetId: input.paperAssetId,
+      projectId: input.projectId,
+      readerExcerptId: input.readerExcerptId,
+      sourceLibraryEntryId: input.sourceLibraryEntryId ?? input.libraryEntryId,
+    });
   }
 
   const authorizedView = await store.libraryService.assertCanAccessEntry(
@@ -419,12 +463,275 @@ async function assertPaperAssetAvailableInProject(
     authorizedView.entry.scope.type !== 'project' ||
     authorizedView.entry.scope.id !== input.projectId
   ) {
-    throw new Error(
-      `Paper asset ${input.paperAssetId} is not available in project ${input.projectId}.`,
-    );
+    throw new ProjectDocCitationSourceUnavailableError({
+      evidenceSpan: input.evidenceSpan,
+      libraryEntryId: input.libraryEntryId,
+      paperAssetId: input.paperAssetId,
+      projectId: input.projectId,
+      readerExcerptId: input.readerExcerptId,
+      sourceLibraryEntryId: input.sourceLibraryEntryId ?? input.libraryEntryId,
+    });
   }
 
-  return authorizedView.asset.id;
+  return authorizedView;
+}
+
+interface NormalizedProjectDocReference {
+  evidenceSpan?: string;
+  libraryEntryId?: string;
+  paperAssetId: string;
+  readerExcerptId?: string;
+}
+
+function isAccessRestrictionError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (/access denied/i.test(error.message) || /space context/i.test(error.message))
+  );
+}
+
+function snapshotContainsPreservedReference(
+  snapshot: ProjectDocSnapshot | null,
+  input: {
+    libraryEntryId?: string;
+    paperAssetId: string;
+    readerExcerptId?: string;
+  },
+): boolean {
+  if (!snapshot) {
+    return false;
+  }
+
+  if (
+    input.readerExcerptId &&
+    snapshot.citations.some(
+      (citation) =>
+        citation.paperAssetId === input.paperAssetId &&
+        citation.readerExcerptId === input.readerExcerptId,
+    )
+  ) {
+    return true;
+  }
+
+  return extractDocumentBlockReferences(
+    snapshot.documentContent ?? createEmptyDocumentBlockDocument(),
+  ).some(
+    (reference) =>
+      reference.paperAssetId === input.paperAssetId &&
+      (!input.readerExcerptId || reference.readerExcerptId === input.readerExcerptId) &&
+      (!input.libraryEntryId || reference.libraryEntryId === input.libraryEntryId),
+  );
+}
+
+async function normalizeReferenceForProject(
+  store: ProjectDocsStore,
+  citation: ProjectDocCitationInput,
+  actorUserId: string,
+  projectId: string,
+  actorSpaceId: string,
+  currentSnapshot: ProjectDocSnapshot | null,
+): Promise<NormalizedProjectDocReference> {
+  if (citation.readerExcerptId) {
+    const excerpt = await store.readingRepository.getReaderExcerpt(
+      citation.readerExcerptId,
+    );
+
+    if (!excerpt) {
+      throw new Error(`Reader excerpt ${citation.readerExcerptId} does not exist.`);
+    }
+
+    if (citation.libraryEntryId && citation.libraryEntryId !== excerpt.libraryEntryId) {
+      throw new Error(
+        `Document reference ${citation.readerExcerptId} does not match library entry ${citation.libraryEntryId}.`,
+      );
+    }
+
+    if (citation.paperAssetId !== excerpt.paperAssetId) {
+      throw new Error(
+        `Document reference ${citation.paperAssetId} does not match reader excerpt ${citation.readerExcerptId}.`,
+      );
+    }
+
+    const sourceEntry = await store.libraryRepository.getLibraryEntry(
+      excerpt.libraryEntryId,
+    );
+
+    if (!sourceEntry || sourceEntry.asset.id !== excerpt.paperAssetId) {
+      throw new Error(
+        `Reader excerpt ${citation.readerExcerptId} does not match its source library entry.`,
+      );
+    }
+
+    if (
+      sourceEntry.entry.scope.type === 'project' &&
+      sourceEntry.entry.scope.id === projectId
+    ) {
+      return {
+        evidenceSpan: citation.evidenceSpan ?? excerpt.quote,
+        libraryEntryId: citation.libraryEntryId,
+        paperAssetId: excerpt.paperAssetId,
+        readerExcerptId: excerpt.id,
+      };
+    }
+
+    await resolveAuthorizedProjectScopedEntryForAsset(store, {
+      actorSpaceId,
+      actorUserId,
+      evidenceSpan: citation.evidenceSpan ?? excerpt.quote,
+      libraryEntryId: citation.libraryEntryId,
+      paperAssetId: excerpt.paperAssetId,
+      projectId,
+      readerExcerptId: excerpt.id,
+      sourceLibraryEntryId: excerpt.libraryEntryId,
+    });
+
+    try {
+      await store.readingService.getReaderExcerptSource({
+        actorSpaceId,
+        actorUserId,
+        readerExcerptId: citation.readerExcerptId,
+      });
+    } catch (error) {
+      if (!isAccessRestrictionError(error)) {
+        throw error;
+      }
+
+      if (
+        !snapshotContainsPreservedReference(currentSnapshot, {
+          paperAssetId: excerpt.paperAssetId,
+          readerExcerptId: excerpt.id,
+        })
+      ) {
+        throw error;
+      }
+    }
+
+    return {
+      evidenceSpan: citation.evidenceSpan ?? excerpt.quote,
+      libraryEntryId: citation.libraryEntryId,
+      paperAssetId: excerpt.paperAssetId,
+      readerExcerptId: excerpt.id,
+    };
+  }
+
+  if (citation.libraryEntryId) {
+    const sourceEntry = await store.libraryRepository.getLibraryEntry(
+      citation.libraryEntryId,
+    );
+
+    if (!sourceEntry) {
+      throw new Error(`Library entry ${citation.libraryEntryId} does not exist.`);
+    }
+
+    if (sourceEntry.asset.id !== citation.paperAssetId) {
+      throw new Error(
+        `Document reference ${citation.paperAssetId} does not match library entry ${citation.libraryEntryId}.`,
+      );
+    }
+
+    if (
+      sourceEntry.entry.scope.type === 'project' &&
+      sourceEntry.entry.scope.id === projectId
+    ) {
+      await store.libraryService.assertCanAccessEntry(
+        citation.libraryEntryId,
+        actorUserId,
+        actorSpaceId,
+      );
+
+      return {
+        evidenceSpan: citation.evidenceSpan,
+        libraryEntryId: citation.libraryEntryId,
+        paperAssetId: sourceEntry.asset.id,
+      };
+    }
+
+    await resolveAuthorizedProjectScopedEntryForAsset(store, {
+      actorSpaceId,
+      actorUserId,
+      evidenceSpan: citation.evidenceSpan,
+      libraryEntryId: citation.libraryEntryId,
+      paperAssetId: sourceEntry.asset.id,
+      projectId,
+      readerExcerptId: citation.readerExcerptId,
+      sourceLibraryEntryId: citation.libraryEntryId,
+    });
+
+    try {
+      await store.libraryService.assertCanAccessEntry(
+        citation.libraryEntryId,
+        actorUserId,
+        actorSpaceId,
+      );
+    } catch (error) {
+      if (!isAccessRestrictionError(error)) {
+        throw error;
+      }
+
+      if (
+        !snapshotContainsPreservedReference(currentSnapshot, {
+          libraryEntryId: citation.libraryEntryId,
+          paperAssetId: sourceEntry.asset.id,
+        })
+      ) {
+        throw error;
+      }
+    }
+
+    return {
+      evidenceSpan: citation.evidenceSpan,
+      libraryEntryId: citation.libraryEntryId,
+      paperAssetId: sourceEntry.asset.id,
+    };
+  }
+
+  const directEntry = await store.libraryRepository.getLibraryEntry(
+    citation.paperAssetId,
+  );
+
+  if (directEntry) {
+    const authorizedView = await store.libraryService.assertCanAccessEntry(
+      citation.paperAssetId,
+      actorUserId,
+      actorSpaceId,
+    );
+
+    if (
+      authorizedView.entry.scope.type !== 'project' ||
+      authorizedView.entry.scope.id !== projectId
+    ) {
+      return {
+        evidenceSpan: citation.evidenceSpan,
+        paperAssetId: await assertPaperAssetAvailableInProject(store, {
+          actorSpaceId,
+          actorUserId,
+          evidenceSpan: citation.evidenceSpan,
+          libraryEntryId: authorizedView.entry.id,
+          paperAssetId: authorizedView.asset.id,
+          projectId,
+          readerExcerptId: citation.readerExcerptId,
+          sourceLibraryEntryId: authorizedView.entry.id,
+        }),
+      };
+    }
+
+    return {
+      evidenceSpan: citation.evidenceSpan,
+      paperAssetId: authorizedView.asset.id,
+    };
+  }
+
+  return {
+    evidenceSpan: citation.evidenceSpan,
+    paperAssetId: await assertPaperAssetAvailableInProject(store, {
+      actorSpaceId,
+      actorUserId,
+      evidenceSpan: citation.evidenceSpan,
+      paperAssetId: citation.paperAssetId,
+      projectId,
+      readerExcerptId: citation.readerExcerptId,
+    }),
+  };
 }
 
 async function normalizeAuthorizedCitations(
@@ -433,6 +740,7 @@ async function normalizeAuthorizedCitations(
   actorUserId: string,
   projectId: string,
   actorSpaceId: string,
+  currentSnapshot: ProjectDocSnapshot | null,
 ): Promise<Array<{ evidenceSpan?: string; paperAssetId: string; readerExcerptId?: string }>> {
   const normalizedCitations: Array<{
     evidenceSpan?: string;
@@ -441,109 +749,19 @@ async function normalizeAuthorizedCitations(
   }> = [];
 
   for (const citation of citations) {
-    if (citation.readerExcerptId) {
-      const source = await store.readingService.getReaderExcerptSource({
-        actorSpaceId,
-        actorUserId,
-        readerExcerptId: citation.readerExcerptId,
-      });
-
-      if (citation.libraryEntryId && citation.libraryEntryId !== source.excerpt.libraryEntryId) {
-        throw new Error(
-          `Document reference ${citation.readerExcerptId} does not match library entry ${citation.libraryEntryId}.`,
-        );
-      }
-
-      if (citation.paperAssetId !== source.excerpt.paperAssetId) {
-        throw new Error(
-          `Document reference ${citation.paperAssetId} does not match reader excerpt ${citation.readerExcerptId}.`,
-        );
-      }
-
-      if (
-        source.sourceEntry.entry.scope.type !== 'project' ||
-        source.sourceEntry.entry.scope.id !== projectId
-      ) {
-        await assertPaperAssetAvailableInProject(store, {
-          actorSpaceId,
-          actorUserId,
-          paperAssetId: source.excerpt.paperAssetId,
-          projectId,
-        });
-      }
-
-      normalizedCitations.push({
-        evidenceSpan: citation.evidenceSpan ?? source.excerpt.quote,
-        paperAssetId: source.excerpt.paperAssetId,
-        readerExcerptId: source.excerpt.id,
-      });
-      continue;
-    }
-
-    if (citation.libraryEntryId) {
-      const authorizedView = await store.libraryService.assertCanAccessEntry(
-        citation.libraryEntryId,
-        actorUserId,
-        actorSpaceId,
-      );
-
-      if (
-        authorizedView.entry.scope.type !== 'project' ||
-        authorizedView.entry.scope.id !== projectId
-      ) {
-        throw new Error(
-          `Paper asset ${authorizedView.asset.id} is not available in project ${projectId}.`,
-        );
-      }
-
-      if (authorizedView.asset.id !== citation.paperAssetId) {
-        throw new Error(
-          `Document reference ${citation.paperAssetId} does not match library entry ${citation.libraryEntryId}.`,
-        );
-      }
-
-      normalizedCitations.push({
-        evidenceSpan: citation.evidenceSpan,
-        paperAssetId: authorizedView.asset.id,
-      });
-      continue;
-    }
-
-    const directEntry = await store.libraryRepository.getLibraryEntry(
-      citation.paperAssetId,
+    const normalized = await normalizeReferenceForProject(
+      store,
+      citation,
+      actorUserId,
+      projectId,
+      actorSpaceId,
+      currentSnapshot,
     );
 
-    if (directEntry) {
-      const authorizedView = await store.libraryService.assertCanAccessEntry(
-        citation.paperAssetId,
-        actorUserId,
-        actorSpaceId,
-      );
-
-      if (
-        authorizedView.entry.scope.type !== 'project' ||
-        authorizedView.entry.scope.id !== projectId
-      ) {
-        throw new Error(
-          `Paper asset ${authorizedView.asset.id} is not available in project ${projectId}.`,
-        );
-      }
-
-      normalizedCitations.push({
-        evidenceSpan: citation.evidenceSpan,
-        paperAssetId: authorizedView.asset.id,
-      });
-      continue;
-    }
-
     normalizedCitations.push({
-      evidenceSpan: citation.evidenceSpan,
-      paperAssetId: await assertPaperAssetAvailableInProject(store, {
-        actorSpaceId,
-        actorUserId,
-        paperAssetId: citation.paperAssetId,
-        projectId,
-      }),
+      evidenceSpan: normalized.evidenceSpan,
+      paperAssetId: normalized.paperAssetId,
+      readerExcerptId: normalized.readerExcerptId,
     });
   }
 
@@ -627,12 +845,16 @@ export function createProjectDocsService(
         actorUserId,
       );
       const documentContent = normalizeSaveDocumentContent(input);
+      const currentSnapshot = await store.projectDocRepository.getLatestSnapshot(
+        input.documentId,
+      );
       const citations = await normalizeAuthorizedCitations(
         store,
         mergeCitationInputs(input.citations, documentContent),
         actorUserId,
         document.projectId,
         projectSpaceId,
+        currentSnapshot ? mapSnapshot(currentSnapshot) : null,
       );
 
       return mapSnapshot(

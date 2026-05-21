@@ -1264,6 +1264,209 @@ describe('project writer flow', () => {
     expect(await screen.findByRole('button', { name: 'Reload draft' })).toBeEnabled();
   });
 
+  it('writing page guides citation adoption and retries save with preserved citation identity', async () => {
+    const user = userEvent.setup();
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'space-project-1',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+    };
+    const documentState = {
+      capturedAt: '2026-03-23T00:40:00.000Z',
+      citations: [
+        {
+          createdAt: '2026-03-23T00:40:00.000Z',
+          evidenceSpan: 'Unavailable quote survives recovery.',
+          id: 'citation-1',
+          paperAssetId: 'asset-adoption-needed',
+          projectDocVersionId: 'project-doc-version-1',
+          readerExcerptId: 'excerpt-adoption-needed',
+        },
+      ],
+      content: 'Unavailable quote survives recovery.',
+      documentContent: {
+        blocks: [
+          {
+            evidenceSpan: 'Unavailable quote survives recovery.',
+            libraryEntryId: 'entry-personal-source',
+            paperAssetId: 'asset-adoption-needed',
+            quote: 'Unavailable quote survives recovery.',
+            readerExcerptId: 'excerpt-adoption-needed',
+            title: 'Adoption needed paper',
+            type: 'sourceExcerpt',
+          },
+        ],
+        schemaVersion: 1,
+      },
+      document: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'doc-project-1',
+        projectId: 'project-1',
+        publishState: 'draft',
+        title: 'Tumor board literature synthesis',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+      versionId: 'project-doc-version-1',
+      versionNumber: 1,
+    };
+    const saveBodies: unknown[] = [];
+    let saveAttempt = 0;
+
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const requestUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/projects')) {
+        return jsonResponse([projectFixture]);
+      }
+
+      if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
+        return jsonResponse(documentState);
+      }
+
+      if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as {
+          citations: Array<{
+            evidenceSpan?: string;
+            libraryEntryId?: string;
+            paperAssetId: string;
+            readerExcerptId?: string;
+          }>;
+          documentContent: typeof documentState.documentContent;
+        };
+        saveBodies.push(body);
+        expect(body.citations).toEqual([
+          {
+            evidenceSpan: 'Unavailable quote survives recovery.',
+            libraryEntryId: 'entry-personal-source',
+            paperAssetId: 'asset-adoption-needed',
+            readerExcerptId: 'excerpt-adoption-needed',
+          },
+        ]);
+        expect(body.documentContent.blocks[0]).toMatchObject({
+          evidenceSpan: 'Unavailable quote survives recovery.',
+          libraryEntryId: 'entry-personal-source',
+          paperAssetId: 'asset-adoption-needed',
+          quote: 'Unavailable quote survives recovery.',
+          readerExcerptId: 'excerpt-adoption-needed',
+          type: 'sourceExcerpt',
+        });
+
+        saveAttempt += 1;
+
+        if (saveAttempt === 1) {
+          return jsonResponse(
+            {
+              code: 'PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE',
+              details: {
+                evidenceSpan: 'Unavailable quote survives recovery.',
+                paperAssetId: 'asset-adoption-needed',
+                projectId: 'project-1',
+                readerExcerptId: 'excerpt-adoption-needed',
+                sourceLibraryEntryId: 'entry-personal-source',
+              },
+              error: 'Paper asset asset-adoption-needed is not available in project project-1.',
+            },
+            400,
+          );
+        }
+
+        documentState.capturedAt = '2026-03-23T00:48:00.000Z';
+        documentState.versionId = 'project-doc-version-2';
+        documentState.versionNumber = 2;
+        return jsonResponse(documentState);
+      }
+
+      if (requestUrl.endsWith('/api/projects/project-1/library/adoptions') && init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({
+          sourceLibraryEntryId: 'entry-personal-source',
+        });
+
+        return jsonResponse({
+          entry: {
+            asset: {
+              canonicalId: 'doi:10.1000/adoption-needed',
+              createdAt: '2026-03-23T00:35:00.000Z',
+              id: 'asset-adoption-needed',
+              title: 'Adoption needed paper',
+            },
+            entry: {
+              addedAt: '2026-03-23T00:48:00.000Z',
+              addedByUserId: 'user-alice',
+              createdAt: '2026-03-23T00:48:00.000Z',
+              id: 'entry-project-adopted',
+              paperAssetId: 'asset-adoption-needed',
+              scope: { id: 'project-1', type: 'project' },
+              scopeId: 'project-1',
+              scopeType: 'project',
+              spaceId: 'space-project-1',
+              visibility: 'published_to_project',
+            },
+          },
+          reused: false,
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench('/projects/project-1/writing/doc-project-1');
+
+    expect(await screen.findByText('Adoption needed paper')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Citation source needs project adoption' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Paper asset · asset-adoption-needed')).toBeInTheDocument();
+    expect(screen.getByText('Source library entry · entry-personal-source')).toBeInTheDocument();
+    expect(screen.getByText('Reader excerpt · excerpt-adoption-needed')).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Add source to project library and retry save' }),
+    );
+
+    expect(
+      await screen.findByText('Citation source adopted and Project Doc saved.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Citation source needs project adoption' })).not.toBeInTheDocument();
+    expect(await screen.findByText('Latest snapshot · 2026-03-23T00:48:00.000Z')).toBeInTheDocument();
+    expect(saveBodies).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/projects/project-1/library/adoptions'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
   it('project page treats an empty Project Docs index as an empty state instead of a runtime failure', async () => {
     const workspaceFixture = {
       activity: {

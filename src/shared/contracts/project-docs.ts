@@ -33,4 +33,16 @@ export type ProjectDocSnapshot = DocumentSnapshot<
   ProjectDocCitationRecord
 >;
 
+export const PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE =
+  'PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE';
+
+export interface ProjectDocCitationSourceUnavailableDetails {
+  evidenceSpan?: string;
+  libraryEntryId?: string;
+  paperAssetId: string;
+  projectId: string;
+  readerExcerptId?: string;
+  sourceLibraryEntryId?: string;
+}
+
 export const projectDocsContract = 'jixia-project-docs-contract';

@@ -7,6 +7,8 @@ import { DocumentBlockEditor } from "../components/document-block-editor";
 import { createLegacyTextProjection } from "../lib/document-blocks";
 import { useProjectDocPresenter } from "../presenters/project-doc-presenter";
 
+type ProjectDocSaveInput = Parameters<ReturnType<typeof useProjectDocPresenter>["save"]>[0];
+
 export function WritingPage() {
   const { projectId = "", docId = "" } = useParams();
   const presenter = useProjectDocPresenter(projectId, docId);
@@ -17,7 +19,9 @@ export function WritingPage() {
     presenter.snapshot?.versionId ?? null,
   );
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [adoptionStatus, setAdoptionStatus] = useState<string | null>(null);
   const [isSavePendingLocally, setIsSavePendingLocally] = useState(false);
+  const [isAdoptionPending, setIsAdoptionPending] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
   const draftDocumentContentRef = useRef(draftDocumentContent);
   const mutationLockRef = useRef<"save" | "reload" | null>(null);
@@ -25,6 +29,7 @@ export function WritingPage() {
   const isMutating =
     presenter.isSaving ||
     isSavePendingLocally ||
+    isAdoptionPending ||
     isReloading ||
     mutationLockRef.current !== null;
   const isDraftHydrating = snapshotVersionId !== draftVersionId;
@@ -71,17 +76,10 @@ export function WritingPage() {
     mutationLockRef.current = "save";
     setIsSavePendingLocally(true);
     setMutationError(null);
+    setAdoptionStatus(null);
 
     try {
-      await presenter.save({
-        citations: presenter.citations.map((citation) => ({
-          evidenceSpan: citation.evidenceSpan,
-          libraryEntryId: citation.libraryEntryId,
-          paperAssetId: citation.paperAssetId,
-          readerExcerptId: citation.readerExcerptId,
-        })),
-        documentContent: draftDocumentContentRef.current,
-      });
+      await presenter.save(createProjectDocSaveInput());
     } catch (error) {
       setMutationError(
         error instanceof Error ? error.message : "Failed to save the Project Doc.",
@@ -89,6 +87,59 @@ export function WritingPage() {
     } finally {
       mutationLockRef.current = null;
       setIsSavePendingLocally(false);
+    }
+  }
+
+  function createProjectDocSaveInput(): ProjectDocSaveInput {
+    return {
+      citations: presenter.citations.map((citation) => ({
+        evidenceSpan: citation.evidenceSpan,
+        libraryEntryId: citation.libraryEntryId,
+        paperAssetId: citation.paperAssetId,
+        readerExcerptId: citation.readerExcerptId,
+      })),
+      documentContent: draftDocumentContentRef.current,
+    };
+  }
+
+  async function handleAdoptCitationSourceAndRetry(): Promise<void> {
+    const adoption = presenter.adoptionNeeded;
+
+    if (!adoption?.sourceLibraryEntryId || mutationLockRef.current || !canEditProjectDoc) {
+      return;
+    }
+
+    mutationLockRef.current = "save";
+    setIsAdoptionPending(true);
+    setMutationError(null);
+    setAdoptionStatus(null);
+
+    try {
+      const adopted = await presenter.adoptCitationSource();
+
+      if (!adopted) {
+        setMutationError("Failed to adopt the citation source into the project library.");
+        return;
+      }
+
+      setAdoptionStatus("Citation source adopted into the project library. Retrying the Project Doc save…");
+      const saved = await presenter.save(createProjectDocSaveInput());
+
+      if (!saved) {
+        setMutationError("Citation source was adopted, but the Project Doc save still needs attention.");
+        return;
+      }
+
+      setAdoptionStatus("Citation source adopted and Project Doc saved.");
+    } catch (error) {
+      setMutationError(
+        error instanceof Error
+          ? error.message
+          : "Failed to adopt the citation source and retry the Project Doc save.",
+      );
+    } finally {
+      mutationLockRef.current = null;
+      setIsAdoptionPending(false);
     }
   }
 
@@ -100,6 +151,7 @@ export function WritingPage() {
     mutationLockRef.current = "reload";
     setIsReloading(true);
     setMutationError(null);
+    setAdoptionStatus(null);
 
     try {
       await presenter.refresh();
@@ -118,7 +170,8 @@ export function WritingPage() {
   const contextDocumentId = activeDocument?.id ?? docId;
   const projectLabel = presenter.project?.project.name ?? projectId;
   const resolvedSpaceId = presenter.project?.project.spaceId ?? "No governance space";
-  const pageError = presenter.projectError ?? presenter.error;
+  const adoptionNeeded = presenter.adoptionNeeded;
+  const pageError = presenter.projectError ?? (adoptionNeeded ? null : presenter.error);
 
   return (
     <main className="page-shell">
@@ -198,6 +251,40 @@ export function WritingPage() {
                   Your project role can read this Project Doc, but only project owners and editors can save shared document versions.
                 </p>
               ) : null}
+              {adoptionNeeded ? (
+                <section className="panel" aria-label="citation adoption needed">
+                  <h3 className="panel-title">Citation source needs project adoption</h3>
+                  <p className="quiet-copy">
+                    This cited source is readable to you but is not yet available in the target project library. Add it to the project library before saving shared Project Doc evidence.
+                  </p>
+                  <p className="quiet-copy">{adoptionNeeded.message}</p>
+                  <p className="quiet-copy">Paper asset · {adoptionNeeded.paperAssetId}</p>
+                  {adoptionNeeded.sourceLibraryEntryId ? (
+                    <p className="quiet-copy">Source library entry · {adoptionNeeded.sourceLibraryEntryId}</p>
+                  ) : null}
+                  {adoptionNeeded.readerExcerptId ? (
+                    <p className="quiet-copy">Reader excerpt · {adoptionNeeded.readerExcerptId}</p>
+                  ) : null}
+                  {adoptionNeeded.evidenceSpan ? (
+                    <p className="quiet-copy">Evidence span · {adoptionNeeded.evidenceSpan}</p>
+                  ) : null}
+                  {adoptionNeeded.sourceLibraryEntryId ? (
+                    <button
+                      type="button"
+                      className="action-button"
+                      disabled={isMutating || !canEditProjectDoc}
+                      onClick={() => void handleAdoptCitationSourceAndRetry()}
+                    >
+                      {isAdoptionPending ? "Adopting source…" : "Add source to project library and retry save"}
+                    </button>
+                  ) : (
+                    <p className="quiet-copy">
+                      This save failure did not include a source library entry that the browser can request for adoption. Open the source in Reader or Library and add it to the project library, then retry the save.
+                    </p>
+                  )}
+                </section>
+              ) : null}
+              {adoptionStatus ? <p className="quiet-copy">{adoptionStatus}</p> : null}
               {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
             </div>
           ) : (

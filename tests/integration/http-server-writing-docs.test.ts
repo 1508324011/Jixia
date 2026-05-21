@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import {
+  createHttpTestPubmedConnector,
   loginAs,
   startTestServer,
   withSessionCookie,
 } from './http-session-test-helpers';
+import { PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE } from '../../src/shared/contracts/project-docs';
 
 async function createSpace(serverUrl: string, cookie: string, actorUserId: string) {
   return fetch(`${serverUrl}/api/spaces`, {
@@ -409,6 +411,213 @@ describe('http server notebook and project-doc api', () => {
         expect(latestProjectDocumentWithCreatorQuery.status).toBe(400);
         expect(workbenchDocumentWithCreatorQuery.status).toBe(400);
         expect(workbenchSaveWithCreatorBody.status).toBe(400);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('returns a stable adoption-needed ProjectDoc citation error and accepts the retry after adoption', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-doc-adoption-'));
+
+    try {
+      const server = await startTestServer(
+        {
+          JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-project-doc-adoption.db')}`,
+          JIXIA_STORAGE_ROOT: storageRoot,
+        },
+        { connectors: { pubmed: createHttpTestPubmedConnector() } },
+      );
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const sharedSpace = await createSpace(server.url, aliceCookie, 'user-alice');
+        const project = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({ name: 'HTTP Citation Adoption', spaceId: sharedSpace.id }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+        const personalSource = await fetch(`${server.url}/api/import/paper`, {
+          body: JSON.stringify({
+            scope: { id: 'user-alice', type: 'user' },
+            sourceLocator: '10.1000/http-project-doc-adoption-needed',
+            sourceType: 'doi',
+            spaceId: sharedSpace.id,
+            visibility: 'private',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{
+            asset: { id: string };
+            entry: { id: string };
+          }>,
+        );
+        const readerExcerpt = await fetch(
+          `${server.url}/api/reading/${personalSource.entry.id}/excerpts`,
+          {
+            body: JSON.stringify({
+              endOffset: 35,
+              locator: 'p. 8',
+              quote: 'private quote needs project adoption',
+              startOffset: 1,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        ).then(
+          (response) => response.json() as Promise<{
+            excerpt: { id: string; paperAssetId: string };
+          }>,
+        );
+        const projectDoc = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({
+            projectId: project.project.id,
+            title: 'HTTP adoption guided Project Doc',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const saveBody = {
+          citations: [
+            {
+              evidenceSpan: 'private quote needs project adoption',
+              libraryEntryId: personalSource.entry.id,
+              paperAssetId: personalSource.asset.id,
+              readerExcerptId: readerExcerpt.excerpt.id,
+            },
+          ],
+          documentContent: {
+            blocks: [
+              {
+                evidenceSpan: 'private quote needs project adoption',
+                libraryEntryId: personalSource.entry.id,
+                locator: 'p. 8',
+                paperAssetId: personalSource.asset.id,
+                quote: 'private quote needs project adoption',
+                readerExcerptId: readerExcerpt.excerpt.id,
+                type: 'sourceExcerpt',
+              },
+            ],
+            schemaVersion: 1,
+          },
+        };
+
+        const unavailableSave = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/versions`,
+          {
+            body: JSON.stringify(saveBody),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const unavailablePayload = await unavailableSave.json() as {
+          code?: string;
+          details?: {
+            evidenceSpan?: string;
+            libraryEntryId?: string;
+            paperAssetId?: string;
+            projectId?: string;
+            readerExcerptId?: string;
+            sourceLibraryEntryId?: string;
+          };
+          error?: string;
+        };
+
+        expect(unavailableSave.status).toBe(400);
+        expect(unavailablePayload).toMatchObject({
+          code: PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
+          details: {
+            evidenceSpan: 'private quote needs project adoption',
+            libraryEntryId: personalSource.entry.id,
+            paperAssetId: personalSource.asset.id,
+            projectId: project.project.id,
+            readerExcerptId: readerExcerpt.excerpt.id,
+            sourceLibraryEntryId: personalSource.entry.id,
+          },
+          error: `Paper asset ${personalSource.asset.id} is not available in project ${project.project.id}.`,
+        });
+
+        const adoption = await fetch(
+          `${server.url}/api/projects/${project.project.id}/library/adoptions`,
+          {
+            body: JSON.stringify({ sourceLibraryEntryId: personalSource.entry.id }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        ).then(
+          (response) => response.json() as Promise<{
+            entry: { asset: { id: string }; entry: { id: string } };
+            reused: boolean;
+          }>,
+        );
+        const savedAfterAdoption = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/versions`,
+          {
+            body: JSON.stringify(saveBody),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const savedPayload = await savedAfterAdoption.json() as {
+          citations: Array<{
+            evidenceSpan?: string;
+            paperAssetId: string;
+            readerExcerptId?: string;
+          }>;
+          documentContent?: {
+            blocks?: Array<{
+              evidenceSpan?: string;
+              libraryEntryId?: string;
+              paperAssetId?: string;
+              readerExcerptId?: string;
+              type?: string;
+            }>;
+            schemaVersion?: number;
+          };
+          versionNumber: number;
+        };
+
+        expect(adoption).toMatchObject({
+          entry: {
+            asset: { id: personalSource.asset.id },
+          },
+          reused: false,
+        });
+        expect(savedAfterAdoption.status).toBe(200);
+        expect(savedPayload.citations).toEqual([
+          expect.objectContaining({
+            evidenceSpan: 'private quote needs project adoption',
+            paperAssetId: personalSource.asset.id,
+            readerExcerptId: readerExcerpt.excerpt.id,
+          }),
+        ]);
+        expect(savedPayload.documentContent?.blocks?.[0]).toMatchObject({
+          evidenceSpan: 'private quote needs project adoption',
+          libraryEntryId: personalSource.entry.id,
+          paperAssetId: personalSource.asset.id,
+          readerExcerptId: readerExcerpt.excerpt.id,
+          type: 'sourceExcerpt',
+        });
+        expect(savedPayload.versionNumber).toBe(1);
       } finally {
         await server.close();
       }
