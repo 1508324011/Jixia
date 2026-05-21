@@ -429,6 +429,18 @@ describe('notebook and project document persistence', () => {
         { documentId: projectDoc.id },
         'user-bob',
       );
+      const bobResavedSnapshot = await app.projectDocs.saveDocument(
+        {
+          citations: bobVisibleSnapshot.citations.map((citation) => ({
+            evidenceSpan: citation.evidenceSpan,
+            paperAssetId: citation.paperAssetId,
+            readerExcerptId: citation.readerExcerptId,
+          })),
+          documentContent: bobVisibleSnapshot.documentContent,
+          documentId: projectDoc.id,
+        },
+        'user-bob',
+      );
 
       expect(targetProjectSnapshot.citations).toEqual([
         expect.objectContaining({
@@ -452,7 +464,17 @@ describe('notebook and project document persistence', () => {
           readerExcerptId: sourceProjectExcerpt.id,
         }),
       ]);
-      expect(bobVisibleSnapshot.citations[0]?.readerExcerptId).toBe(sourceProjectExcerpt.id);
+      expect(bobVisibleSnapshot.citations[0]?.readerExcerptId).toBe(
+        sourceProjectExcerpt.id,
+      );
+      expect(bobVisibleSnapshot.documentContent).toBeDefined();
+      expect(bobResavedSnapshot.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: sourceProjectExcerpt.quote,
+          paperAssetId: sourceProjectImport.asset.id,
+          readerExcerptId: sourceProjectExcerpt.id,
+        }),
+      ]);
       await expect(
         app.projectDocs.getDocument({ documentId: projectDoc.id }, 'user-charlie'),
       ).rejects.toThrow(/access denied/i);

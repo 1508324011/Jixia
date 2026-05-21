@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { DocumentBlockDocument } from '../../src/shared/contracts/document-content';
 import type { ProjectDocSnapshot } from '../../src/shared/contracts/project-docs';
+import { PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE } from '../../src/shared/contracts/project-docs';
 import { apiClient } from '../../src/web/lib/http-client';
+import { ApiError } from '../../src/web/lib/http-client';
 import { useProjectDocPresenter } from '../../src/web/presenters/project-doc-presenter';
 
 import { expectDocumentBlocksToOmitAuthorityFields } from './document-block-assertions';
@@ -114,6 +116,49 @@ function CitationPreservationHarness() {
         }
       >
         save preserved citations
+      </button>
+    </section>
+  );
+}
+
+function AdoptionNeededHarness() {
+  const presenter = useProjectDocPresenter('project-1', 'doc-project-1');
+
+  return (
+    <section>
+      <div data-testid="presenter-error">{presenter.error ?? 'none'}</div>
+      <div data-testid="snapshot-version">{presenter.snapshot?.versionId ?? 'none'}</div>
+      <div data-testid="adoption-paper-asset">
+        {presenter.adoptionNeeded?.paperAssetId ?? 'none'}
+      </div>
+      <div data-testid="adoption-source-entry">
+        {presenter.adoptionNeeded?.sourceLibraryEntryId ?? 'none'}
+      </div>
+      <button
+        type="button"
+        onClick={() =>
+          void presenter.save({
+            citations: [],
+            documentContent: {
+              blocks: [
+                {
+                  evidenceSpan: 'Unavailable quote survives recovery.',
+                  libraryEntryId: 'entry-personal-source',
+                  paperAssetId: 'asset-adoption-needed',
+                  quote: 'Unavailable quote survives recovery.',
+                  readerExcerptId: 'excerpt-adoption-needed',
+                  type: 'sourceExcerpt',
+                },
+              ],
+              schemaVersion: 1,
+            },
+          })
+        }
+      >
+        save unavailable citation
+      </button>
+      <button type="button" onClick={() => void presenter.adoptCitationSource()}>
+        adopt citation source
       </button>
     </section>
   );
@@ -306,6 +351,99 @@ describe('project doc presenter', () => {
       expect(screen.getByTestId('citation-version')).toHaveTextContent(
         'project-doc-version-2',
       );
+    });
+  });
+
+  it('surfaces citation-source-unavailable saves as adoption-needed presenter state', async () => {
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        membership: {
+          joinedAt: '2026-03-23T00:35:00.000Z',
+          projectId: 'project-1',
+          role: 'owner',
+          userId: 'user-alice',
+        },
+        project: {
+          createdAt: '2026-03-23T00:35:00.000Z',
+          createdByUserId: 'user-alice',
+          id: 'project-1',
+          name: 'Tumor board project',
+          spaceId: 'space-project-1',
+          status: 'active',
+          updatedAt: '2026-03-23T00:35:00.000Z',
+        },
+      },
+    ]);
+    vi.spyOn(apiClient, 'getProjectDoc').mockResolvedValue(
+      buildSnapshot('project-doc-version-1', 1, 'Draft before recovery.'),
+    );
+    vi.spyOn(apiClient, 'saveProjectDocVersion').mockRejectedValue(
+      new ApiError(
+        'Paper asset asset-adoption-needed is not available in project project-1.',
+        400,
+        PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
+        {
+          paperAssetId: 'asset-adoption-needed',
+          projectId: 'project-1',
+          readerExcerptId: 'excerpt-adoption-needed',
+        },
+      ),
+    );
+    vi.spyOn(apiClient, 'adoptProjectLibraryEntry').mockResolvedValue({
+      entry: {
+        asset: {
+          canonicalId: 'doi:10.1000/adoption-needed',
+          createdAt: '2026-03-23T00:35:00.000Z',
+          id: 'asset-adoption-needed',
+          title: 'Adoption needed paper',
+        },
+        entry: {
+          addedAt: '2026-03-23T00:36:00.000Z',
+          addedByUserId: 'user-alice',
+          createdAt: '2026-03-23T00:36:00.000Z',
+          id: 'entry-project-adopted',
+          paperAssetId: 'asset-adoption-needed',
+          scope: { id: 'project-1', type: 'project' },
+          scopeId: 'project-1',
+          scopeType: 'project',
+          spaceId: 'space-project-1',
+          visibility: 'published_to_project',
+        },
+      },
+      reused: false,
+    });
+
+    render(<AdoptionNeededHarness />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('snapshot-version')).toHaveTextContent(
+        'project-doc-version-1',
+      );
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'save unavailable citation' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('adoption-paper-asset')).toHaveTextContent(
+        'asset-adoption-needed',
+      );
+    });
+    expect(screen.getByTestId('adoption-source-entry')).toHaveTextContent(
+      'entry-personal-source',
+    );
+    expect(screen.getByTestId('presenter-error')).toHaveTextContent(
+      'not available in project project-1',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'adopt citation source' }));
+
+    await waitFor(() => {
+      expect(apiClient.adoptProjectLibraryEntry).toHaveBeenCalledWith('project-1', {
+        sourceLibraryEntryId: 'entry-personal-source',
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('adoption-paper-asset')).toHaveTextContent('none');
     });
   });
 });

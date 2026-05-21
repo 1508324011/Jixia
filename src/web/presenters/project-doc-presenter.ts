@@ -7,13 +7,17 @@ import type {
   DocumentBlockDocument,
   DocumentBlockReference,
 } from "@shared/contracts/document-content";
+import {
+  PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
+} from "@shared/contracts/project-docs";
 import type {
+  ProjectDocCitationSourceUnavailableDetails,
   ProjectDocCitationRecord,
   ProjectDocRecord,
   ProjectDocSnapshot,
 } from "@shared/contracts/project-docs";
 
-import { apiClient } from "../lib/http-client";
+import { ApiError, apiClient } from "../lib/http-client";
 import { createEditableDocumentContent } from "../lib/document-blocks";
 import { useProjectContext } from "./project-context";
 
@@ -32,7 +36,19 @@ export interface ProjectDocPresenterCitation extends ProjectDocCitationRecord {
   libraryEntryId?: string;
 }
 
+export interface ProjectDocCitationAdoptionState {
+  evidenceSpan?: string;
+  libraryEntryId?: string;
+  message: string;
+  paperAssetId: string;
+  projectId: string;
+  readerExcerptId?: string;
+  sourceLibraryEntryId?: string;
+}
+
 export interface ProjectDocPresenterViewModel {
+  adoptionNeeded: ProjectDocCitationAdoptionState | null;
+  adoptCitationSource(): Promise<boolean>;
   citations: ProjectDocPresenterCitation[];
   content: string;
   documentContent: DocumentBlockDocument;
@@ -44,8 +60,95 @@ export interface ProjectDocPresenterViewModel {
   project: ReturnType<typeof useProjectContext>["project"];
   projectError: string | null;
   refresh(): Promise<void>;
-  save(input: SaveProjectDocInput): Promise<void>;
+  save(input: SaveProjectDocInput): Promise<boolean>;
   snapshot: ProjectDocSnapshot | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readCitationSourceUnavailableDetails(
+  value: unknown,
+): ProjectDocCitationSourceUnavailableDetails | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const paperAssetId = optionalString(value.paperAssetId);
+  const projectId = optionalString(value.projectId);
+
+  if (!paperAssetId || !projectId) {
+    return null;
+  }
+
+  return {
+    evidenceSpan: optionalString(value.evidenceSpan),
+    libraryEntryId: optionalString(value.libraryEntryId),
+    paperAssetId,
+    projectId,
+    readerExcerptId: optionalString(value.readerExcerptId),
+    sourceLibraryEntryId: optionalString(value.sourceLibraryEntryId),
+  };
+}
+
+function findReferenceForUnavailableCitation(
+  documentContent: DocumentBlockDocument,
+  details: ProjectDocCitationSourceUnavailableDetails,
+): DocumentBlockReference | null {
+  const references = extractDocumentBlockReferences(documentContent);
+  const matchingReaderExcerpt = details.readerExcerptId
+    ? references.find((reference) => reference.readerExcerptId === details.readerExcerptId)
+    : undefined;
+  const matchingLibraryEntry = details.libraryEntryId
+    ? references.find((reference) => reference.libraryEntryId === details.libraryEntryId)
+    : undefined;
+  const matchingAssetWithEntry = references.find(
+    (reference) => reference.paperAssetId === details.paperAssetId && reference.libraryEntryId,
+  );
+  const matchingAsset = references.find(
+    (reference) => reference.paperAssetId === details.paperAssetId,
+  );
+
+  return matchingReaderExcerpt ?? matchingLibraryEntry ?? matchingAssetWithEntry ?? matchingAsset ?? null;
+}
+
+function createAdoptionStateFromError(
+  error: unknown,
+  documentContent: DocumentBlockDocument,
+): ProjectDocCitationAdoptionState | null {
+  if (
+    !(error instanceof ApiError) ||
+    error.code !== PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE
+  ) {
+    return null;
+  }
+
+  const details = readCitationSourceUnavailableDetails(error.details);
+
+  if (!details) {
+    return null;
+  }
+
+  const matchingReference = findReferenceForUnavailableCitation(documentContent, details);
+  const sourceLibraryEntryId =
+    details.sourceLibraryEntryId ??
+    details.libraryEntryId ??
+    matchingReference?.libraryEntryId;
+
+  return {
+    evidenceSpan: details.evidenceSpan ?? matchingReference?.evidenceSpan,
+    libraryEntryId: details.libraryEntryId ?? matchingReference?.libraryEntryId,
+    message: error.message,
+    paperAssetId: details.paperAssetId,
+    projectId: details.projectId,
+    readerExcerptId: details.readerExcerptId ?? matchingReference?.readerExcerptId,
+    sourceLibraryEntryId,
+  };
 }
 
 function buildProjectDocMismatchError(
@@ -144,6 +247,7 @@ export function useProjectDocPresenter(
   const projectContext = useProjectContext(projectId);
   const [snapshot, setSnapshot] = useState<ProjectDocSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [adoptionNeeded, setAdoptionNeeded] = useState<ProjectDocCitationAdoptionState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const isMountedRef = useRef(false);
@@ -200,6 +304,7 @@ export function useProjectDocPresenter(
       invalidatePendingRequests();
       setSnapshot(null);
       setError(null);
+      setAdoptionNeeded(null);
       setIsLoading(false);
       return;
     }
@@ -208,6 +313,7 @@ export function useProjectDocPresenter(
 
     try {
       setError(null);
+      setAdoptionNeeded(null);
       const nextSnapshot = await apiClient.getProjectDoc(documentId);
 
       if (!canCommitRequest(generation)) {
@@ -231,6 +337,7 @@ export function useProjectDocPresenter(
       }
 
       setSnapshot(null);
+      setAdoptionNeeded(null);
       setError(
         presenterError instanceof Error
           ? presenterError.message
@@ -245,21 +352,23 @@ export function useProjectDocPresenter(
     async (input: SaveProjectDocInput) => {
       if (!projectId || !documentId || !projectContext.project) {
         invalidatePendingRequests();
+        setAdoptionNeeded(null);
         setError("A visible project and document route are required before saving.");
-        return;
+        return false;
       }
 
       const generation = beginRequest("save");
 
       try {
         setError(null);
+        setAdoptionNeeded(null);
         const nextSnapshot = await apiClient.saveProjectDocVersion(
           documentId,
           input,
         );
 
         if (!canCommitRequest(generation)) {
-          return;
+          return false;
         }
 
         setSnapshot(nextSnapshot);
@@ -272,23 +381,58 @@ export function useProjectDocPresenter(
               nextSnapshot.document.projectId,
             ),
           );
-        }
-      } catch (presenterError) {
-        if (!canCommitRequest(generation)) {
-          return;
+          return false;
         }
 
+        return true;
+      } catch (presenterError) {
+        if (!canCommitRequest(generation)) {
+          return false;
+        }
+
+        const nextAdoptionNeeded = createAdoptionStateFromError(
+          presenterError,
+          input.documentContent,
+        );
+
+        setAdoptionNeeded(nextAdoptionNeeded);
         setError(
           presenterError instanceof Error
             ? presenterError.message
             : "Failed to save the project document.",
         );
+        return false;
       } finally {
         completeRequest(generation, "save");
       }
     },
     [beginRequest, canCommitRequest, completeRequest, documentId, invalidatePendingRequests, projectContext.project, projectId],
   );
+
+  const adoptCitationSource = useCallback(async () => {
+    const adoption = adoptionNeeded;
+
+    if (!adoption?.sourceLibraryEntryId || !projectId || !projectContext.project) {
+      setError("A source library entry and visible project are required before adoption.");
+      return false;
+    }
+
+    try {
+      setError(null);
+      await apiClient.adoptProjectLibraryEntry(projectId, {
+        sourceLibraryEntryId: adoption.sourceLibraryEntryId,
+      });
+      setAdoptionNeeded(null);
+      return true;
+    } catch (presenterError) {
+      setError(
+        presenterError instanceof Error
+          ? presenterError.message
+          : "Failed to adopt the citation source into the project library.",
+      );
+      return false;
+    }
+  }, [adoptionNeeded, projectContext.project, projectId]);
 
   const documentContent = useMemo(
     () => createEditableDocumentContent(snapshot),
@@ -317,6 +461,7 @@ export function useProjectDocPresenter(
       invalidatePendingRequests();
       setSnapshot(null);
       setError(null);
+      setAdoptionNeeded(null);
       setIsLoading(false);
       return;
     }
@@ -326,6 +471,8 @@ export function useProjectDocPresenter(
 
   return useMemo(
     () => ({
+      adoptionNeeded,
+      adoptCitationSource,
       citations,
       content: snapshot?.content ?? "",
       documentContent,
@@ -340,6 +487,6 @@ export function useProjectDocPresenter(
       save,
       snapshot,
     }),
-    [citations, documentContent, error, isLoading, isSaving, projectContext.error, projectContext.isLoading, projectContext.project, refresh, save, snapshot],
+    [adoptionNeeded, adoptCitationSource, citations, documentContent, error, isLoading, isSaving, projectContext.error, projectContext.isLoading, projectContext.project, refresh, save, snapshot],
   );
 }

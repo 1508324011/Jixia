@@ -12,6 +12,10 @@ import type { DocumentBlockDocument } from "@shared/contracts/document-content";
 import type { LoginSessionRequest } from "@shared/contracts/session";
 import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
 import type { CreateReaderExcerptRequest } from "@shared/contracts/reading";
+import {
+  PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
+  type ProjectDocCitationSourceUnavailableDetails,
+} from "@shared/contracts/project-docs";
 
 import { createJixiaApp, type CreateJixiaAppOptions } from "./app";
 import { resolveHttpApi } from "./http-api";
@@ -69,6 +73,60 @@ function hasErrnoCode(error: unknown): error is Error & { code: string } {
   return (
     error instanceof Error && "code" in error && typeof error.code === "string"
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function readOptionalPublicErrorString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readPublicProjectDocCitationDetails(
+  value: unknown,
+): ProjectDocCitationSourceUnavailableDetails | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const paperAssetId = readOptionalPublicErrorString(value.paperAssetId);
+  const projectId = readOptionalPublicErrorString(value.projectId);
+
+  if (!paperAssetId || !projectId) {
+    return undefined;
+  }
+
+  return {
+    evidenceSpan: readOptionalPublicErrorString(value.evidenceSpan),
+    libraryEntryId: readOptionalPublicErrorString(value.libraryEntryId),
+    paperAssetId,
+    projectId,
+    readerExcerptId: readOptionalPublicErrorString(value.readerExcerptId),
+    sourceLibraryEntryId: readOptionalPublicErrorString(value.sourceLibraryEntryId),
+  };
+}
+
+function readPublicErrorMetadata(error: unknown): {
+  code?: string;
+  details?: ProjectDocCitationSourceUnavailableDetails;
+} {
+  if (
+    !(error instanceof Error) ||
+    !("code" in error) ||
+    error.code !== PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE
+  ) {
+    return {};
+  }
+
+  if (!("details" in error)) {
+    return { code: PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE };
+  }
+
+  return {
+    code: PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
+    details: readPublicProjectDocCitationDetails(error.details),
+  };
 }
 
 function loadProjectEnvFile(): void {
@@ -167,8 +225,24 @@ function sendJsonError(
   statusCode: number,
   message: string,
   method: string,
+  error?: unknown,
 ): void {
-  sendJson(response, statusCode, { error: message }, method);
+  const payload: {
+    code?: string;
+    details?: ProjectDocCitationSourceUnavailableDetails;
+    error: string;
+  } = { error: message };
+  const publicMetadata = readPublicErrorMetadata(error);
+
+  if (publicMetadata.code) {
+    payload.code = publicMetadata.code;
+  }
+
+  if (publicMetadata.details) {
+    payload.details = publicMetadata.details;
+  }
+
+  sendJson(response, statusCode, payload, method);
 }
 
 function statusCodeForError(error: unknown): number {
@@ -282,7 +356,7 @@ async function handleWorkbenchHttpApiRequest(
     const message = error instanceof Error
       ? error.message
       : "Unknown server error.";
-    sendJsonError(response, statusCodeForError(error), message, method);
+    sendJsonError(response, statusCodeForError(error), message, method, error);
   }
 
   return true;
@@ -1994,7 +2068,7 @@ async function handleApiRequest(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown server error.";
-    sendJsonError(response, statusCodeForError(error), message, method);
+    sendJsonError(response, statusCodeForError(error), message, method, error);
     return true;
   }
 }
@@ -2143,7 +2217,7 @@ export function createHttpServer(
           const message = error instanceof Error
             ? error.message
             : "Unknown server error.";
-          sendJsonError(response, statusCodeForError(error), message, method);
+          sendJsonError(response, statusCodeForError(error), message, method, error);
         }
       })();
       return;

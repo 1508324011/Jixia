@@ -67,6 +67,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
+    readonly details?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -207,12 +209,26 @@ function buildUrl(
   return `${url.pathname}${url.search}`;
 }
 
-async function readErrorMessage(response: Response): Promise<string> {
+async function readErrorPayload(response: Response): Promise<{
+  code?: string;
+  details?: unknown;
+  message: string;
+}> {
   try {
-    const payload = (await response.json()) as { error?: string };
-    return payload.error ?? `Request failed with status ${response.status}`;
+    const payload = (await response.json()) as {
+      code?: unknown;
+      details?: unknown;
+      error?: unknown;
+    };
+    return {
+      code: typeof payload.code === "string" ? payload.code : undefined,
+      details: payload.details,
+      message: typeof payload.error === "string"
+        ? payload.error
+        : `Request failed with status ${response.status}`,
+    };
   } catch {
-    return `Request failed with status ${response.status}`;
+    return { message: `Request failed with status ${response.status}` };
   }
 }
 
@@ -236,7 +252,13 @@ export async function requestJson<T>(
   });
 
   if (!response.ok) {
-    throw new ApiError(await readErrorMessage(response), response.status);
+    const errorPayload = await readErrorPayload(response);
+    throw new ApiError(
+      errorPayload.message,
+      response.status,
+      errorPayload.code,
+      errorPayload.details,
+    );
   }
 
   if (response.status === 204) {
@@ -269,7 +291,13 @@ function subscribeToJobEvents(
       });
 
       if (!response.ok) {
-        throw new ApiError(await readErrorMessage(response), response.status);
+        const errorPayload = await readErrorPayload(response);
+        throw new ApiError(
+          errorPayload.message,
+          response.status,
+          errorPayload.code,
+          errorPayload.details,
+        );
       }
 
       if (!response.body) {

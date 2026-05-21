@@ -1025,6 +1025,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     projectDocRepository,
     projectRepository,
     readingService,
+    readingRepository,
   });
   const projectWorkspaceRoutes = createProjectWorkspaceRoutes(
     createProjectWorkspaceService({
