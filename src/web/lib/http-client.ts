@@ -37,6 +37,7 @@ import type {
 } from "@shared/contracts/projects";
 import type {
   ProjectDocRecord,
+  ProjectDocCitationTraceResponse,
   ProjectDocSnapshot,
 } from "@shared/contracts/project-docs";
 import type {
@@ -581,6 +582,11 @@ export const apiClient = {
   },
   getProjectDoc(documentId: string): Promise<ProjectDocSnapshot> {
     return requestJson(`/api/project-docs/${documentId}`);
+  },
+  getProjectDocCitationTrace(
+    documentId: string,
+  ): Promise<ProjectDocCitationTraceResponse> {
+    return requestJson(`/api/project-docs/${documentId}/citation-trace`);
   },
   getNotebook(documentId: string): Promise<NotebookDocumentRecord> {
     return requestJson(`/api/notebooks/${documentId}`);

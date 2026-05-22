@@ -45,4 +45,75 @@ export interface ProjectDocCitationSourceUnavailableDetails {
   sourceLibraryEntryId?: string;
 }
 
+export type ProjectDocCitationTraceSourceState =
+  | 'available'
+  | 'adoption_needed';
+
+export type ProjectDocCitationTraceReaderExcerptSource =
+  | 'project_library_asset'
+  | 'reader_source'
+  | 'project_doc_snapshot';
+
+export interface ProjectDocCitationTracePaperAsset {
+  abstractText?: string;
+  canonicalId: string;
+  createdAt: string;
+  hasFile?: boolean;
+  id: string;
+  title: string;
+}
+
+export interface ProjectDocCitationTraceProjectLibraryEntry {
+  libraryEntryId: string;
+  projectId: string;
+}
+
+export interface ProjectDocCitationTraceAvailableSource {
+  state: 'available';
+}
+
+export interface ProjectDocCitationTraceAdoptionNeededSource {
+  code: typeof PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE;
+  details: ProjectDocCitationSourceUnavailableDetails;
+  message: string;
+  state: 'adoption_needed';
+}
+
+export type ProjectDocCitationTraceSource =
+  | ProjectDocCitationTraceAdoptionNeededSource
+  | ProjectDocCitationTraceAvailableSource;
+
+export interface ProjectDocCitationTraceReaderExcerpt {
+  endOffset?: number;
+  evidenceSpan?: string;
+  id: string;
+  locator?: string;
+  quote?: string;
+  source: ProjectDocCitationTraceReaderExcerptSource;
+  sourceLibraryEntryId?: string;
+  startOffset?: number;
+}
+
+export interface ProjectDocCitationTraceRow {
+  citationId: string;
+  createdAt: string;
+  evidenceSpan?: string;
+  paper?: ProjectDocCitationTracePaperAsset;
+  paperAssetId: string;
+  projectDocVersionId: string;
+  projectLibraryEntry?: ProjectDocCitationTraceProjectLibraryEntry;
+  readerExcerpt?: ProjectDocCitationTraceReaderExcerpt;
+  readerExcerptId?: string;
+  source: ProjectDocCitationTraceSource;
+}
+
+export interface ProjectDocCitationTraceResponse {
+  capturedAt: string;
+  citations: ProjectDocCitationTraceRow[];
+  document: ProjectDocRecord;
+  generatedAt: string;
+  versionId: string;
+  versionNumber: number;
+}
+
 export const projectDocsContract = 'jixia-project-docs-contract';

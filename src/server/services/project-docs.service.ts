@@ -13,6 +13,8 @@ import {
 } from '@shared/contracts/document-content';
 import type {
   CreateProjectDocRequest,
+  ProjectDocCitationTraceResponse,
+  ProjectDocCitationTraceRow,
   ProjectDocCitationSourceUnavailableDetails,
   ProjectDocCitationRecord,
   ProjectDocLookup,
@@ -57,6 +59,10 @@ export interface ProjectDocsService {
     query: ProjectDocLookup,
     actorUserId: string,
   ): Promise<ProjectDocSnapshot>;
+  getCitationTrace(
+    query: ProjectDocLookup,
+    actorUserId: string,
+  ): Promise<ProjectDocCitationTraceResponse>;
   saveDocument(
     input: SaveProjectDocRequest,
     actorUserId: string,
@@ -308,6 +314,219 @@ function mapWritingDocument(
     publishState: document.publishState,
     spaceId,
     title: document.title,
+  };
+}
+
+function mapBrowserSafePaperAsset(
+  asset: Awaited<ReturnType<LibraryRepository['findPaperAsset']>>,
+): ProjectDocCitationTraceRow['paper'] {
+  if (!asset) {
+    return undefined;
+  }
+
+  return {
+    abstractText: asset.abstractText,
+    canonicalId: asset.canonicalId,
+    createdAt: asset.createdAt,
+    hasFile: Boolean(asset.storageKey),
+    id: asset.id,
+    title: asset.title,
+  };
+}
+
+async function resolveProjectScopedCitationTraceSource(
+  store: ProjectDocsStore,
+  input: {
+    actorSpaceId: string;
+    actorUserId: string;
+    citation: ProjectDocCitationRecord;
+    projectId: string;
+  },
+): Promise<Pick<ProjectDocCitationTraceRow, 'paper' | 'projectLibraryEntry' | 'source'>> {
+  const projectScopedView = (
+    await store.libraryRepository.listLibraryEntriesForAsset(input.citation.paperAssetId)
+  ).find(
+    (view) =>
+      view.entry.scope.type === 'project' &&
+      view.entry.scope.id === input.projectId,
+  );
+
+  if (!projectScopedView) {
+    const existingAsset = await store.libraryRepository.findPaperAsset(
+      input.citation.paperAssetId,
+    );
+
+    return {
+      paper: undefined,
+      projectLibraryEntry: undefined,
+      source: {
+        code: PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
+        details: {
+          evidenceSpan: input.citation.evidenceSpan,
+          paperAssetId: input.citation.paperAssetId,
+          projectId: input.projectId,
+          readerExcerptId: input.citation.readerExcerptId,
+        },
+        message: existingAsset
+          ? `Paper asset ${input.citation.paperAssetId} is not available in project ${input.projectId}.`
+          : `Paper asset ${input.citation.paperAssetId} does not exist.`,
+        state: 'adoption_needed',
+      },
+    };
+  }
+
+  const authorizedView = await store.libraryService.assertCanAccessEntry(
+    projectScopedView.entry.id,
+    input.actorUserId,
+    input.actorSpaceId,
+  );
+
+  if (
+    authorizedView.entry.id !== projectScopedView.entry.id ||
+    authorizedView.entry.scope.type !== 'project' ||
+    authorizedView.entry.scope.id !== input.projectId ||
+    authorizedView.asset.id !== input.citation.paperAssetId
+  ) {
+    return {
+      paper: undefined,
+      projectLibraryEntry: undefined,
+      source: {
+        code: PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
+        details: {
+          evidenceSpan: input.citation.evidenceSpan,
+          libraryEntryId: projectScopedView.entry.id,
+          paperAssetId: input.citation.paperAssetId,
+          projectId: input.projectId,
+          readerExcerptId: input.citation.readerExcerptId,
+        },
+        message: `Paper asset ${input.citation.paperAssetId} is not available in project ${input.projectId}.`,
+        state: 'adoption_needed',
+      },
+    };
+  }
+
+  return {
+    paper: mapBrowserSafePaperAsset(authorizedView.asset),
+    projectLibraryEntry: {
+      libraryEntryId: authorizedView.entry.id,
+      projectId: input.projectId,
+    },
+    source: { state: 'available' },
+  };
+}
+
+async function resolveProjectDocCitationReaderExcerptTrace(
+  store: ProjectDocsStore,
+  input: {
+    actorSpaceId: string;
+    actorUserId: string;
+    citation: ProjectDocCitationRecord;
+  },
+): Promise<ProjectDocCitationTraceRow['readerExcerpt']> {
+  if (!input.citation.readerExcerptId) {
+    return createProjectDocSnapshotEvidenceTrace(input.citation, 'project_library_asset');
+  }
+
+  function createProjectDocSnapshotEvidenceTrace(
+    citation: ProjectDocCitationRecord,
+    source: 'project_doc_snapshot' | 'project_library_asset',
+  ): ProjectDocCitationTraceRow['readerExcerpt'] {
+    if (!citation.evidenceSpan) {
+      return undefined;
+    }
+
+    return {
+      evidenceSpan: citation.evidenceSpan,
+      id: source === 'project_library_asset'
+        ? `project-doc-citation:${citation.id}:evidence-span`
+        : citation.readerExcerptId ?? `project-doc-citation:${citation.id}:evidence-span`,
+      quote: citation.evidenceSpan,
+      source,
+    };
+  }
+
+  try {
+    const { excerpt, sourceEntry } = await store.readingService.getReaderExcerptSource({
+      actorSpaceId: input.actorSpaceId,
+      actorUserId: input.actorUserId,
+      readerExcerptId: input.citation.readerExcerptId,
+    });
+
+    if (excerpt.paperAssetId !== input.citation.paperAssetId) {
+      return createProjectDocSnapshotEvidenceTrace(
+        input.citation,
+        'project_doc_snapshot',
+      );
+    }
+
+    return {
+      endOffset: excerpt.endOffset,
+      evidenceSpan: input.citation.evidenceSpan ?? excerpt.quote,
+      id: excerpt.id,
+      locator: excerpt.locator,
+      quote: excerpt.quote,
+      source: 'reader_source',
+      sourceLibraryEntryId: sourceEntry.entry.id,
+      startOffset: excerpt.startOffset,
+    };
+  } catch (error) {
+    if (!isAccessRestrictionError(error)) {
+      throw error;
+    }
+
+    return createProjectDocSnapshotEvidenceTrace(
+      input.citation,
+      'project_doc_snapshot',
+    );
+  }
+}
+
+async function createProjectDocCitationTraceResponse(
+  store: ProjectDocsStore,
+  input: {
+    actorSpaceId: string;
+    actorUserId: string;
+    snapshot: ProjectDocSnapshot;
+  },
+): Promise<ProjectDocCitationTraceResponse> {
+  const citations: ProjectDocCitationTraceRow[] = [];
+
+  for (const citation of input.snapshot.citations) {
+    const [source, readerExcerpt] = await Promise.all([
+      resolveProjectScopedCitationTraceSource(store, {
+        actorSpaceId: input.actorSpaceId,
+        actorUserId: input.actorUserId,
+        citation,
+        projectId: input.snapshot.document.projectId,
+      }),
+      resolveProjectDocCitationReaderExcerptTrace(store, {
+        actorSpaceId: input.actorSpaceId,
+        actorUserId: input.actorUserId,
+        citation,
+      }),
+    ]);
+
+    citations.push({
+      citationId: citation.id,
+      createdAt: citation.createdAt,
+      evidenceSpan: citation.evidenceSpan,
+      paper: source.paper,
+      paperAssetId: citation.paperAssetId,
+      projectDocVersionId: citation.projectDocVersionId,
+      projectLibraryEntry: source.projectLibraryEntry,
+      readerExcerpt,
+      readerExcerptId: citation.readerExcerptId,
+      source: source.source,
+    });
+  }
+
+  return {
+    capturedAt: input.snapshot.capturedAt,
+    citations,
+    document: input.snapshot.document,
+    generatedAt: new Date().toISOString(),
+    versionId: input.snapshot.versionId,
+    versionNumber: input.snapshot.versionNumber,
   };
 }
 
@@ -834,6 +1053,28 @@ export function createProjectDocsService(
       }
 
       return mapSnapshot(snapshot);
+    },
+    async getCitationTrace(
+      query: ProjectDocLookup,
+      actorUserId: string,
+    ): Promise<ProjectDocCitationTraceResponse> {
+      const authorized = await getAuthorizedProjectDoc(
+        store,
+        query.documentId,
+        actorUserId,
+      );
+      const snapshot = await store.projectDocRepository.getLatestSnapshot(
+        query.documentId,
+      );
+      const mappedSnapshot = snapshot
+        ? mapSnapshot(snapshot)
+        : createEmptySnapshot(authorized.document);
+
+      return createProjectDocCitationTraceResponse(store, {
+        actorSpaceId: authorized.projectSpaceId,
+        actorUserId,
+        snapshot: mappedSnapshot,
+      });
     },
     async saveDocument(
       input: SaveProjectDocRequest,

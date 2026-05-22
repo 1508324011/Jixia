@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -34,6 +34,30 @@ function createDeferred<T>() {
   }
 
   return { promise, reject, resolve };
+}
+
+function buildEmptyCitationTrace(documentState: {
+  capturedAt: string;
+  document: {
+    createdAt: string;
+    createdByUserId: string;
+    id: string;
+    projectId: string;
+    publishState: string;
+    title: string;
+    updatedAt: string;
+  };
+  versionId: string;
+  versionNumber: number;
+}) {
+  return {
+    capturedAt: documentState.capturedAt,
+    citations: [],
+    document: documentState.document,
+    generatedAt: '2026-03-23T00:45:30.000Z',
+    versionId: documentState.versionId,
+    versionNumber: documentState.versionNumber,
+  };
 }
 
 afterEach(() => {
@@ -409,8 +433,27 @@ describe('project writer flow', () => {
         ]);
       }
 
-      if (requestUrl.endsWith('/api/project-docs/doc-created-1')) {
-        return jsonResponse({
+        if (requestUrl.endsWith('/api/project-docs/doc-created-1/citation-trace')) {
+          return jsonResponse({
+            capturedAt: '2026-03-23T00:42:00.000Z',
+            citations: [],
+            document: {
+              createdAt: '2026-03-23T00:42:00.000Z',
+              createdByUserId: 'user-alice',
+              id: 'doc-created-1',
+              projectId: 'project-1',
+              publishState: 'draft',
+              title: 'Shared evidence rationale',
+              updatedAt: '2026-03-23T00:42:00.000Z',
+            },
+            generatedAt: '2026-03-23T00:42:30.000Z',
+            versionId: 'project-doc:doc-created-1:version-0',
+            versionNumber: 0,
+          });
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-created-1')) {
+          return jsonResponse({
           capturedAt: '2026-03-23T00:42:00.000Z',
           citations: [],
           content: '',
@@ -627,6 +670,25 @@ describe('project writer flow', () => {
           return jsonResponse([projectFixture]);
         }
 
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/citation-trace')) {
+          return jsonResponse({
+            capturedAt: '2026-03-23T00:40:00.000Z',
+            citations: [],
+            document: {
+              createdAt: '2026-03-23T00:35:00.000Z',
+              createdByUserId: 'user-alice',
+              id: 'doc-project-1',
+              projectId: 'project-1',
+              publishState: 'draft',
+              title: 'Viewer-readable synthesis',
+              updatedAt: '2026-03-23T00:35:00.000Z',
+            },
+            generatedAt: '2026-03-23T00:40:30.000Z',
+            versionId: 'project-doc-version-1',
+            versionNumber: 1,
+          });
+        }
+
         if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
           return jsonResponse({
             capturedAt: '2026-03-23T00:40:00.000Z',
@@ -666,6 +728,155 @@ describe('project writer flow', () => {
     expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
     expect(screen.getByText('Your project role can read this Project Doc, but only project owners and editors can save shared document versions.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reload draft' })).toBeEnabled();
+    expect(screen.getByText('No citations in the latest saved Project Doc snapshot.')).toBeInTheDocument();
+  });
+
+  it('writing page renders citation trace loading, server rows, and error states without authority labels', async () => {
+    const user = userEvent.setup();
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'space-project-1',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+    };
+    const documentState = {
+      capturedAt: '2026-03-23T00:40:00.000Z',
+      citations: [
+        {
+          createdAt: '2026-03-23T00:40:00.000Z',
+          evidenceSpan: 'Server trace quote.',
+          id: 'citation-trace-ui-1',
+          paperAssetId: 'asset-trace-ui-1',
+          projectDocVersionId: 'project-doc-version-1',
+          readerExcerptId: 'excerpt-trace-ui-1',
+        },
+      ],
+      content: 'Server trace quote.',
+      documentContent: {
+        blocks: [{ text: 'Server trace quote.', type: 'paragraph' }],
+        schemaVersion: 1,
+      },
+      document: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'doc-project-1',
+        projectId: 'project-1',
+        publishState: 'draft',
+        title: 'Tumor board literature synthesis',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+      versionId: 'project-doc-version-1',
+      versionNumber: 1,
+    };
+    const initialTrace = createDeferred<Response>();
+    let traceRequests = 0;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([projectFixture]);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/citation-trace')) {
+          traceRequests += 1;
+
+          if (traceRequests === 1) {
+            return initialTrace.promise;
+          }
+
+          return jsonResponse({ error: 'Trace endpoint unavailable.' }, 503);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
+          return jsonResponse(documentState);
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-1/writing/doc-project-1');
+
+    expect(await screen.findByText('Loading citation trace…')).toBeInTheDocument();
+    initialTrace.resolve(jsonResponse({
+      capturedAt: documentState.capturedAt,
+      citations: [
+        {
+          citationId: 'citation-trace-ui-1',
+          createdAt: '2026-03-23T00:40:00.000Z',
+          evidenceSpan: 'Server trace quote.',
+          paper: {
+            canonicalId: 'doi:10.1000/trace-ui',
+            createdAt: '2026-03-23T00:35:00.000Z',
+            hasFile: false,
+            id: 'asset-trace-ui-1',
+            title: 'Trace UI paper',
+          },
+          paperAssetId: 'asset-trace-ui-1',
+          projectDocVersionId: documentState.versionId,
+          projectLibraryEntry: {
+            libraryEntryId: 'entry-trace-ui-1',
+            projectId: 'project-1',
+          },
+          readerExcerpt: {
+            evidenceSpan: 'Server trace quote.',
+            id: 'excerpt-trace-ui-1',
+            locator: 'p. 7',
+            quote: 'Server trace quote.',
+            source: 'reader_source',
+            sourceLibraryEntryId: 'entry-trace-ui-1',
+          },
+          readerExcerptId: 'excerpt-trace-ui-1',
+          source: { state: 'available' },
+        },
+      ],
+      document: documentState.document,
+      generatedAt: '2026-03-23T00:47:30.000Z',
+      versionId: documentState.versionId,
+      versionNumber: documentState.versionNumber,
+    }));
+
+    expect(await screen.findByText('Paper · Trace UI paper')).toBeInTheDocument();
+    expect(screen.getByText('Reader excerpt · excerpt-trace-ui-1')).toBeInTheDocument();
+    expect(screen.getByText('Locator · p. 7')).toBeInTheDocument();
+    expect(screen.queryByText(/ownerId/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/createdByUserId/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/visibility/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/scopeType/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Reload draft' }));
+
+    expect(await screen.findByText('Trace endpoint unavailable.')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Server trace quote.')).toBeInTheDocument();
   });
 
   it('writing page reopens the promoted writer draft and saves updates', async () => {
@@ -743,6 +954,10 @@ describe('project writer flow', () => {
 
         if (requestUrl.endsWith('/api/projects')) {
           return jsonResponse([projectFixture]);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/citation-trace')) {
+          return jsonResponse(buildEmptyCitationTrace(documentState));
         }
 
         if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
@@ -896,6 +1111,10 @@ describe('project writer flow', () => {
 
         if (requestUrl.endsWith('/api/projects')) {
           return jsonResponse([projectFixture]);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/citation-trace')) {
+          return jsonResponse(buildEmptyCitationTrace(documentState));
         }
 
         if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
@@ -1066,6 +1285,46 @@ describe('project writer flow', () => {
           return jsonResponse([projectFixture]);
         }
 
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/citation-trace')) {
+          return jsonResponse({
+            capturedAt: documentState.capturedAt,
+            citations: [
+              {
+                citationId: 'citation-1',
+                createdAt: '2026-03-23T00:40:00.000Z',
+                evidenceSpan: 'Quoted reader excerpt evidence',
+                paper: {
+                  canonicalId: 'doi:10.1000/project-visible',
+                  createdAt: '2026-03-23T00:35:00.000Z',
+                  hasFile: false,
+                  id: 'asset-project-visible',
+                  title: 'Reader excerpt citation paper',
+                },
+                paperAssetId: 'asset-project-visible',
+                projectDocVersionId: documentState.versionId,
+                projectLibraryEntry: {
+                  libraryEntryId: 'entry-project-visible',
+                  projectId: 'project-1',
+                },
+                readerExcerpt: {
+                  evidenceSpan: 'Quoted reader excerpt evidence',
+                  id: 'excerpt-project-visible',
+                  locator: 'p. 12',
+                  quote: 'Quoted reader excerpt evidence',
+                  source: 'reader_source',
+                  sourceLibraryEntryId: 'entry-project-visible',
+                },
+                readerExcerptId: 'excerpt-project-visible',
+                source: { state: 'available' },
+              },
+            ],
+            document: documentState.document,
+            generatedAt: '2026-03-23T00:47:30.000Z',
+            versionId: documentState.versionId,
+            versionNumber: documentState.versionNumber,
+          });
+        }
+
         if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
           return jsonResponse(documentState);
         }
@@ -1130,6 +1389,13 @@ describe('project writer flow', () => {
     renderWorkbench('/projects/project-1/writing/doc-project-1');
 
     expect(await screen.findAllByText('entry-project-visible')).toHaveLength(3);
+    expect(await screen.findByText('Citation trace')).toBeInTheDocument();
+    expect(screen.getByText('Read-only server-authorized citation provenance.')).toBeInTheDocument();
+    expect(screen.getByText('Citation · citation-1')).toBeInTheDocument();
+    expect(screen.getByText('Paper · Reader excerpt citation paper')).toBeInTheDocument();
+    expect(screen.getByText('Evidence source · Reader excerpt')).toBeInTheDocument();
+    expect(screen.getByText('Citation source available in this project.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Citation trace/i })).not.toBeInTheDocument();
 
     const quoteEditor = await screen.findByLabelText('Quote block 3');
     await user.clear(quoteEditor);
@@ -1210,6 +1476,10 @@ describe('project writer flow', () => {
 
         if (requestUrl.endsWith('/api/projects')) {
           return Promise.resolve(jsonResponse([projectFixture]));
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/citation-trace')) {
+          return Promise.resolve(jsonResponse(buildEmptyCitationTrace(documentState)));
         }
 
         if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
@@ -1347,6 +1617,43 @@ describe('project writer flow', () => {
         return jsonResponse([projectFixture]);
       }
 
+      if (requestUrl.endsWith('/api/project-docs/doc-project-1/citation-trace')) {
+        return jsonResponse({
+          capturedAt: documentState.capturedAt,
+          citations: [
+            {
+              citationId: 'citation-1',
+              createdAt: '2026-03-23T00:40:00.000Z',
+              evidenceSpan: 'Unavailable quote survives recovery.',
+              paperAssetId: 'asset-adoption-needed',
+              projectDocVersionId: documentState.versionId,
+              readerExcerpt: {
+                evidenceSpan: 'Unavailable quote survives recovery.',
+                id: 'excerpt-adoption-needed',
+                quote: 'Unavailable quote survives recovery.',
+                source: 'project_doc_snapshot',
+              },
+              readerExcerptId: 'excerpt-adoption-needed',
+              source: {
+                code: 'PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE',
+                details: {
+                  evidenceSpan: 'Unavailable quote survives recovery.',
+                  paperAssetId: 'asset-adoption-needed',
+                  projectId: 'project-1',
+                  readerExcerptId: 'excerpt-adoption-needed',
+                },
+                message: 'Paper asset asset-adoption-needed is not available in project project-1.',
+                state: 'adoption_needed',
+              },
+            },
+          ],
+          document: documentState.document,
+          generatedAt: '2026-03-23T00:48:30.000Z',
+          versionId: documentState.versionId,
+          versionNumber: documentState.versionNumber,
+        });
+      }
+
       if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
         return jsonResponse(documentState);
       }
@@ -1444,12 +1751,18 @@ describe('project writer flow', () => {
     expect(await screen.findByText('Adoption needed paper')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
 
-    expect(
-      await screen.findByRole('heading', { name: 'Citation source needs project adoption' }),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Paper asset · asset-adoption-needed')).toBeInTheDocument();
-    expect(screen.getByText('Source library entry · entry-personal-source')).toBeInTheDocument();
-    expect(screen.getByText('Reader excerpt · excerpt-adoption-needed')).toBeInTheDocument();
+    const adoptionHeading = await screen.findByRole('heading', {
+      name: 'Citation source needs project adoption',
+    });
+    const adoptionPanel = adoptionHeading.closest('section');
+
+    expect(adoptionHeading).toBeInTheDocument();
+    if (!(adoptionPanel instanceof HTMLElement)) {
+      throw new Error('Citation adoption panel was not rendered.');
+    }
+    expect(within(adoptionPanel).getByText('Paper asset · asset-adoption-needed')).toBeInTheDocument();
+    expect(within(adoptionPanel).getByText('Source library entry · entry-personal-source')).toBeInTheDocument();
+    expect(within(adoptionPanel).getByText('Reader excerpt · excerpt-adoption-needed')).toBeInTheDocument();
 
     await user.click(
       screen.getByRole('button', { name: 'Add source to project library and retry save' }),

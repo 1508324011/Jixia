@@ -3,6 +3,7 @@ import type {
   ProjectDocLookup,
   ProjectDocRecord,
   ProjectDocSnapshot,
+  ProjectDocCitationTraceResponse,
 } from '@shared/contracts/project-docs';
 import type { WritingDocumentView } from '@shared/contracts/writing';
 import type { DocumentBlockDocument } from '@shared/contracts/document-content';
@@ -26,6 +27,10 @@ export interface ProjectDocsRoutes {
     query: ProjectDocLookup,
     actorUserId: string,
   ): Promise<ProjectDocSnapshot>;
+  getCitationTrace(
+    query: ProjectDocLookup,
+    actorUserId: string,
+  ): Promise<ProjectDocCitationTraceResponse>;
   saveDocument(
     input: SaveProjectDocRequest,
     actorUserId: string,
@@ -67,6 +72,9 @@ export function createProjectDocsRoutes(
     },
     getDocument(query, actorUserId) {
       return service.getDocument(query, actorUserId);
+    },
+    getCitationTrace(query, actorUserId) {
+      return service.getCitationTrace(query, actorUserId);
     },
     saveDocument(input, actorUserId) {
       return service.saveDocument(input, actorUserId);

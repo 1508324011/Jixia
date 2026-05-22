@@ -87,6 +87,7 @@ import type {
 } from '../../src/shared/contracts/notebook';
 import type {
   ProjectDocCitationRecord,
+  ProjectDocCitationTraceResponse,
   ProjectDocRecord,
   ProjectDocSnapshot,
 } from '../../src/shared/contracts/project-docs';
@@ -866,6 +867,68 @@ describe('core contracts', () => {
       versionId: 'project_doc_version_001',
       versionNumber: 2,
     };
+    const citationTrace: ProjectDocCitationTraceResponse = {
+      capturedAt: projectDocSnapshot.capturedAt,
+      citations: [
+        {
+          citationId: projectDocCitation.id,
+          createdAt: projectDocCitation.createdAt,
+          evidenceSpan: 'fig. 2',
+          paper: {
+            canonicalId: 'doi:10.1000/j.jixia.2026.01',
+            createdAt: '2026-03-21T00:00:00.000Z',
+            hasFile: true,
+            id: 'asset_001',
+            title: 'Jixia as a server-first research platform',
+          },
+          paperAssetId: 'asset_001',
+          projectDocVersionId: 'project_doc_version_001',
+          projectLibraryEntry: {
+            libraryEntryId: 'entry_project_001',
+            projectId: 'project_001',
+          },
+          readerExcerpt: {
+            endOffset: 32,
+            evidenceSpan: 'fig. 2',
+            id: 'excerpt_001',
+            locator: 'Figure 2',
+            quote: 'source-backed quote',
+            source: 'reader_source',
+            sourceLibraryEntryId: 'entry_project_001',
+            startOffset: 4,
+          },
+          readerExcerptId: 'excerpt_001',
+          source: { state: 'available' },
+        },
+      ],
+      document: projectDoc,
+      generatedAt: '2026-03-21T00:01:00.000Z',
+      versionId: projectDocSnapshot.versionId,
+      versionNumber: projectDocSnapshot.versionNumber,
+    };
+    const unavailableTrace: ProjectDocCitationTraceResponse = {
+      ...citationTrace,
+      citations: [
+        {
+          citationId: 'project_doc_citation_002',
+          createdAt: '2026-03-21T00:00:00.000Z',
+          evidenceSpan: 'adoption-needed quote',
+          paperAssetId: 'asset_private_001',
+          projectDocVersionId: 'project_doc_version_001',
+          source: {
+            code: projectDocs.PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
+            details: {
+              evidenceSpan: 'adoption-needed quote',
+              paperAssetId: 'asset_private_001',
+              projectId: projectDoc.projectId,
+              readerExcerptId: 'excerpt_private_001',
+            },
+            message: 'Paper asset asset_private_001 is not available in project project_001.',
+            state: 'adoption_needed',
+          },
+        },
+      ],
+    };
 
     expect(notebookSnapshot.document.ownerId).toBe('user_001');
     expect(notebookSnapshot.citations[0]?.evidenceSpan).toBe('p. 4');
@@ -887,6 +950,34 @@ describe('core contracts', () => {
       'project_doc_version_001',
     );
     expect(projectDocSnapshot.citations[0]?.readerExcerptId).toBe('excerpt_001');
+    expect(citationTrace.citations[0]?.source.state).toBe('available');
+    expect(citationTrace.citations[0]?.paper).not.toHaveProperty('storageKey');
+    expect(citationTrace.citations[0]?.paper).not.toHaveProperty('checksum');
+    expect(citationTrace.citations[0]).not.toHaveProperty('actorUserId');
+    expect(citationTrace.citations[0]).not.toHaveProperty('ownerId');
+    expect(citationTrace.citations[0]).not.toHaveProperty('visibility');
+    expect(citationTrace.citations[0]).not.toHaveProperty('scope');
+    expect(citationTrace.citations[0]).not.toHaveProperty('scopeType');
+    expect(citationTrace.citations[0].projectLibraryEntry).not.toHaveProperty('spaceId');
+    expect(citationTrace.citations[0].projectLibraryEntry).not.toHaveProperty('visibility');
+    expect(citationTrace.citations[0].projectLibraryEntry).not.toHaveProperty('addedByUserId');
+    expect(citationTrace.citations[0].readerExcerpt).not.toHaveProperty('note');
+    expect(citationTrace.citations[0].readerExcerpt).not.toHaveProperty('ownerId');
+    expect(citationTrace.citations[0].readerExcerpt).not.toHaveProperty('createdByUserId');
+    expect(citationTrace.citations[0].readerExcerpt).not.toHaveProperty('spaceId');
+    expect(citationTrace.citations[0].readerExcerpt).not.toHaveProperty('scopeType');
+    expect(citationTrace.citations[0]?.readerExcerpt?.quote).toBe('source-backed quote');
+    const unavailableTraceSource = unavailableTrace.citations[0]?.source;
+    expect(unavailableTraceSource?.state).toBe('adoption_needed');
+    if (unavailableTraceSource?.state !== 'adoption_needed') {
+      throw new Error('Expected the trace source to require project adoption.');
+    }
+    expect(unavailableTraceSource.details).not.toHaveProperty('ownerId');
+    expect(unavailableTraceSource.details).not.toHaveProperty('actorUserId');
+    expect(unavailableTraceSource.details).not.toHaveProperty('spaceId');
+    expect(unavailableTraceSource.details).not.toHaveProperty('visibility');
+    expect(JSON.stringify(citationTrace)).not.toContain('private notebook');
+    expect(JSON.stringify(citationTrace)).not.toContain('storageKey');
     expect(notebook.notebookContract).toBe('jixia-notebook-contract');
     expect(projectDocs.projectDocsContract).toBe('jixia-project-docs-contract');
     expect(documentSnapshot.documentSnapshotContract).toBe(

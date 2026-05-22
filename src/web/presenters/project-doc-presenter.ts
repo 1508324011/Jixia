@@ -12,6 +12,7 @@ import {
 } from "@shared/contracts/project-docs";
 import type {
   ProjectDocCitationSourceUnavailableDetails,
+  ProjectDocCitationTraceResponse,
   ProjectDocCitationRecord,
   ProjectDocRecord,
   ProjectDocSnapshot,
@@ -54,6 +55,9 @@ export interface ProjectDocPresenterViewModel {
   documentContent: DocumentBlockDocument;
   document: ProjectDocRecord | null;
   error: string | null;
+  citationTrace: ProjectDocCitationTraceResponse | null;
+  citationTraceError: string | null;
+  isCitationTraceLoading: boolean;
   isLoading: boolean;
   isProjectLoading: boolean;
   isSaving: boolean;
@@ -246,8 +250,11 @@ export function useProjectDocPresenter(
 ): ProjectDocPresenterViewModel {
   const projectContext = useProjectContext(projectId);
   const [snapshot, setSnapshot] = useState<ProjectDocSnapshot | null>(null);
+  const [citationTrace, setCitationTrace] = useState<ProjectDocCitationTraceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [citationTraceError, setCitationTraceError] = useState<string | null>(null);
   const [adoptionNeeded, setAdoptionNeeded] = useState<ProjectDocCitationAdoptionState | null>(null);
+  const [isCitationTraceLoading, setIsCitationTraceLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const isMountedRef = useRef(false);
@@ -263,6 +270,7 @@ export function useProjectDocPresenter(
     requestKindRef.current = null;
     setIsLoading(false);
     setIsSaving(false);
+    setIsCitationTraceLoading(false);
   }, []);
 
   const beginRequest = useCallback((kind: "refresh" | "save") => {
@@ -303,7 +311,9 @@ export function useProjectDocPresenter(
     if (!projectId || !documentId || !projectContext.project || projectContext.error) {
       invalidatePendingRequests();
       setSnapshot(null);
+      setCitationTrace(null);
       setError(null);
+      setCitationTraceError(null);
       setAdoptionNeeded(null);
       setIsLoading(false);
       return;
@@ -313,7 +323,9 @@ export function useProjectDocPresenter(
 
     try {
       setError(null);
+      setCitationTraceError(null);
       setAdoptionNeeded(null);
+      setIsCitationTraceLoading(true);
       const nextSnapshot = await apiClient.getProjectDoc(documentId);
 
       if (!canCommitRequest(generation)) {
@@ -330,6 +342,35 @@ export function useProjectDocPresenter(
             nextSnapshot.document.projectId,
           ),
         );
+        setCitationTrace(null);
+        setIsCitationTraceLoading(false);
+        return;
+      }
+
+      try {
+        const nextCitationTrace = await apiClient.getProjectDocCitationTrace(documentId);
+
+        if (!canCommitRequest(generation)) {
+          return;
+        }
+
+        setCitationTrace(nextCitationTrace);
+        setCitationTraceError(null);
+      } catch (traceError) {
+        if (!canCommitRequest(generation)) {
+          return;
+        }
+
+        setCitationTrace(null);
+        setCitationTraceError(
+          traceError instanceof Error
+            ? traceError.message
+            : "Failed to load the project document citation trace.",
+        );
+      } finally {
+        if (canCommitRequest(generation)) {
+          setIsCitationTraceLoading(false);
+        }
       }
     } catch (presenterError) {
       if (!canCommitRequest(generation)) {
@@ -337,7 +378,9 @@ export function useProjectDocPresenter(
       }
 
       setSnapshot(null);
+      setCitationTrace(null);
       setAdoptionNeeded(null);
+      setIsCitationTraceLoading(false);
       setError(
         presenterError instanceof Error
           ? presenterError.message
@@ -361,6 +404,7 @@ export function useProjectDocPresenter(
 
       try {
         setError(null);
+        setCitationTraceError(null);
         setAdoptionNeeded(null);
         const nextSnapshot = await apiClient.saveProjectDocVersion(
           documentId,
@@ -381,7 +425,36 @@ export function useProjectDocPresenter(
               nextSnapshot.document.projectId,
             ),
           );
+          setCitationTrace(null);
           return false;
+        }
+
+        setIsCitationTraceLoading(true);
+
+        try {
+          const nextCitationTrace = await apiClient.getProjectDocCitationTrace(documentId);
+
+          if (!canCommitRequest(generation)) {
+            return false;
+          }
+
+          setCitationTrace(nextCitationTrace);
+          setCitationTraceError(null);
+        } catch (traceError) {
+          if (!canCommitRequest(generation)) {
+            return false;
+          }
+
+          setCitationTrace(null);
+          setCitationTraceError(
+            traceError instanceof Error
+              ? traceError.message
+              : "Failed to load the project document citation trace.",
+          );
+        } finally {
+          if (canCommitRequest(generation)) {
+            setIsCitationTraceLoading(false);
+          }
         }
 
         return true;
@@ -396,6 +469,7 @@ export function useProjectDocPresenter(
         );
 
         setAdoptionNeeded(nextAdoptionNeeded);
+        setIsCitationTraceLoading(false);
         setError(
           presenterError instanceof Error
             ? presenterError.message
@@ -460,7 +534,9 @@ export function useProjectDocPresenter(
     if (projectContext.error || !projectContext.project || !projectId || !documentId) {
       invalidatePendingRequests();
       setSnapshot(null);
+      setCitationTrace(null);
       setError(null);
+      setCitationTraceError(null);
       setAdoptionNeeded(null);
       setIsLoading(false);
       return;
@@ -473,11 +549,14 @@ export function useProjectDocPresenter(
     () => ({
       adoptionNeeded,
       adoptCitationSource,
+      citationTrace,
+      citationTraceError,
       citations,
       content: snapshot?.content ?? "",
       documentContent,
       document: snapshot?.document ?? null,
       error,
+      isCitationTraceLoading,
       isLoading,
       isProjectLoading: projectContext.isLoading,
       isSaving,
@@ -487,6 +566,6 @@ export function useProjectDocPresenter(
       save,
       snapshot,
     }),
-    [adoptionNeeded, adoptCitationSource, citations, documentContent, error, isLoading, isSaving, projectContext.error, projectContext.isLoading, projectContext.project, refresh, save, snapshot],
+    [adoptionNeeded, adoptCitationSource, citationTrace, citationTraceError, citations, documentContent, error, isCitationTraceLoading, isLoading, isSaving, projectContext.error, projectContext.isLoading, projectContext.project, refresh, save, snapshot],
   );
 }

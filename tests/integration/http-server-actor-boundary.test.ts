@@ -316,6 +316,7 @@ describe('http server actor boundary cleanup', () => {
           fetch(`${server.url}/api/projects`),
           fetch(`${server.url}/api/notebooks/notebook-1`),
           fetch(`${server.url}/api/project-docs/project-doc-1`),
+          fetch(`${server.url}/api/project-docs/project-doc-1/citation-trace`),
           fetch(`${server.url}/api/reading/entry-1`),
           fetch(`${server.url}/api/reading/project-comments`, {
             body: JSON.stringify({ body: 'Unauthenticated project comment', libraryEntryId: 'entry-1' }),
@@ -768,6 +769,36 @@ describe('http server actor boundary cleanup', () => {
               'Content-Type': 'application/json',
             }),
             method: 'POST',
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?actorUserId=user-bob`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?userId=user-bob`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?createdByUserId=user-bob`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?ownerId=user-bob`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?spaceId=${createdSpace.id}`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?scope=${encodeURIComponent(`project:${importedRecord.projectId}`)}`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?scopeId=${importedRecord.projectId}`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?scopeType=project`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?visibility=published_to_project`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?projectId=${importedRecord.projectId}`, {
+            headers: withSessionCookie(aliceCookie),
           }),
           fetch(`${server.url}/api/projects/${importedRecord.projectId}/library/adoptions`, {
             body: JSON.stringify({
@@ -1261,6 +1292,36 @@ describe('http server actor boundary cleanup', () => {
               'Content-Type': 'application/json',
             }),
             method: 'POST',
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?actorUserId=user-alice`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?userId=user-alice`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?createdByUserId=user-alice`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?ownerId=user-alice`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?spaceId=${createdSpace.id}`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?scope=${encodeURIComponent(`project:${importedRecord.projectId}`)}`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?scopeId=${importedRecord.projectId}`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?scopeType=project`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?visibility=published_to_project`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/citation-trace?projectId=${importedRecord.projectId}`, {
+            headers: withSessionCookie(aliceCookie),
           }),
           fetch(`${server.url}/api/projects/${importedRecord.projectId}/library/adoptions?ownerId=user-alice`, {
             body: JSON.stringify({
