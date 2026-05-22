@@ -44,6 +44,7 @@ const productionFiles = [
   'src/web/components/project-writer-list.tsx',
   'src/web/components/app-shell.tsx',
   'src/web/components/workbench-layout.tsx',
+  'src/web/lib/shell-project-context.tsx',
   'src/web/presenters/projects-presenter.ts',
   'src/web/presenters/runtime-context.ts',
   'src/web/lib/workbench-navigation.ts',

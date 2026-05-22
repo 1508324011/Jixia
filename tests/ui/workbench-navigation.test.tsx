@@ -81,6 +81,15 @@ describe('workbench navigation', () => {
     );
   });
 
+  it('resolves the project overview route to visible server-owned project context', () => {
+    const projectContext = deriveWorkbenchRouteContext('/projects/project-alpha');
+
+    expect(projectContext).toEqual({
+      currentSection: 'projects',
+      projectId: 'project-alpha',
+    });
+  });
+
   it('sidebar switches among approved top-level surfaces', async () => {
     const user = userEvent.setup();
     const personalLibraryEntries: Array<{

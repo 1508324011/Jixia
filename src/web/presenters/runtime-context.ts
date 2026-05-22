@@ -1,4 +1,1 @@
-export const runtimeContext = {
-  defaultSharedSpaceName: "Shared Space",
-  defaultProjectName: "Untitled Research Project",
-} as const;
+export const runtimeContext = {} as const;

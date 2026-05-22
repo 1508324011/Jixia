@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -152,8 +152,13 @@ describe('library and project context', () => {
     cleanup();
 
     renderWorkbench('/projects/project-recovery');
-    expect(await screen.findByText('Project / project-recovery')).toBeInTheDocument();
-    expect(await screen.findByText('Project / Project-first Recovery')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByRole('region', { name: 'current context' }),
+      ).toHaveTextContent('Project / Project-first Recovery');
+    });
+    expect(screen.getByRole('heading', { name: 'Project-first Recovery' })).toBeInTheDocument();
+    expect(screen.queryByText('Project / project-recovery')).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '共享 Library' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Project Docs' })).toBeInTheDocument();
   });

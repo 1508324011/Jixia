@@ -143,6 +143,28 @@ describe('project writer flow', () => {
           });
         }
 
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([
+            {
+              membership: {
+                joinedAt: '2026-03-23T00:35:00.000Z',
+                projectId: 'project-1',
+                role: 'owner',
+                userId: 'user-alice',
+              },
+              project: {
+                createdAt: '2026-03-23T00:35:00.000Z',
+                createdByUserId: 'user-alice',
+                id: 'project-1',
+                name: 'Tumor board project',
+                spaceId: 'personal-space-user-alice',
+                status: 'active',
+                updatedAt: '2026-03-23T00:35:00.000Z',
+              },
+            },
+          ]);
+        }
+
         if (requestUrl.endsWith('/api/projects/project-1/workspace')) {
           return jsonResponse(workspaceFixture);
         }
@@ -171,18 +193,40 @@ describe('project writer flow', () => {
             ? input.toString()
             : input.url;
 
-      if (requestUrl.endsWith('/api/session/me')) {
-        return jsonResponse({
-          user: {
-            displayName: 'Alice',
-            email: 'alice@example.test',
-            id: 'user-alice',
-          },
-        });
-      }
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
 
-      if (requestUrl.endsWith('/api/projects/project-1/workspace')) {
-        return jsonResponse({
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([
+            {
+              membership: {
+                joinedAt: '2026-03-23T00:35:00.000Z',
+                projectId: 'project-1',
+                role: 'owner',
+                userId: 'user-alice',
+              },
+              project: {
+                createdAt: '2026-03-23T00:35:00.000Z',
+                createdByUserId: 'user-alice',
+                id: 'project-1',
+                name: 'Tumor board project',
+                spaceId: 'space-project-1',
+                status: 'active',
+                updatedAt: '2026-03-23T00:35:00.000Z',
+              },
+            },
+          ]);
+        }
+
+        if (requestUrl.endsWith('/api/projects/project-1/workspace')) {
+          return jsonResponse({
           activity: {
             emptyState: {
               body: 'Project activity will appear when project-scoped records change.',
@@ -308,10 +352,6 @@ describe('project writer flow', () => {
     );
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.stringContaining('/api/projects/project-1/writing-document'),
-      expect.anything(),
-    );
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      expect.stringMatching(/\/api\/projects$/),
       expect.anything(),
     );
   });

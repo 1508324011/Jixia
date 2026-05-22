@@ -5,6 +5,7 @@ import { ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { CommandPalette } from "./command-palette";
 import { useSessionAuth } from "../lib/session-auth";
+import { ShellProjectContext } from "../lib/shell-project-context";
 import {
   deriveWorkbenchRouteContext,
   isWorkbenchNavigationItemActive,
@@ -12,6 +13,7 @@ import {
   resolveWorkbenchSectionTitle,
   workbenchNavigationItems,
 } from "../lib/workbench-navigation";
+import { useProjectContext } from "../presenters/project-context";
 
 const SIDEBAR_COLLAPSED_KEY = "jixia-sidebar-collapsed";
 
@@ -33,16 +35,62 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
     () => deriveWorkbenchRouteContext(location.pathname),
     [location.pathname],
   );
-  const resolvedProjectId = context.projectId;
-  const resolvedSpaceId = context.spaceId;
+  const projectContext = useProjectContext(context.projectId, {
+    selectDefaultProject: false,
+  });
+  const visibleProject = projectContext.project;
+  const navigationContext = useMemo(
+    () => ({
+      ...context,
+      projectId: visibleProject?.project.id,
+      spaceId: visibleProject?.project.spaceId,
+    }),
+    [context, visibleProject],
+  );
+  const resolvedProjectLabel = (() => {
+    if (projectContext.isLoading) {
+      return "Loading project context";
+    }
+
+    if (!context.projectId) {
+      if (projectContext.error) {
+        return projectContext.error;
+      }
+
+      return projectContext.projects.length === 0 && !projectContext.isLoading
+        ? "No visible projects"
+        : "No project selected";
+    }
+
+    if (visibleProject) {
+      return visibleProject.project.name;
+    }
+
+    return projectContext.error ?? `Project ${context.projectId} is not visible to the current actor.`;
+  })();
+  const resolvedSpaceLabel = (() => {
+    if (projectContext.isLoading) {
+      return "Loading governance context";
+    }
+
+    if (!context.projectId) {
+      return "No governance space";
+    }
+
+    if (visibleProject) {
+      return visibleProject.project.spaceId;
+    }
+
+    return "Project context unavailable";
+  })();
 
   const shellLinks = useMemo(
     () =>
       workbenchNavigationItems.map((item) => ({
         ...item,
-        to: resolveWorkbenchNavigationTarget(item, context, resolvedProjectId),
+        to: resolveWorkbenchNavigationTarget(item, navigationContext),
       })),
-    [context, resolvedProjectId],
+    [navigationContext],
   );
 
   function toggleSidebar() {
@@ -71,10 +119,11 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div
-      data-testid="app-shell"
-      className="app-shell flex h-screen overflow-hidden bg-[var(--jixia-app-bg)] text-[var(--jixia-text)]"
-    >
+    <ShellProjectContext.Provider value={projectContext}>
+      <div
+        data-testid="app-shell"
+        className="app-shell flex h-screen overflow-hidden bg-[var(--jixia-app-bg)] text-[var(--jixia-text)]"
+      >
       <aside
         aria-label="jixia-app-sidebar"
         className={`flex shrink-0 flex-col border-r border-notion-border bg-notion-sidebar transition-[width] duration-150 ease-out ${
@@ -187,7 +236,7 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
                     space
                   </span>
                   <span className="truncate">
-                    {resolvedSpaceId ?? "No server project loaded"}
+                    {resolvedSpaceLabel}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -195,7 +244,7 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
                     project
                   </span>
                   <span className="truncate">
-                    {resolvedProjectId ?? "No project selected"}
+                    {resolvedProjectLabel}
                   </span>
                 </div>
               </div>
@@ -215,14 +264,13 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
               <span>{resolveWorkbenchSectionTitle(context.currentSection)}</span>
             </div>
             <div className="mt-1 truncate text-sm text-notion-text-secondary">
-              {resolvedSpaceId ?? "No governance space"} ·{" "}
-              {resolvedProjectId ?? "No project"}
+              {resolvedSpaceLabel} · {resolvedProjectLabel}
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <CommandPalette
-              projectId={resolvedProjectId}
+              projectId={visibleProject?.project.id}
               onNavigate={(route) => navigate(route)}
             />
             {user ? (
@@ -253,8 +301,9 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
         <main className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
           {children}
         </main>
+        </div>
       </div>
-    </div>
+    </ShellProjectContext.Provider>
   );
 }
 

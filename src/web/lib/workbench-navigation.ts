@@ -182,6 +182,14 @@ export function deriveWorkbenchRouteContext(pathname: string): WorkbenchRouteCon
     };
   }
 
+  const projectRouteMatch = matchPath('/projects/:projectId', pathname);
+  if (projectRouteMatch?.params.projectId) {
+    return {
+      currentSection: 'projects',
+      projectId: projectRouteMatch.params.projectId,
+    };
+  }
+
   const personalReaderMatch = matchPath('/library/:entryId/reader', pathname);
   if (personalReaderMatch?.params.entryId) {
     return {
