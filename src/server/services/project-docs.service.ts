@@ -12,7 +12,11 @@ import {
   serializeDocumentBlockSnapshotPayload,
 } from '@shared/contracts/document-content';
 import type {
+  CreateProjectDocAiSuggestionRequest,
+  CreateProjectDocAiSuggestionResponse,
   CreateProjectDocRequest,
+  ProjectDocAiSuggestion,
+  ProjectDocAiSuggestionCitation,
   ProjectDocCitationTraceResponse,
   ProjectDocCitationTraceRow,
   ProjectDocCitationSourceUnavailableDetails,
@@ -21,7 +25,11 @@ import type {
   ProjectDocRecord,
   ProjectDocSnapshot,
 } from '@shared/contracts/project-docs';
-import { PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE } from '@shared/contracts/project-docs';
+import {
+  PROJECT_DOC_AI_SUGGESTION_JOB_KIND,
+  PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
+} from '@shared/contracts/project-docs';
+import type { CreateJobRequest, JobRecord } from '@shared/contracts/jobs';
 import type { WritingDocumentView, WritingDocSnapshot } from '@shared/contracts/writing';
 
 import type {
@@ -51,6 +59,10 @@ export interface ProjectDocsService {
     input: CreateProjectDocRequest,
     actorUserId: string,
   ): Promise<ProjectDocRecord>;
+  createAiSuggestion(
+    input: ProjectDocLookup & CreateProjectDocAiSuggestionRequest,
+    actorUserId: string,
+  ): Promise<CreateProjectDocAiSuggestionResponse>;
   findLatestProjectDocument(
     projectId: string,
     actorUserId: string,
@@ -88,12 +100,17 @@ export interface ProjectDocsService {
 }
 
 export interface ProjectDocsStore {
+  jobs: ProjectDocSuggestionJobCreator;
   libraryRepository: LibraryRepository;
   libraryService: LibraryService;
   projectDocRepository: ProjectDocRepository;
   projectRepository: ProjectRepository;
   readingRepository: Pick<ReadingRepository, 'getReaderExcerpt'>;
   readingService: Pick<ReadingService, 'getReaderExcerptSource'>;
+}
+
+export interface ProjectDocSuggestionJobCreator {
+  createJob(input: CreateJobRequest, actorUserId: string): Promise<JobRecord>;
 }
 
 interface ProjectDocCitationInput {
@@ -331,6 +348,191 @@ function mapBrowserSafePaperAsset(
     hasFile: Boolean(asset.storageKey),
     id: asset.id,
     title: asset.title,
+  };
+}
+
+function boundedText(value: string | undefined, maxLength: number): string | undefined {
+  const normalized = value?.replace(/\s+/g, ' ').trim();
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength - 1)}…`
+    : normalized;
+}
+
+function summarizeDocumentForAiContext(snapshot: ProjectDocSnapshot): string {
+  const projection = boundedText(snapshot.content, 4000);
+
+  if (projection) {
+    return projection;
+  }
+
+  const documentContent = snapshot.documentContent ?? createEmptyDocumentBlockDocument();
+
+  return documentContent.blocks
+    .map((block) => {
+      switch (block.type) {
+        case 'heading':
+        case 'paragraph':
+        case 'quote':
+        case 'todo':
+          return block.text;
+        case 'citation':
+          return [block.label, block.evidenceSpan].filter(Boolean).join(' — ');
+        case 'sourceExcerpt':
+          return block.quote;
+        case 'paperReference':
+          return block.title ?? block.paperAssetId;
+        case 'aiSuggestion':
+          return block.text;
+      }
+    })
+    .map((text) => boundedText(text, 500))
+    .filter((text): text is string => Boolean(text))
+    .join('\n\n')
+    .slice(0, 4000);
+}
+
+function collectSuggestionCitationRows(
+  trace: ProjectDocCitationTraceResponse,
+  citationIds: string[] | undefined,
+): ProjectDocCitationTraceRow[] {
+  const requestedIds = new Set(
+    citationIds
+      ?.map((id) => id.trim())
+      .filter((id) => id.length > 0),
+  );
+
+  if (requestedIds.size === 0) {
+    return trace.citations;
+  }
+
+  return trace.citations.filter((row) => requestedIds.has(row.citationId));
+}
+
+function mapTraceRowToSuggestionCitation(
+  row: ProjectDocCitationTraceRow,
+): ProjectDocAiSuggestionCitation {
+  return {
+    citationId: row.citationId,
+    evidenceSpan: row.readerExcerpt?.evidenceSpan ?? row.readerExcerpt?.quote ?? row.evidenceSpan,
+    libraryEntryId: row.projectLibraryEntry?.libraryEntryId,
+    locator: row.readerExcerpt?.locator,
+    paperAssetId: row.paperAssetId,
+    readerExcerptId: row.readerExcerptId,
+    sourceState: row.source.state,
+    title: row.paper?.title,
+  };
+}
+
+function createSuggestionText(input: {
+  documentSummary: string;
+  instruction: string;
+  selectedText?: string;
+  citations: ProjectDocAiSuggestionCitation[];
+}): string {
+  const evidenceSnippets = input.citations
+    .map((citation) => citation.evidenceSpan ?? citation.title)
+    .filter((text): text is string => Boolean(text?.trim()))
+    .slice(0, 3)
+    .map((text) => boundedText(text, 220))
+    .filter((text): text is string => Boolean(text));
+  const basis = boundedText(input.selectedText, 600) ??
+    boundedText(input.documentSummary, 600) ??
+    'the latest saved Project Doc snapshot';
+  const evidenceLine = evidenceSnippets.length
+    ? ` Evidence considered: ${evidenceSnippets.join(' | ')}`
+    : '';
+
+  return `Evidence Copilot suggestion for: ${input.instruction.trim()}\n\n${basis}${evidenceLine}`;
+}
+
+function createProjectDocAiSuggestion(
+  input: CreateProjectDocAiSuggestionRequest & {
+    citations: ProjectDocAiSuggestionCitation[];
+    documentSummary: string;
+  },
+): ProjectDocAiSuggestion {
+  const primaryCitation = input.citations[0];
+  const text = createSuggestionText({
+    citations: input.citations,
+    documentSummary: input.documentSummary,
+    instruction: input.instruction,
+    selectedText: input.selectedText,
+  });
+  const rationale = input.citations.length > 0
+    ? 'Drafted from the latest saved Project Doc snapshot and server-authorized citation trace rows only.'
+    : 'Drafted from the latest saved Project Doc snapshot only; no saved Project Doc citations were available for this request.';
+
+  return {
+    block: {
+      evidenceSpan: primaryCitation?.evidenceSpan,
+      libraryEntryId: primaryCitation?.libraryEntryId,
+      paperAssetId: primaryCitation?.paperAssetId,
+      rationale,
+      readerExcerptId: primaryCitation?.readerExcerptId,
+      status: 'proposed',
+      targetBlockId: input.selectedBlockId,
+      text,
+      type: 'aiSuggestion',
+    },
+    citations: input.citations,
+    rationale,
+    text,
+  };
+}
+
+function createProjectDocAiSuggestionPayload(input: {
+  citationRows: ProjectDocCitationTraceRow[];
+  document: ProjectDocRecord;
+  documentSummary: string;
+  instruction: string;
+  selectedBlockId?: string;
+  selectedText?: string;
+  snapshot: ProjectDocSnapshot;
+  suggestion: ProjectDocAiSuggestion;
+}): Record<string, unknown> {
+  return {
+    citationIds: input.citationRows.map((row) => row.citationId),
+    context: {
+      citationTrace: input.citationRows.map((row) => ({
+        citationId: row.citationId,
+        evidenceSpan: boundedText(
+          row.readerExcerpt?.evidenceSpan ?? row.readerExcerpt?.quote ?? row.evidenceSpan,
+          1000,
+        ),
+        paperAssetId: row.paperAssetId,
+        readerExcerpt: row.readerExcerpt
+          ? {
+              endOffset: row.readerExcerpt.endOffset,
+              locator: row.readerExcerpt.locator,
+              quote: boundedText(row.readerExcerpt.quote, 1000),
+              source: row.readerExcerpt.source,
+              sourceLibraryEntryId: row.readerExcerpt.sourceLibraryEntryId,
+              startOffset: row.readerExcerpt.startOffset,
+            }
+          : undefined,
+        source: row.source,
+      })),
+      document: {
+        id: input.document.id,
+        publishState: input.document.publishState,
+        title: input.document.title,
+      },
+      latestSnapshot: {
+        capturedAt: input.snapshot.capturedAt,
+        content: input.documentSummary,
+        versionId: input.snapshot.versionId,
+        versionNumber: input.snapshot.versionNumber,
+      },
+      selectedBlockId: input.selectedBlockId,
+      selectedText: boundedText(input.selectedText, 1000),
+    },
+    instruction: input.instruction.trim(),
+    result: input.suggestion,
   };
 }
 
@@ -1016,6 +1218,68 @@ export function createProjectDocsService(
           title: input.title,
         }),
       );
+    },
+    async createAiSuggestion(
+      input: ProjectDocLookup & CreateProjectDocAiSuggestionRequest,
+      actorUserId: string,
+    ): Promise<CreateProjectDocAiSuggestionResponse> {
+      const { document, projectSpaceId } = await assertProjectWriteAccess(
+        store,
+        input.documentId,
+        actorUserId,
+      );
+      const snapshotRecord = await store.projectDocRepository.getLatestSnapshot(
+        input.documentId,
+      );
+      const snapshot = snapshotRecord
+        ? mapSnapshot(snapshotRecord)
+        : createEmptySnapshot(document);
+      const trace = await createProjectDocCitationTraceResponse(store, {
+        actorSpaceId: projectSpaceId,
+        actorUserId,
+        snapshot,
+      });
+      const citationRows = collectSuggestionCitationRows(trace, input.citationIds);
+      const citations = citationRows.map(mapTraceRowToSuggestionCitation);
+      const documentSummary = summarizeDocumentForAiContext(snapshot);
+      const suggestion = createProjectDocAiSuggestion({
+        citationIds: input.citationIds,
+        citations,
+        credentialRef: input.credentialRef,
+        documentSummary,
+        instruction: input.instruction,
+        selectedBlockId: input.selectedBlockId,
+        selectedText: input.selectedText,
+      });
+      const job = await store.jobs.createJob(
+        {
+          credentialRef: input.credentialRef,
+          kind: PROJECT_DOC_AI_SUGGESTION_JOB_KIND,
+          payload: createProjectDocAiSuggestionPayload({
+            citationRows,
+            document,
+            documentSummary,
+            instruction: input.instruction,
+            selectedBlockId: input.selectedBlockId,
+            selectedText: input.selectedText,
+            snapshot,
+            suggestion,
+          }),
+          scope: {
+            id: document.projectId,
+            type: 'project',
+          },
+          spaceId: projectSpaceId,
+        },
+        actorUserId,
+      );
+
+      return {
+        documentId: document.id,
+        job,
+        projectId: document.projectId,
+        suggestion,
+      };
     },
     async findLatestProjectDocument(
       projectId: string,

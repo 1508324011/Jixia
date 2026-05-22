@@ -11,6 +11,8 @@ import {
   PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
 } from "@shared/contracts/project-docs";
 import type {
+  CreateProjectDocAiSuggestionRequest,
+  CreateProjectDocAiSuggestionResponse,
   ProjectDocCitationSourceUnavailableDetails,
   ProjectDocCitationTraceResponse,
   ProjectDocCitationRecord,
@@ -33,6 +35,9 @@ interface SaveProjectDocInput {
   documentContent: DocumentBlockDocument;
 }
 
+interface CreateProjectDocAiSuggestionInput
+  extends CreateProjectDocAiSuggestionRequest {}
+
 export interface ProjectDocPresenterCitation extends ProjectDocCitationRecord {
   libraryEntryId?: string;
 }
@@ -50,14 +55,21 @@ export interface ProjectDocCitationAdoptionState {
 export interface ProjectDocPresenterViewModel {
   adoptionNeeded: ProjectDocCitationAdoptionState | null;
   adoptCitationSource(): Promise<boolean>;
+  aiSuggestion: CreateProjectDocAiSuggestionResponse | null;
+  aiSuggestionError: string | null;
   citations: ProjectDocPresenterCitation[];
   content: string;
+  createAiSuggestion(
+    input: CreateProjectDocAiSuggestionInput,
+  ): Promise<boolean>;
+  clearAiSuggestion(): void;
   documentContent: DocumentBlockDocument;
   document: ProjectDocRecord | null;
   error: string | null;
   citationTrace: ProjectDocCitationTraceResponse | null;
   citationTraceError: string | null;
   isCitationTraceLoading: boolean;
+  isCreatingAiSuggestion: boolean;
   isLoading: boolean;
   isProjectLoading: boolean;
   isSaving: boolean;
@@ -254,12 +266,15 @@ export function useProjectDocPresenter(
   const [error, setError] = useState<string | null>(null);
   const [citationTraceError, setCitationTraceError] = useState<string | null>(null);
   const [adoptionNeeded, setAdoptionNeeded] = useState<ProjectDocCitationAdoptionState | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<CreateProjectDocAiSuggestionResponse | null>(null);
+  const [aiSuggestionError, setAiSuggestionError] = useState<string | null>(null);
+  const [isCreatingAiSuggestion, setIsCreatingAiSuggestion] = useState(false);
   const [isCitationTraceLoading, setIsCitationTraceLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const isMountedRef = useRef(false);
   const requestGenerationRef = useRef(0);
-  const requestKindRef = useRef<"refresh" | "save" | null>(null);
+  const requestKindRef = useRef<"refresh" | "save" | "aiSuggestion" | null>(null);
 
   const canCommitRequest = useCallback((generation: number) => {
     return isMountedRef.current && requestGenerationRef.current === generation;
@@ -270,10 +285,11 @@ export function useProjectDocPresenter(
     requestKindRef.current = null;
     setIsLoading(false);
     setIsSaving(false);
+    setIsCreatingAiSuggestion(false);
     setIsCitationTraceLoading(false);
   }, []);
 
-  const beginRequest = useCallback((kind: "refresh" | "save") => {
+  const beginRequest = useCallback((kind: "refresh" | "save" | "aiSuggestion") => {
     const generation = requestGenerationRef.current + 1;
     requestGenerationRef.current = generation;
     requestKindRef.current = kind;
@@ -281,16 +297,24 @@ export function useProjectDocPresenter(
     if (kind === "refresh") {
       setIsLoading(true);
       setIsSaving(false);
+      setIsCreatingAiSuggestion(false);
     } else {
-      setIsSaving(true);
-      setIsLoading(false);
+      if (kind === "save") {
+        setIsSaving(true);
+        setIsLoading(false);
+        setIsCreatingAiSuggestion(false);
+      } else {
+        setIsCreatingAiSuggestion(true);
+        setIsLoading(false);
+        setIsSaving(false);
+      }
     }
 
     return generation;
   }, []);
 
   const completeRequest = useCallback(
-    (generation: number, kind: "refresh" | "save") => {
+    (generation: number, kind: "refresh" | "save" | "aiSuggestion") => {
       if (!canCommitRequest(generation) || requestKindRef.current !== kind) {
         return;
       }
@@ -303,9 +327,15 @@ export function useProjectDocPresenter(
       }
 
       setIsSaving(false);
+      setIsCreatingAiSuggestion(false);
     },
     [canCommitRequest],
   );
+
+  const clearAiSuggestion = useCallback(() => {
+    setAiSuggestion(null);
+    setAiSuggestionError(null);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!projectId || !documentId || !projectContext.project || projectContext.error) {
@@ -390,6 +420,51 @@ export function useProjectDocPresenter(
       completeRequest(generation, "refresh");
     }
   }, [beginRequest, canCommitRequest, completeRequest, documentId, invalidatePendingRequests, projectContext.error, projectContext.project, projectId]);
+
+  const createAiSuggestion = useCallback(
+    async (input: CreateProjectDocAiSuggestionInput) => {
+      if (!projectId || !documentId || !projectContext.project) {
+        invalidatePendingRequests();
+        setAiSuggestionError(
+          "A visible project and document route are required before creating a suggestion.",
+        );
+        return false;
+      }
+
+      const generation = beginRequest("aiSuggestion");
+
+      try {
+        setAiSuggestionError(null);
+        setError(null);
+
+        const nextSuggestion = await apiClient.createProjectDocAiSuggestion(
+          documentId,
+          input,
+        );
+
+        if (!canCommitRequest(generation)) {
+          return false;
+        }
+
+        setAiSuggestion(nextSuggestion);
+        return true;
+      } catch (presenterError) {
+        if (!canCommitRequest(generation)) {
+          return false;
+        }
+
+        setAiSuggestionError(
+          presenterError instanceof Error
+            ? presenterError.message
+            : "Failed to create the Project Doc AI suggestion.",
+        );
+        return false;
+      } finally {
+        completeRequest(generation, "aiSuggestion");
+      }
+    },
+    [beginRequest, canCommitRequest, completeRequest, documentId, invalidatePendingRequests, projectContext.project, projectId],
+  );
 
   const save = useCallback(
     async (input: SaveProjectDocInput) => {
@@ -533,6 +608,7 @@ export function useProjectDocPresenter(
 
     if (projectContext.error || !projectContext.project || !projectId || !documentId) {
       invalidatePendingRequests();
+      clearAiSuggestion();
       setSnapshot(null);
       setCitationTrace(null);
       setError(null);
@@ -543,20 +619,25 @@ export function useProjectDocPresenter(
     }
 
     void refresh();
-  }, [documentId, invalidatePendingRequests, projectContext.error, projectContext.isLoading, projectContext.project, projectId, refresh]);
+  }, [clearAiSuggestion, documentId, invalidatePendingRequests, projectContext.error, projectContext.isLoading, projectContext.project, projectId, refresh]);
 
   return useMemo(
     () => ({
       adoptionNeeded,
       adoptCitationSource,
+      aiSuggestion,
+      aiSuggestionError,
       citationTrace,
       citationTraceError,
       citations,
       content: snapshot?.content ?? "",
+      clearAiSuggestion,
+      createAiSuggestion,
       documentContent,
       document: snapshot?.document ?? null,
       error,
       isCitationTraceLoading,
+      isCreatingAiSuggestion,
       isLoading,
       isProjectLoading: projectContext.isLoading,
       isSaving,
@@ -566,6 +647,6 @@ export function useProjectDocPresenter(
       save,
       snapshot,
     }),
-    [adoptionNeeded, adoptCitationSource, citationTrace, citationTraceError, citations, documentContent, error, isCitationTraceLoading, isLoading, isSaving, projectContext.error, projectContext.isLoading, projectContext.project, refresh, save, snapshot],
+    [adoptionNeeded, adoptCitationSource, aiSuggestion, aiSuggestionError, citationTrace, citationTraceError, citations, clearAiSuggestion, createAiSuggestion, documentContent, error, isCitationTraceLoading, isCreatingAiSuggestion, isLoading, isSaving, projectContext.error, projectContext.isLoading, projectContext.project, refresh, save, snapshot],
   );
 }
