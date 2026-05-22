@@ -36,6 +36,8 @@ import type {
   ScopeRef,
 } from "@shared/contracts/projects";
 import type {
+  CreateProjectDocAiSuggestionRequest,
+  CreateProjectDocAiSuggestionResponse,
   ProjectDocRecord,
   ProjectDocCitationTraceResponse,
   ProjectDocSnapshot,
@@ -587,6 +589,15 @@ export const apiClient = {
     documentId: string,
   ): Promise<ProjectDocCitationTraceResponse> {
     return requestJson(`/api/project-docs/${documentId}/citation-trace`);
+  },
+  createProjectDocAiSuggestion(
+    documentId: string,
+    input: CreateProjectDocAiSuggestionRequest,
+  ): Promise<CreateProjectDocAiSuggestionResponse> {
+    return requestJson(`/api/project-docs/${documentId}/ai-suggestions`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
   },
   getNotebook(documentId: string): Promise<NotebookDocumentRecord> {
     return requestJson(`/api/notebooks/${documentId}`);

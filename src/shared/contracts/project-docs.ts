@@ -1,7 +1,9 @@
+import type { DocumentAiSuggestionBlock } from './document-content';
 import type {
   DocumentCitationRecordBase,
   DocumentSnapshot,
 } from './document-snapshot';
+import type { JobRecord } from './jobs';
 import type { PublishState } from './writing';
 
 export interface CreateProjectDocRequest {
@@ -114,6 +116,42 @@ export interface ProjectDocCitationTraceResponse {
   generatedAt: string;
   versionId: string;
   versionNumber: number;
+}
+
+export const PROJECT_DOC_AI_SUGGESTION_JOB_KIND =
+  'project-doc.evidence-suggestion';
+
+export interface CreateProjectDocAiSuggestionRequest {
+  citationIds?: string[];
+  credentialRef: string;
+  instruction: string;
+  selectedBlockId?: string;
+  selectedText?: string;
+}
+
+export interface ProjectDocAiSuggestionCitation {
+  citationId?: string;
+  evidenceSpan?: string;
+  libraryEntryId?: string;
+  locator?: string;
+  paperAssetId: string;
+  readerExcerptId?: string;
+  sourceState?: ProjectDocCitationTraceSourceState;
+  title?: string;
+}
+
+export interface ProjectDocAiSuggestion {
+  block?: DocumentAiSuggestionBlock;
+  citations?: ProjectDocAiSuggestionCitation[];
+  rationale?: string;
+  text: string;
+}
+
+export interface CreateProjectDocAiSuggestionResponse {
+  documentId: string;
+  job: JobRecord;
+  projectId: string;
+  suggestion?: ProjectDocAiSuggestion;
 }
 
 export const projectDocsContract = 'jixia-project-docs-contract';

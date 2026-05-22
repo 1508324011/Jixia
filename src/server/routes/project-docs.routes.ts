@@ -1,4 +1,6 @@
 import type {
+  CreateProjectDocAiSuggestionRequest,
+  CreateProjectDocAiSuggestionResponse,
   CreateProjectDocRequest,
   ProjectDocLookup,
   ProjectDocRecord,
@@ -19,6 +21,10 @@ export interface ProjectDocsRoutes {
     input: CreateProjectDocRequest,
     actorUserId: string,
   ): Promise<ProjectDocRecord>;
+  createAiSuggestion(
+    input: ProjectDocLookup & CreateProjectDocAiSuggestionRequest,
+    actorUserId: string,
+  ): Promise<CreateProjectDocAiSuggestionResponse>;
   findLatestProjectDocument(
     projectId: string,
     actorUserId: string,
@@ -66,6 +72,9 @@ export function createProjectDocsRoutes(
   return {
     createDocument(input, actorUserId) {
       return service.createDocument(input, actorUserId);
+    },
+    createAiSuggestion(input, actorUserId) {
+      return service.createAiSuggestion(input, actorUserId);
     },
     findLatestProjectDocument(projectId, actorUserId) {
       return service.findLatestProjectDocument(projectId, actorUserId);

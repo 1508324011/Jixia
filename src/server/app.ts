@@ -1019,14 +1019,6 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       },
     },
   });
-  const projectDocsService = createProjectDocsService({
-    libraryRepository,
-    libraryService,
-    projectDocRepository,
-    projectRepository,
-    readingService,
-    readingRepository,
-  });
   const projectWorkspaceRoutes = createProjectWorkspaceRoutes(
     createProjectWorkspaceService({
       projectDocRepository,
@@ -1071,6 +1063,15 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     nextId: createRuntimeId,
     projectRepository,
     spaceRepository,
+  });
+  const projectDocsService = createProjectDocsService({
+    jobs: jobsRoutes,
+    libraryRepository,
+    libraryService,
+    projectDocRepository,
+    projectRepository,
+    readingService,
+    readingRepository,
   });
   const notebooksRoutes = createNotebooksRoutes(notebookService);
   const projectDocsRoutes = createProjectDocsRoutes(projectDocsService);

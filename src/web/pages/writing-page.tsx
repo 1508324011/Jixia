@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import type { DocumentBlockDocument } from "@shared/contracts/document-content";
+import type { CreateProjectDocAiSuggestionRequest } from "@shared/contracts/project-docs";
 import type { ProjectDocCitationTraceRow } from "@shared/contracts/project-docs";
 
 import { DocumentBlockEditor } from "../components/document-block-editor";
@@ -9,6 +10,20 @@ import { createLegacyTextProjection } from "../lib/document-blocks";
 import { useProjectDocPresenter } from "../presenters/project-doc-presenter";
 
 type ProjectDocSaveInput = Parameters<ReturnType<typeof useProjectDocPresenter>["save"]>[0];
+type ProjectDocAiSuggestionInput = CreateProjectDocAiSuggestionRequest;
+
+function createProjectDocAiSuggestionInput(
+  input: ProjectDocAiSuggestionInput,
+): ProjectDocAiSuggestionInput {
+  return {
+    citationIds: input.citationIds?.filter((citationId) => citationId.trim())
+      .map((citationId) => citationId.trim()),
+    credentialRef: input.credentialRef.trim(),
+    instruction: input.instruction.trim(),
+    selectedBlockId: input.selectedBlockId?.trim() || undefined,
+    selectedText: input.selectedText,
+  };
+}
 
 function readerExcerptSourceLabel(
   source: NonNullable<ProjectDocCitationTraceRow["readerExcerpt"]>["source"],
@@ -58,6 +73,226 @@ function CitationTraceRow({ row }: { row: ProjectDocCitationTraceRow }) {
         <p className="quiet-copy">Citation source available in this project.</p>
       )}
     </li>
+  );
+}
+
+function AiSuggestionPanel({
+  canEditProjectDoc,
+  documentContent,
+  onApply,
+  onClear,
+  onCreate,
+  presenter,
+}: {
+  canEditProjectDoc: boolean;
+  documentContent: DocumentBlockDocument;
+  onApply(nextDocumentContent: DocumentBlockDocument): void;
+  onClear(): void;
+  onCreate(input: ProjectDocAiSuggestionInput): Promise<void>;
+  presenter: ReturnType<typeof useProjectDocPresenter>;
+}) {
+  const [instruction, setInstruction] = useState("");
+  const [credentialRef, setCredentialRef] = useState("");
+  const [selectedBlockId, setSelectedBlockId] = useState("");
+  const [selectedText, setSelectedText] = useState("");
+  const [selectedCitationIds, setSelectedCitationIds] = useState<string[]>([]);
+  const [applyStatus, setApplyStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (presenter.aiSuggestion) {
+      setApplyStatus(null);
+    }
+  }, [presenter.aiSuggestion]);
+
+  useEffect(() => {
+    if (!presenter.citationTrace?.citations.length) {
+      setSelectedCitationIds([]);
+      return;
+    }
+
+    setSelectedCitationIds((current) => {
+      const citations = presenter.citationTrace?.citations ?? [];
+      const allowedIds = new Set(citations.map((row) => row.citationId));
+      const nextSelection = current.filter((citationId) => allowedIds.has(citationId));
+
+      return nextSelection.length > 0 ? nextSelection : citations.slice(0, 1).map((row) => row.citationId);
+    });
+  }, [presenter.citationTrace]);
+
+  if (!canEditProjectDoc) {
+    return (
+      <section className="panel" aria-label="Evidence Copilot">
+        <h3 className="panel-title">Evidence Copilot</h3>
+        <p className="quiet-copy">
+          Read-only view. Only project owners and editors can request AI suggestions for this Project Doc.
+        </p>
+      </section>
+    );
+  }
+
+  const suggestion = presenter.aiSuggestion;
+
+  async function handleCreateSuggestion(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+
+    await onCreate(
+      createProjectDocAiSuggestionInput({
+        citationIds: selectedCitationIds.length > 0 ? selectedCitationIds : undefined,
+        credentialRef,
+        instruction,
+        selectedBlockId: selectedBlockId || undefined,
+        selectedText: selectedText || undefined,
+      }),
+    );
+  }
+
+  function handleApplySuggestion(): void {
+    if (!suggestion?.suggestion) {
+      return;
+    }
+
+    const nextDocumentContent = {
+      ...documentContent,
+      blocks: [...documentContent.blocks, suggestion.suggestion.block ?? {
+        status: 'proposed',
+        text: suggestion.suggestion.text,
+        type: 'aiSuggestion',
+      }],
+    };
+
+    onApply(nextDocumentContent);
+    setApplyStatus('Suggestion applied to the local draft. Use Save draft to persist a new version.');
+  }
+
+  return (
+    <section className="panel" aria-label="Evidence Copilot">
+      <h3 className="panel-title">Evidence Copilot</h3>
+      <p className="quiet-copy">
+        Create a server-governed AI suggestion grounded in the latest saved Project Doc and citation trace.
+      </p>
+
+      <form className="stack-sm" onSubmit={(event) => void handleCreateSuggestion(event)}>
+        <label className="document-block-editor__field">
+          <span>Instruction</span>
+          <textarea
+            rows={4}
+            value={instruction}
+            onChange={(event) => setInstruction(event.target.value)}
+            placeholder="Refine the evidence summary into a concise discussion paragraph."
+          />
+        </label>
+
+        <label className="document-block-editor__field">
+          <span>Credential reference</span>
+          <input
+            value={credentialRef}
+            onChange={(event) => setCredentialRef(event.target.value)}
+            placeholder="credential-..."
+          />
+        </label>
+
+        <label className="document-block-editor__field">
+          <span>Selected block id (optional)</span>
+          <input
+            value={selectedBlockId}
+            onChange={(event) => setSelectedBlockId(event.target.value)}
+            placeholder="doc-block-1"
+          />
+        </label>
+
+        <label className="document-block-editor__field">
+          <span>Selected text (optional)</span>
+          <textarea
+            rows={3}
+            value={selectedText}
+            onChange={(event) => setSelectedText(event.target.value)}
+            placeholder="Paste the local draft text the model should revise."
+          />
+        </label>
+
+        <fieldset className="stack-sm">
+          <legend className="quiet-copy">Project citation trace inputs</legend>
+          {presenter.citationTrace?.citations.length ? (
+            presenter.citationTrace.citations.map((row) => (
+              <label key={row.citationId} className="document-block-editor__checkbox">
+                <input
+                  checked={selectedCitationIds.includes(row.citationId)}
+                  type="checkbox"
+                  onChange={(event) => {
+                    setSelectedCitationIds((current) => (
+                      event.target.checked
+                        ? Array.from(new Set([...current, row.citationId]))
+                        : current.filter((citationId) => citationId !== row.citationId)
+                    ));
+                  }}
+                />
+                <span>{row.citationId} · {row.paper?.title ?? row.paperAssetId}</span>
+              </label>
+            ))
+          ) : (
+            <p className="quiet-copy">No saved Project Doc citation trace rows are available yet.</p>
+          )}
+        </fieldset>
+
+        <div className="button-row">
+          <button
+            type="submit"
+            className="action-button"
+            disabled={presenter.isCreatingAiSuggestion || !instruction.trim() || !credentialRef.trim()}
+          >
+            {presenter.isCreatingAiSuggestion ? 'Creating suggestion…' : 'Create AI suggestion'}
+          </button>
+          <button
+            type="button"
+            className="action-button action-button-secondary"
+            disabled={!suggestion}
+            onClick={() => {
+              onClear();
+              setApplyStatus(null);
+            }}
+          >
+            Dismiss suggestion
+          </button>
+        </div>
+      </form>
+
+      {presenter.aiSuggestionError ? <p className="quiet-copy">{presenter.aiSuggestionError}</p> : null}
+      {presenter.aiSuggestion?.job ? (
+        <div className="stack-sm">
+          <p className="quiet-copy">Job · {presenter.aiSuggestion.job.id}</p>
+          <p className="quiet-copy">Status · {presenter.aiSuggestion.job.status}</p>
+        </div>
+      ) : null}
+      {suggestion ? (
+        <section className="stack-sm" aria-label="ai suggestion result">
+          <h4 className="panel-title">Suggestion preview</h4>
+          <DocumentBlockEditor
+            disabled
+            label="AI suggestion"
+            showProjection={false}
+            value={{
+              blocks: [suggestion.suggestion?.block ?? {
+                status: 'proposed',
+                text: suggestion.suggestion?.text ?? '',
+                type: 'aiSuggestion',
+              }],
+              schemaVersion: 1,
+            }}
+            onChange={() => undefined}
+          />
+          <p className="quiet-copy">{suggestion.suggestion?.rationale ?? 'Review the suggestion before applying it locally.'}</p>
+          <div className="button-row">
+            <button type="button" className="action-button" onClick={handleApplySuggestion}>
+              Apply to local draft
+            </button>
+            <button type="button" className="action-button action-button-secondary" onClick={onClear}>
+              Clear preview
+            </button>
+          </div>
+          {applyStatus ? <p className="quiet-copy">{applyStatus}</p> : null}
+        </section>
+      ) : null}
+    </section>
   );
 }
 
@@ -256,128 +491,141 @@ export function WritingPage() {
       ) : null}
 
       <section className="panel-grid" aria-label="writing layout">
-        <article className="panel">
-          {presenter.isProjectLoading || presenter.isLoading || isDraftHydrating ? (
-            <>
-              <h2 className="panel-title">Loading Project Doc…</h2>
-              <p className="quiet-copy">Pulling the latest saved project document from the server-owned project-doc runtime.</p>
-            </>
-          ) : activeDocument && !pageError ? (
-            <div className="stack-sm">
-              <h2 className="panel-title">{activeDocument.title}</h2>
-              <p className="quiet-copy">
-                Project context · {projectLabel} · {contextDocumentId}
-              </p>
-              <p className="quiet-copy">
-                Latest snapshot · {presenter.snapshot?.capturedAt ?? "Not saved yet"}
-              </p>
-              <DocumentBlockEditor
-                disabled={isMutating || !canEditProjectDoc}
-                label="Draft content"
-                value={draftDocumentContent}
-                onChange={(nextDocumentContent) => {
+              <article className="panel">
+                {presenter.isProjectLoading || presenter.isLoading || isDraftHydrating ? (
+                  <>
+                    <h2 className="panel-title">Loading Project Doc…</h2>
+                    <p className="quiet-copy">Pulling the latest saved project document from the server-owned project-doc runtime.</p>
+                  </>
+                ) : activeDocument && !pageError ? (
+                  <div className="stack-sm">
+                    <h2 className="panel-title">{activeDocument.title}</h2>
+                    <p className="quiet-copy">
+                      Project context · {projectLabel} · {contextDocumentId}
+                    </p>
+                    <p className="quiet-copy">
+                      Latest snapshot · {presenter.snapshot?.capturedAt ?? "Not saved yet"}
+                    </p>
+                    <DocumentBlockEditor
+                      disabled={isMutating || !canEditProjectDoc}
+                      label="Draft content"
+                      value={draftDocumentContent}
+                      onChange={(nextDocumentContent) => {
+                        draftDocumentContentRef.current = nextDocumentContent;
+                        setDraftDocumentContent(nextDocumentContent);
+                      }}
+                    />
+                    <div className="button-row">
+                      <button
+                        type="button"
+                        className="action-button"
+                        disabled={isMutating || !canEditProjectDoc}
+                        onClick={() => void handleSave()}
+                      >
+                        {presenter.isSaving || isSavePendingLocally ? "Saving draft…" : "Save draft"}
+                      </button>
+                      <button
+                        type="button"
+                        className="action-button action-button-secondary"
+                        disabled={isMutating}
+                        onClick={() => void handleReload()}
+                      >
+                        {isReloading ? "Reloading…" : "Reload draft"}
+                      </button>
+                    </div>
+                    {!canEditProjectDoc ? (
+                      <p className="quiet-copy">
+                        Your project role can read this Project Doc, but only project owners and editors can save shared document versions.
+                      </p>
+                    ) : null}
+                    {adoptionNeeded ? (
+                      <section className="panel" aria-label="citation adoption needed">
+                        <h3 className="panel-title">Citation source needs project adoption</h3>
+                        <p className="quiet-copy">
+                          This cited source is readable to you but is not yet available in the target project library. Add it to the project library before saving shared Project Doc evidence.
+                        </p>
+                        <p className="quiet-copy">{adoptionNeeded.message}</p>
+                        <p className="quiet-copy">Paper asset · {adoptionNeeded.paperAssetId}</p>
+                        {adoptionNeeded.sourceLibraryEntryId ? (
+                          <p className="quiet-copy">Source library entry · {adoptionNeeded.sourceLibraryEntryId}</p>
+                        ) : null}
+                        {adoptionNeeded.readerExcerptId ? (
+                          <p className="quiet-copy">Reader excerpt · {adoptionNeeded.readerExcerptId}</p>
+                        ) : null}
+                        {adoptionNeeded.evidenceSpan ? (
+                          <p className="quiet-copy">Evidence span · {adoptionNeeded.evidenceSpan}</p>
+                        ) : null}
+                        {adoptionNeeded.sourceLibraryEntryId ? (
+                          <button
+                            type="button"
+                            className="action-button"
+                            disabled={isMutating || !canEditProjectDoc}
+                            onClick={() => void handleAdoptCitationSourceAndRetry()}
+                          >
+                            {isAdoptionPending ? "Adopting source…" : "Add source to project library and retry save"}
+                          </button>
+                        ) : (
+                          <p className="quiet-copy">
+                            This save failure did not include a source library entry that the browser can request for adoption. Open the source in Reader or Library and add it to the project library, then retry the save.
+                          </p>
+                        )}
+                      </section>
+                    ) : null}
+                    {adoptionStatus ? <p className="quiet-copy">{adoptionStatus}</p> : null}
+                    {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
+                  </div>
+                ) : (
+                  <>
+                    <h2 className="panel-title">Draft canvas</h2>
+                    <p className="quiet-copy">
+                      Project context · {projectLabel} · {docId || "No document"}
+                    </p>
+                    <p className="quiet-copy">Promote an insight from Reader to start this document.</p>
+                    {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
+                  </>
+                )}
+              </article>
+              <AiSuggestionPanel
+                canEditProjectDoc={canEditProjectDoc}
+                documentContent={draftDocumentContent}
+                onApply={(nextDocumentContent) => {
                   draftDocumentContentRef.current = nextDocumentContent;
                   setDraftDocumentContent(nextDocumentContent);
                 }}
+                onClear={() => presenter.clearAiSuggestion()}
+                onCreate={async (input) => {
+                  await presenter.createAiSuggestion(input);
+                }}
+                presenter={presenter}
               />
-              <div className="button-row">
-                <button
-                  type="button"
-                  className="action-button"
-                  disabled={isMutating || !canEditProjectDoc}
-                  onClick={() => void handleSave()}
-                >
-                  {presenter.isSaving || isSavePendingLocally ? "Saving draft…" : "Save draft"}
-                </button>
-                <button
-                  type="button"
-                  className="action-button action-button-secondary"
-                  disabled={isMutating}
-                  onClick={() => void handleReload()}
-                >
-                  {isReloading ? "Reloading…" : "Reload draft"}
-                </button>
-              </div>
-              {!canEditProjectDoc ? (
+              <aside className="panel">
+                <h2 className="panel-title">Versions and references</h2>
+                <p className="quiet-copy">review path · published target · citation links</p>
+                <p className="quiet-copy">将成熟内容整理进入 Project Docs</p>
+                <p className="quiet-copy">Publish state path</p>
+                <p className="quiet-copy">draft · review · published</p>
                 <p className="quiet-copy">
-                  Your project role can read this Project Doc, but only project owners and editors can save shared document versions.
+                  Latest content size · {draftProjection.length} characters
                 </p>
-              ) : null}
-              {adoptionNeeded ? (
-                <section className="panel" aria-label="citation adoption needed">
-                  <h3 className="panel-title">Citation source needs project adoption</h3>
-                  <p className="quiet-copy">
-                    This cited source is readable to you but is not yet available in the target project library. Add it to the project library before saving shared Project Doc evidence.
-                  </p>
-                  <p className="quiet-copy">{adoptionNeeded.message}</p>
-                  <p className="quiet-copy">Paper asset · {adoptionNeeded.paperAssetId}</p>
-                  {adoptionNeeded.sourceLibraryEntryId ? (
-                    <p className="quiet-copy">Source library entry · {adoptionNeeded.sourceLibraryEntryId}</p>
-                  ) : null}
-                  {adoptionNeeded.readerExcerptId ? (
-                    <p className="quiet-copy">Reader excerpt · {adoptionNeeded.readerExcerptId}</p>
-                  ) : null}
-                  {adoptionNeeded.evidenceSpan ? (
-                    <p className="quiet-copy">Evidence span · {adoptionNeeded.evidenceSpan}</p>
-                  ) : null}
-                  {adoptionNeeded.sourceLibraryEntryId ? (
-                    <button
-                      type="button"
-                      className="action-button"
-                      disabled={isMutating || !canEditProjectDoc}
-                      onClick={() => void handleAdoptCitationSourceAndRetry()}
-                    >
-                      {isAdoptionPending ? "Adopting source…" : "Add source to project library and retry save"}
-                    </button>
+                <section className="stack-sm" aria-label="citation trace panel">
+                  <h3 className="panel-title">Citation trace</h3>
+                  <p className="quiet-copy">Read-only server-authorized citation provenance.</p>
+                  {presenter.isCitationTraceLoading ? (
+                    <p className="quiet-copy">Loading citation trace…</p>
+                  ) : presenter.citationTraceError ? (
+                    <p className="quiet-copy">{presenter.citationTraceError}</p>
+                  ) : presenter.citationTrace && presenter.citationTrace.citations.length > 0 ? (
+                    <ul className="stack-sm">
+                      {presenter.citationTrace.citations.map((row) => (
+                        <CitationTraceRow key={row.citationId} row={row} />
+                      ))}
+                    </ul>
                   ) : (
-                    <p className="quiet-copy">
-                      This save failure did not include a source library entry that the browser can request for adoption. Open the source in Reader or Library and add it to the project library, then retry the save.
-                    </p>
+                    <p className="quiet-copy">No citations in the latest saved Project Doc snapshot.</p>
                   )}
                 </section>
-              ) : null}
-              {adoptionStatus ? <p className="quiet-copy">{adoptionStatus}</p> : null}
-              {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
-            </div>
-          ) : (
-            <>
-              <h2 className="panel-title">Draft canvas</h2>
-              <p className="quiet-copy">
-                Project context · {projectLabel} · {docId || "No document"}
-              </p>
-              <p className="quiet-copy">Promote an insight from Reader to start this document.</p>
-              {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
-            </>
-          )}
-        </article>
-        <aside className="panel">
-          <h2 className="panel-title">Versions and references</h2>
-          <p className="quiet-copy">review path · published target · citation links</p>
-          <p className="quiet-copy">将成熟内容整理进入 Project Docs</p>
-          <p className="quiet-copy">Publish state path</p>
-          <p className="quiet-copy">draft · review · published</p>
-          <p className="quiet-copy">
-            Latest content size · {draftProjection.length} characters
-          </p>
-          <section className="stack-sm" aria-label="citation trace panel">
-            <h3 className="panel-title">Citation trace</h3>
-            <p className="quiet-copy">Read-only server-authorized citation provenance.</p>
-            {presenter.isCitationTraceLoading ? (
-              <p className="quiet-copy">Loading citation trace…</p>
-            ) : presenter.citationTraceError ? (
-              <p className="quiet-copy">{presenter.citationTraceError}</p>
-            ) : presenter.citationTrace && presenter.citationTrace.citations.length > 0 ? (
-              <ul className="stack-sm">
-                {presenter.citationTrace.citations.map((row) => (
-                  <CitationTraceRow key={row.citationId} row={row} />
-                ))}
-              </ul>
-            ) : (
-              <p className="quiet-copy">No citations in the latest saved Project Doc snapshot.</p>
-            )}
-          </section>
-        </aside>
-      </section>
+              </aside>
+            </section>
     </main>
   );
 }

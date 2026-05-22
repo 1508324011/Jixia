@@ -14,6 +14,7 @@ import type { LoginSessionRequest } from "@shared/contracts/session";
 import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
 import type { CreateReaderExcerptRequest } from "@shared/contracts/reading";
 import {
+  type CreateProjectDocAiSuggestionRequest,
   PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
   type ProjectDocCitationSourceUnavailableDetails,
 } from "@shared/contracts/project-docs";
@@ -623,6 +624,7 @@ function rejectNotebookAuthorityBodyFields(
 function rejectProjectDocAuthorityBodyFields(
   actor: { userId: string },
   requestBody: unknown,
+  options?: { allowProjectId?: boolean },
 ): void {
   rejectLegacyIdentityBodyFields(actor, requestBody);
 
@@ -639,6 +641,111 @@ function rejectProjectDocAuthorityBodyFields(
   assertNoClientActorContextField(body.scopeId, "scopeId");
   assertNoClientActorContextField(body.scopeType, "scopeType");
   assertNoClientActorContextField(body.visibility, "visibility");
+
+  if (!options?.allowProjectId) {
+    assertNoClientActorContextField(body.projectId, "projectId");
+  }
+}
+
+function normalizePayloadKey(key: string): string {
+  return key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+function assertNoForbiddenProjectDocAiSuggestionFields(
+  value: unknown,
+  path = "requestBody",
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      assertNoForbiddenProjectDocAiSuggestionFields(item, `${path}[${index}]`);
+    });
+    return;
+  }
+
+  if (!value || typeof value !== "object") {
+    return;
+  }
+
+  for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedKey = normalizePayloadKey(key);
+    const currentPath = `${path}.${key}`;
+
+    if (
+      normalizedKey === "credentialref" ||
+      normalizedKey === "instruction" ||
+      normalizedKey === "citationids" ||
+      normalizedKey === "selectedblockid" ||
+      normalizedKey === "selectedtext"
+    ) {
+      assertNoForbiddenProjectDocAiSuggestionFields(nestedValue, currentPath);
+      continue;
+    }
+
+    if (
+      normalizedKey.endsWith("apikey") ||
+      normalizedKey.endsWith("token") ||
+      normalizedKey.endsWith("password") ||
+      normalizedKey.endsWith("secret") ||
+      normalizedKey.endsWith("privatekey") ||
+      normalizedKey.includes("storagekey") ||
+      normalizedKey.includes("checksum") ||
+      normalizedKey.includes("filepath") ||
+      normalizedKey.includes("filesystem") ||
+      normalizedKey.includes("storageroot") ||
+      normalizedKey.includes("jixiastorageroot") ||
+      normalizedKey.includes("notebook") ||
+      normalizedKey.includes("private")
+    ) {
+      throw new Error(`${currentPath} is not accepted for Project Doc AI suggestions.`);
+    }
+
+    assertNoForbiddenProjectDocAiSuggestionFields(nestedValue, currentPath);
+  }
+}
+
+function parseProjectDocAiSuggestionBody(
+  requestBody: unknown,
+): CreateProjectDocAiSuggestionRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Project Doc AI suggestion payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  const allowedFields = new Set([
+    "citationIds",
+    "credentialRef",
+    "instruction",
+    "selectedBlockId",
+    "selectedText",
+  ]);
+
+  for (const fieldName of Object.keys(body)) {
+    if (!allowedFields.has(fieldName)) {
+      throw new Error(`${fieldName} is not accepted for Project Doc AI suggestions.`);
+    }
+  }
+
+  const citationIds = typeof body.citationIds === "undefined"
+    ? undefined
+    : Array.isArray(body.citationIds)
+      ? body.citationIds.map((citationId, index) => {
+          if (typeof citationId !== "string" || !citationId.trim()) {
+            throw new Error(`citationIds[${index}] must be a non-empty string.`);
+          }
+
+          return citationId.trim();
+        })
+      : (() => {
+          throw new Error("citationIds must be an array when provided.");
+        })();
+
+  return {
+    citationIds,
+    credentialRef: assertStringField(body.credentialRef, "credentialRef"),
+    instruction: assertStringField(body.instruction, "instruction"),
+    selectedBlockId: assertOptionalStringField(body.selectedBlockId, "selectedBlockId"),
+    selectedText: assertOptionalTextField(body.selectedText, "selectedText"),
+  };
 }
 
 function rejectProjectLibraryAdoptionAuthorityBodyFields(
@@ -1546,7 +1653,7 @@ async function handleApiRequest(
         publishState?: "draft" | "review" | "published";
         title: string;
       }>(request);
-      rejectProjectDocAuthorityBodyFields(actor, body);
+      rejectProjectDocAuthorityBodyFields(actor, body, { allowProjectId: true });
 
       sendJson(
         response,
@@ -1591,6 +1698,37 @@ async function handleApiRequest(
         response,
         200,
         await app.projectDocs.getCitationTrace({ documentId }, actor.userId),
+        method,
+      );
+      return true;
+    }
+
+    const projectDocAiSuggestionsMatch = pathname.match(
+      /^\/api\/project-docs\/([^/]+)\/ai-suggestions$/,
+    );
+    if (projectDocAiSuggestionsMatch && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      const [, documentId] = projectDocAiSuggestionsMatch;
+      rejectProjectDocAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectProjectDocAuthorityBodyFields(actor, requestBody);
+      assertNoForbiddenProjectDocAiSuggestionFields(requestBody);
+      const body = parseProjectDocAiSuggestionBody(requestBody);
+
+      sendJson(
+        response,
+        200,
+        await app.projectDocs.createAiSuggestion(
+          {
+            citationIds: body.citationIds,
+            credentialRef: body.credentialRef,
+            documentId,
+            instruction: body.instruction,
+            selectedBlockId: body.selectedBlockId,
+            selectedText: body.selectedText,
+          },
+          actor.userId,
+        ),
         method,
       );
       return true;
