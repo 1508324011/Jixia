@@ -10,6 +10,8 @@ import {
   startTestServer,
   withSessionCookie,
 } from './http-session-test-helpers';
+import { createPrismaClient } from '../../src/db';
+import { serializeDocumentBlockSnapshotPayload } from '../../src/shared/contracts/document-content';
 import { PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE } from '../../src/shared/contracts/project-docs';
 
 async function createSpace(serverUrl: string, cookie: string, actorUserId: string) {
@@ -390,9 +392,17 @@ describe('http server notebook and project-doc api', () => {
         const memberRead = await fetch(`${server.url}/api/project-docs/${projectDoc.id}`, {
           headers: withSessionCookie(bobCookie),
         });
+        const memberTraceRead = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/citation-trace`,
+          { headers: withSessionCookie(bobCookie) },
+        );
         const nonMemberRead = await fetch(`${server.url}/api/project-docs/${projectDoc.id}`, {
           headers: withSessionCookie(charlieCookie),
         });
+        const nonMemberTraceRead = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/citation-trace`,
+          { headers: withSessionCookie(charlieCookie) },
+        );
         const spoofedCreate = await fetch(`${server.url}/api/project-docs`, {
           body: JSON.stringify({ createdByUserId: 'user-alice', projectId: project.project.id, title: 'Spoofed Project Draft' }),
           headers: withSessionCookie(bobCookie, {
@@ -482,6 +492,10 @@ describe('http server notebook and project-doc api', () => {
           `${server.url}/api/project-docs/${projectDoc.id}`,
           { headers: withSessionCookie(aliceCookie) },
         );
+        const ownerTraceRead = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/citation-trace`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
         const latestProjectDocument = await fetch(
           `${server.url}/api/projects/${project.project.id}/writing-document`,
           { headers: withSessionCookie(aliceCookie) },
@@ -520,9 +534,16 @@ describe('http server notebook and project-doc api', () => {
           id: string;
           projectId: string;
         } | null;
+        const ownerTracePayload = await ownerTraceRead.json() as {
+          citations: unknown[];
+          document: { id: string; projectId: string };
+          versionNumber: number;
+        };
 
         expect(memberRead.status).toBe(200);
+        expect(memberTraceRead.status).toBe(200);
         expect(nonMemberRead.status).toBe(403);
+        expect(nonMemberTraceRead.status).toBe(403);
         expect(spoofedCreate.status).toBe(400);
         expect(viewerCreate.status).toBe(403);
         expect(editorCreate.status).toBe(200);
@@ -537,6 +558,15 @@ describe('http server notebook and project-doc api', () => {
         expect(viewerPublishState.status).toBe(403);
         expect(ownerSave.status).toBe(200);
         expect(ownerRead.status).toBe(200);
+        expect(ownerTraceRead.status).toBe(200);
+        expect(ownerTracePayload).toMatchObject({
+          citations: [],
+          document: {
+            id: projectDoc.id,
+            projectId: project.project.id,
+          },
+          versionNumber: 1,
+        });
         expect(ownerSnapshot.content).toBe('Owner saved draft');
         expect(ownerSnapshot.document).toMatchObject({
           id: projectDoc.id,
@@ -589,13 +619,245 @@ describe('http server notebook and project-doc api', () => {
     }
   });
 
-  it('returns a stable adoption-needed ProjectDoc citation error and accepts the retry after adoption', async () => {
-    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-doc-adoption-'));
+  it('serves browser-safe Project Doc citation trace only to project members', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-doc-trace-'));
 
     try {
       const server = await startTestServer(
         {
-          JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-project-doc-adoption.db')}`,
+          JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-project-doc-trace.db')}`,
+          JIXIA_STORAGE_ROOT: storageRoot,
+        },
+        { connectors: { pubmed: createHttpTestPubmedConnector() } },
+      );
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+        const charlieCookie = await loginAs(server.url, 'user-charlie');
+        const sharedSpace = await createSpace(server.url, aliceCookie, 'user-alice');
+        const project = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({ name: 'HTTP Citation Trace', spaceId: sharedSpace.id }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+        await fetch(`${server.url}/api/projects/${project.project.id}/members`, {
+          body: JSON.stringify({ role: 'viewer', userId: 'user-bob' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const projectSource = await fetch(`${server.url}/api/import/paper`, {
+          body: JSON.stringify({
+            scope: { id: project.project.id, type: 'project' },
+            sourceLocator: '10.1000/http-project-doc-trace',
+            sourceType: 'doi',
+            spaceId: sharedSpace.id,
+            visibility: 'published_to_project',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{
+            asset: { canonicalId?: string; id: string; title?: string };
+            entry: { id: string };
+          }>,
+        );
+        const readerExcerpt = await fetch(
+          `${server.url}/api/reading/${projectSource.entry.id}/excerpts`,
+          {
+            body: JSON.stringify({
+              endOffset: 38,
+              locator: 'p. 12',
+              note: 'Alice private reader note must not leak.',
+              quote: 'project-visible quote for trace panel',
+              startOffset: 3,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        ).then(
+          (response) => response.json() as Promise<{
+            excerpt: { id: string; paperAssetId: string; quote: string };
+          }>,
+        );
+        const projectDoc = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({
+            projectId: project.project.id,
+            title: 'HTTP traceable Project Doc',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const emptyProjectDoc = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({
+            projectId: project.project.id,
+            title: 'HTTP empty trace Project Doc',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const saveTraceableDoc = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/versions`,
+          {
+            body: JSON.stringify({
+              citations: [
+                {
+                  evidenceSpan: 'project-visible quote for trace panel',
+                  libraryEntryId: projectSource.entry.id,
+                  paperAssetId: projectSource.asset.id,
+                  readerExcerptId: readerExcerpt.excerpt.id,
+                },
+              ],
+              documentContent: {
+                blocks: [
+                  {
+                    evidenceSpan: 'project-visible quote for trace panel',
+                    libraryEntryId: projectSource.entry.id,
+                    locator: 'p. 12',
+                    paperAssetId: projectSource.asset.id,
+                    quote: 'project-visible quote for trace panel',
+                    readerExcerptId: readerExcerpt.excerpt.id,
+                    title: 'Traceable project paper',
+                    type: 'sourceExcerpt',
+                  },
+                ],
+                schemaVersion: 1,
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+
+        expect(saveTraceableDoc.status).toBe(200);
+
+        const ownerTrace = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/citation-trace`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const viewerTrace = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/citation-trace`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        const nonMemberTrace = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/citation-trace`,
+          { headers: withSessionCookie(charlieCookie) },
+        );
+        const emptyTrace = await fetch(
+          `${server.url}/api/project-docs/${emptyProjectDoc.id}/citation-trace`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const ownerTracePayload = await ownerTrace.json() as {
+          citations: Array<{
+            citationId: string;
+            paper?: { canonicalId: string; hasFile?: boolean; id: string; title: string };
+            paperAssetId: string;
+            projectDocVersionId: string;
+            projectLibraryEntry?: { libraryEntryId: string; projectId: string };
+            readerExcerpt?: {
+              id: string;
+              locator?: string;
+              quote?: string;
+              source: string;
+              sourceLibraryEntryId?: string;
+            };
+            readerExcerptId?: string;
+            source: { state: string };
+          }>;
+          document: { id: string; projectId: string };
+          versionNumber: number;
+        };
+        const viewerTracePayload = await viewerTrace.json() as typeof ownerTracePayload;
+        const emptyTracePayload = await emptyTrace.json() as typeof ownerTracePayload;
+
+        expect(ownerTrace.status).toBe(200);
+        expect(viewerTrace.status).toBe(200);
+        expect(nonMemberTrace.status).toBe(403);
+        expect(ownerTracePayload).toMatchObject({
+          citations: [
+            {
+              paperAssetId: projectSource.asset.id,
+              projectLibraryEntry: {
+                libraryEntryId: projectSource.entry.id,
+                projectId: project.project.id,
+              },
+              readerExcerpt: {
+                id: readerExcerpt.excerpt.id,
+                locator: 'p. 12',
+                quote: 'project-visible quote for trace panel',
+                source: 'reader_source',
+                sourceLibraryEntryId: projectSource.entry.id,
+              },
+              readerExcerptId: readerExcerpt.excerpt.id,
+              source: { state: 'available' },
+            },
+          ],
+          document: {
+            id: projectDoc.id,
+            projectId: project.project.id,
+          },
+          versionNumber: 1,
+        });
+        expect(viewerTracePayload.citations[0]?.readerExcerpt?.quote).toBe(
+          'project-visible quote for trace panel',
+        );
+        expect(ownerTracePayload.citations[0]?.paper).toMatchObject({
+          canonicalId: expect.stringContaining('10.1000/http-project-doc-trace'),
+          hasFile: false,
+          id: projectSource.asset.id,
+        });
+        expect(emptyTrace.status).toBe(200);
+        expect(emptyTracePayload).toMatchObject({
+          citations: [],
+          document: {
+            id: emptyProjectDoc.id,
+            projectId: project.project.id,
+          },
+          versionNumber: 0,
+        });
+
+        const serializedTrace = JSON.stringify(ownerTracePayload);
+        expect(serializedTrace).not.toContain('Alice private reader note must not leak');
+        expect(serializedTrace).not.toContain('storageKey');
+        expect(serializedTrace).not.toContain('checksum');
+        expect(serializedTrace).not.toContain('papers/');
+        expect(serializedTrace).not.toContain(storageRoot);
+        expect(ownerTracePayload.citations[0]?.readerExcerpt).not.toHaveProperty('note');
+        expect(ownerTracePayload.citations[0]?.projectLibraryEntry).not.toHaveProperty('visibility');
+        expect(ownerTracePayload.citations[0]).not.toHaveProperty('ownerId');
+        expect(ownerTracePayload.citations[0]).not.toHaveProperty('actorUserId');
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 30_000);
+
+  it('returns a stable adoption-needed ProjectDoc citation error and accepts the retry after adoption', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-doc-adoption-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-http-project-doc-adoption.db')}`;
+
+    try {
+      const server = await startTestServer(
+        {
+          JIXIA_DATABASE_URL: databaseUrl,
           JIXIA_STORAGE_ROOT: storageRoot,
         },
         { connectors: { pubmed: createHttpTestPubmedConnector() } },
@@ -650,6 +912,26 @@ describe('http server notebook and project-doc api', () => {
             excerpt: { id: string; paperAssetId: string };
           }>,
         );
+        await fetch(`${server.url}/api/notebooks`, {
+          body: JSON.stringify({ title: 'HTTP private notebook beside trace' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(async (response) => {
+          const notebook = await response.json() as { id: string };
+
+          return fetch(`${server.url}/api/notebooks/${notebook.id}/versions`, {
+            body: JSON.stringify({
+              citations: [],
+              content: 'Private notebook body beside trace must not leak.',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          });
+        });
         const projectDoc = await fetch(`${server.url}/api/project-docs`, {
           body: JSON.stringify({
             projectId: project.project.id,
@@ -737,6 +1019,92 @@ describe('http server notebook and project-doc api', () => {
             reused: boolean;
           }>,
         );
+        const unavailableProject = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({ name: 'HTTP Citation Trace Missing Adoption', spaceId: sharedSpace.id }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+        await fetch(`${server.url}/api/projects/${unavailableProject.project.id}/members`, {
+          body: JSON.stringify({ role: 'viewer', userId: 'user-bob' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const unavailableProjectDoc = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({
+            projectId: unavailableProject.project.id,
+            title: 'HTTP unavailable citation trace Project Doc',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const prisma = createPrismaClient({ url: databaseUrl });
+
+        try {
+          await prisma.$transaction(async (transaction) => {
+            await transaction.projectDocVersion.create({
+              data: {
+                citations: {
+                  create: [
+                    {
+                      evidenceSpan: 'missing asset trace evidence',
+                      paperAssetId: personalSource.asset.id,
+                    },
+                  ],
+                },
+                projectDocId: unavailableProjectDoc.id,
+                snapshot: serializeDocumentBlockSnapshotPayload({
+                  blocks: [
+                    {
+                      evidenceSpan: 'missing asset trace evidence',
+                      paperAssetId: personalSource.asset.id,
+                      type: 'citation',
+                    },
+                  ],
+                  schemaVersion: 1,
+                }),
+                versionNumber: 1,
+              },
+            });
+            await transaction.projectDoc.update({
+              data: { updatedAt: new Date() },
+              where: { id: unavailableProjectDoc.id },
+            });
+          });
+        } finally {
+          await prisma.$disconnect().catch(() => undefined);
+        }
+        const missingAssetTrace = await fetch(
+          `${server.url}/api/project-docs/${unavailableProjectDoc.id}/citation-trace`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const missingAssetViewerTrace = await fetch(
+          `${server.url}/api/project-docs/${unavailableProjectDoc.id}/citation-trace`,
+          { headers: withSessionCookie(await loginAs(server.url, 'user-bob')) },
+        );
+        const missingAssetTracePayload = await missingAssetTrace.json() as {
+          citations: Array<{
+            evidenceSpan?: string;
+            paper?: unknown;
+            paperAssetId: string;
+            readerExcerpt?: { source: string; quote?: string };
+            source: {
+              code?: string;
+              details?: { paperAssetId?: string; projectId?: string; readerExcerptId?: string };
+              message?: string;
+              state: string;
+            };
+          }>;
+          document: { id: string; projectId: string };
+          versionNumber: number;
+        };
         const savedAfterAdoption = await fetch(
           `${server.url}/api/project-docs/${projectDoc.id}/versions`,
           {
@@ -746,6 +1114,10 @@ describe('http server notebook and project-doc api', () => {
             }),
             method: 'POST',
           },
+        );
+        const citationTrace = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/citation-trace`,
+          { headers: withSessionCookie(aliceCookie) },
         );
         const savedPayload = await savedAfterAdoption.json() as {
           citations: Array<{
@@ -765,6 +1137,24 @@ describe('http server notebook and project-doc api', () => {
           };
           versionNumber: number;
         };
+        const citationTracePayload = await citationTrace.json() as {
+          citations: Array<{
+            evidenceSpan?: string;
+            paper?: Record<string, unknown>;
+            paperAssetId: string;
+            projectLibraryEntry?: { libraryEntryId: string; projectId: string };
+            readerExcerpt?: {
+              id: string;
+              locator?: string;
+              quote?: string;
+              source: string;
+              sourceLibraryEntryId?: string;
+            };
+            source: { state: string };
+          }>;
+          document: { id: string; projectId: string };
+          versionNumber: number;
+        };
 
         expect(adoption).toMatchObject({
           entry: {
@@ -772,7 +1162,36 @@ describe('http server notebook and project-doc api', () => {
           },
           reused: false,
         });
+        expect(missingAssetTrace.status).toBe(200);
+        expect(missingAssetViewerTrace.status).toBe(200);
+        expect(missingAssetTracePayload).toMatchObject({
+          citations: [
+            {
+              evidenceSpan: 'missing asset trace evidence',
+              paperAssetId: personalSource.asset.id,
+              readerExcerpt: {
+                quote: 'missing asset trace evidence',
+                source: 'project_library_asset',
+              },
+              source: {
+                code: PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
+                details: {
+                  paperAssetId: personalSource.asset.id,
+                  projectId: unavailableProject.project.id,
+                },
+                state: 'adoption_needed',
+              },
+            },
+          ],
+          document: {
+            id: unavailableProjectDoc.id,
+            projectId: unavailableProject.project.id,
+          },
+          versionNumber: 1,
+        });
+        expect(missingAssetTracePayload.citations[0]?.paper).toBeUndefined();
         expect(savedAfterAdoption.status).toBe(200);
+        expect(citationTrace.status).toBe(200);
         expect(savedPayload.citations).toEqual([
           expect.objectContaining({
             evidenceSpan: 'private quote needs project adoption',
@@ -788,6 +1207,50 @@ describe('http server notebook and project-doc api', () => {
           type: 'sourceExcerpt',
         });
         expect(savedPayload.versionNumber).toBe(1);
+        expect(citationTracePayload).toMatchObject({
+          citations: [
+            {
+              evidenceSpan: 'private quote needs project adoption',
+              paper: {
+                canonicalId: 'doi:10.1000/http-project-doc-adoption-needed',
+                hasFile: false,
+                id: personalSource.asset.id,
+                title: 'HTTP DOI paper 10.1000/http-project-doc-adoption-needed',
+              },
+              paperAssetId: personalSource.asset.id,
+              projectLibraryEntry: {
+                libraryEntryId: adoption.entry.entry.id,
+                projectId: project.project.id,
+              },
+              readerExcerpt: {
+                id: readerExcerpt.excerpt.id,
+                locator: 'p. 8',
+                quote: 'private quote needs project adoption',
+                source: 'reader_source',
+                sourceLibraryEntryId: personalSource.entry.id,
+              },
+              source: { state: 'available' },
+            },
+          ],
+          document: {
+            id: projectDoc.id,
+            projectId: project.project.id,
+          },
+          versionNumber: 1,
+        });
+        const serializedTrace = JSON.stringify(citationTracePayload);
+        expect(serializedTrace).not.toContain('storageKey');
+        expect(serializedTrace).not.toContain('checksum');
+        expect(serializedTrace).not.toContain('JIXIA_STORAGE_ROOT');
+        expect(serializedTrace).not.toContain(storageRoot);
+        expect(serializedTrace).not.toContain('Private notebook body beside trace must not leak.');
+        expect(serializedTrace).not.toContain('rawSecret');
+        expect(serializedTrace).not.toContain('credentialRef');
+        const serializedMissingTrace = JSON.stringify(missingAssetTracePayload);
+        expect(serializedMissingTrace).not.toContain('storageKey');
+        expect(serializedMissingTrace).not.toContain('checksum');
+        expect(serializedMissingTrace).not.toContain(storageRoot);
+        expect(serializedMissingTrace).not.toContain('Private notebook body beside trace must not leak.');
       } finally {
         await server.close();
       }

@@ -2,12 +2,64 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import type { DocumentBlockDocument } from "@shared/contracts/document-content";
+import type { ProjectDocCitationTraceRow } from "@shared/contracts/project-docs";
 
 import { DocumentBlockEditor } from "../components/document-block-editor";
 import { createLegacyTextProjection } from "../lib/document-blocks";
 import { useProjectDocPresenter } from "../presenters/project-doc-presenter";
 
 type ProjectDocSaveInput = Parameters<ReturnType<typeof useProjectDocPresenter>["save"]>[0];
+
+function readerExcerptSourceLabel(
+  source: NonNullable<ProjectDocCitationTraceRow["readerExcerpt"]>["source"],
+): string {
+  switch (source) {
+    case "reader_source":
+      return "Reader excerpt";
+    case "project_doc_snapshot":
+      return "Project Doc snapshot evidence";
+    case "project_library_asset":
+      return "Project library citation span";
+  }
+}
+
+function CitationTraceRow({ row }: { row: ProjectDocCitationTraceRow }) {
+  return (
+    <li className="stack-sm">
+      <p className="quiet-copy">Citation · {row.citationId}</p>
+      <p className="quiet-copy">Paper asset · {row.paperAssetId}</p>
+      {row.paper ? (
+        <>
+          <p className="quiet-copy">Paper · {row.paper.title}</p>
+          <p className="quiet-copy">Source · {row.paper.canonicalId}</p>
+          <p className="quiet-copy">File available · {row.paper.hasFile ? "yes" : "no"}</p>
+        </>
+      ) : null}
+      {row.projectLibraryEntry ? (
+        <p className="quiet-copy">Project library entry · {row.projectLibraryEntry.libraryEntryId}</p>
+      ) : null}
+      {row.readerExcerpt ? (
+        <>
+          <p className="quiet-copy">Evidence source · {readerExcerptSourceLabel(row.readerExcerpt.source)}</p>
+          <p className="quiet-copy">Reader excerpt · {row.readerExcerpt.id}</p>
+          {row.readerExcerpt.locator ? (
+            <p className="quiet-copy">Locator · {row.readerExcerpt.locator}</p>
+          ) : null}
+          {row.readerExcerpt.quote ? (
+            <blockquote className="quiet-copy">{row.readerExcerpt.quote}</blockquote>
+          ) : null}
+        </>
+      ) : row.evidenceSpan ? (
+        <blockquote className="quiet-copy">{row.evidenceSpan}</blockquote>
+      ) : null}
+      {row.source.state === "adoption_needed" ? (
+        <p className="quiet-copy">Citation source unavailable · {row.source.message}</p>
+      ) : (
+        <p className="quiet-copy">Citation source available in this project.</p>
+      )}
+    </li>
+  );
+}
 
 export function WritingPage() {
   const { projectId = "", docId = "" } = useParams();
@@ -307,6 +359,23 @@ export function WritingPage() {
           <p className="quiet-copy">
             Latest content size · {draftProjection.length} characters
           </p>
+          <section className="stack-sm" aria-label="citation trace panel">
+            <h3 className="panel-title">Citation trace</h3>
+            <p className="quiet-copy">Read-only server-authorized citation provenance.</p>
+            {presenter.isCitationTraceLoading ? (
+              <p className="quiet-copy">Loading citation trace…</p>
+            ) : presenter.citationTraceError ? (
+              <p className="quiet-copy">{presenter.citationTraceError}</p>
+            ) : presenter.citationTrace && presenter.citationTrace.citations.length > 0 ? (
+              <ul className="stack-sm">
+                {presenter.citationTrace.citations.map((row) => (
+                  <CitationTraceRow key={row.citationId} row={row} />
+                ))}
+              </ul>
+            ) : (
+              <p className="quiet-copy">No citations in the latest saved Project Doc snapshot.</p>
+            )}
+          </section>
         </aside>
       </section>
     </main>

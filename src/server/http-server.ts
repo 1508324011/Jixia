@@ -453,6 +453,35 @@ function rejectProjectDocAuthorityQueryFields(
     optionalQueryParam(requestUrl, "createdByUserId"),
     "createdByUserId",
   );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "spaceId"),
+    "spaceId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scope"),
+    "scope",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeId"),
+    "scopeId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeType"),
+    "scopeType",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "visibility"),
+    "visibility",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "projectId"),
+    "projectId",
+  );
 }
 
 function rejectProjectLibraryAdoptionAuthorityQueryFields(
@@ -604,6 +633,12 @@ function rejectProjectDocAuthorityBodyFields(
   const body = requestBody as Record<string, unknown>;
 
   assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
+  assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+  assertNoClientActorContextField(body.spaceId, "spaceId");
+  assertNoClientActorContextField(body.scope, "scope");
+  assertNoClientActorContextField(body.scopeId, "scopeId");
+  assertNoClientActorContextField(body.scopeType, "scopeType");
+  assertNoClientActorContextField(body.visibility, "visibility");
 }
 
 function rejectProjectLibraryAdoptionAuthorityBodyFields(
@@ -1539,6 +1574,23 @@ async function handleApiRequest(
         response,
         200,
         await app.projectDocs.getDocument({ documentId }, actor.userId),
+        method,
+      );
+      return true;
+    }
+
+    const projectDocCitationTraceMatch = pathname.match(
+      /^\/api\/project-docs\/([^/]+)\/citation-trace$/,
+    );
+    if (projectDocCitationTraceMatch && method === "GET") {
+      const actor = await getActor(request, actorOptions);
+      const [, documentId] = projectDocCitationTraceMatch;
+      rejectProjectDocAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.projectDocs.getCitationTrace({ documentId }, actor.userId),
         method,
       );
       return true;
