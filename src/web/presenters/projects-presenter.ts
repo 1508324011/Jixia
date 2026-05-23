@@ -4,7 +4,11 @@ import type { ProjectListItem } from "@shared/contracts/projects";
 import type { SpaceSummary } from "@shared/contracts/spaces";
 
 import { apiClient } from "../lib/http-client";
-import { runtimeContext } from "./runtime-context";
+
+export interface CreateProjectInput {
+  name: string;
+  spaceId: string;
+}
 
 export interface ProjectCardView {
   item: ProjectListItem;
@@ -12,7 +16,7 @@ export interface ProjectCardView {
 }
 
 export interface ProjectsViewModel {
-  createProject(): Promise<void>;
+  createProject(input: CreateProjectInput): Promise<boolean>;
   error: string | null;
   isCreating: boolean;
   isLoading: boolean;
@@ -62,41 +66,36 @@ export function useProjectsPresenter(): ProjectsViewModel {
     void refresh();
   }, [refresh]);
 
-  const createProject = useCallback(async () => {
+  const createProject = useCallback(async (input: CreateProjectInput) => {
     try {
       setIsCreating(true);
       setError(null);
-      let nextSpaces = spaces;
 
-      if (nextSpaces.length === 0) {
-        const createdSpace = await apiClient.createSpace({
-          kind: "shared",
-          name: runtimeContext.defaultSharedSpaceName,
-        });
-        nextSpaces = [createdSpace];
-        setSpaces(nextSpaces);
+      const name = input.name.trim();
+      if (!name) {
+        throw new Error("Enter a project name before creating a collaboration lane.");
       }
 
-      const targetSpace = nextSpaces[0];
+      const targetSpace = spaces.find((space) => space.id === input.spaceId);
       if (!targetSpace) {
-        throw new Error("No governance space is available for project creation.");
+        throw new Error("Select a visible governance space before creating a project.");
       }
 
       await apiClient.createProject(
         {
-          name: `${runtimeContext.defaultProjectName} ${Date.now()
-            .toString()
-            .slice(-4)}`,
-          spaceId: targetSpace.id,
+          name,
+          spaceId: input.spaceId,
         },
       );
       await refresh();
+      return true;
     } catch (presenterError) {
       setError(
         presenterError instanceof Error
           ? presenterError.message
           : "Failed to create project.",
       );
+      return false;
     } finally {
       setIsCreating(false);
     }

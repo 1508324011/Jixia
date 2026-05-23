@@ -14,24 +14,31 @@ export interface ProjectContextViewModel {
   refresh(): Promise<void>;
 }
 
+interface UseProjectContextOptions {
+  selectDefaultProject?: boolean;
+}
+
 function selectProject(
   projects: ProjectListItem[],
   projectId: string | undefined,
+  selectDefaultProject: boolean,
 ): ProjectListItem | null {
   if (projectId) {
     return projects.find((item) => item.project.id === projectId) ?? null;
   }
 
-  return projects[0] ?? null;
+  return selectDefaultProject ? projects[0] ?? null : null;
 }
 
 export function useProjectContext(
   projectId?: string,
+  options: UseProjectContextOptions = {},
 ): ProjectContextViewModel {
+  const selectDefaultProject = options.selectDefaultProject ?? true;
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const isMountedRef = useRef(false);
   const refreshGenerationRef = useRef(0);
 
@@ -76,7 +83,7 @@ export function useProjectContext(
         setIsLoading(false);
       }
     }
-  }, [canCommitRefresh, projectId]);
+  }, [canCommitRefresh]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -86,11 +93,11 @@ export function useProjectContext(
       isMountedRef.current = false;
       refreshGenerationRef.current += 1;
     };
-  }, [refresh]);
+  }, [projectId, refresh]);
 
   const project = useMemo(
-    () => selectProject(projects, projectId),
-    [projectId, projects],
+    () => selectProject(projects, projectId, selectDefaultProject),
+    [projectId, projects, selectDefaultProject],
   );
 
   const derivedError = useMemo(() => {
