@@ -168,12 +168,11 @@ describe('core contracts', () => {
     const workspace: ProjectWorkspaceResponse = {
       activity: {
         emptyState: {
-          body: 'Project activity will appear when project-scoped records change.',
+          body: 'Project activity will appear when Project Docs, project Library entries, Reader comments or excerpts, and governed project jobs change.',
           title: 'No project activity yet',
         },
         items: [
           {
-            actorUserId: 'user_001',
             href: '/projects/project_001/writing/project-doc_001',
             id: 'project-doc:project-doc_001',
             kind: 'project-doc',
@@ -184,9 +183,53 @@ describe('core contracts', () => {
             summary: 'Project Doc draft · version 1',
             title: 'Shared synthesis',
           },
+          {
+            href: '/projects/project_001/library/entry_001/reader',
+            id: 'library-entry:entry_001',
+            kind: 'library-entry',
+            occurredAt: '2026-05-03T00:09:00.000Z',
+            projectId: project.id,
+            sourceId: 'entry_001',
+            sourceLabel: 'Project Library',
+            summary: 'Project Library · doi:10.1000/j.jixia.2026.01',
+            title: 'Shared synthesis source',
+          },
+          {
+            href: '/projects/project_001/library/entry_001/reader',
+            id: 'reader-comment:comment_001',
+            kind: 'reader-comment',
+            occurredAt: '2026-05-03T00:08:30.000Z',
+            projectId: project.id,
+            sourceId: 'comment_001',
+            sourceLabel: 'Reader comment',
+            summary: 'Project comment · Shared synthesis source',
+            title: 'Shared project comment',
+          },
+          {
+            href: '/projects/project_001/library/entry_001/reader',
+            id: 'reader-excerpt:excerpt_001',
+            kind: 'reader-excerpt',
+            occurredAt: '2026-05-03T00:08:00.000Z',
+            projectId: project.id,
+            sourceId: 'excerpt_001',
+            sourceLabel: 'Reader excerpt',
+            summary: 'Reader excerpt · Shared synthesis source · loc-1',
+            title: 'Evidence quote',
+          },
+          {
+            href: '/jobs?scopeType=project&scopeId=project_001&jobId=job_001',
+            id: 'job:job_001',
+            kind: 'job',
+            occurredAt: '2026-05-03T00:07:00.000Z',
+            projectId: project.id,
+            sourceId: 'job_001',
+            sourceLabel: 'Project job',
+            summary: 'Job status · queued',
+            title: 'ai.summary',
+          },
         ],
         projectId: project.id,
-        totalCount: 1,
+        totalCount: 5,
       },
       actor: {
         role: 'owner',
@@ -229,7 +272,7 @@ describe('core contracts', () => {
       project,
       resources: {
         emptyState: {
-          body: 'Project resources will appear when project-scoped records are created.',
+          body: 'Project resources will appear when Project Docs, project Library entries, Reader excerpts, or governed jobs exist.',
           title: 'No project resources yet',
         },
         items: [
@@ -243,9 +286,39 @@ describe('core contracts', () => {
             title: 'Shared synthesis',
             updatedAt: '2026-05-03T00:10:00.000Z',
           },
+          {
+            href: '/projects/project_001/library/entry_001/reader',
+            id: 'library-entry:entry_001',
+            kind: 'library-entry',
+            projectId: project.id,
+            sourceId: 'entry_001',
+            subtitle: 'Project Library · doi:10.1000/j.jixia.2026.01',
+            title: 'Shared synthesis source',
+            updatedAt: '2026-05-03T00:09:00.000Z',
+          },
+          {
+            href: '/projects/project_001/library/entry_001/reader',
+            id: 'reader-excerpt:excerpt_001',
+            kind: 'reader-excerpt',
+            projectId: project.id,
+            sourceId: 'excerpt_001',
+            subtitle: 'Reader excerpt · Shared synthesis source · loc-1',
+            title: 'Evidence quote',
+            updatedAt: '2026-05-03T00:08:00.000Z',
+          },
+          {
+            href: '/jobs?scopeType=project&scopeId=project_001&jobId=job_001',
+            id: 'job:job_001',
+            kind: 'job',
+            projectId: project.id,
+            sourceId: 'job_001',
+            subtitle: 'Project job · queued',
+            title: 'ai.summary',
+            updatedAt: '2026-05-03T00:07:00.000Z',
+          },
         ],
         projectId: project.id,
-        totalCount: 1,
+        totalCount: 4,
       },
     };
 
@@ -258,6 +331,7 @@ describe('core contracts', () => {
     expect(workspace.docs.totalCount).toBe(1);
     expect(workspace.activity.items[0]?.kind).toBe('project-doc');
     expect(workspace.activity.items[0]?.href).toBe('/projects/project_001/writing/project-doc_001');
+    expect(workspace.activity.items[0]).not.toHaveProperty('actorUserId');
     expect(workspace.resources.items[0]?.title).toBe('Shared synthesis');
     expect(workspace.links.libraryHref).toBe('/projects/project_001/library');
     expect(workspace.docs.documents[0]?.openHref).toBe('/projects/project_001/writing/project-doc_001');
@@ -268,8 +342,12 @@ describe('core contracts', () => {
     expectTypeOf<ProjectMemberRole>().toEqualTypeOf<
       'owner' | 'editor' | 'viewer'
     >();
-    expectTypeOf<ProjectWorkspaceActivityKind>().toEqualTypeOf<'project-doc'>();
-    expectTypeOf<ProjectWorkspaceResourceKind>().toEqualTypeOf<'project-doc'>();
+    expectTypeOf<ProjectWorkspaceActivityKind>().toEqualTypeOf<
+      'project-doc' | 'library-entry' | 'reader-comment' | 'reader-excerpt' | 'job'
+    >();
+    expectTypeOf<ProjectWorkspaceResourceKind>().toEqualTypeOf<
+      'project-doc' | 'library-entry' | 'reader-excerpt' | 'job'
+    >();
   });
 
   it('exports the server-owned Home cockpit read-model contract', () => {
