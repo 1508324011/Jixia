@@ -93,7 +93,7 @@ export function useProjectContext(
       isMountedRef.current = false;
       refreshGenerationRef.current += 1;
     };
-  }, [refresh]);
+  }, [projectId, refresh]);
 
   const project = useMemo(
     () => selectProject(projects, projectId, selectDefaultProject),
