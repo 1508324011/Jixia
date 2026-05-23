@@ -1,4 +1,8 @@
 import type { SyntheticEvent } from 'react';
+import type {
+  ProjectWorkspaceActivityKind,
+  ProjectWorkspaceResourceKind,
+} from '@shared/contracts/projects';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
@@ -7,6 +11,25 @@ import { apiClient } from '../lib/http-client';
 import { useProjectWorkspace } from '../presenters/project-workspace-presenter';
 
 const projectTabs = ['概览', '共享 Library', 'Project Docs', '活动'];
+
+function describeWorkspaceKind(
+  kind: ProjectWorkspaceActivityKind | ProjectWorkspaceResourceKind,
+): string {
+  switch (kind) {
+    case 'project-doc':
+      return 'Project Doc';
+    case 'library-entry':
+      return 'Project Library';
+    case 'reader-comment':
+      return 'Reader comment';
+    case 'reader-excerpt':
+      return 'Reader excerpt';
+    case 'job':
+      return 'Project job';
+    default:
+      return kind;
+  }
+}
 
 export function ProjectPage() {
   const { projectId = '' } = useParams();
@@ -137,6 +160,7 @@ export function ProjectPage() {
           {resourceItems.length > 0 ? (
             resourceItems.slice(0, 3).map((resource) => (
               <article className="panel" key={resource.id}>
+                <p className="page-kicker">{describeWorkspaceKind(resource.kind)}</p>
                 <h3 className="panel-title">{resource.title}</h3>
                 <p className="quiet-copy">{resource.subtitle ?? 'Project resource'}</p>
                 {resource.updatedAt ? (
@@ -236,13 +260,10 @@ export function ProjectPage() {
           {activityItems.length > 0 ? (
             activityItems.map((activity) => (
               <article className="panel" key={activity.id}>
-                <p className="page-kicker">{activity.sourceLabel ?? activity.kind}</p>
+                <p className="page-kicker">{activity.sourceLabel ?? describeWorkspaceKind(activity.kind)}</p>
                 <h3 className="panel-title">{activity.title}</h3>
                 <p className="quiet-copy">{activity.summary}</p>
                 <p className="quiet-copy">Occurred {activity.occurredAt}</p>
-                {activity.actorUserId ? (
-                  <p className="quiet-copy">Actor · {activity.actorUserId}</p>
-                ) : null}
                 {activity.href ? (
                   <Link className="panel-link" to={activity.href}>
                     Resume from activity

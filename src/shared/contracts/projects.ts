@@ -68,10 +68,14 @@ export interface ProjectWorkspaceDocsIndex {
   totalCount: number;
 }
 
-export type ProjectWorkspaceActivityKind = 'project-doc';
+export type ProjectWorkspaceActivityKind =
+  | 'project-doc'
+  | 'library-entry'
+  | 'reader-comment'
+  | 'reader-excerpt'
+  | 'job';
 
 export interface ProjectWorkspaceActivityItem {
-  actorUserId?: string;
   href?: string;
   id: string;
   kind: ProjectWorkspaceActivityKind;
@@ -93,7 +97,11 @@ export interface ProjectWorkspaceActivitySection {
   totalCount: number;
 }
 
-export type ProjectWorkspaceResourceKind = 'project-doc';
+export type ProjectWorkspaceResourceKind =
+  | 'project-doc'
+  | 'library-entry'
+  | 'reader-excerpt'
+  | 'job';
 
 export interface ProjectWorkspaceResourceItem {
   href?: string;

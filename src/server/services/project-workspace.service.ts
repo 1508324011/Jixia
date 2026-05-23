@@ -7,14 +7,24 @@ import type {
 import { projectsContract } from '@shared/contracts/projects';
 
 import type {
+  JobRepository,
+  LibraryRepository,
   ProjectDocRepository,
   ProjectRepository,
+  ReadingRepository,
   PersistedProjectDocIndexItem,
+  PersistedJobRecord,
+  PersistedLibraryEntryView,
+  PersistedProjectReadingCommentRecord,
+  PersistedReaderExcerptRecord,
 } from '../../db';
 
 export interface ProjectWorkspaceStore {
+  jobRepository: JobRepository;
+  libraryRepository: LibraryRepository;
   projectDocRepository: ProjectDocRepository;
   projectRepository: ProjectRepository;
+  readingRepository: ReadingRepository;
 }
 
 export interface ProjectWorkspaceService {
@@ -27,16 +37,34 @@ const emptyProjectDocsIndex = {
 };
 
 const emptyProjectActivitySection = {
-  body: 'Project activity will appear when Project Docs, project Library resources, Reader comments or evidence, and governed project jobs change.',
+  body: 'Project activity will appear when Project Docs, project Library entries, Reader comments or excerpts, and governed project jobs change.',
   title: 'No project activity yet',
 };
 
 const emptyProjectResourcesSection = {
-  body: 'Project resources will appear when the team creates Project Docs or adopts literature into the project-scoped Library.',
+  body: 'Project resources will appear when the team creates Project Docs, adopts literature into the project-scoped Library, captures Reader excerpts, or opens governed jobs.',
   title: 'No project resources yet',
 };
 
 const projectWorkspaceActivityLimit = 8;
+
+function sortTimestamp(value?: string): number {
+  return value ? new Date(value).getTime() : 0;
+}
+
+function sanitizeText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function truncateText(value: string, maxLength = 96): string {
+  const normalized = sanitizeText(value);
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1)}…`;
+}
 
 function resolveDocsCreatePermissions(role: string): {
   canCreate: boolean;
@@ -68,12 +96,32 @@ function mapDocIndexItem(
   };
 }
 
-function compareActivityItems(
+function compareWorkspaceActivityItems(
   left: ProjectWorkspaceActivityItem,
   right: ProjectWorkspaceActivityItem,
 ): number {
   const rightTime = new Date(right.occurredAt).getTime();
   const leftTime = new Date(left.occurredAt).getTime();
+
+  if (rightTime !== leftTime) {
+    return rightTime - leftTime;
+  }
+
+  const kindComparison = left.kind.localeCompare(right.kind);
+
+  if (kindComparison !== 0) {
+    return kindComparison;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function compareWorkspaceResourceItems(
+  left: ProjectWorkspaceResourceItem,
+  right: ProjectWorkspaceResourceItem,
+): number {
+  const rightTime = sortTimestamp(right.updatedAt);
+  const leftTime = sortTimestamp(left.updatedAt);
 
   if (rightTime !== leftTime) {
     return rightTime - leftTime;
@@ -129,6 +177,133 @@ function buildProjectDocResourceItem(
   };
 }
 
+function buildProjectLibraryHref(projectId: string, entryId: string): string {
+  return `/projects/${projectId}/library/${entryId}/reader`;
+}
+
+function buildProjectLibraryActivityItem(
+  projectId: string,
+  libraryEntry: PersistedLibraryEntryView,
+): ProjectWorkspaceActivityItem {
+  return {
+    href: buildProjectLibraryHref(projectId, libraryEntry.entry.id),
+    id: `library-entry:${libraryEntry.entry.id}`,
+    kind: 'library-entry',
+    occurredAt: libraryEntry.entry.updatedAt,
+    projectId,
+    sourceId: libraryEntry.entry.id,
+    sourceLabel: 'Project Library',
+    summary: `Project Library · ${libraryEntry.asset.canonicalId}`,
+    title: libraryEntry.asset.title,
+  };
+}
+
+function buildProjectLibraryResourceItem(
+  projectId: string,
+  libraryEntry: PersistedLibraryEntryView,
+): ProjectWorkspaceResourceItem {
+  return {
+    href: buildProjectLibraryHref(projectId, libraryEntry.entry.id),
+    id: `library-entry:${libraryEntry.entry.id}`,
+    kind: 'library-entry',
+    projectId,
+    sourceId: libraryEntry.entry.id,
+    subtitle: `Project Library · ${libraryEntry.asset.canonicalId}`,
+    title: libraryEntry.asset.title,
+    updatedAt: libraryEntry.entry.updatedAt,
+  };
+}
+
+function buildProjectCommentActivityItem(
+  projectId: string,
+  libraryEntry: PersistedLibraryEntryView,
+  comment: PersistedProjectReadingCommentRecord,
+): ProjectWorkspaceActivityItem {
+  return {
+    href: buildProjectLibraryHref(projectId, libraryEntry.entry.id),
+    id: `reader-comment:${comment.id}`,
+    kind: 'reader-comment',
+    occurredAt: comment.createdAt,
+    projectId,
+    sourceId: comment.id,
+    sourceLabel: 'Reader comment',
+    summary: `Project comment · ${libraryEntry.asset.title}`,
+    title: truncateText(comment.body),
+  };
+}
+
+function buildProjectExcerptActivityItem(
+  projectId: string,
+  libraryEntry: PersistedLibraryEntryView,
+  excerpt: PersistedReaderExcerptRecord,
+): ProjectWorkspaceActivityItem {
+  return {
+    href: buildProjectLibraryHref(projectId, libraryEntry.entry.id),
+    id: `reader-excerpt:${excerpt.id}`,
+    kind: 'reader-excerpt',
+    occurredAt: excerpt.updatedAt,
+    projectId,
+    sourceId: excerpt.id,
+    sourceLabel: 'Reader excerpt',
+    summary: `Reader excerpt · ${libraryEntry.asset.title}${excerpt.locator ? ` · ${excerpt.locator}` : ''}`,
+    title: truncateText(excerpt.quote),
+  };
+}
+
+function buildProjectExcerptResourceItem(
+  projectId: string,
+  libraryEntry: PersistedLibraryEntryView,
+  excerpt: PersistedReaderExcerptRecord,
+): ProjectWorkspaceResourceItem {
+  return {
+    href: buildProjectLibraryHref(projectId, libraryEntry.entry.id),
+    id: `reader-excerpt:${excerpt.id}`,
+    kind: 'reader-excerpt',
+    projectId,
+    sourceId: excerpt.id,
+    subtitle: `Reader excerpt · ${libraryEntry.asset.title}${excerpt.locator ? ` · ${excerpt.locator}` : ''}`,
+    title: truncateText(excerpt.quote),
+    updatedAt: excerpt.updatedAt,
+  };
+}
+
+function buildProjectJobHref(projectId: string, jobId: string): string {
+  return `/jobs?scopeType=project&scopeId=${encodeURIComponent(projectId)}&jobId=${encodeURIComponent(jobId)}`;
+}
+
+function buildProjectJobActivityItem(
+  projectId: string,
+  job: PersistedJobRecord,
+): ProjectWorkspaceActivityItem {
+  return {
+    href: buildProjectJobHref(projectId, job.id),
+    id: `job:${job.id}`,
+    kind: 'job',
+    occurredAt: job.updatedAt,
+    projectId,
+    sourceId: job.id,
+    sourceLabel: 'Project job',
+    summary: `Job status · ${job.status}`,
+    title: job.kind,
+  };
+}
+
+function buildProjectJobResourceItem(
+  projectId: string,
+  job: PersistedJobRecord,
+): ProjectWorkspaceResourceItem {
+  return {
+    href: buildProjectJobHref(projectId, job.id),
+    id: `job:${job.id}`,
+    kind: 'job',
+    projectId,
+    sourceId: job.id,
+    subtitle: `Project job · ${job.status}`,
+    title: job.kind,
+    updatedAt: job.updatedAt,
+  };
+}
+
 export function createProjectWorkspaceService(
   store: ProjectWorkspaceStore,
 ): ProjectWorkspaceService {
@@ -155,10 +330,54 @@ export function createProjectWorkspaceService(
       const documents = await store.projectDocRepository.listDocumentsForProject(projectId);
       const docIndexDocuments = documents.map(mapDocIndexItem);
       const docsCreatePermissions = resolveDocsCreatePermissions(project.membership.role);
-      const activityItems = docIndexDocuments
-        .map(buildProjectDocActivityItem)
-        .sort(compareActivityItems);
-      const resourceItems = docIndexDocuments.map(buildProjectDocResourceItem);
+      const projectLibraryEntries = await store.libraryRepository.listLibraryEntriesForScope({
+        id: projectId,
+        type: 'project',
+      });
+      const projectScopedSignals = await Promise.all(
+        projectLibraryEntries.map(async (libraryEntry) => ({
+          comments: await store.readingRepository.listProjectCommentsForEntry({
+            libraryEntryId: libraryEntry.entry.id,
+            projectId,
+          }),
+          excerpts: await store.readingRepository.listReaderExcerptsForEntry(
+            libraryEntry.entry.id,
+          ),
+          libraryEntry,
+        })),
+      );
+      const projectJobs = await store.jobRepository.listJobsForScope({
+        scope: { id: projectId, type: 'project' },
+        spaceId: project.project.spaceId,
+      });
+
+      const activityItems = [
+        ...docIndexDocuments.map(buildProjectDocActivityItem),
+        ...projectLibraryEntries.map((libraryEntry) =>
+          buildProjectLibraryActivityItem(projectId, libraryEntry),
+        ),
+        ...projectScopedSignals.flatMap(({ comments, excerpts, libraryEntry }) => [
+          ...comments.map((comment) =>
+            buildProjectCommentActivityItem(projectId, libraryEntry, comment),
+          ),
+          ...excerpts.map((excerpt) =>
+            buildProjectExcerptActivityItem(projectId, libraryEntry, excerpt),
+          ),
+        ]),
+        ...projectJobs.map((job) => buildProjectJobActivityItem(projectId, job)),
+      ].sort(compareWorkspaceActivityItems);
+      const resourceItems = [
+        ...docIndexDocuments.map(buildProjectDocResourceItem),
+        ...projectLibraryEntries.map((libraryEntry) =>
+          buildProjectLibraryResourceItem(projectId, libraryEntry),
+        ),
+        ...projectScopedSignals.flatMap(({ excerpts, libraryEntry }) =>
+          excerpts.map((excerpt) =>
+            buildProjectExcerptResourceItem(projectId, libraryEntry, excerpt),
+          ),
+        ),
+        ...projectJobs.map((job) => buildProjectJobResourceItem(projectId, job)),
+      ].sort(compareWorkspaceResourceItems);
 
       return {
         activity: {

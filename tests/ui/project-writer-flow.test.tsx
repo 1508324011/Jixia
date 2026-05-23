@@ -70,7 +70,7 @@ describe('project writer flow', () => {
     const workspaceFixture = {
       activity: {
         emptyState: {
-          body: 'Project activity will appear when Project Docs, project Library resources, Reader comments or evidence, and governed project jobs change.',
+          body: 'Project activity will appear when Project Docs, project Library entries, Reader comments or excerpts, and governed project jobs change.',
           title: 'No project activity yet',
         },
         items: [],
@@ -114,7 +114,7 @@ describe('project writer flow', () => {
       },
       resources: {
         emptyState: {
-          body: 'Project resources will appear when the team creates Project Docs or adopts literature into the project-scoped Library.',
+          body: 'Project resources will appear when the team creates Project Docs, adopts literature into the project-scoped Library, captures Reader excerpts, or opens governed jobs.',
           title: 'No project resources yet',
         },
         items: [],
@@ -176,12 +176,246 @@ describe('project writer flow', () => {
     renderWorkbench('/projects/project-1');
 
     expect(await screen.findByText('Project Docs 共享知识中心')).toBeInTheDocument();
-    expect(await screen.findByText('No Project Docs yet')).toBeInTheDocument();
+    expect(screen.getByText('No Project Docs yet')).toBeInTheDocument();
     expect(screen.getByText('No project resources yet')).toBeInTheDocument();
     expect(screen.getByText('No project activity yet')).toBeInTheDocument();
-    expect(
-      screen.getByText('No Project Docs have been created for this project yet. Use Project Docs to maintain shared background, evidence, rationale, conclusions, and formal drafts for the team.'),
-    ).toBeInTheDocument();
+  });
+
+  it('project page renders widened workspace kinds from the server DTO', async () => {
+    const workspaceFixture = {
+      activity: {
+        emptyState: {
+          body: 'Project activity will appear when Project Docs, project Library entries, Reader comments or excerpts, and governed project jobs change.',
+          title: 'No project activity yet',
+        },
+        items: [
+          {
+            href: '/jobs?scopeType=project&scopeId=project-1&jobId=job-1',
+            id: 'job:job-1',
+            kind: 'job',
+            occurredAt: '2026-03-23T00:34:00.000Z',
+            projectId: 'project-1',
+            sourceId: 'job-1',
+            sourceLabel: 'Project job',
+            summary: 'Job status · queued',
+            title: 'ai.summary',
+          },
+          {
+            href: '/projects/project-1/writing/doc-1',
+            id: 'project-doc:doc-1',
+            kind: 'project-doc',
+            occurredAt: '2026-03-23T00:35:00.000Z',
+            projectId: 'project-1',
+            sourceId: 'doc-1',
+            sourceLabel: 'Project Doc',
+            summary: 'Project Doc draft · version 1',
+            title: 'Tumor board literature synthesis',
+          },
+          {
+            href: '/projects/project-1/library/entry-1/reader',
+            id: 'library-entry:entry-1',
+            kind: 'library-entry',
+            occurredAt: '2026-03-23T00:33:00.000Z',
+            projectId: 'project-1',
+            sourceId: 'entry-1',
+            sourceLabel: 'Project Library',
+            summary: 'Project Library · doi:10.1000/project-entry',
+            title: 'Project reader source',
+          },
+          {
+            href: '/projects/project-1/library/entry-1/reader',
+            id: 'reader-comment:comment-1',
+            kind: 'reader-comment',
+            occurredAt: '2026-03-23T00:32:00.000Z',
+            projectId: 'project-1',
+            sourceId: 'comment-1',
+            sourceLabel: 'Reader comment',
+            summary: 'Project comment · Project reader source',
+            title: 'Project comment summary',
+          },
+          {
+            href: '/projects/project-1/library/entry-1/reader',
+            id: 'reader-excerpt:excerpt-1',
+            kind: 'reader-excerpt',
+            occurredAt: '2026-03-23T00:31:00.000Z',
+            projectId: 'project-1',
+            sourceId: 'excerpt-1',
+            sourceLabel: 'Reader excerpt',
+            summary: 'Reader excerpt · Project reader source · loc-1',
+            title: 'Quoted evidence from the source',
+          },
+        ],
+        projectId: 'project-1',
+        totalCount: 5,
+      },
+      actor: {
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      contract: 'jixia-projects-contract',
+      docs: {
+        canCreate: true,
+        documents: [
+          {
+            createdAt: '2026-03-23T00:35:00.000Z',
+            createdByUserId: 'user-alice',
+            documentId: 'doc-1',
+            latestVersion: {
+              capturedAt: '2026-03-23T00:40:00.000Z',
+              versionId: 'project-doc-version-1',
+              versionNumber: 1,
+            },
+            openHref: '/projects/project-1/writing/doc-1',
+            projectId: 'project-1',
+            publishState: 'draft',
+            title: 'Tumor board literature synthesis',
+            updatedAt: '2026-03-23T00:40:00.000Z',
+          },
+        ],
+        emptyState: {
+          body: 'No Project Docs have been created for this project yet.',
+          title: 'No Project Docs yet',
+        },
+        projectId: 'project-1',
+        totalCount: 1,
+      },
+      generatedAt: '2026-03-23T00:41:00.000Z',
+      links: {
+        libraryHref: '/projects/project-1/library',
+        projectHref: '/projects/project-1',
+        writerHref: '/projects/project-1/writing/doc-1',
+      },
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'personal-space-user-alice',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+      resources: {
+        emptyState: {
+          body: 'Project resources will appear when the team creates Project Docs, adopts literature into the project-scoped Library, captures Reader excerpts, or opens governed jobs.',
+          title: 'No project resources yet',
+        },
+        items: [
+          {
+            href: '/jobs?scopeType=project&scopeId=project-1&jobId=job-1',
+            id: 'job:job-1',
+            kind: 'job',
+            projectId: 'project-1',
+            sourceId: 'job-1',
+            subtitle: 'Project job · queued',
+            title: 'ai.summary',
+            updatedAt: '2026-03-23T00:34:00.000Z',
+          },
+          {
+            href: '/projects/project-1/writing/doc-1',
+            id: 'project-doc:doc-1',
+            kind: 'project-doc',
+            projectId: 'project-1',
+            sourceId: 'doc-1',
+            subtitle: 'draft · version 1',
+            title: 'Tumor board literature synthesis',
+            updatedAt: '2026-03-23T00:40:00.000Z',
+          },
+          {
+            href: '/projects/project-1/library/entry-1/reader',
+            id: 'library-entry:entry-1',
+            kind: 'library-entry',
+            projectId: 'project-1',
+            sourceId: 'entry-1',
+            subtitle: 'Project Library · doi:10.1000/project-entry',
+            title: 'Project reader source',
+            updatedAt: '2026-03-23T00:33:00.000Z',
+          },
+          {
+            href: '/projects/project-1/library/entry-1/reader',
+            id: 'reader-excerpt:excerpt-1',
+            kind: 'reader-excerpt',
+            projectId: 'project-1',
+            sourceId: 'excerpt-1',
+            subtitle: 'Reader excerpt · Project reader source · loc-1',
+            title: 'Quoted evidence from the source',
+            updatedAt: '2026-03-23T00:31:00.000Z',
+          },
+        ],
+        projectId: 'project-1',
+        totalCount: 4,
+      },
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([
+            {
+              membership: {
+                joinedAt: '2026-03-23T00:35:00.000Z',
+                projectId: 'project-1',
+                role: 'owner',
+                userId: 'user-alice',
+              },
+              project: {
+                createdAt: '2026-03-23T00:35:00.000Z',
+                createdByUserId: 'user-alice',
+                id: 'project-1',
+                name: 'Tumor board project',
+                spaceId: 'personal-space-user-alice',
+                status: 'active',
+                updatedAt: '2026-03-23T00:35:00.000Z',
+              },
+            },
+          ]);
+        }
+
+        if (requestUrl.endsWith('/api/projects/project-1/workspace')) {
+          return jsonResponse(workspaceFixture);
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-1');
+
+    expect(await screen.findByText('Project Docs 共享知识中心')).toBeInTheDocument();
+    expect(screen.getAllByText('Project job').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Project Library').length).toBeGreaterThan(0);
+    expect(screen.getByText('Reader comment')).toBeInTheDocument();
+    expect(screen.getAllByText('Reader excerpt').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Project reader source').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Tumor board literature synthesis').length).toBeGreaterThan(0);
+    expect(screen.getByText('Quoted evidence from the source')).toBeInTheDocument();
+    expect(screen.getByText('Project comment summary')).toBeInTheDocument();
+    expect(screen.queryByText('No Project Docs yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('No project resources yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('No project activity yet')).not.toBeInTheDocument();
   });
 
   it('project page renders server-indexed Project Docs without loading the legacy latest-doc preview', async () => {
@@ -234,7 +468,6 @@ describe('project writer flow', () => {
             },
             items: [
               {
-                actorUserId: 'user-alice',
                 href: '/projects/project-1/writing/doc-project-1',
                 id: 'project-doc:doc-project-1',
                 kind: 'project-doc',
@@ -565,7 +798,6 @@ describe('project writer flow', () => {
               },
               items: [
                 {
-                  actorUserId: 'user-alice',
                   href: '/projects/project-1/writing/doc-project-1',
                   id: 'project-doc:doc-project-1',
                   kind: 'project-doc',

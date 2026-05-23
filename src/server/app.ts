@@ -1021,8 +1021,11 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const projectWorkspaceRoutes = createProjectWorkspaceRoutes(
     createProjectWorkspaceService({
+      jobRepository,
+      libraryRepository,
       projectDocRepository,
       projectRepository,
+      readingRepository,
     }),
   );
   const notebookRepository = createNotebookRepository(prismaClient);
