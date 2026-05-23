@@ -12,6 +12,7 @@ import {
   createReadingRepository,
   createSpaceRepository,
 } from '../../src/db';
+import { createJixiaApp } from '../../src/server/app';
 import {
   loginAs,
   startTestServer,
@@ -380,7 +381,37 @@ describe('http server project api', () => {
               scope: { id: 'user-alice', type: 'user' },
             },
           });
+          const projectLibraryEntry = await createLibraryRepository(prisma).importScopedEntry({
+            asset: {
+              abstractText: 'Project reader entry abstract',
+              canonicalId: 'doi:10.1000/project-reader-entry',
+              importedByUserId: 'user-alice',
+              sourceLocator: '10.1000/project-reader-entry',
+              sourceType: 'doi',
+              title: 'Project reader entry title',
+            },
+            entry: {
+              addedByUserId: 'user-alice',
+              scope: { id: project.project.id, type: 'project' },
+            },
+          });
           const readingRepository = createReadingRepository(prisma);
+          await readingRepository.createProjectComment({
+            authorUserId: 'user-alice',
+            body: 'Project-scoped reader comment body',
+            libraryEntryId: projectLibraryEntry.entry.id,
+            projectId: project.project.id,
+          });
+          await readingRepository.createReaderExcerpt({
+            createdByUserId: 'user-alice',
+            endOffset: 44,
+            libraryEntryId: projectLibraryEntry.entry.id,
+            locator: 'reader-loc-1',
+            note: 'Project reader excerpt note',
+            paperAssetId: projectLibraryEntry.asset.id,
+            quote: 'Project reader excerpt quote',
+            startOffset: 0,
+          });
           await readingRepository.createPrivateNote({
             authorUserId: 'user-alice',
             body: 'Private reader leak note body',
@@ -425,6 +456,29 @@ describe('http server project api', () => {
             content: 'Server-owned indexed content.',
             documentId: document.id,
           });
+          const workspaceSeederApp = createJixiaApp({
+            env: {
+              JIXIA_DATABASE_URL: databaseUrl,
+              JIXIA_STORAGE_ROOT: storageRoot,
+            },
+          });
+          try {
+            const credential = await workspaceSeederApp.credentials.createCredential({
+              provider: 'openai',
+              rawSecret: 'workspace-job-secret',
+              userId: 'user-alice',
+            }, 'user-alice');
+            await workspaceSeederApp.jobs.createJob({
+              credentialRef: credential.credentialRef,
+              kind: 'ai.summary',
+              payload: { prompt: 'Summarize the project workspace.' },
+              requestedByUserId: 'user-alice',
+              scope: { id: project.project.id, type: 'project' },
+              spaceId: project.project.spaceId,
+            }, 'user-alice');
+          } finally {
+            await workspaceSeederApp.close();
+          }
         } finally {
           await prisma.$disconnect();
         }
@@ -438,7 +492,6 @@ describe('http server project api', () => {
           activity: {
             emptyState: { body: string; title: string };
             items: Array<{
-              actorUserId?: string;
               href?: string;
               id: string;
               kind: string;
@@ -494,9 +547,23 @@ describe('http server project api', () => {
           openHref: `/projects/${project.project.id}/writing/${ownerWorkspace.docs.documents[0]?.documentId}`,
           title: 'Workspace indexed synthesis',
         });
-        expect(ownerWorkspace.activity.totalCount).toBe(1);
-        expect(ownerWorkspace.activity.items).toHaveLength(1);
+        expect(ownerWorkspace.activity.totalCount).toBe(5);
+        expect(ownerWorkspace.activity.items).toHaveLength(5);
+        expect(ownerWorkspace.activity.items.map((item) => item.kind)).toEqual([
+          'job',
+          'project-doc',
+          'reader-excerpt',
+          'reader-comment',
+          'library-entry',
+        ]);
         expect(ownerWorkspace.activity.items[0]).toMatchObject({
+          kind: 'job',
+          projectId: project.project.id,
+          sourceLabel: 'Project job',
+          summary: 'Job status · queued',
+          title: 'ai.summary',
+        });
+        expect(ownerWorkspace.activity.items[1]).toMatchObject({
           href: ownerWorkspace.docs.documents[0]?.openHref,
           kind: 'project-doc',
           occurredAt: ownerWorkspace.docs.documents[0]?.latestVersion?.capturedAt,
@@ -506,14 +573,42 @@ describe('http server project api', () => {
           summary: 'Project Doc draft · version 1',
           title: 'Workspace indexed synthesis',
         });
-        expect(ownerWorkspace.activity.items[0]).not.toHaveProperty('actorUserId');
-        expect(ownerWorkspace.activity.items.map((item) => item.kind)).toEqual(['project-doc']);
+        expect(ownerWorkspace.activity.items[2]).toMatchObject({
+          kind: 'reader-excerpt',
+          projectId: project.project.id,
+          sourceLabel: 'Reader excerpt',
+        });
+        expect(ownerWorkspace.activity.items[3]).toMatchObject({
+          kind: 'reader-comment',
+          projectId: project.project.id,
+          sourceLabel: 'Reader comment',
+        });
+        expect(ownerWorkspace.activity.items[4]).toMatchObject({
+          kind: 'library-entry',
+          projectId: project.project.id,
+          sourceLabel: 'Project Library',
+        });
+        for (const activity of ownerWorkspace.activity.items) {
+          expect(activity).not.toHaveProperty('actorUserId');
+        }
         const serializedWorkspaceActivity = JSON.stringify(ownerWorkspace.activity.items);
         for (const sentinel of privateLeakSentinels) {
           expect(serializedWorkspaceActivity).not.toContain(sentinel);
         }
-        expect(ownerWorkspace.resources.totalCount).toBe(1);
+        expect(ownerWorkspace.resources.totalCount).toBe(4);
+        expect(ownerWorkspace.resources.items.map((item) => item.kind)).toEqual([
+          'job',
+          'project-doc',
+          'reader-excerpt',
+          'library-entry',
+        ]);
         expect(ownerWorkspace.resources.items[0]).toMatchObject({
+          kind: 'job',
+          projectId: project.project.id,
+          subtitle: 'Project job · queued',
+          title: 'ai.summary',
+        });
+        expect(ownerWorkspace.resources.items[1]).toMatchObject({
           href: ownerWorkspace.docs.documents[0]?.openHref,
           kind: 'project-doc',
           projectId: project.project.id,
@@ -521,7 +616,18 @@ describe('http server project api', () => {
           subtitle: 'draft · version 1',
           title: 'Workspace indexed synthesis',
         });
-        expect(ownerWorkspace.resources.items.map((item) => item.kind)).toEqual(['project-doc']);
+        expect(ownerWorkspace.resources.items[2]).toMatchObject({
+          kind: 'reader-excerpt',
+          projectId: project.project.id,
+          subtitle: 'Reader excerpt · Project reader entry title · reader-loc-1',
+          title: 'Project reader excerpt quote',
+        });
+        expect(ownerWorkspace.resources.items[3]).toMatchObject({
+          kind: 'library-entry',
+          projectId: project.project.id,
+          subtitle: 'Project Library · doi:10.1000/project-reader-entry',
+          title: 'Project reader entry title',
+        });
         const serializedWorkspaceResources = JSON.stringify(ownerWorkspace.resources.items);
         for (const sentinel of privateLeakSentinels) {
           expect(serializedWorkspaceResources).not.toContain(sentinel);
@@ -618,11 +724,11 @@ describe('http server project api', () => {
         expect(emptyWorkspace.activity.items).toEqual([]);
         expect(emptyWorkspace.activity.totalCount).toBe(0);
         expect(emptyWorkspace.activity.emptyState.title).toBe('No project activity yet');
-        expect(emptyWorkspace.activity.emptyState.body).toMatch(/Project Docs, project Library resources, Reader comments or evidence, and governed project jobs/i);
+        expect(emptyWorkspace.activity.emptyState.body).toMatch(/Project Docs, project Library entries, Reader comments or excerpts, and governed project jobs/i);
         expect(emptyWorkspace.resources.items).toEqual([]);
         expect(emptyWorkspace.resources.totalCount).toBe(0);
         expect(emptyWorkspace.resources.emptyState.title).toBe('No project resources yet');
-        expect(emptyWorkspace.resources.emptyState.body).toMatch(/Project Docs or adopts literature/i);
+        expect(emptyWorkspace.resources.emptyState.body).toMatch(/Project Docs, adopts literature into the project-scoped Library, captures Reader excerpts, or opens governed jobs/i);
         expect(emptyWorkspace.links.writerHref).toBeUndefined();
       } finally {
         await server.close();
