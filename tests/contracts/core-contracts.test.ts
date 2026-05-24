@@ -86,8 +86,11 @@ import type {
   NotebookSourceExcerptBlock,
 } from '../../src/shared/contracts/notebook';
 import type {
+  AdoptNotebookIntoProjectDocRequest,
+  AdoptNotebookIntoProjectDocResponse,
   ProjectDocCitationRecord,
   ProjectDocCitationTraceResponse,
+  ProjectDocNotebookAdoptionProvenance,
   ProjectDocRecord,
   ProjectDocSnapshot,
 } from '../../src/shared/contracts/project-docs';
@@ -1007,6 +1010,27 @@ describe('core contracts', () => {
         },
       ],
     };
+    const notebookAdoptionRequest: AdoptNotebookIntoProjectDocRequest = {
+      notebookDocumentId: notebookDoc.id,
+    };
+    const notebookAdoptionProvenance: ProjectDocNotebookAdoptionProvenance = {
+      paperAssetIds: ['asset_001'],
+      projectDocId: projectDoc.id,
+      projectDocVersionId: projectDocSnapshot.versionId,
+      projectDocVersionNumber: projectDocSnapshot.versionNumber,
+      projectId: projectDoc.projectId,
+      projectLibraryEntryIds: ['entry_project_001'],
+      readerExcerptIds: ['excerpt_001'],
+      sourceNotebookCapturedAt: notebookSnapshot.capturedAt,
+      sourceNotebookDocumentId: notebookDoc.id,
+      sourceNotebookVersionId: notebookSnapshot.versionId,
+      sourceNotebookVersionNumber: notebookSnapshot.versionNumber,
+    };
+    const notebookAdoptionResponse: AdoptNotebookIntoProjectDocResponse = {
+      citationTrace,
+      provenance: notebookAdoptionProvenance,
+      snapshot: projectDocSnapshot,
+    };
 
     expect(notebookSnapshot.document.ownerId).toBe('user_001');
     expect(notebookSnapshot.citations[0]?.evidenceSpan).toBe('p. 4');
@@ -1054,6 +1078,24 @@ describe('core contracts', () => {
     expect(unavailableTraceSource.details).not.toHaveProperty('actorUserId');
     expect(unavailableTraceSource.details).not.toHaveProperty('spaceId');
     expect(unavailableTraceSource.details).not.toHaveProperty('visibility');
+    expect(notebookAdoptionRequest.notebookDocumentId).toBe(notebookDoc.id);
+    expect(notebookAdoptionRequest).not.toHaveProperty('ownerId');
+    expect(notebookAdoptionRequest).not.toHaveProperty('projectId');
+    expect(notebookAdoptionRequest).not.toHaveProperty('actorUserId');
+    expect(notebookAdoptionResponse.provenance).toMatchObject({
+      projectDocId: projectDoc.id,
+      projectId: projectDoc.projectId,
+      sourceNotebookDocumentId: notebookDoc.id,
+      sourceNotebookVersionId: notebookSnapshot.versionId,
+      sourceNotebookVersionNumber: notebookSnapshot.versionNumber,
+    });
+    expect(notebookAdoptionResponse.provenance.projectLibraryEntryIds).toEqual([
+      'entry_project_001',
+    ]);
+    expect(notebookAdoptionResponse.provenance).not.toHaveProperty('ownerId');
+    expect(notebookAdoptionResponse.provenance).not.toHaveProperty('actorUserId');
+    expect(notebookAdoptionResponse.provenance).not.toHaveProperty('spaceId');
+    expect(notebookAdoptionResponse.provenance).not.toHaveProperty('visibility');
     expect(JSON.stringify(citationTrace)).not.toContain('private notebook');
     expect(JSON.stringify(citationTrace)).not.toContain('storageKey');
     expect(notebook.notebookContract).toBe('jixia-notebook-contract');

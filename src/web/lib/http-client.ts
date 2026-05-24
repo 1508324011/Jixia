@@ -36,6 +36,8 @@ import type {
   ScopeRef,
 } from "@shared/contracts/projects";
 import type {
+  AdoptNotebookIntoProjectDocRequest,
+  AdoptNotebookIntoProjectDocResponse,
   CreateProjectDocAiSuggestionRequest,
   CreateProjectDocAiSuggestionResponse,
   ProjectDocRecord,
@@ -595,6 +597,15 @@ export const apiClient = {
     input: CreateProjectDocAiSuggestionRequest,
   ): Promise<CreateProjectDocAiSuggestionResponse> {
     return requestJson(`/api/project-docs/${documentId}/ai-suggestions`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  adoptNotebookIntoProjectDoc(
+    documentId: string,
+    input: AdoptNotebookIntoProjectDocRequest,
+  ): Promise<AdoptNotebookIntoProjectDocResponse> {
+    return requestJson(`/api/project-docs/${documentId}/notebook-adoptions`, {
       body: JSON.stringify(input),
       method: "POST",
     });

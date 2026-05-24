@@ -16,6 +16,10 @@ export interface ProjectDocLookup {
   documentId: string;
 }
 
+export interface AdoptNotebookIntoProjectDocRequest {
+  notebookDocumentId: string;
+}
+
 export interface ProjectDocCitationRecord extends DocumentCitationRecordBase {
   projectDocVersionId: string;
 }
@@ -116,6 +120,26 @@ export interface ProjectDocCitationTraceResponse {
   generatedAt: string;
   versionId: string;
   versionNumber: number;
+}
+
+export interface ProjectDocNotebookAdoptionProvenance {
+  paperAssetIds: string[];
+  projectDocId: string;
+  projectDocVersionId: string;
+  projectDocVersionNumber: number;
+  projectId: string;
+  projectLibraryEntryIds: string[];
+  readerExcerptIds: string[];
+  sourceNotebookCapturedAt: string;
+  sourceNotebookDocumentId: string;
+  sourceNotebookVersionId: string;
+  sourceNotebookVersionNumber: number;
+}
+
+export interface AdoptNotebookIntoProjectDocResponse {
+  citationTrace: ProjectDocCitationTraceResponse;
+  provenance: ProjectDocNotebookAdoptionProvenance;
+  snapshot: ProjectDocSnapshot;
 }
 
 export const PROJECT_DOC_AI_SUGGESTION_JOB_KIND =

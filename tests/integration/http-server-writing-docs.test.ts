@@ -1227,7 +1227,6 @@ describe('http server notebook and project-doc api', () => {
                 locator: 'p. 8',
                 quote: 'private quote needs project adoption',
                 source: 'reader_source',
-                sourceLibraryEntryId: personalSource.entry.id,
               },
               source: { state: 'available' },
             },
@@ -1442,6 +1441,353 @@ describe('http server notebook and project-doc api', () => {
           documentContent: projectDocumentContent,
           versionNumber: 2,
         });
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('adopts private notebooks into project docs over HTTP with server provenance', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-notebook-project-adoption-'));
+
+    try {
+      const server = await startTestServer(
+        {
+          JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-notebook-project-adoption.db')}`,
+          JIXIA_STORAGE_ROOT: storageRoot,
+        },
+        { connectors: { pubmed: createHttpTestPubmedConnector() } },
+      );
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+        const charlieCookie = await loginAs(server.url, 'user-charlie');
+        const sharedSpace = await createSpace(server.url, aliceCookie, 'user-alice');
+        const project = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({ name: 'HTTP Notebook Adoption Project', spaceId: sharedSpace.id }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+        await fetch(`${server.url}/api/projects/${project.project.id}/members`, {
+          body: JSON.stringify({ role: 'editor', userId: 'user-bob' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+
+        const personalSource = await fetch(`${server.url}/api/import/paper`, {
+          body: JSON.stringify({
+            scope: { id: 'user-alice', type: 'user' },
+            sourceLocator: '10.1000/http-notebook-project-adoption',
+            sourceType: 'doi',
+            spaceId: sharedSpace.id,
+            visibility: 'private',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{
+            asset: { id: string; title: string };
+            entry: { id: string };
+          }>,
+        );
+        const readerExcerpt = await fetch(
+          `${server.url}/api/reading/${personalSource.entry.id}/excerpts`,
+          {
+            body: JSON.stringify({
+              endOffset: 40,
+              locator: 'p. 10',
+              note: 'HTTP private reader note must not leak.',
+              quote: 'HTTP private notebook adoption quote',
+              startOffset: 2,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        ).then(
+          (response) => response.json() as Promise<{
+            excerpt: { id: string; paperAssetId: string; quote: string };
+          }>,
+        );
+        const notebook = await fetch(`${server.url}/api/notebooks`, {
+          body: JSON.stringify({ title: 'HTTP adoption source notebook' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const notebookSave = await fetch(
+          `${server.url}/api/notebooks/${notebook.id}/versions`,
+          {
+            body: JSON.stringify({
+              citations: [],
+              documentContent: {
+                blocks: [
+                  {
+                    level: 1,
+                    text: 'HTTP private notebook synthesis',
+                    type: 'heading',
+                  },
+                  {
+                    text: 'HTTP private interpretation intentionally adopted by server action.',
+                    type: 'paragraph',
+                  },
+                  {
+                    capturedAt: '2026-05-23T00:00:00.000Z',
+                    evidenceSpan: 'HTTP private notebook adoption quote',
+                    libraryEntryId: personalSource.entry.id,
+                    locator: 'p. 10',
+                    note: 'HTTP private capture note must not leak.',
+                    paperAssetId: personalSource.asset.id,
+                    quote: 'HTTP private notebook adoption quote',
+                    readerExcerptId: readerExcerpt.excerpt.id,
+                    title: personalSource.asset.title,
+                    type: 'sourceExcerpt',
+                  },
+                ],
+                schemaVersion: 1,
+              },
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const notebookPayload = await notebookSave.json() as {
+          versionId: string;
+          versionNumber: number;
+        };
+        const projectDoc = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({
+            projectId: project.project.id,
+            title: 'HTTP adopted Project Doc',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        await fetch(`${server.url}/api/project-docs/${projectDoc.id}/versions`, {
+          body: JSON.stringify({ citations: [], content: 'HTTP existing project context.' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+
+        const bobAdoptionAttempt = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/notebook-adoptions`,
+          {
+            body: JSON.stringify({ notebookDocumentId: notebook.id }),
+            headers: withSessionCookie(bobCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const nonMemberAdoptionAttempt = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/notebook-adoptions`,
+          {
+            body: JSON.stringify({ notebookDocumentId: notebook.id }),
+            headers: withSessionCookie(charlieCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const spoofedAdoption = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/notebook-adoptions`,
+          {
+            body: JSON.stringify({
+              notebookDocumentId: notebook.id,
+              ownerId: 'user-alice',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const projectQueryAdoption = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/notebook-adoptions?projectId=${project.project.id}`,
+          {
+            body: JSON.stringify({ notebookDocumentId: notebook.id }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const extraFieldAdoption = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/notebook-adoptions`,
+          {
+            body: JSON.stringify({
+              metadata: { source: 'browser-local' },
+              notebookDocumentId: notebook.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const adoptionResponse = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/notebook-adoptions`,
+          {
+            body: JSON.stringify({ notebookDocumentId: notebook.id }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const adoptionPayload = await adoptionResponse.json() as {
+          citationTrace: {
+            citations: Array<{
+              paperAssetId: string;
+              projectLibraryEntry?: { libraryEntryId: string; projectId: string };
+              readerExcerpt?: { quote?: string; source: string; sourceLibraryEntryId?: string };
+              source: { state: string };
+            }>;
+            versionNumber: number;
+          };
+          provenance: {
+            paperAssetIds: string[];
+            projectDocId: string;
+            projectDocVersionId: string;
+            projectDocVersionNumber: number;
+            projectId: string;
+            projectLibraryEntryIds: string[];
+            readerExcerptIds: string[];
+            sourceNotebookDocumentId: string;
+            sourceNotebookVersionId: string;
+            sourceNotebookVersionNumber: number;
+          };
+          snapshot: {
+            citations: Array<{ evidenceSpan?: string; paperAssetId: string; readerExcerptId?: string }>;
+            content: string;
+            documentContent?: { blocks?: Array<Record<string, unknown>>; schemaVersion?: number };
+            versionId: string;
+            versionNumber: number;
+          };
+        };
+        const bobTrace = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/citation-trace`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        const bobTracePayload = await bobTrace.json() as {
+          citations: Array<{
+            paperAssetId: string;
+            projectLibraryEntry?: { libraryEntryId: string; projectId: string };
+            readerExcerpt?: { quote?: string; source: string; sourceLibraryEntryId?: string };
+            source: { state: string };
+          }>;
+          versionNumber: number;
+        };
+        const serializedAdoption = JSON.stringify(adoptionPayload);
+        const serializedBobTrace = JSON.stringify(bobTracePayload);
+
+        expect(notebookSave.status).toBe(200);
+        expect(bobAdoptionAttempt.status).toBe(403);
+        expect(nonMemberAdoptionAttempt.status).toBe(403);
+        expect(spoofedAdoption.status).toBe(400);
+        expect(projectQueryAdoption.status).toBe(400);
+        expect(extraFieldAdoption.status).toBe(400);
+        expect(adoptionResponse.status).toBe(200);
+        expect(adoptionPayload.snapshot.versionNumber).toBe(2);
+        expect(adoptionPayload.snapshot.content).toContain('HTTP existing project context.');
+        expect(adoptionPayload.snapshot.content).toContain('Adopted notebook: HTTP adoption source notebook');
+        expect(adoptionPayload.snapshot.content).toContain(`Source Notebook: ${notebook.id}`);
+        expect(adoptionPayload.snapshot.content).toContain('HTTP private notebook adoption quote');
+        expect(adoptionPayload.snapshot.content).toContain(
+          `Project library entry: ${adoptionPayload.provenance.projectLibraryEntryIds[0]}`,
+        );
+        expect(adoptionPayload.snapshot.citations).toEqual([
+          expect.objectContaining({
+            evidenceSpan: 'HTTP private notebook adoption quote',
+            paperAssetId: personalSource.asset.id,
+            readerExcerptId: readerExcerpt.excerpt.id,
+          }),
+        ]);
+        expect(adoptionPayload.provenance).toMatchObject({
+          paperAssetIds: [personalSource.asset.id],
+          projectDocId: projectDoc.id,
+          projectDocVersionId: adoptionPayload.snapshot.versionId,
+          projectDocVersionNumber: 2,
+          projectId: project.project.id,
+          readerExcerptIds: [readerExcerpt.excerpt.id],
+          sourceNotebookDocumentId: notebook.id,
+          sourceNotebookVersionId: notebookPayload.versionId,
+          sourceNotebookVersionNumber: notebookPayload.versionNumber,
+        });
+        expect(adoptionPayload.provenance.projectLibraryEntryIds[0]).toBeDefined();
+        expect(adoptionPayload.provenance.projectLibraryEntryIds[0]).not.toBe(
+          personalSource.entry.id,
+        );
+        expect(adoptionPayload.citationTrace).toMatchObject({
+          citations: [
+            {
+              paperAssetId: personalSource.asset.id,
+              projectLibraryEntry: {
+                libraryEntryId: adoptionPayload.provenance.projectLibraryEntryIds[0],
+                projectId: project.project.id,
+              },
+              readerExcerpt: {
+                quote: 'HTTP private notebook adoption quote',
+                source: 'reader_source',
+              },
+              source: { state: 'available' },
+            },
+          ],
+          versionNumber: 2,
+        });
+        expect(adoptionPayload.citationTrace.citations[0]?.readerExcerpt).not.toHaveProperty(
+          'sourceLibraryEntryId',
+        );
+        expect(serializedAdoption).not.toContain(`Library entry: ${personalSource.entry.id}`);
+        expect(serializedAdoption).not.toContain(personalSource.entry.id);
+        expect(bobTrace.status).toBe(200);
+        expect(bobTracePayload).toMatchObject({
+          citations: [
+            {
+              paperAssetId: personalSource.asset.id,
+              projectLibraryEntry: {
+                libraryEntryId: adoptionPayload.provenance.projectLibraryEntryIds[0],
+                projectId: project.project.id,
+              },
+              readerExcerpt: {
+                quote: 'HTTP private notebook adoption quote',
+                source: 'project_doc_snapshot',
+              },
+              source: { state: 'available' },
+            },
+          ],
+          versionNumber: 2,
+        });
+        expect(serializedAdoption).not.toContain('HTTP private capture note must not leak');
+        expect(serializedAdoption).not.toContain('HTTP private reader note must not leak');
+        expect(serializedAdoption).not.toContain('storageKey');
+        expect(serializedAdoption).not.toContain('checksum');
+        expect(serializedAdoption).not.toContain(storageRoot);
+        expect(serializedBobTrace).not.toContain(personalSource.entry.id);
+        expect(serializedBobTrace).not.toContain('HTTP private capture note must not leak');
+        expect(serializedBobTrace).not.toContain('HTTP private reader note must not leak');
+        expect(serializedBobTrace).not.toContain('storageKey');
+        expect(serializedBobTrace).not.toContain('checksum');
+        expect(serializedBobTrace).not.toContain(storageRoot);
       } finally {
         await server.close();
       }
