@@ -899,7 +899,7 @@ describe('project writer flow', () => {
     );
   });
 
-  it('viewer can open a Project Doc but cannot save from the editor UI', async () => {
+  it('viewer opens Project Docs through the shared read-only renderer and cannot save', async () => {
     const projectFixture = {
       membership: {
         joinedAt: '2026-03-23T00:35:00.000Z',
@@ -965,7 +965,7 @@ describe('project writer flow', () => {
           return jsonResponse({
             capturedAt: '2026-03-23T00:40:00.000Z',
             citations: [],
-            content: 'Viewer readable paragraph.',
+            content: '## Viewer structured synthesis\n\nViewer readable paragraph.\n\n[Citation: Viewer citation — Figure 2 — Viewer cited evidence.]',
             document: {
               createdAt: '2026-03-23T00:35:00.000Z',
               createdByUserId: 'user-alice',
@@ -976,7 +976,26 @@ describe('project writer flow', () => {
               updatedAt: '2026-03-23T00:35:00.000Z',
             },
             documentContent: {
-              blocks: [{ text: 'Viewer readable paragraph.', type: 'paragraph' }],
+              blocks: [
+                {
+                  level: 2,
+                  text: 'Viewer structured synthesis',
+                  type: 'heading',
+                },
+                {
+                  text: 'Viewer readable paragraph.',
+                  type: 'paragraph',
+                },
+                {
+                  evidenceSpan: 'Viewer cited evidence.',
+                  label: 'Viewer citation',
+                  libraryEntryId: 'entry-viewer-readable',
+                  locator: 'Figure 2',
+                  paperAssetId: 'asset-viewer-readable',
+                  readerExcerptId: 'excerpt-viewer-readable',
+                  type: 'citation',
+                },
+              ],
               schemaVersion: 1,
             },
             versionId: 'project-doc-version-1',
@@ -994,12 +1013,27 @@ describe('project writer flow', () => {
 
     renderWorkbench('/projects/project-1/writing/doc-project-1');
 
-    expect(
-      await screen.findByDisplayValue('Viewer readable paragraph.'),
-    ).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+    expect(await screen.findByLabelText('Read-only Project Doc content')).toBeInTheDocument();
+    expect(screen.getByText('Viewer structured synthesis')).toBeInTheDocument();
+    expect(screen.getByText('Viewer readable paragraph.')).toBeInTheDocument();
+    expect(screen.getByText('Citation · Viewer citation')).toBeInTheDocument();
+    expect(screen.getByText('Paper asset')).toBeInTheDocument();
+    expect(screen.getByText('asset-viewer-readable')).toBeInTheDocument();
+    expect(screen.getByText('Library entry')).toBeInTheDocument();
+    expect(screen.getByText('entry-viewer-readable')).toBeInTheDocument();
+    expect(screen.getByText('Reader excerpt')).toBeInTheDocument();
+    expect(screen.getByText('excerpt-viewer-readable')).toBeInTheDocument();
+    expect(screen.getByText('Locator')).toBeInTheDocument();
+    expect(screen.getByText('Figure 2')).toBeInTheDocument();
+    expect(screen.getByText('Evidence span')).toBeInTheDocument();
+    expect(screen.getByText('Viewer cited evidence.')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Paragraph block/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Heading block/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add paragraph' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reload draft' })).not.toBeInTheDocument();
     expect(screen.getByText('Your project role can read this Project Doc, but only project owners and editors can save shared document versions.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reload draft' })).toBeEnabled();
+    expect(screen.getByText('Read-only viewers can inspect the shared Project Doc and citation trace, but only project owners and editors can modify the saved version.')).toBeInTheDocument();
     expect(screen.getByText('Only project owners and editors can adopt private Notebook drafts into this shared Project Doc.')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Adopt a private Notebook into this Project Doc' })).not.toBeInTheDocument();
     expect(screen.getByText('No citations in the latest saved Project Doc snapshot.')).toBeInTheDocument();
@@ -1442,7 +1476,12 @@ describe('project writer flow', () => {
 
     expect(await screen.findByDisplayValue('Evidence synthesis')).toBeInTheDocument();
     expect(screen.getByText('Project-visible paper')).toBeInTheDocument();
-    expect(screen.getByText('Project-visible quote')).toBeInTheDocument();
+    expect(
+      screen.getByText('Project-visible quote', { selector: 'blockquote' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Project-visible quote', { selector: 'dd' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Paper asset')).toBeInTheDocument();
     expect(screen.getByText('asset-project-visible')).toBeInTheDocument();
     expect(screen.getByText('Library entry')).toBeInTheDocument();
@@ -1458,7 +1497,12 @@ describe('project writer flow', () => {
     await user.click(reloadButton);
     await waitFor(() => expect(projectDocGetCount).toBeGreaterThan(projectDocGetCountBeforeReload));
     expect(await screen.findByText('Project-visible paper')).toBeInTheDocument();
-    expect(screen.getByText('Project-visible quote')).toBeInTheDocument();
+    expect(
+      screen.getByText('Project-visible quote', { selector: 'blockquote' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Project-visible quote', { selector: 'dd' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('asset-project-visible')).toBeInTheDocument();
     expect(screen.getByText('entry-project-visible')).toBeInTheDocument();
   });
