@@ -1000,6 +1000,8 @@ describe('project writer flow', () => {
     expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
     expect(screen.getByText('Your project role can read this Project Doc, but only project owners and editors can save shared document versions.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reload draft' })).toBeEnabled();
+    expect(screen.getByText('Only project owners and editors can adopt private Notebook drafts into this shared Project Doc.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Adopt a private Notebook into this Project Doc' })).not.toBeInTheDocument();
     expect(screen.getByText('No citations in the latest saved Project Doc snapshot.')).toBeInTheDocument();
   });
 
@@ -1138,6 +1140,10 @@ describe('project writer flow', () => {
     }));
 
     expect(await screen.findByText('Paper · Trace UI paper')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Adopt a private Notebook into this Project Doc' })).toHaveAttribute(
+      'href',
+      '/notebook?adoptProjectId=project-1&adoptProjectDocId=doc-project-1',
+    );
     expect(screen.getByText('Reader excerpt · excerpt-trace-ui-1')).toBeInTheDocument();
     expect(screen.getByText('Locator · p. 7')).toBeInTheDocument();
     expect(screen.queryByText(/ownerId/i)).not.toBeInTheDocument();

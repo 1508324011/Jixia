@@ -459,6 +459,7 @@ export function WritingPage() {
   const resolvedSpaceId = presenter.project?.project.spaceId ?? "No governance space";
   const adoptionNeeded = presenter.adoptionNeeded;
   const pageError = presenter.projectError ?? (adoptionNeeded ? null : presenter.error);
+  const notebookAdoptionHref = `/notebook?adoptProjectId=${encodeURIComponent(projectId)}&adoptProjectDocId=${encodeURIComponent(docId)}`;
 
   return (
     <main className="page-shell">
@@ -470,6 +471,9 @@ export function WritingPage() {
         </p>
         <p className="quiet-copy">
           Reader evidence can inform this document only through explicit, project-scoped, citation-backed saves.
+        </p>
+        <p className="quiet-copy">
+          Private Notebook drafts can contribute only through an explicit server adoption action from the Notebook page.
         </p>
       </header>
 
@@ -610,6 +614,15 @@ export function WritingPage() {
                 <section className="stack-sm" aria-label="citation trace panel">
                   <h3 className="panel-title">Citation trace</h3>
                   <p className="quiet-copy">Read-only server-authorized citation provenance.</p>
+                  {canEditProjectDoc ? (
+                    <Link className="panel-link" to={notebookAdoptionHref}>
+                      Adopt a private Notebook into this Project Doc
+                    </Link>
+                  ) : (
+                    <p className="quiet-copy">
+                      Only project owners and editors can adopt private Notebook drafts into this shared Project Doc.
+                    </p>
+                  )}
                   {presenter.isCitationTraceLoading ? (
                     <p className="quiet-copy">Loading citation trace…</p>
                   ) : presenter.citationTraceError ? (
