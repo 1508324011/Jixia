@@ -1071,6 +1071,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     jobs: jobsRoutes,
     libraryRepository,
     libraryService,
+    notebookRepository,
     projectDocRepository,
     projectRepository,
     readingService,

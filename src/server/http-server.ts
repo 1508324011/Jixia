@@ -14,6 +14,7 @@ import type { LoginSessionRequest } from "@shared/contracts/session";
 import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
 import type { CreateReaderExcerptRequest } from "@shared/contracts/reading";
 import {
+  type AdoptNotebookIntoProjectDocRequest,
   type CreateProjectDocAiSuggestionRequest,
   PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
   type ProjectDocCitationSourceUnavailableDetails,
@@ -745,6 +746,30 @@ function parseProjectDocAiSuggestionBody(
     instruction: assertStringField(body.instruction, "instruction"),
     selectedBlockId: assertOptionalStringField(body.selectedBlockId, "selectedBlockId"),
     selectedText: assertOptionalTextField(body.selectedText, "selectedText"),
+  };
+}
+
+function parseProjectDocNotebookAdoptionBody(
+  requestBody: unknown,
+): AdoptNotebookIntoProjectDocRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Project Doc notebook adoption payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  const allowedFields = new Set(["notebookDocumentId"]);
+
+  for (const fieldName of Object.keys(body)) {
+    if (!allowedFields.has(fieldName)) {
+      throw new Error(`${fieldName} is not accepted for Project Doc notebook adoption.`);
+    }
+  }
+
+  return {
+    notebookDocumentId: assertStringField(
+      body.notebookDocumentId,
+      "notebookDocumentId",
+    ),
   };
 }
 
@@ -1726,6 +1751,32 @@ async function handleApiRequest(
             instruction: body.instruction,
             selectedBlockId: body.selectedBlockId,
             selectedText: body.selectedText,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    const projectDocNotebookAdoptionsMatch = pathname.match(
+      /^\/api\/project-docs\/([^/]+)\/notebook-adoptions$/,
+    );
+    if (projectDocNotebookAdoptionsMatch && method === "POST") {
+      const actor = await getActor(request, actorOptions);
+      const [, documentId] = projectDocNotebookAdoptionsMatch;
+      rejectProjectDocAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectProjectDocAuthorityBodyFields(actor, requestBody);
+      const body = parseProjectDocNotebookAdoptionBody(requestBody);
+
+      sendJson(
+        response,
+        200,
+        await app.projectDocs.adoptNotebook(
+          {
+            documentId,
+            notebookDocumentId: body.notebookDocumentId,
           },
           actor.userId,
         ),

@@ -1,4 +1,6 @@
 import type {
+  AdoptNotebookIntoProjectDocRequest,
+  AdoptNotebookIntoProjectDocResponse,
   CreateProjectDocAiSuggestionRequest,
   CreateProjectDocAiSuggestionResponse,
   CreateProjectDocRequest,
@@ -21,6 +23,10 @@ export interface ProjectDocsRoutes {
     input: CreateProjectDocRequest,
     actorUserId: string,
   ): Promise<ProjectDocRecord>;
+  adoptNotebook(
+    input: ProjectDocLookup & AdoptNotebookIntoProjectDocRequest,
+    actorUserId: string,
+  ): Promise<AdoptNotebookIntoProjectDocResponse>;
   createAiSuggestion(
     input: ProjectDocLookup & CreateProjectDocAiSuggestionRequest,
     actorUserId: string,
@@ -72,6 +78,9 @@ export function createProjectDocsRoutes(
   return {
     createDocument(input, actorUserId) {
       return service.createDocument(input, actorUserId);
+    },
+    adoptNotebook(input, actorUserId) {
+      return service.adoptNotebook(input, actorUserId);
     },
     createAiSuggestion(input, actorUserId) {
       return service.createAiSuggestion(input, actorUserId);

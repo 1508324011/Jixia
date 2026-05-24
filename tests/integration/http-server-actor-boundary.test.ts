@@ -317,6 +317,11 @@ describe('http server actor boundary cleanup', () => {
           fetch(`${server.url}/api/notebooks/notebook-1`),
           fetch(`${server.url}/api/project-docs/project-doc-1`),
           fetch(`${server.url}/api/project-docs/project-doc-1/citation-trace`),
+          fetch(`${server.url}/api/project-docs/project-doc-1/notebook-adoptions`, {
+            body: JSON.stringify({ notebookDocumentId: 'notebook-1' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
           fetch(`${server.url}/api/reading/entry-1`),
           fetch(`${server.url}/api/reading/project-comments`, {
             body: JSON.stringify({ body: 'Unauthenticated project comment', libraryEntryId: 'entry-1' }),
@@ -765,6 +770,20 @@ describe('http server actor boundary cleanup', () => {
           }),
           fetch(`${server.url}/api/project-docs/${projectDoc.id}/publish-state?createdByUserId=user-bob`, {
             body: JSON.stringify({ publishState: 'review' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/notebook-adoptions`, {
+            body: JSON.stringify({ actorUserId: 'user-bob', notebookDocumentId: notebook.id }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/notebook-adoptions?projectId=${importedRecord.projectId}`, {
+            body: JSON.stringify({ notebookDocumentId: notebook.id }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
             }),
@@ -1288,6 +1307,20 @@ describe('http server actor boundary cleanup', () => {
           }),
           fetch(`${server.url}/api/project-docs/${projectDoc.id}/versions`, {
             body: JSON.stringify({ citations: [], content: 'Matching creator project-doc save', createdByUserId: 'user-alice' }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/notebook-adoptions`, {
+            body: JSON.stringify({ actorUserId: 'user-alice', notebookDocumentId: notebook.id }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/project-docs/${projectDoc.id}/notebook-adoptions?ownerId=user-alice`, {
+            body: JSON.stringify({ notebookDocumentId: notebook.id }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
             }),
