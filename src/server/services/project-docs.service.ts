@@ -1,4 +1,5 @@
 import type {
+  DocumentBlock,
   DocumentBlockDocument,
   DocumentBlockReference,
 } from '@shared/contracts/document-content';
@@ -12,9 +13,12 @@ import {
   serializeDocumentBlockSnapshotPayload,
 } from '@shared/contracts/document-content';
 import type {
+  AdoptNotebookIntoProjectDocRequest,
+  AdoptNotebookIntoProjectDocResponse,
   CreateProjectDocAiSuggestionRequest,
   CreateProjectDocAiSuggestionResponse,
   CreateProjectDocRequest,
+  ProjectDocNotebookAdoptionProvenance,
   ProjectDocAiSuggestion,
   ProjectDocAiSuggestionCitation,
   ProjectDocCitationTraceResponse,
@@ -34,6 +38,7 @@ import type { WritingDocumentView, WritingDocSnapshot } from '@shared/contracts/
 
 import type {
   LibraryRepository,
+  NotebookRepository,
   ProjectDocRepository,
   ProjectRepository,
   ReadingRepository,
@@ -59,6 +64,10 @@ export interface ProjectDocsService {
     input: CreateProjectDocRequest,
     actorUserId: string,
   ): Promise<ProjectDocRecord>;
+  adoptNotebook(
+    input: ProjectDocLookup & AdoptNotebookIntoProjectDocRequest,
+    actorUserId: string,
+  ): Promise<AdoptNotebookIntoProjectDocResponse>;
   createAiSuggestion(
     input: ProjectDocLookup & CreateProjectDocAiSuggestionRequest,
     actorUserId: string,
@@ -103,6 +112,7 @@ export interface ProjectDocsStore {
   jobs: ProjectDocSuggestionJobCreator;
   libraryRepository: LibraryRepository;
   libraryService: LibraryService;
+  notebookRepository: NotebookRepository;
   projectDocRepository: ProjectDocRepository;
   projectRepository: ProjectRepository;
   readingRepository: Pick<ReadingRepository, 'getReaderExcerpt'>;
@@ -202,6 +212,58 @@ function mapSnapshot(snapshot: {
     content: documentBlockDocumentToLegacyText(documentContent),
     document: mapDocument(snapshot.document),
     documentContent,
+    versionId: snapshot.versionId,
+    versionNumber: snapshot.versionNumber,
+  };
+}
+
+function mapNotebookSnapshot(snapshot: {
+  capturedAt: string;
+  citations: Array<{
+    createdAt: string;
+    evidenceSpan?: string;
+    id: string;
+    notebookDocumentVersionId: string;
+    paperAssetId: string;
+    readerExcerptId?: string;
+  }>;
+  content: string;
+  document: {
+    createdAt: string;
+    id: string;
+    ownerId: string;
+    title: string;
+    updatedAt: string;
+  };
+  versionId: string;
+  versionNumber: number;
+}): {
+  capturedAt: string;
+  citations: Array<{
+    evidenceSpan?: string;
+    paperAssetId: string;
+    readerExcerptId?: string;
+  }>;
+  content: string;
+  documentContent: DocumentBlockDocument;
+  documentId: string;
+  title: string;
+  versionId: string;
+  versionNumber: number;
+} {
+  const documentContent = normalizePersistedDocumentSnapshot(snapshot.content);
+
+  return {
+    capturedAt: snapshot.capturedAt,
+    citations: snapshot.citations.map((citation) => ({
+      evidenceSpan: citation.evidenceSpan,
+      paperAssetId: citation.paperAssetId,
+      readerExcerptId: citation.readerExcerptId,
+    })),
+    content: documentBlockDocumentToLegacyText(documentContent),
+    documentContent,
+    documentId: snapshot.document.id,
+    title: snapshot.document.title,
     versionId: snapshot.versionId,
     versionNumber: snapshot.versionNumber,
   };
@@ -668,7 +730,9 @@ async function resolveProjectDocCitationReaderExcerptTrace(
       locator: excerpt.locator,
       quote: excerpt.quote,
       source: 'reader_source',
-      sourceLibraryEntryId: sourceEntry.entry.id,
+      sourceLibraryEntryId: sourceEntry.entry.scope.type === 'project'
+        ? sourceEntry.entry.id
+        : undefined,
       startOffset: excerpt.startOffset,
     };
   } catch (error) {
@@ -904,6 +968,13 @@ interface NormalizedProjectDocReference {
   readerExcerptId?: string;
 }
 
+interface NotebookAdoptionReference {
+  evidenceSpan?: string;
+  libraryEntryId?: string;
+  paperAssetId: string;
+  readerExcerptId?: string;
+}
+
 function isAccessRestrictionError(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -961,15 +1032,39 @@ async function normalizeReferenceForProject(
       throw new Error(`Reader excerpt ${citation.readerExcerptId} does not exist.`);
     }
 
-    if (citation.libraryEntryId && citation.libraryEntryId !== excerpt.libraryEntryId) {
+    if (citation.paperAssetId !== excerpt.paperAssetId) {
+      throw new Error(
+        `Document reference ${citation.paperAssetId} does not match reader excerpt ${citation.readerExcerptId}.`,
+      );
+    }
+
+    const citationLibraryEntry = citation.libraryEntryId
+      ? await store.libraryRepository.getLibraryEntry(citation.libraryEntryId)
+      : null;
+
+    if (citation.libraryEntryId && !citationLibraryEntry) {
+      throw new Error(`Library entry ${citation.libraryEntryId} does not exist.`);
+    }
+
+    if (
+      citationLibraryEntry &&
+      citationLibraryEntry.asset.id !== excerpt.paperAssetId
+    ) {
       throw new Error(
         `Document reference ${citation.readerExcerptId} does not match library entry ${citation.libraryEntryId}.`,
       );
     }
 
-    if (citation.paperAssetId !== excerpt.paperAssetId) {
+    if (
+      citation.libraryEntryId &&
+      citation.libraryEntryId !== excerpt.libraryEntryId &&
+      !(
+        citationLibraryEntry?.entry.scope.type === 'project' &&
+        citationLibraryEntry.entry.scope.id === projectId
+      )
+    ) {
       throw new Error(
-        `Document reference ${citation.paperAssetId} does not match reader excerpt ${citation.readerExcerptId}.`,
+        `Document reference ${citation.readerExcerptId} must use its Reader source entry or the target project library entry.`,
       );
     }
 
@@ -999,7 +1094,7 @@ async function normalizeReferenceForProject(
       actorSpaceId,
       actorUserId,
       evidenceSpan: citation.evidenceSpan ?? excerpt.quote,
-      libraryEntryId: citation.libraryEntryId,
+      libraryEntryId: sourceEntry.entry.id,
       paperAssetId: excerpt.paperAssetId,
       projectId,
       readerExcerptId: excerpt.id,
@@ -1189,6 +1284,456 @@ async function normalizeAuthorizedCitations(
   return dedupeNormalizedCitations(normalizedCitations);
 }
 
+function mergeNotebookAdoptionReference(
+  references: Map<string, NotebookAdoptionReference>,
+  reference: NotebookAdoptionReference,
+): void {
+  const key = reference.readerExcerptId
+    ? `excerpt:${reference.readerExcerptId}`
+    : `asset:${reference.paperAssetId}`;
+  const existing = references.get(key);
+
+  if (!existing) {
+    references.set(key, { ...reference });
+    return;
+  }
+
+  references.set(key, {
+    evidenceSpan: existing.evidenceSpan ?? reference.evidenceSpan,
+    libraryEntryId: existing.libraryEntryId ?? reference.libraryEntryId,
+    paperAssetId: existing.paperAssetId,
+    readerExcerptId: existing.readerExcerptId ?? reference.readerExcerptId,
+  });
+}
+
+function collectNotebookAdoptionReferences(input: {
+  citations: Array<{
+    evidenceSpan?: string;
+    paperAssetId: string;
+    readerExcerptId?: string;
+  }>;
+  documentContent: DocumentBlockDocument;
+}): NotebookAdoptionReference[] {
+  const references = new Map<string, NotebookAdoptionReference>();
+
+  for (const citation of input.citations) {
+    mergeNotebookAdoptionReference(references, citation);
+  }
+
+  for (const reference of extractDocumentBlockReferences(input.documentContent)) {
+    mergeNotebookAdoptionReference(references, {
+      evidenceSpan: reference.evidenceSpan,
+      libraryEntryId: reference.libraryEntryId,
+      paperAssetId: reference.paperAssetId,
+      readerExcerptId: reference.readerExcerptId,
+    });
+  }
+
+  return [...references.values()];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function resolveSourceLibraryEntryIdForNotebookReference(
+  store: ProjectDocsStore,
+  reference: NotebookAdoptionReference,
+  actorUserId: string,
+): Promise<string> {
+  if (reference.libraryEntryId) {
+    const sourceEntry = await store.libraryRepository.getLibraryEntry(
+      reference.libraryEntryId,
+    );
+
+    if (!sourceEntry) {
+      throw new Error(`Library entry ${reference.libraryEntryId} does not exist.`);
+    }
+
+    if (sourceEntry.asset.id !== reference.paperAssetId) {
+      throw new Error(
+        `Notebook reference ${reference.paperAssetId} does not match library entry ${reference.libraryEntryId}.`,
+      );
+    }
+
+    await store.libraryService.assertCanAccessEntry(
+      reference.libraryEntryId,
+      actorUserId,
+    );
+
+    return reference.libraryEntryId;
+  }
+
+  if (reference.readerExcerptId) {
+    const excerpt = await store.readingRepository.getReaderExcerpt(
+      reference.readerExcerptId,
+    );
+
+    if (!excerpt) {
+      throw new Error(`Reader excerpt ${reference.readerExcerptId} does not exist.`);
+    }
+
+    if (excerpt.paperAssetId !== reference.paperAssetId) {
+      throw new Error(
+        `Notebook reference ${reference.paperAssetId} does not match reader excerpt ${reference.readerExcerptId}.`,
+      );
+    }
+
+    await store.libraryService.assertCanAccessEntry(
+      excerpt.libraryEntryId,
+      actorUserId,
+    );
+
+    return excerpt.libraryEntryId;
+  }
+
+  const accessibleSource = await store.libraryService.assertCanAccessPaperAsset(
+    reference.paperAssetId,
+    actorUserId,
+  );
+
+  return accessibleSource.entry.id;
+}
+
+async function ensureProjectLibraryEntryForNotebookReference(
+  store: ProjectDocsStore,
+  input: {
+    actorUserId: string;
+    projectId: string;
+    projectSpaceId: string;
+    reference: NotebookAdoptionReference;
+  },
+): Promise<string> {
+  const existingProjectView = (
+    await store.libraryRepository.listLibraryEntriesForAsset(
+      input.reference.paperAssetId,
+    )
+  ).find(
+    (view) =>
+      view.entry.scope.type === 'project' &&
+      view.entry.scope.id === input.projectId,
+  );
+
+  if (existingProjectView) {
+    const authorizedView = await store.libraryService.assertCanAccessEntry(
+      existingProjectView.entry.id,
+      input.actorUserId,
+      input.projectSpaceId,
+    );
+
+    if (authorizedView.asset.id !== input.reference.paperAssetId) {
+      throw new Error(
+        `Project library entry ${existingProjectView.entry.id} does not match notebook reference ${input.reference.paperAssetId}.`,
+      );
+    }
+
+    return authorizedView.entry.id;
+  }
+
+  const sourceLibraryEntryId = await resolveSourceLibraryEntryIdForNotebookReference(
+    store,
+    input.reference,
+    input.actorUserId,
+  );
+  const adoption = await store.libraryService.adoptProjectLibraryEntry({
+    actorUserId: input.actorUserId,
+    projectId: input.projectId,
+    sourceLibraryEntryId,
+  });
+
+  if (adoption.entry.asset.id !== input.reference.paperAssetId) {
+    throw new Error(
+      `Project library adoption ${adoption.entry.entry.id} does not match notebook reference ${input.reference.paperAssetId}.`,
+    );
+  }
+
+  return adoption.entry.entry.id;
+}
+
+async function ensureProjectLibraryEntriesForNotebookReferences(
+  store: ProjectDocsStore,
+  input: {
+    actorUserId: string;
+    projectId: string;
+    projectSpaceId: string;
+    references: NotebookAdoptionReference[];
+  },
+): Promise<Map<string, string>> {
+  const projectLibraryEntryIdsByAsset = new Map<string, string>();
+
+  for (const reference of input.references) {
+    if (projectLibraryEntryIdsByAsset.has(reference.paperAssetId)) {
+      continue;
+    }
+
+    projectLibraryEntryIdsByAsset.set(
+      reference.paperAssetId,
+      await ensureProjectLibraryEntryForNotebookReference(store, {
+        actorUserId: input.actorUserId,
+        projectId: input.projectId,
+        projectSpaceId: input.projectSpaceId,
+        reference,
+      }),
+    );
+  }
+
+  return projectLibraryEntryIdsByAsset;
+}
+
+function rewriteNotebookBlockForProjectLibrary(
+  block: DocumentBlock,
+  projectLibraryEntryIdsByAsset: Map<string, string>,
+  projectLibraryEntryIdsBySourceLibraryEntry: Map<string, string>,
+): DocumentBlock {
+  switch (block.type) {
+    case 'aiSuggestion':
+      return block.paperAssetId
+        ? {
+            ...block,
+            libraryEntryId: block.readerExcerptId
+              ? projectLibraryEntryIdsByAsset.get(block.paperAssetId)
+              : projectLibraryEntryIdsByAsset.get(block.paperAssetId) ??
+                block.libraryEntryId,
+          }
+        : block;
+    case 'citation':
+      return {
+        ...block,
+        libraryEntryId: block.readerExcerptId
+          ? projectLibraryEntryIdsByAsset.get(block.paperAssetId)
+          : projectLibraryEntryIdsByAsset.get(block.paperAssetId) ??
+            block.libraryEntryId,
+      };
+    case 'paperReference':
+      return {
+        ...block,
+        libraryEntryId: projectLibraryEntryIdsByAsset.get(block.paperAssetId) ??
+          block.libraryEntryId,
+      };
+    case 'quote':
+      return block.paperAssetId
+        ? {
+            ...block,
+            libraryEntryId: block.readerExcerptId
+              ? projectLibraryEntryIdsByAsset.get(block.paperAssetId)
+              : projectLibraryEntryIdsByAsset.get(block.paperAssetId) ??
+                block.libraryEntryId,
+          }
+        : block;
+    case 'sourceExcerpt':
+      return {
+        ...block,
+        libraryEntryId: block.readerExcerptId
+          ? projectLibraryEntryIdsByAsset.get(block.paperAssetId)
+          : projectLibraryEntryIdsByAsset.get(block.paperAssetId) ??
+            block.libraryEntryId,
+        note: undefined,
+      };
+    case 'paragraph':
+      return {
+        ...block,
+        text: rewriteNotebookAdoptionParagraphMetadata(
+          block.text,
+          projectLibraryEntryIdsBySourceLibraryEntry,
+        ),
+      };
+    case 'heading':
+    case 'todo':
+      return block;
+  }
+}
+
+function createProjectLibraryEntryIdsBySourceLibraryEntry(
+  references: NotebookAdoptionReference[],
+  projectLibraryEntryIdsByAsset: Map<string, string>,
+): Map<string, string> {
+  const projectLibraryEntryIdsBySourceLibraryEntry = new Map<string, string>();
+
+  for (const reference of references) {
+    if (!reference.libraryEntryId) {
+      continue;
+    }
+
+    const projectLibraryEntryId = projectLibraryEntryIdsByAsset.get(
+      reference.paperAssetId,
+    );
+
+    if (projectLibraryEntryId) {
+      projectLibraryEntryIdsBySourceLibraryEntry.set(
+        reference.libraryEntryId,
+        projectLibraryEntryId,
+      );
+    }
+  }
+
+  return projectLibraryEntryIdsBySourceLibraryEntry;
+}
+
+function rewriteNotebookAdoptionParagraphMetadata(
+  text: string,
+  projectLibraryEntryIdsBySourceLibraryEntry: Map<string, string>,
+): string {
+  let rewrittenText = text;
+
+  for (const [sourceLibraryEntryId, projectLibraryEntryId] of projectLibraryEntryIdsBySourceLibraryEntry) {
+    rewrittenText = rewrittenText.replace(
+      new RegExp(
+        `(^|\\n)Library entry: ${escapeRegExp(sourceLibraryEntryId)}(?=\\n|$)`,
+        'g',
+      ),
+      (_match, linePrefix: string) =>
+        `${linePrefix}Project library entry: ${projectLibraryEntryId}`,
+    );
+  }
+
+  return rewrittenText;
+}
+
+function createNotebookAdoptionDocumentContent(input: {
+  adoptedAt: string;
+  currentDocumentContent: DocumentBlockDocument;
+  notebook: {
+    capturedAt: string;
+    documentContent: DocumentBlockDocument;
+    documentId: string;
+    title: string;
+    versionId: string;
+    versionNumber: number;
+  };
+  projectLibraryEntryIdsByAsset: Map<string, string>;
+  references: NotebookAdoptionReference[];
+}): DocumentBlockDocument {
+  const projectLibraryEntryIdsBySourceLibraryEntry =
+    createProjectLibraryEntryIdsBySourceLibraryEntry(
+      input.references,
+      input.projectLibraryEntryIdsByAsset,
+    );
+  const adoptedBlocks = input.notebook.documentContent.blocks.map((block) =>
+    rewriteNotebookBlockForProjectLibrary(
+      block,
+      input.projectLibraryEntryIdsByAsset,
+      projectLibraryEntryIdsBySourceLibraryEntry,
+    )
+  );
+
+  return normalizeDocumentBlockDocument({
+    blocks: [
+      ...input.currentDocumentContent.blocks,
+      {
+        level: 2,
+        text: `Adopted notebook: ${input.notebook.title}`,
+        type: 'heading',
+      },
+      {
+        text: [
+          `Adopted at: ${input.adoptedAt}`,
+          `Source Notebook: ${input.notebook.documentId}`,
+          `Source Notebook version: ${input.notebook.versionNumber}`,
+          `Source Notebook version id: ${input.notebook.versionId}`,
+          `Source Notebook captured at: ${input.notebook.capturedAt}`,
+          ...uniqueStrings([...input.projectLibraryEntryIdsByAsset.values()])
+            .map((projectLibraryEntryId) =>
+              `Project library entry: ${projectLibraryEntryId}`
+            ),
+        ].join('\n'),
+        type: 'paragraph',
+      },
+      ...adoptedBlocks,
+    ],
+    schemaVersion: 1,
+  });
+}
+
+function createNotebookAdoptionCitationInputs(
+  references: NotebookAdoptionReference[],
+  projectLibraryEntryIdsByAsset: Map<string, string>,
+): ProjectDocCitationInput[] {
+  return references.map((reference) => ({
+    evidenceSpan: reference.evidenceSpan,
+    libraryEntryId: projectLibraryEntryIdsByAsset.get(reference.paperAssetId),
+    paperAssetId: reference.paperAssetId,
+    readerExcerptId: reference.readerExcerptId,
+  }));
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function createNotebookAdoptionProvenance(input: {
+  projectDocId: string;
+  projectDocVersionId: string;
+  projectDocVersionNumber: number;
+  projectId: string;
+  projectLibraryEntryIdsByAsset: Map<string, string>;
+  references: NotebookAdoptionReference[];
+  sourceNotebookCapturedAt: string;
+  sourceNotebookDocumentId: string;
+  sourceNotebookVersionId: string;
+  sourceNotebookVersionNumber: number;
+}): ProjectDocNotebookAdoptionProvenance {
+  return {
+    paperAssetIds: uniqueStrings(
+      input.references.map((reference) => reference.paperAssetId),
+    ),
+    projectDocId: input.projectDocId,
+    projectDocVersionId: input.projectDocVersionId,
+    projectDocVersionNumber: input.projectDocVersionNumber,
+    projectId: input.projectId,
+    projectLibraryEntryIds: uniqueStrings([
+      ...input.projectLibraryEntryIdsByAsset.values(),
+    ]),
+    readerExcerptIds: uniqueStrings(
+      input.references.map((reference) => reference.readerExcerptId),
+    ),
+    sourceNotebookCapturedAt: input.sourceNotebookCapturedAt,
+    sourceNotebookDocumentId: input.sourceNotebookDocumentId,
+    sourceNotebookVersionId: input.sourceNotebookVersionId,
+    sourceNotebookVersionNumber: input.sourceNotebookVersionNumber,
+  };
+}
+
+async function getOwnedNotebookSnapshotForAdoption(
+  store: ProjectDocsStore,
+  notebookDocumentId: string,
+  actorUserId: string,
+): Promise<ReturnType<typeof mapNotebookSnapshot>> {
+  const normalizedNotebookDocumentId = notebookDocumentId.trim();
+
+  if (!normalizedNotebookDocumentId) {
+    throw new Error('notebookDocumentId is required.');
+  }
+
+  const notebookDocument = await store.notebookRepository.getDocumentForOwner(
+    normalizedNotebookDocumentId,
+    actorUserId,
+  );
+
+  if (!notebookDocument) {
+    const existingNotebookDocument = await store.notebookRepository.findDocument(
+      normalizedNotebookDocumentId,
+    );
+
+    if (!existingNotebookDocument) {
+      throw new Error(`Notebook document ${normalizedNotebookDocumentId} does not exist.`);
+    }
+
+    throw new Error('Access denied for the requested notebook document.');
+  }
+
+  const notebookSnapshot = await store.notebookRepository.getLatestSnapshot(
+    normalizedNotebookDocumentId,
+  );
+
+  if (!notebookSnapshot) {
+    throw new Error(
+      `Notebook document ${normalizedNotebookDocumentId} has no saved version to adopt.`,
+    );
+  }
+
+  return mapNotebookSnapshot(notebookSnapshot);
+}
+
 export function createProjectDocsService(
   store: ProjectDocsStore,
 ): ProjectDocsService {
@@ -1218,6 +1763,92 @@ export function createProjectDocsService(
           title: input.title,
         }),
       );
+    },
+    async adoptNotebook(
+      input: ProjectDocLookup & AdoptNotebookIntoProjectDocRequest,
+      actorUserId: string,
+    ): Promise<AdoptNotebookIntoProjectDocResponse> {
+      const { document, projectSpaceId } = await assertProjectWriteAccess(
+        store,
+        input.documentId,
+        actorUserId,
+      );
+      const notebookSnapshot = await getOwnedNotebookSnapshotForAdoption(
+        store,
+        input.notebookDocumentId,
+        actorUserId,
+      );
+      const references = collectNotebookAdoptionReferences({
+        citations: notebookSnapshot.citations,
+        documentContent: notebookSnapshot.documentContent,
+      });
+      const projectLibraryEntryIdsByAsset = await ensureProjectLibraryEntriesForNotebookReferences(
+        store,
+        {
+          actorUserId,
+          projectId: document.projectId,
+          projectSpaceId,
+          references,
+        },
+      );
+      const currentSnapshotRecord = await store.projectDocRepository.getLatestSnapshot(
+        input.documentId,
+      );
+      const currentSnapshot = currentSnapshotRecord
+        ? mapSnapshot(currentSnapshotRecord)
+        : null;
+      const adoptedAt = new Date().toISOString();
+      const documentContent = createNotebookAdoptionDocumentContent({
+        adoptedAt,
+        currentDocumentContent: currentSnapshot?.documentContent ??
+          createEmptyDocumentBlockDocument(),
+        notebook: notebookSnapshot,
+        projectLibraryEntryIdsByAsset,
+        references,
+      });
+      const citations = await normalizeAuthorizedCitations(
+        store,
+        mergeCitationInputs(
+          createNotebookAdoptionCitationInputs(
+            references,
+            projectLibraryEntryIdsByAsset,
+          ),
+          documentContent,
+        ),
+        actorUserId,
+        document.projectId,
+        projectSpaceId,
+        currentSnapshot,
+      );
+      const snapshot = mapSnapshot(
+        await store.projectDocRepository.saveVersion({
+          citations,
+          content: serializeDocumentBlockSnapshotPayload(documentContent),
+          documentId: input.documentId,
+        }),
+      );
+      const citationTrace = await createProjectDocCitationTraceResponse(store, {
+        actorSpaceId: projectSpaceId,
+        actorUserId,
+        snapshot,
+      });
+
+      return {
+        citationTrace,
+        provenance: createNotebookAdoptionProvenance({
+          projectDocId: snapshot.document.id,
+          projectDocVersionId: snapshot.versionId,
+          projectDocVersionNumber: snapshot.versionNumber,
+          projectId: snapshot.document.projectId,
+          projectLibraryEntryIdsByAsset,
+          references,
+          sourceNotebookCapturedAt: notebookSnapshot.capturedAt,
+          sourceNotebookDocumentId: notebookSnapshot.documentId,
+          sourceNotebookVersionId: notebookSnapshot.versionId,
+          sourceNotebookVersionNumber: notebookSnapshot.versionNumber,
+        }),
+        snapshot,
+      };
     },
     async createAiSuggestion(
       input: ProjectDocLookup & CreateProjectDocAiSuggestionRequest,

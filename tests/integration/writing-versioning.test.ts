@@ -1628,4 +1628,212 @@ describe('notebook and project document persistence', () => {
     }
   });
 
+  it('adopts a private notebook into a versioned project doc with server provenance', async () => {
+    const storageRoot = createStorageRoot('jixia-notebook-project-doc-adoption-');
+    const env = createWritingEnv(storageRoot);
+    const prisma = createPrismaClient({ url: env.JIXIA_DATABASE_URL });
+    const spaceRepository = createSpaceRepository(prisma);
+
+    try {
+      const app = createWritingTestApp({ env });
+      const sharedSpace = await app.spaces.createSpace(
+        { kind: 'shared', name: 'Notebook Adoption Space' },
+        'user-alice',
+      );
+      const project = await app.projects.createProject(
+        { name: 'Notebook Adoption Project', spaceId: sharedSpace.id },
+        'user-alice',
+      );
+      await app.projects.addProjectMember(
+        project.project.id,
+        { role: 'editor', userId: 'user-bob' },
+        'user-alice',
+      );
+      await spaceRepository.addMembership(sharedSpace.id, {
+        role: 'viewer',
+        userId: 'user-charlie',
+      });
+
+      const personalSource = await app.imports.importPaper(
+        {
+          scope: { id: 'user-alice', type: 'user' },
+          sourceLocator: '10.1000/notebook-project-adoption',
+          sourceType: 'doi',
+          spaceId: sharedSpace.id,
+          visibility: 'private',
+        },
+        'user-alice',
+      );
+      const readerExcerpt = await app.reading.createReaderExcerpt({
+        actorUserId: 'user-alice',
+        endOffset: 38,
+        libraryEntryId: personalSource.entry.id,
+        locator: 'p. 9',
+        note: 'Alice private reader note must stay private.',
+        quote: 'private notebook evidence quote',
+        startOffset: 2,
+      });
+      const notebook = await app.notebooks.createDocument(
+        { title: 'Alice Project Continuity Notebook' },
+        'user-alice',
+      );
+      const notebookSnapshot = await app.notebooks.saveDocument(
+        {
+          citations: [],
+          documentContent: {
+            blocks: [
+              {
+                level: 1,
+                text: 'Private synthesis for later adoption',
+                type: 'heading',
+              },
+              {
+                text: 'Alice private interpretation may be explicitly adopted.',
+                type: 'paragraph',
+              },
+              {
+                capturedAt: '2026-05-23T00:00:00.000Z',
+                evidenceSpan: 'private notebook evidence quote',
+                libraryEntryId: personalSource.entry.id,
+                locator: 'p. 9',
+                note: 'Private capture note must not leak to project docs.',
+                paperAssetId: personalSource.asset.id,
+                quote: 'private notebook evidence quote',
+                readerExcerptId: readerExcerpt.id,
+                title: personalSource.asset.title,
+                type: 'sourceExcerpt',
+              },
+            ],
+            schemaVersion: 1,
+          },
+          documentId: notebook.id,
+        },
+        'user-alice',
+      );
+      const projectDoc = await app.projectDocs.createDocument(
+        {
+          projectId: project.project.id,
+          title: 'Shared continuity draft',
+        },
+        'user-alice',
+      );
+      const initialProjectSnapshot = await app.projectDocs.saveDocument(
+        {
+          citations: [],
+          content: 'Existing project context remains in history.',
+          documentId: projectDoc.id,
+        },
+        'user-alice',
+      );
+
+      await expect(
+        app.projectDocs.adoptNotebook(
+          { documentId: projectDoc.id, notebookDocumentId: notebook.id },
+          'user-bob',
+        ),
+      ).rejects.toThrow(/notebook document/i);
+      await expect(
+        app.projectDocs.adoptNotebook(
+          { documentId: projectDoc.id, notebookDocumentId: notebook.id },
+          'user-charlie',
+        ),
+      ).rejects.toThrow(/access denied/i);
+
+      const adoption = await app.projectDocs.adoptNotebook(
+        { documentId: projectDoc.id, notebookDocumentId: notebook.id },
+        'user-alice',
+      );
+      const projectLibraryEntryId = adoption.provenance.projectLibraryEntryIds[0];
+      const projectLibraryEntry = projectLibraryEntryId
+        ? await app.library.getEntry({
+            actorUserId: 'user-alice',
+            entryId: projectLibraryEntryId,
+          })
+        : null;
+      const bobTrace = await app.projectDocs.getCitationTrace(
+        { documentId: projectDoc.id },
+        'user-bob',
+      );
+      const serializedAdoption = JSON.stringify(adoption);
+      const serializedBobTrace = JSON.stringify(bobTrace);
+
+      expect(initialProjectSnapshot.versionNumber).toBe(1);
+      expect(notebookSnapshot.versionNumber).toBe(1);
+      expect(adoption.snapshot.versionNumber).toBe(2);
+      expect(adoption.snapshot.content).toContain('Existing project context remains in history.');
+      expect(adoption.snapshot.content).toContain('Adopted notebook: Alice Project Continuity Notebook');
+      expect(adoption.snapshot.content).toContain(`Source Notebook: ${notebook.id}`);
+      expect(adoption.snapshot.content).toContain(`Source Notebook version: ${notebookSnapshot.versionNumber}`);
+      expect(adoption.snapshot.content).toContain('private notebook evidence quote');
+      expect(adoption.snapshot.content).toContain(`Project library entry: ${projectLibraryEntryId}`);
+      expect(adoption.snapshot.citations).toEqual([
+        expect.objectContaining({
+          evidenceSpan: 'private notebook evidence quote',
+          paperAssetId: personalSource.asset.id,
+          readerExcerptId: readerExcerpt.id,
+        }),
+      ]);
+      expect(adoption.provenance).toMatchObject({
+        paperAssetIds: [personalSource.asset.id],
+        projectDocId: projectDoc.id,
+        projectDocVersionId: adoption.snapshot.versionId,
+        projectDocVersionNumber: 2,
+        projectId: project.project.id,
+        readerExcerptIds: [readerExcerpt.id],
+        sourceNotebookDocumentId: notebook.id,
+        sourceNotebookVersionId: notebookSnapshot.versionId,
+        sourceNotebookVersionNumber: notebookSnapshot.versionNumber,
+      });
+      expect(projectLibraryEntryId).toBeDefined();
+      expect(projectLibraryEntryId).not.toBe(personalSource.entry.id);
+      expect(projectLibraryEntry).toMatchObject({
+        asset: { id: personalSource.asset.id },
+        entry: {
+          scope: { id: project.project.id, type: 'project' },
+          visibility: 'published_to_project',
+        },
+      });
+      expect(serializedAdoption).not.toContain(`Library entry: ${personalSource.entry.id}`);
+      expect(serializedAdoption).not.toContain(personalSource.entry.id);
+      expect(adoption.citationTrace.citations[0]).toMatchObject({
+        paperAssetId: personalSource.asset.id,
+        projectLibraryEntry: {
+          libraryEntryId: projectLibraryEntryId,
+          projectId: project.project.id,
+        },
+        readerExcerpt: {
+          id: readerExcerpt.id,
+          quote: 'private notebook evidence quote',
+          source: 'reader_source',
+        },
+        source: { state: 'available' },
+      });
+      expect(bobTrace.citations[0]).toMatchObject({
+        paperAssetId: personalSource.asset.id,
+        projectLibraryEntry: {
+          libraryEntryId: projectLibraryEntryId,
+          projectId: project.project.id,
+        },
+        readerExcerpt: {
+          quote: 'private notebook evidence quote',
+          source: 'project_doc_snapshot',
+        },
+        source: { state: 'available' },
+      });
+      expect(serializedAdoption).not.toContain('Private capture note must not leak');
+      expect(serializedAdoption).not.toContain('Alice private reader note must stay private');
+      expect(serializedBobTrace).not.toContain(personalSource.entry.id);
+      expect(serializedBobTrace).not.toContain('Private capture note must not leak');
+      expect(serializedBobTrace).not.toContain('Alice private reader note must stay private');
+      expect(serializedBobTrace).not.toContain('storageKey');
+      expect(serializedBobTrace).not.toContain('checksum');
+      expect(serializedBobTrace).not.toContain(storageRoot);
+
+      await app.close();
+    } finally {
+      await prisma.$disconnect();
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
 });
