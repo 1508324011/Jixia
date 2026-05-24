@@ -1,11 +1,9 @@
 import type { ChangeEvent } from "react";
 
 import type {
-  DocumentAiSuggestionBlock,
   DocumentBlock,
   DocumentBlockDocument,
   DocumentHeadingLevel,
-  DocumentQuoteBlock,
 } from "@shared/contracts/document-content";
 import {
   DOCUMENT_BLOCK_SCHEMA_VERSION,
@@ -13,6 +11,10 @@ import {
 } from "@shared/contracts/document-content";
 
 import { createLegacyTextProjection } from "../lib/document-blocks";
+import {
+  DocumentQuoteReferenceMetadata,
+  DocumentReadonlyBlockContent,
+} from "./document-block-renderer";
 
 type UserAuthoredBlockType = "heading" | "paragraph" | "quote" | "todo";
 
@@ -66,67 +68,6 @@ function readHeadingLevel(event: ChangeEvent<HTMLSelectElement>): DocumentHeadin
   const level = Number(event.target.value);
 
   return level === 1 || level === 2 || level === 3 ? level : 2;
-}
-
-interface ReferenceMetadataBlock {
-  libraryEntryId?: string;
-  locator?: string;
-  paperAssetId?: string;
-}
-
-function ReferenceMetadata({ block }: { block: ReferenceMetadataBlock }) {
-  const metadata = [
-    block.paperAssetId ? `Paper asset · ${block.paperAssetId}` : undefined,
-    block.libraryEntryId ? `Library entry · ${block.libraryEntryId}` : undefined,
-    block.locator ? `Locator · ${block.locator}` : undefined,
-  ].filter((value): value is string => Boolean(value));
-
-  if (metadata.length === 0) {
-    return null;
-  }
-
-  return (
-    <dl className="document-block-editor__metadata" aria-label="reference metadata">
-      {metadata.map((item) => {
-        const [term, detail] = item.split(" · ");
-
-        return (
-          <div key={item}>
-            <dt>{term}</dt>
-            <dd>{detail}</dd>
-          </div>
-        );
-      })}
-    </dl>
-  );
-}
-
-function AiSuggestionBlockView({ block }: { block: DocumentAiSuggestionBlock }) {
-  return (
-    <div className="document-block-editor__readonly-body">
-      <p>{block.text}</p>
-      {block.rationale ? (
-        <p className="quiet-copy">Rationale · {block.rationale}</p>
-      ) : null}
-      <p className="quiet-copy">Status · {block.status}</p>
-      <ReferenceMetadata block={block} />
-    </div>
-  );
-}
-
-function SourceAwareQuoteMetadata({ block }: { block: DocumentQuoteBlock }) {
-  if (!block.evidenceSpan && !block.paperAssetId && !block.libraryEntryId) {
-    return null;
-  }
-
-  return (
-    <div className="document-block-editor__readonly-body">
-      {block.evidenceSpan ? (
-        <p className="quiet-copy">Evidence span · {block.evidenceSpan}</p>
-      ) : null}
-      <ReferenceMetadata block={block} />
-    </div>
-  );
 }
 
 export function DocumentBlockEditor({
@@ -257,7 +198,7 @@ export function DocumentBlockEditor({
                         })}
                       />
                     </label>
-                    <SourceAwareQuoteMetadata block={block} />
+                    <DocumentQuoteReferenceMetadata block={block} />
                   </>
                 ) : null}
 
@@ -288,35 +229,19 @@ export function DocumentBlockEditor({
                 ) : null}
 
                 {block.type === "citation" ? (
-                  <div className="document-block-editor__readonly-body">
-                    <p>
-                      Citation · {block.label ?? block.paperAssetId}
-                    </p>
-                    {block.evidenceSpan ? (
-                      <p className="quiet-copy">Evidence span · {block.evidenceSpan}</p>
-                    ) : null}
-                    <ReferenceMetadata block={block} />
-                  </div>
+                  <DocumentReadonlyBlockContent block={block} />
                 ) : null}
 
                 {block.type === "sourceExcerpt" ? (
-                  <div className="document-block-editor__readonly-body">
-                    {block.title ? <p>{block.title}</p> : null}
-                    <blockquote>{block.quote}</blockquote>
-                    {block.note ? <p className="quiet-copy">Capture note · {block.note}</p> : null}
-                    <ReferenceMetadata block={block} />
-                  </div>
+                  <DocumentReadonlyBlockContent block={block} />
                 ) : null}
 
                 {block.type === "paperReference" ? (
-                  <div className="document-block-editor__readonly-body">
-                    <p>Paper reference · {block.title ?? block.paperAssetId}</p>
-                    <ReferenceMetadata block={block} />
-                  </div>
+                  <DocumentReadonlyBlockContent block={block} />
                 ) : null}
 
                 {block.type === "aiSuggestion" ? (
-                  <AiSuggestionBlockView block={block} />
+                  <DocumentReadonlyBlockContent block={block} />
                 ) : null}
               </section>
             );

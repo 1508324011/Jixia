@@ -13,6 +13,7 @@ export default mergeConfig(
         'tests/smoke/**/*.test.ts',
         'tests/smoke/**/*.test.tsx',
       ],
+      fileParallelism: false,
       setupFiles: ['./src/test/setup.ts'],
       testTimeout: 30_000,
     },

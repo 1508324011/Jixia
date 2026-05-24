@@ -6,6 +6,7 @@ import type { CreateProjectDocAiSuggestionRequest } from "@shared/contracts/proj
 import type { ProjectDocCitationTraceRow } from "@shared/contracts/project-docs";
 
 import { DocumentBlockEditor } from "../components/document-block-editor";
+import { DocumentBlockRenderer } from "../components/document-block-renderer";
 import { createLegacyTextProjection } from "../lib/document-blocks";
 import { useProjectDocPresenter } from "../presenters/project-doc-presenter";
 
@@ -510,33 +511,48 @@ export function WritingPage() {
                     <p className="quiet-copy">
                       Latest snapshot · {presenter.snapshot?.capturedAt ?? "Not saved yet"}
                     </p>
-                    <DocumentBlockEditor
-                      disabled={isMutating || !canEditProjectDoc}
-                      label="Draft content"
-                      value={draftDocumentContent}
-                      onChange={(nextDocumentContent) => {
-                        draftDocumentContentRef.current = nextDocumentContent;
-                        setDraftDocumentContent(nextDocumentContent);
-                      }}
-                    />
-                    <div className="button-row">
-                      <button
-                        type="button"
-                        className="action-button"
-                        disabled={isMutating || !canEditProjectDoc}
-                        onClick={() => void handleSave()}
-                      >
-                        {presenter.isSaving || isSavePendingLocally ? "Saving draft…" : "Save draft"}
-                      </button>
-                      <button
-                        type="button"
-                        className="action-button action-button-secondary"
-                        disabled={isMutating}
-                        onClick={() => void handleReload()}
-                      >
-                        {isReloading ? "Reloading…" : "Reload draft"}
-                      </button>
-                    </div>
+                    {canEditProjectDoc ? (
+                      <>
+                        <DocumentBlockEditor
+                          disabled={isMutating}
+                          label="Draft content"
+                          value={draftDocumentContent}
+                          onChange={(nextDocumentContent) => {
+                            draftDocumentContentRef.current = nextDocumentContent;
+                            setDraftDocumentContent(nextDocumentContent);
+                          }}
+                        />
+                        <div className="button-row">
+                          <button
+                            type="button"
+                            className="action-button"
+                            disabled={isMutating}
+                            onClick={() => void handleSave()}
+                          >
+                            {presenter.isSaving || isSavePendingLocally ? "Saving draft…" : "Save draft"}
+                          </button>
+                          <button
+                            type="button"
+                            className="action-button action-button-secondary"
+                            disabled={isMutating}
+                            onClick={() => void handleReload()}
+                          >
+                            {isReloading ? "Reloading…" : "Reload draft"}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <DocumentBlockRenderer
+                          emptyState="This Project Doc does not have saved blocks yet."
+                          label="Read-only Project Doc content"
+                          value={draftDocumentContent}
+                        />
+                        <p className="quiet-copy">
+                          Read-only viewers can inspect the shared Project Doc and citation trace, but only project owners and editors can modify the saved version.
+                        </p>
+                      </>
+                    )}
                     {!canEditProjectDoc ? (
                       <p className="quiet-copy">
                         Your project role can read this Project Doc, but only project owners and editors can save shared document versions.
