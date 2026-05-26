@@ -90,6 +90,28 @@ describe('workbench navigation', () => {
     });
   });
 
+  it('recognizes AI Workspace as a secondary governed AI surface', () => {
+    const aiWorkspaceContext = deriveWorkbenchRouteContext('/ai-workspace');
+    const aiWorkspaceItem = workbenchNavigationItems.find((item) => item.key === 'ai-workspace');
+
+    expect(aiWorkspaceContext).toEqual({
+      currentSection: 'ai-workspace',
+    });
+    expect(aiWorkspaceItem).toMatchObject({
+      label: 'AI Workspace',
+      subtitle: 'Long-running governed AI work',
+      to: '/ai-workspace',
+    });
+    expect(isWorkbenchNavigationItemActive('/ai-workspace', 'ai-workspace')).toBe(true);
+    expect(isWorkbenchNavigationItemActive('/search', 'ai-workspace')).toBe(false);
+
+    if (!aiWorkspaceItem) {
+      throw new Error('AI Workspace navigation item is required.');
+    }
+
+    expect(resolveWorkbenchNavigationTarget(aiWorkspaceItem, aiWorkspaceContext)).toBe('/ai-workspace');
+  });
+
   it('sidebar switches among approved top-level surfaces', async () => {
     const user = userEvent.setup();
     const personalLibraryEntries: Array<{

@@ -18,6 +18,89 @@ afterEach(() => {
 });
 
 describe('workbench routing', () => {
+  it('protects /ai-workspace and preserves the redirect target for unauthenticated users', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({ error: 'Unauthorized' }, 401);
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    window.history.replaceState({}, '', '/ai-workspace');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '登录' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/login');
+    expect(window.location.search).toBe('?redirect=%2Fai-workspace');
+  });
+
+  it('renders /ai-workspace inside the authenticated workbench shell with active navigation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([]);
+        }
+
+        if (requestUrl.endsWith('/api/spaces')) {
+          return jsonResponse([]);
+        }
+
+        if (requestUrl.endsWith('/api/credentials')) {
+          return jsonResponse([]);
+        }
+
+        if (requestUrl.includes('/api/jobs?')) {
+          const url = new URL(requestUrl);
+          expect(url.searchParams.get('scopeType')).toBe('user');
+          expect(url.searchParams.get('scopeId')).toBe('user-alice');
+          expect(url.searchParams.get('actorUserId')).toBeNull();
+          return jsonResponse([]);
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    window.history.replaceState({}, '', '/ai-workspace');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
+    const aiWorkspaceLink = screen.getByRole('link', { name: 'AI Workspace' });
+    expect(aiWorkspaceLink).toHaveAttribute('href', '/ai-workspace');
+    expect(aiWorkspaceLink).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+    expect(screen.getByText('Credential setup required')).toBeInTheDocument();
+  });
+
   it('redirects authenticated users to /home and renders stable nav', async () => {
     vi.stubGlobal(
       'fetch',
@@ -136,6 +219,7 @@ describe('workbench routing', () => {
     expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Notebook' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'AI Workspace' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Jobs' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '设置' })).toBeInTheDocument();
   });
