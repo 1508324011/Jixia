@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./components/app-shell";
+import { AiWorkspacePage } from "./pages/ai-workspace-page";
 import { ProtectedRoute } from "./components/protected-route";
 import { WorkbenchLayout } from "./components/workbench-layout";
 import { HomePage } from "./pages/home-page";
@@ -63,6 +64,7 @@ export function AppRouter() {
             path="/spaces/:spaceId/projects/:projectId/writing/:docId"
             element={<WritingPage />}
           />
+          <Route path="/ai-workspace" element={<AiWorkspacePage />} />
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>

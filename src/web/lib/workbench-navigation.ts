@@ -8,6 +8,7 @@ import {
   NotebookTabs,
   Search,
   Settings,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -21,6 +22,7 @@ export type WorkbenchSection =
   | 'spaces'
   | 'reader'
   | 'writing'
+  | 'ai-workspace'
   | 'jobs'
   | 'settings';
 
@@ -85,6 +87,13 @@ export const workbenchNavigationItems: WorkbenchNavigationItem[] = [
     label: 'Projects',
     subtitle: 'Collaboration lanes',
     to: '/projects',
+  },
+  {
+    icon: Sparkles,
+    key: 'ai-workspace',
+    label: 'AI Workspace',
+    subtitle: 'Long-running governed AI work',
+    to: '/ai-workspace',
   },
   {
     icon: Bot,
@@ -220,6 +229,10 @@ export function deriveWorkbenchRouteContext(pathname: string): WorkbenchRouteCon
 
   if (pathname === '/spaces') {
     return { currentSection: 'spaces' };
+  }
+
+  if (pathname === '/ai-workspace') {
+    return { currentSection: 'ai-workspace' };
   }
 
   if (pathname === '/jobs') {
