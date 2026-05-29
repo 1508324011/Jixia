@@ -77,6 +77,24 @@ function CitationTraceRow({ row }: { row: ProjectDocCitationTraceRow }) {
   );
 }
 
+function CitationTraceEmptyState({
+  trace,
+}: {
+  trace: ReturnType<typeof useProjectDocPresenter>["citationTrace"];
+}) {
+  if (trace?.versionNumber === 0) {
+    return (
+      <p className="quiet-copy">
+        No saved Project Doc version yet. Citation trace rows appear after the first server-confirmed Save draft.
+      </p>
+    );
+  }
+
+  return (
+    <p className="quiet-copy">No citations in the latest saved Project Doc snapshot.</p>
+  );
+}
+
 function AiSuggestionPanel({
   canEditProjectDoc,
   documentContent,
@@ -650,7 +668,7 @@ export function WritingPage() {
                       ))}
                     </ul>
                   ) : (
-                    <p className="quiet-copy">No citations in the latest saved Project Doc snapshot.</p>
+                    <CitationTraceEmptyState trace={presenter.citationTrace} />
                   )}
                 </section>
               </aside>

@@ -98,9 +98,14 @@ export interface LegacyCreateReadingNoteRequest extends CreateReadingNoteRequest
 export interface CreateProjectReadingCommentRequest {
   body: string;
   libraryEntryId: string;
+}
+
+export interface LegacyCreateProjectReadingCommentRequest
+  extends CreateProjectReadingCommentRequest {
   /**
-   * @deprecated Compatibility assertion only. The server derives project
-   * authority from LibraryEntry.scope and ProjectMember access.
+   * @deprecated Compatibility assertion only for server/service callers. Browser
+   * clients must not send project context for Reader project comments; the
+   * server derives the project from LibraryEntry.scope and ProjectMember access.
    */
   projectId?: string;
 }

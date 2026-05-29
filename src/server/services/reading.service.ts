@@ -34,6 +34,8 @@ export interface CreateProjectCommentRequest
   actorUserId: string;
   /** @deprecated Compatibility assertion only. */
   authorUserId?: string;
+  /** @deprecated Compatibility assertion only; never browser authority. */
+  projectId?: string;
 }
 
 export interface SaveGeneratedInsightRequest

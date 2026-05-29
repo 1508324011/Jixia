@@ -131,7 +131,6 @@ export function useReaderPresenter(
         await apiClient.createProjectReadingComment({
           body,
           libraryEntryId: entryId,
-          projectId: projectContext.project.project.id,
         });
         await refresh();
       } catch (presenterError) {

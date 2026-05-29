@@ -1039,6 +1039,88 @@ describe('project writer flow', () => {
     expect(screen.getByText('No citations in the latest saved Project Doc snapshot.')).toBeInTheDocument();
   });
 
+  it('writing page distinguishes a version-zero citation trace from a saved snapshot with no citations', async () => {
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'space-project-1',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+    };
+    const documentState = {
+      capturedAt: '2026-03-23T00:40:00.000Z',
+      citations: [],
+      content: '',
+      document: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'doc-project-1',
+        projectId: 'project-1',
+        publishState: 'draft',
+        title: 'Unsaved Project Doc',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+      documentContent: { blocks: [], schemaVersion: 1 },
+      versionId: 'project-doc:doc-project-1:version-0',
+      versionNumber: 0,
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (requestUrl.endsWith('/api/session/me')) {
+          return jsonResponse({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
+
+        if (requestUrl.endsWith('/api/projects')) {
+          return jsonResponse([projectFixture]);
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1/citation-trace')) {
+          return jsonResponse(buildEmptyCitationTrace(documentState));
+        }
+
+        if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
+          return jsonResponse(documentState);
+        }
+
+        throw new Error(`Unexpected fetch: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-1/writing/doc-project-1');
+
+    expect(
+      await screen.findByText(
+        'No saved Project Doc version yet. Citation trace rows appear after the first server-confirmed Save draft.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('No citations in the latest saved Project Doc snapshot.')).not.toBeInTheDocument();
+  });
+
   it('writing page renders citation trace loading, server rows, and error states without authority labels', async () => {
     const user = userEvent.setup();
     const projectFixture = {

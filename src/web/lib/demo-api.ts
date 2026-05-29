@@ -98,14 +98,12 @@ export function createDemoApi(baseUrl = '', options: DemoApiOptions = {}) {
     createProjectReadingComment(input: {
       body: string;
       entryId: string;
-      projectId?: string;
     }): Promise<ReadingProjectCommentResponse> {
       return requestJson<ReadingProjectCommentResponse>(
         resolvePath(`/api/reading/${input.entryId}/project-comments`),
         {
           body: JSON.stringify({
             body: input.body,
-            projectId: input.projectId,
           }),
           headers: requestHeaders(),
           method: 'POST',

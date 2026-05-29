@@ -54,7 +54,6 @@ interface CreateReadingNoteRequestBody {
 interface CreateProjectReadingCommentRequestBody {
   body?: string;
   libraryEntryId?: string;
-  projectId?: string;
 }
 
 interface SaveReadingInsightRequestBody {
@@ -183,20 +182,15 @@ function parseCreateProjectReadingCommentRequest(
   requestBody: unknown,
 ): Required<Pick<CreateProjectReadingCommentRequestBody, 'body'>> & {
   libraryEntryId?: string;
-  projectId?: string;
 } {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Project reading comment payload must be a JSON object.');
   }
 
-  const { body, libraryEntryId, projectId } = requestBody as Record<string, unknown>;
+  const { body, libraryEntryId } = requestBody as Record<string, unknown>;
 
   if (typeof body !== 'string' || !body.trim()) {
     throw new Error('body is required.');
-  }
-
-  if (typeof projectId !== 'undefined' && typeof projectId !== 'string') {
-    throw new Error('projectId must be a string when provided.');
   }
 
   if (typeof libraryEntryId !== 'undefined' && typeof libraryEntryId !== 'string') {
@@ -206,7 +200,6 @@ function parseCreateProjectReadingCommentRequest(
   return {
     body: body.trim(),
     libraryEntryId: libraryEntryId?.trim() || undefined,
-    projectId: projectId?.trim() || undefined,
   };
 }
 
@@ -415,6 +408,69 @@ function rejectLegacyIdentityBodyFields(
   assertNoClientActorIdentityField(actor, body.authorUserId, 'authorUserId');
   assertNoClientActorIdentityField(actor, body.startedByUserId, 'startedByUserId');
   assertNoClientActorContextField(body.actorSpaceId, 'actorSpaceId');
+}
+
+function rejectProjectReadingCommentAuthorityBodyFields(
+  actor: ActorContext,
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.ownerId, 'ownerId');
+  assertNoClientActorIdentityField(actor, body.createdByUserId, 'createdByUserId');
+  assertNoClientActorContextField(body.projectId, 'projectId');
+  assertNoClientActorContextField(body.scope, 'scope');
+  assertNoClientActorContextField(body.scopeId, 'scopeId');
+  assertNoClientActorContextField(body.scopeType, 'scopeType');
+  assertNoClientActorContextField(body.spaceId, 'spaceId');
+  assertNoClientActorContextField(body.visibility, 'visibility');
+}
+
+function rejectProjectReadingCommentAuthorityQueryFields(
+  actor: ActorContext,
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    requestUrl.searchParams.get('ownerId') ?? undefined,
+    'ownerId',
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    requestUrl.searchParams.get('createdByUserId') ?? undefined,
+    'createdByUserId',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('projectId') ?? undefined,
+    'projectId',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('scope') ?? undefined,
+    'scope',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('scopeId') ?? undefined,
+    'scopeId',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('scopeType') ?? undefined,
+    'scopeType',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('spaceId') ?? undefined,
+    'spaceId',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('visibility') ?? undefined,
+    'visibility',
+  );
 }
 
 function requireActor(actor?: ActorContext): ActorContext {
@@ -645,8 +701,8 @@ export async function resolveHttpApi(
 
   if (projectReadingCommentMatch && method === 'POST') {
     const requiredActor = requireActor(actor);
-    rejectLegacyIdentityQueryFields(requiredActor, requestUrl);
-    rejectLegacyIdentityBodyFields(requiredActor, requestBody);
+    rejectProjectReadingCommentAuthorityQueryFields(requiredActor, requestUrl);
+    rejectProjectReadingCommentAuthorityBodyFields(requiredActor, requestBody);
     const payload = parseCreateProjectReadingCommentRequest(requestBody);
 
     return {
@@ -655,7 +711,6 @@ export async function resolveHttpApi(
           actorUserId: requiredActor.userId,
           body: payload.body,
           libraryEntryId: decodePathSegment(projectReadingCommentMatch[1]),
-          projectId: payload.projectId,
         }),
       ),
       statusCode: 201,
@@ -664,8 +719,8 @@ export async function resolveHttpApi(
 
   if (pathname === '/api/reading/project-comments' && method === 'POST') {
     const requiredActor = requireActor(actor);
-    rejectLegacyIdentityQueryFields(requiredActor, requestUrl);
-    rejectLegacyIdentityBodyFields(requiredActor, requestBody);
+    rejectProjectReadingCommentAuthorityQueryFields(requiredActor, requestUrl);
+    rejectProjectReadingCommentAuthorityBodyFields(requiredActor, requestBody);
     const payload = parseCreateProjectReadingCommentRequest(requestBody);
 
     if (!payload.libraryEntryId) {
@@ -678,7 +733,6 @@ export async function resolveHttpApi(
           actorUserId: requiredActor.userId,
           body: payload.body,
           libraryEntryId: payload.libraryEntryId,
-          projectId: payload.projectId,
         }),
       ),
       statusCode: 201,

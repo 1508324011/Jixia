@@ -219,6 +219,10 @@ describe('paper workspace', () => {
             body: string;
             projectId?: string;
           };
+          expect(body).toEqual({
+            body: expect.any(String),
+          });
+          expect(body).not.toHaveProperty('projectId');
           const comment = {
             authorUserId: 'user-alice',
             body: body.body,
@@ -226,7 +230,7 @@ describe('paper workspace', () => {
             id: `comment-${readingDetail.projectComments.length + 1}`,
             kind: 'project_comment' as const,
             libraryEntryId: 'entry-1',
-            projectId: body.projectId ?? 'project-alpha',
+            projectId: 'project-alpha',
           };
           readingDetail.projectComments.push(comment);
 
@@ -242,8 +246,8 @@ describe('paper workspace', () => {
           expect(body).toEqual({
             body: expect.any(String),
             libraryEntryId: 'entry-1',
-            projectId: 'project-alpha',
           });
+          expect(body).not.toHaveProperty('projectId');
           const comment = {
             authorUserId: 'user-alice',
             body: body.body,
@@ -531,8 +535,8 @@ describe('paper workspace', () => {
     expect(JSON.parse(String(noteRequest?.[1]?.body))).not.toHaveProperty('visibility');
     expect(JSON.parse(String(commentRequest?.[1]?.body))).toMatchObject({
       body: 'Project comment for later synthesis.',
-      projectId: 'project-alpha',
     });
+    expect(JSON.parse(String(commentRequest?.[1]?.body))).not.toHaveProperty('projectId');
 
     await user.click(screen.getByRole('button', { name: 'Generate insight' }));
     await user.click(screen.getByRole('button', { name: 'Send latest insight to Notebook' }));
