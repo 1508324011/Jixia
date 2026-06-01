@@ -335,7 +335,7 @@ describe('minimal recovery loop server truth smoke', () => {
           headers: jsonHeaders(aliceCookie),
           method: 'POST',
         });
-        await expectError(rejectedVisibilityComment, 400, /project-comments endpoint/i);
+        await expectError(rejectedVisibilityComment, 400, /not accepted for protected routes/i);
         const projectCommentResponse = await expectJson<{ comment: ProjectCommentResponse }>(
           await fetch(`${firstServer.url}/api/reading/${importedProjectEntry.entry.id}/project-comments`, {
             body: JSON.stringify({

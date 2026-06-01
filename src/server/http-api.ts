@@ -48,7 +48,6 @@ interface ImportToPersonalLibraryRequestBody {
 
 interface CreateReadingNoteRequestBody {
   body?: string;
-  visibility?: 'private' | 'space_shared';
 }
 
 interface CreateProjectReadingCommentRequestBody {
@@ -147,14 +146,12 @@ function parseImportToPersonalLibraryRequest(
 
 function parseCreateReadingNoteRequest(
   requestBody: unknown,
-): Required<Pick<CreateReadingNoteRequestBody, 'body'>> & {
-  visibility?: CreateReadingNoteRequestBody['visibility'];
-} {
+): Required<Pick<CreateReadingNoteRequestBody, 'body'>> {
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
     throw new Error('Reading note payload must be a JSON object.');
   }
 
-  const { body, visibility } = requestBody as Record<
+  const { body } = requestBody as Record<
     string,
     unknown
   >;
@@ -163,18 +160,8 @@ function parseCreateReadingNoteRequest(
     throw new Error('body is required.');
   }
 
-  if (
-    typeof visibility !== 'undefined' &&
-    visibility !== 'private'
-  ) {
-    throw new Error(
-      'Project comments must use the project-comments endpoint instead of note visibility.',
-    );
-  }
-
   return {
     body: body.trim(),
-    visibility,
   };
 }
 
@@ -432,7 +419,70 @@ function rejectProjectReadingCommentAuthorityBodyFields(
   assertNoClientActorContextField(body.visibility, 'visibility');
 }
 
+function rejectReaderWriteAuthorityBodyFields(
+  actor: ActorContext,
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.ownerId, 'ownerId');
+  assertNoClientActorIdentityField(actor, body.createdByUserId, 'createdByUserId');
+  assertNoClientActorContextField(body.projectId, 'projectId');
+  assertNoClientActorContextField(body.scope, 'scope');
+  assertNoClientActorContextField(body.scopeId, 'scopeId');
+  assertNoClientActorContextField(body.scopeType, 'scopeType');
+  assertNoClientActorContextField(body.spaceId, 'spaceId');
+  assertNoClientActorContextField(body.visibility, 'visibility');
+}
+
 function rejectProjectReadingCommentAuthorityQueryFields(
+  actor: ActorContext,
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    requestUrl.searchParams.get('ownerId') ?? undefined,
+    'ownerId',
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    requestUrl.searchParams.get('createdByUserId') ?? undefined,
+    'createdByUserId',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('projectId') ?? undefined,
+    'projectId',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('scope') ?? undefined,
+    'scope',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('scopeId') ?? undefined,
+    'scopeId',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('scopeType') ?? undefined,
+    'scopeType',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('spaceId') ?? undefined,
+    'spaceId',
+  );
+  assertNoClientActorContextField(
+    requestUrl.searchParams.get('visibility') ?? undefined,
+    'visibility',
+  );
+}
+
+function rejectReaderWriteAuthorityQueryFields(
   actor: ActorContext,
   requestUrl: URL,
 ): void {
@@ -678,8 +728,8 @@ export async function resolveHttpApi(
 
   if (readingNoteMatch && method === 'POST') {
     const requiredActor = requireActor(actor);
-    rejectLegacyIdentityQueryFields(requiredActor, requestUrl);
-    rejectLegacyIdentityBodyFields(requiredActor, requestBody);
+    rejectReaderWriteAuthorityQueryFields(requiredActor, requestUrl);
+    rejectReaderWriteAuthorityBodyFields(requiredActor, requestBody);
     const payload = parseCreateReadingNoteRequest(requestBody);
 
     return {
@@ -688,7 +738,6 @@ export async function resolveHttpApi(
           actorUserId: requiredActor.userId,
           body: payload.body,
           libraryEntryId: decodePathSegment(readingNoteMatch[1]),
-          visibility: payload.visibility,
         }),
       ),
       statusCode: 201,
@@ -743,8 +792,8 @@ export async function resolveHttpApi(
 
   if (readingInsightMatch && method === 'POST') {
     const requiredActor = requireActor(actor);
-    rejectLegacyIdentityQueryFields(requiredActor, requestUrl);
-    rejectLegacyIdentityBodyFields(requiredActor, requestBody);
+    rejectReaderWriteAuthorityQueryFields(requiredActor, requestUrl);
+    rejectReaderWriteAuthorityBodyFields(requiredActor, requestBody);
     const payload = parseSaveReadingInsightRequest(requestBody);
 
     return {

@@ -604,6 +604,47 @@ function rejectProjectReadingCommentAuthorityQueryFields(
   );
 }
 
+function rejectReaderWriteAuthorityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "createdByUserId"),
+    "createdByUserId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "projectId"),
+    "projectId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scope"),
+    "scope",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeId"),
+    "scopeId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeType"),
+    "scopeType",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "spaceId"),
+    "spaceId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "visibility"),
+    "visibility",
+  );
+}
+
 function rejectLegacyIdentityBodyFields(
   actor: { userId: string },
   requestBody: unknown,
@@ -854,6 +895,28 @@ function rejectReaderExcerptAuthorityBodyFields(
   assertNoClientActorContextField(body.scopeId, "scopeId");
   assertNoClientActorContextField(body.spaceId, "spaceId");
   assertNoClientActorContextField(body.projectId, "projectId");
+  assertNoClientActorContextField(body.visibility, "visibility");
+}
+
+function rejectReaderWriteAuthorityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+  assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
+  assertNoClientActorContextField(body.projectId, "projectId");
+  assertNoClientActorContextField(body.scope, "scope");
+  assertNoClientActorContextField(body.scopeId, "scopeId");
+  assertNoClientActorContextField(body.scopeType, "scopeType");
+  assertNoClientActorContextField(body.spaceId, "spaceId");
   assertNoClientActorContextField(body.visibility, "visibility");
 }
 
@@ -2084,16 +2147,21 @@ async function handleApiRequest(
 
     if (pathname === "/api/reading/notes" && method === "POST") {
       const actor = await getActor(request, actorOptions);
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectReaderWriteAuthorityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorSpaceId?: string;
         authorUserId?: string;
         body: string;
         libraryEntryId: string;
-        visibility?: "private" | "space_shared";
+        projectId?: unknown;
+        scope?: unknown;
+        scopeId?: unknown;
+        scopeType?: unknown;
+        spaceId?: unknown;
+        visibility?: unknown;
       }>(request);
 
-      rejectLegacyIdentityBodyFields(actor, body);
+      rejectReaderWriteAuthorityBodyFields(actor, body);
       rejectLegacyActorSpaceContextBodyField(body);
 
       sendJson(
@@ -2103,7 +2171,6 @@ async function handleApiRequest(
           actorUserId: actor.userId,
           body: body.body,
           libraryEntryId: body.libraryEntryId,
-          visibility: body.visibility,
         }),
         method,
       );
@@ -2173,7 +2240,7 @@ async function handleApiRequest(
 
     if (pathname === "/api/reading/insights" && method === "POST") {
       const actor = await getActor(request, actorOptions);
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectReaderWriteAuthorityQueryFields(actor, requestUrl);
       const body = await readJsonBody<{
         actorSpaceId?: string;
         evidenceSpans: Array<{
@@ -2182,12 +2249,18 @@ async function handleApiRequest(
           startOffset: number;
         }>;
         libraryEntryId: string;
+        projectId?: unknown;
+        scope?: unknown;
+        scopeId?: unknown;
+        scopeType?: unknown;
+        spaceId?: unknown;
         startedByUserId?: string;
         summary: string;
         title: string;
+        visibility?: unknown;
       }>(request);
 
-      rejectLegacyIdentityBodyFields(actor, body);
+      rejectReaderWriteAuthorityBodyFields(actor, body);
       rejectLegacyActorSpaceContextBodyField(body);
 
       sendJson(

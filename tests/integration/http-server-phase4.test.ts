@@ -114,7 +114,7 @@ describe("http server phase 4 reader slice", () => {
         });
         expect(rejectedSharedVisibility.status).toBe(400);
         await expect(rejectedSharedVisibility.json()).resolves.toMatchObject({
-          error: expect.stringMatching(/project-comments endpoint/i),
+          error: expect.stringMatching(/not accepted for protected routes/i),
         });
 
         const comment = await fetch(

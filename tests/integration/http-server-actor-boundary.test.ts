@@ -1055,6 +1055,123 @@ describe('http server actor boundary cleanup', () => {
     }
   }, 30_000);
 
+  it('rejects authority residue on generic reading note and insight writes', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-reading-residue-'));
+
+    try {
+      const server = await startTestServer(
+        { JIXIA_STORAGE_ROOT: storageRoot },
+        { connectors: { pubmed: createActorBoundaryPubmedConnector() } },
+      );
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const sharedSpace = await createSharedSpace(server.url, aliceCookie, 'user-alice');
+        const importedRecord = await importPaper(
+          server.url,
+          aliceCookie,
+          'user-alice',
+          sharedSpace.id,
+        );
+        const jsonHeaders = withSessionCookie(aliceCookie, {
+          'Content-Type': 'application/json',
+        });
+        const authorityBodyResidueCases: Array<[string, unknown]> = [
+          ['ownerId', 'user-alice'],
+          ['createdByUserId', 'user-alice'],
+          ['projectId', importedRecord.projectId],
+          ['scope', { id: importedRecord.projectId, type: 'project' }],
+          ['scopeId', importedRecord.projectId],
+          ['scopeType', 'project'],
+          ['spaceId', sharedSpace.id],
+          ['visibility', 'private'],
+        ];
+        const authorityQueryResidueCases: Array<[string, string]> = [
+          ['ownerId', 'user-alice'],
+          ['createdByUserId', 'user-alice'],
+          ['projectId', importedRecord.projectId],
+          ['scope', `project:${importedRecord.projectId}`],
+          ['scopeId', importedRecord.projectId],
+          ['scopeType', 'project'],
+          ['spaceId', sharedSpace.id],
+          ['visibility', 'private'],
+        ];
+        const expectProtectedRouteRejection = async (response: Response) => {
+          const payload = (await response.json()) as { error: string };
+
+          expect(response.status).toBe(400);
+          expect(payload.error).toMatch(/not accepted for protected routes/i);
+        };
+        const withResidueQuery = (
+          pathname: string,
+          fieldName: string,
+          value: string,
+        ) => {
+          const requestUrl = new URL(pathname, server.url);
+          requestUrl.searchParams.set(fieldName, value);
+
+          return requestUrl.toString();
+        };
+
+        for (const [fieldName, value] of authorityBodyResidueCases) {
+          await expectProtectedRouteRejection(
+            await fetch(`${server.url}/api/reading/notes`, {
+              body: JSON.stringify({
+                body: `Residue note body ${fieldName}`,
+                libraryEntryId: importedRecord.entry.id,
+                [fieldName]: value,
+              }),
+              headers: jsonHeaders,
+              method: 'POST',
+            }),
+          );
+          await expectProtectedRouteRejection(
+            await fetch(`${server.url}/api/reading/insights`, {
+              body: JSON.stringify({
+                evidenceSpans: [],
+                libraryEntryId: importedRecord.entry.id,
+                summary: `Residue insight body ${fieldName}`,
+                title: `Residue Insight ${fieldName}`,
+                [fieldName]: value,
+              }),
+              headers: jsonHeaders,
+              method: 'POST',
+            }),
+          );
+        }
+
+        for (const [fieldName, value] of authorityQueryResidueCases) {
+          await expectProtectedRouteRejection(
+            await fetch(withResidueQuery('/api/reading/notes', fieldName, value), {
+              body: JSON.stringify({
+                body: `Residue note query ${fieldName}`,
+                libraryEntryId: importedRecord.entry.id,
+              }),
+              headers: jsonHeaders,
+              method: 'POST',
+            }),
+          );
+          await expectProtectedRouteRejection(
+            await fetch(withResidueQuery('/api/reading/insights', fieldName, value), {
+              body: JSON.stringify({
+                evidenceSpans: [],
+                libraryEntryId: importedRecord.entry.id,
+                summary: `Residue insight query ${fieldName}`,
+                title: `Residue Insight Query ${fieldName}`,
+              }),
+              headers: jsonHeaders,
+              method: 'POST',
+            }),
+          );
+        }
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 30_000);
+
   it('rejects matching legacy identity fields on protected browser-facing routes', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-actor-matching-'));
 

@@ -764,6 +764,7 @@ describe('prisma schema', () => {
     );
     const readingService = readFileSync('src/server/services/reading.service.ts', 'utf8');
     const httpServer = readFileSync('src/server/http-server.ts', 'utf8');
+    const httpApi = readFileSync('src/server/http-api.ts', 'utf8');
     const httpClient = readFileSync('src/web/lib/http-client.ts', 'utf8');
     const readerPresenter = readFileSync('src/web/presenters/reader-presenter.ts', 'utf8');
     const readerPage = readFileSync('src/web/pages/reader-page.tsx', 'utf8');
@@ -813,9 +814,35 @@ describe('prisma schema', () => {
       httpServer.indexOf('pathname === "/api/reading/project-comments"'),
       httpServer.indexOf('pathname === "/api/reading/insights"'),
     );
+    const httpServerNoteHandler = httpServer.slice(
+      httpServer.indexOf('pathname === "/api/reading/notes"'),
+      httpServer.indexOf('pathname === "/api/reading/project-comments"'),
+    );
+    const httpServerInsightHandler = httpServer.slice(
+      httpServer.indexOf('pathname === "/api/reading/insights"'),
+      httpServer.indexOf('const membershipsMatch', httpServer.indexOf('pathname === "/api/reading/insights"')),
+    );
+    const httpApiNoteHandler = httpApi.slice(
+      httpApi.indexOf('const readingNoteMatch'),
+      httpApi.indexOf('const projectReadingCommentMatch'),
+    );
+    const httpApiInsightHandler = httpApi.slice(
+      httpApi.indexOf('const readingInsightMatch'),
+      httpApi.indexOf('const writingDocumentMatch'),
+    );
     expect(httpServerProjectCommentHandler).toContain('rejectProjectReadingCommentAuthorityQueryFields(actor, requestUrl)');
     expect(httpServerProjectCommentHandler).toContain('rejectProjectReadingCommentAuthorityBodyFields(actor, body)');
     expect(httpServerProjectCommentHandler).not.toContain('projectId: body.projectId');
+    expect(httpServerNoteHandler).toContain('rejectReaderWriteAuthorityQueryFields(actor, requestUrl)');
+    expect(httpServerNoteHandler).toContain('rejectReaderWriteAuthorityBodyFields(actor, body)');
+    expect(httpServerNoteHandler).not.toContain('visibility: body.visibility');
+    expect(httpServerInsightHandler).toContain('rejectReaderWriteAuthorityQueryFields(actor, requestUrl)');
+    expect(httpServerInsightHandler).toContain('rejectReaderWriteAuthorityBodyFields(actor, body)');
+    expect(httpApiNoteHandler).toContain('rejectReaderWriteAuthorityQueryFields(requiredActor, requestUrl)');
+    expect(httpApiNoteHandler).toContain('rejectReaderWriteAuthorityBodyFields(requiredActor, requestBody)');
+    expect(httpApiNoteHandler).not.toContain('visibility: payload.visibility');
+    expect(httpApiInsightHandler).toContain('rejectReaderWriteAuthorityQueryFields(requiredActor, requestUrl)');
+    expect(httpApiInsightHandler).toContain('rejectReaderWriteAuthorityBodyFields(requiredActor, requestBody)');
     expect(readerPresenter).not.toContain('NoteVisibility');
     expect(readerPage).not.toContain('note.visibility');
   });
