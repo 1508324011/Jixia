@@ -97,7 +97,7 @@ Task 11 turns the verified web interaction shell into a reproducibly runnable la
 
 - Node.js 22
 - npm with the repository lockfile
-- Docker and Docker Compose if you want the container path
+- Docker and Docker Compose only if you want the optional packaging verification path
 
 ### Environment contract
 
@@ -126,7 +126,9 @@ After startup, the server serves the built workbench shell from `dist/`, respond
 
 Use `http://127.0.0.1:3000/health` as the first runtime sanity check. A healthy Task 11 process returns `{"service":"jixia-server","status":"ok"}`.
 
-### Docker Compose startup path
+### Optional Docker Compose packaging path
+
+Use this path only on Docker-capable hosts when you want packaging verification. The required current-host gate is the native Node startup path above.
 
 ```bash
 cp .env.example .env
