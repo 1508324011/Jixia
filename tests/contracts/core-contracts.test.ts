@@ -536,7 +536,6 @@ describe('core contracts', () => {
     const createProjectCommentRequest: CreateProjectReadingCommentRequest = {
       body: 'Project comment body',
       libraryEntryId: 'entry_001',
-      projectId: 'project_001',
     };
     const createExcerptRequest: CreateReaderExcerptRequest = {
       endOffset: 32,
@@ -601,7 +600,10 @@ describe('core contracts', () => {
     expect(excerpt).not.toHaveProperty('spaceId');
     expect(excerpt).not.toHaveProperty('projectId');
     expect(createNoteRequest).not.toHaveProperty('visibility');
-    expect(createProjectCommentRequest.projectId).toBe('project_001');
+    expect(createProjectCommentRequest).not.toHaveProperty('projectId');
+    expect(createProjectCommentRequest).not.toHaveProperty('visibility');
+    expect(createProjectCommentRequest).not.toHaveProperty('spaceId');
+    expect(createProjectCommentRequest).not.toHaveProperty('scope');
     expect(readingDetail.excerpts[0]?.paperAssetId).toBe('asset_001');
     expect(readingDetail.notes).toHaveLength(1);
     expect(readingDetail.projectComments).toHaveLength(1);

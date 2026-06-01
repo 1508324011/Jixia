@@ -335,7 +335,6 @@ describe('workbench http contracts', () => {
       const projectCommentFromClient = await demoApi.createProjectReadingComment({
         body: 'Workbench project comment through explicit route.',
         entryId: importedProjectRecord.entry.id,
-        projectId: project.project.id,
       });
       const projectReaderDetail = await demoApi.getReadingDetail(importedProjectRecord.entry.id);
       const writingDocumentFromClient = await demoApi.getWritingDocument(

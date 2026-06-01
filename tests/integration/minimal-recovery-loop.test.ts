@@ -340,7 +340,6 @@ describe('minimal recovery loop server truth smoke', () => {
           await fetch(`${firstServer.url}/api/reading/${importedProjectEntry.entry.id}/project-comments`, {
             body: JSON.stringify({
               body: 'Project-visible evidence comment.',
-              projectId: project.project.id,
             }),
             headers: jsonHeaders(aliceCookie),
             method: 'POST',

@@ -763,6 +763,7 @@ describe('prisma schema', () => {
       'utf8',
     );
     const readingService = readFileSync('src/server/services/reading.service.ts', 'utf8');
+    const httpServer = readFileSync('src/server/http-server.ts', 'utf8');
     const httpClient = readFileSync('src/web/lib/http-client.ts', 'utf8');
     const readerPresenter = readFileSync('src/web/presenters/reader-presenter.ts', 'utf8');
     const readerPage = readFileSync('src/web/pages/reader-page.tsx', 'utf8');
@@ -799,7 +800,22 @@ describe('prisma schema', () => {
     expect(readingService).not.toContain('includeSharedNotes');
 
     expect(httpClient).toContain('createProjectReadingComment');
+    const httpClientProjectCommentMethod = httpClient.slice(
+      httpClient.indexOf('createProjectReadingComment'),
+      httpClient.indexOf('createSpace', httpClient.indexOf('createProjectReadingComment')),
+    );
+    expect(httpClientProjectCommentMethod).not.toContain('projectId');
+    expect(httpClientProjectCommentMethod).not.toContain('visibility');
+    expect(httpClientProjectCommentMethod).not.toContain('scopeType');
+    expect(httpClientProjectCommentMethod).not.toContain('spaceId');
     expect(httpClient).not.toContain('visibility: "space_shared"');
+    const httpServerProjectCommentHandler = httpServer.slice(
+      httpServer.indexOf('pathname === "/api/reading/project-comments"'),
+      httpServer.indexOf('pathname === "/api/reading/insights"'),
+    );
+    expect(httpServerProjectCommentHandler).toContain('rejectProjectReadingCommentAuthorityQueryFields(actor, requestUrl)');
+    expect(httpServerProjectCommentHandler).toContain('rejectProjectReadingCommentAuthorityBodyFields(actor, body)');
+    expect(httpServerProjectCommentHandler).not.toContain('projectId: body.projectId');
     expect(readerPresenter).not.toContain('NoteVisibility');
     expect(readerPage).not.toContain('note.visibility');
   });

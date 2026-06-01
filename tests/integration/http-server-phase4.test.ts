@@ -122,7 +122,6 @@ describe("http server phase 4 reader slice", () => {
           {
             body: JSON.stringify({
               body: "This paper matters for the shared review.",
-              projectId: project.project.id,
             }),
             headers: withSessionCookie(aliceCookie, {
               "Content-Type": "application/json",

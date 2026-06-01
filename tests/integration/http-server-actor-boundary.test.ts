@@ -854,7 +854,6 @@ describe('http server actor boundary cleanup', () => {
               authorUserId: 'user-bob',
               body: 'Spoofed project comment',
               libraryEntryId: importedRecord.entry.id,
-              projectId: importedRecord.projectId,
             }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
@@ -979,9 +978,48 @@ describe('http server actor boundary cleanup', () => {
           }),
           fetch(`${server.url}/api/reading/project-comments`, {
             body: JSON.stringify({
-              body: 'Project mismatch comment.',
+              body: 'Browser-supplied project context comment.',
               libraryEntryId: importedRecord.entry.id,
-              projectId: 'project-mismatch',
+              projectId: importedRecord.projectId,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/project-comments`, {
+            body: JSON.stringify({
+              body: 'Browser-supplied nested project context comment.',
+              projectId: importedRecord.projectId,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/project-comments`, {
+            body: JSON.stringify({
+              body: 'Browser-supplied comment visibility should be rejected.',
+              visibility: 'published_to_project',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/project-comments?projectId=${importedRecord.projectId}`, {
+            body: JSON.stringify({
+              body: 'Browser-supplied query project context comment.',
+              libraryEntryId: importedRecord.entry.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/project-comments?scopeType=project`, {
+            body: JSON.stringify({
+              body: 'Browser-supplied nested query scope comment.',
             }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',
@@ -1443,6 +1481,46 @@ describe('http server actor boundary cleanup', () => {
             body: JSON.stringify({
               body: 'Matching query note author should be rejected.',
               libraryEntryId: importedRecord.entry.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/project-comments`, {
+            body: JSON.stringify({
+              body: 'Matching project comment project context should be rejected.',
+              libraryEntryId: importedRecord.entry.id,
+              projectId: importedRecord.projectId,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/project-comments`, {
+            body: JSON.stringify({
+              body: 'Matching nested project comment project context should be rejected.',
+              projectId: importedRecord.projectId,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/project-comments?projectId=${importedRecord.projectId}`, {
+            body: JSON.stringify({
+              body: 'Matching query project comment project context should be rejected.',
+              libraryEntryId: importedRecord.entry.id,
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/reading/${importedRecord.entry.id}/project-comments?spaceId=${createdSpace.id}`, {
+            body: JSON.stringify({
+              body: 'Matching nested query project comment space context should be rejected.',
             }),
             headers: withSessionCookie(aliceCookie, {
               'Content-Type': 'application/json',

@@ -121,7 +121,6 @@ type CreateReaderExcerptPayload = CreateReaderExcerptRequest & {
 type CreateProjectReadingCommentPayload = {
   body: string;
   libraryEntryId: string;
-  projectId?: string;
 };
 type ImportToPersonalLibraryPayload = {
   sourceLocator: string;
@@ -485,7 +484,6 @@ export const apiClient = {
       {
         body: JSON.stringify({
           body: input.body,
-          projectId: input.projectId,
         }),
         method: "POST",
       },
