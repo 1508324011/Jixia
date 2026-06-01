@@ -94,7 +94,7 @@ Task 11 的目标是把已经验证过的 Web 交互层收敛成一个可重复�
 
 - Node.js 22
 - 与仓库锁文件匹配的 npm
-- 如需容器化路径，则安装 Docker 与 Docker Compose
+- 只有需要可选打包验证路径时，才需要安装 Docker 与 Docker Compose
 
 ### 环境变量约定
 
@@ -123,7 +123,9 @@ npm run start:server
 
 推荐把 `http://127.0.0.1:3000/health` 作为第一步运行时自检；健康的 Task 11 进程会返回 `{"service":"jixia-server","status":"ok"}`。
 
-### Docker Compose 启动路径
+### 可选 Docker Compose 打包路径
+
+只有在当前主机具备 Docker 能力、需要验证打包形态时才使用此路径。当前主机必需的 gate 是上面的本地 Node 启动路径。
 
 ```bash
 cp .env.example .env

@@ -87,6 +87,9 @@ describe('deployment and operator scaffolding', () => {
     expect(readme).toContain('docker compose up --build');
     expect(readme).toContain('npm run build');
     expect(readme).toContain('npm run start:server');
+    expect(readme).toContain('optional packaging verification path');
+    expect(readme).toContain('required current-host gate');
+    expect(readme).toContain('Optional Docker Compose packaging path');
     expect(readme).toContain('/health');
     expect(readme).toContain('JIXIA_STORAGE_ROOT');
     expect(readme).toContain('JIXIA_DATABASE_URL');
@@ -105,6 +108,9 @@ describe('deployment and operator scaffolding', () => {
 
     expect(readmeCn).toContain('docker compose up --build');
     expect(readmeCn).toContain('npm run start:server');
+    expect(readmeCn).toContain('可选打包验证路径');
+    expect(readmeCn).toContain('当前主机必需的 gate');
+    expect(readmeCn).toContain('可选 Docker Compose 打包路径');
     expect(readmeCn).toContain('/health');
     expect(readmeCn).toContain('JIXIA_STORAGE_ROOT');
     expect(readmeCn).toContain('JIXIA_DATABASE_URL');
@@ -128,5 +134,7 @@ describe('deployment and operator scaffolding', () => {
     expect(plan).toContain('.dockerignore');
     expect(plan).toContain('docs/runbooks/native-demo-showcase.md');
     expect(plan).toContain('integrated workbench shell');
+    expect(plan).toContain('native Node start/health verification pass');
+    expect(plan).toContain('Docker packaging verification is recorded as passed only on Docker-capable hosts');
   });
 });

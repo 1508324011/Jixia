@@ -534,7 +534,7 @@ git add src/web/app.tsx src/web/router.tsx src/web/pages/spaces-page.tsx src/web
 git commit -m "feat: add jixia mvp web workflow shell"
 ```
 
-### Task 11: Add Docker-first deployment scaffolding and operator docs
+### Task 11: Add native Node deployment scaffolding and operator docs
 
 **Files:**
 - Create: `Dockerfile`
@@ -547,7 +547,8 @@ git commit -m "feat: add jixia mvp web workflow shell"
 **Step 1: Write the failing test**
 
 Create `tests/smoke/deploy-docs.test.ts` to verify that:
-- a Docker deployment file exists
+- a native Node server startup path exists
+- optional Docker packaging files exist
 - environment variable examples exist
 - both English and Chinese README files explain storage root, database path, and server startup
 
@@ -572,7 +573,7 @@ Expected: FAIL because deployment scaffolding and docs are missing.
 
 **Step 3: Write minimal implementation**
 
-Add a Docker-first deployment path and bilingual operator documentation for the lab server environment. Document persistent storage, the SQLite path, and how to set server-managed storage roots.
+Add a native Node current-host deployment path, optional Docker packaging path, and bilingual operator documentation for the lab server environment. Document persistent storage, the SQLite path, and how to set server-managed storage roots.
 
 **Step 4: Run test to verify it passes**
 
