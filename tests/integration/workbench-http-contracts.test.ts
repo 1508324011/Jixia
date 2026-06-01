@@ -439,7 +439,7 @@ describe('workbench http contracts', () => {
       );
       expect(rejectedVisibilityComment.status).toBe(400);
       await expect(rejectedVisibilityComment.json()).resolves.toMatchObject({
-        error: expect.stringMatching(/project-comments endpoint/i),
+        error: expect.stringMatching(/not accepted for protected routes/i),
       });
       expect(projectCommentFromClient.comment).toMatchObject({
         body: 'Workbench project comment through explicit route.',
@@ -753,6 +753,117 @@ describe('workbench http contracts', () => {
 
         expect(response.status).toBe(400);
         expect(payload.error).toMatch(/not accepted for protected routes/i);
+      }
+    } finally {
+      await closeServer(httpServer.server);
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 10_000);
+
+  it('rejects authority residue on workbench reading note and insight writes', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-reading-residue-'));
+    const httpServer = createHttpServer({
+      env: {
+        JIXIA_HOST: '127.0.0.1',
+        JIXIA_STORAGE_ROOT: storageRoot,
+      },
+    });
+
+    try {
+      const baseUrl = await listenOnEphemeralPort(httpServer.server);
+      const aliceCookie = await loginAs(baseUrl, 'user-alice');
+      const jsonHeaders = withSessionCookie(aliceCookie, {
+        'Content-Type': 'application/json',
+      });
+      const authorityBodyResidueCases: Array<[string, unknown]> = [
+        ['ownerId', 'user-alice'],
+        ['createdByUserId', 'user-alice'],
+        ['projectId', 'project-alpha'],
+        ['scope', { id: 'project-alpha', type: 'project' }],
+        ['scopeId', 'project-alpha'],
+        ['scopeType', 'project'],
+        ['spaceId', 'space-alpha'],
+        ['visibility', 'private'],
+      ];
+      const authorityQueryResidueCases: Array<[string, string]> = [
+        ['ownerId', 'user-alice'],
+        ['createdByUserId', 'user-alice'],
+        ['projectId', 'project-alpha'],
+        ['scope', 'project:project-alpha'],
+        ['scopeId', 'project-alpha'],
+        ['scopeType', 'project'],
+        ['spaceId', 'space-alpha'],
+        ['visibility', 'private'],
+      ];
+      const expectProtectedRouteRejection = async (response: Response) => {
+        const payload = (await response.json()) as { error: string };
+
+        expect(response.status).toBe(400);
+        expect(payload.error).toMatch(/not accepted for protected routes/i);
+      };
+      const withResidueQuery = (
+        pathname: string,
+        fieldName: string,
+        value: string,
+      ) => {
+        const requestUrl = new URL(pathname, baseUrl);
+        requestUrl.searchParams.set(fieldName, value);
+
+        return requestUrl.toString();
+      };
+
+      for (const [fieldName, value] of authorityBodyResidueCases) {
+        await expectProtectedRouteRejection(
+          await fetch(`${baseUrl}/api/reading/entry-residue/notes`, {
+            body: JSON.stringify({
+              body: `Path note residue ${fieldName}`,
+              [fieldName]: value,
+            }),
+            headers: jsonHeaders,
+            method: 'POST',
+          }),
+        );
+        await expectProtectedRouteRejection(
+          await fetch(`${baseUrl}/api/reading/entry-residue/insights`, {
+            body: JSON.stringify({
+              evidenceSpans: [],
+              summary: `Path insight residue ${fieldName}`,
+              title: `Path Insight ${fieldName}`,
+              [fieldName]: value,
+            }),
+            headers: jsonHeaders,
+            method: 'POST',
+          }),
+        );
+      }
+
+      for (const [fieldName, value] of authorityQueryResidueCases) {
+        await expectProtectedRouteRejection(
+          await fetch(
+            withResidueQuery('/api/reading/entry-residue/notes', fieldName, value),
+            {
+              body: JSON.stringify({
+                body: `Path note query residue ${fieldName}`,
+              }),
+              headers: jsonHeaders,
+              method: 'POST',
+            },
+          ),
+        );
+        await expectProtectedRouteRejection(
+          await fetch(
+            withResidueQuery('/api/reading/entry-residue/insights', fieldName, value),
+            {
+              body: JSON.stringify({
+                evidenceSpans: [],
+                summary: `Path insight query residue ${fieldName}`,
+                title: `Path Insight Query ${fieldName}`,
+              }),
+              headers: jsonHeaders,
+              method: 'POST',
+            },
+          ),
+        );
       }
     } finally {
       await closeServer(httpServer.server);

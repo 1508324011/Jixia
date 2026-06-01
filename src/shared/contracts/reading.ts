@@ -91,7 +91,10 @@ export interface LegacyCreateReadingNoteRequest extends CreateReadingNoteRequest
   actorSpaceId?: string;
   /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
   authorUserId?: string;
-  /** @deprecated Reader sharing uses the project-comments endpoint, not note visibility. */
+  /**
+   * @deprecated Service-level compatibility label only. Protected HTTP routes
+   * reject note visibility; Reader collaboration uses project comments.
+   */
   visibility?: NoteVisibility;
 }
 
