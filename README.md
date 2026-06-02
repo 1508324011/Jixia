@@ -19,7 +19,7 @@ The fastest truthful entry for the integrated product flow on `main` is:
 
 - `docs/runbooks/native-demo-showcase.md`
 
-That runbook documents the **current-host beta path** for `main`: start the app natively, enter the workbench, set up Settings, search PubMed, import into Personal Library, open Reader, persist notes/comments/insights, promote into Project Docs, reopen the Project Doc, restart the process, and confirm the persisted state still exists. The packaged reset/showcase workflow is a **demo-only convenience** that still belongs to the downstream `demo-native-showcase` branch.
+That runbook documents the **current-host beta path** for `main`: start the app natively, enter the workbench, set up Settings, search PubMed, import into Personal Library, explicitly adopt a source into a target Project Library, open the project Reader, persist excerpts/notes/comments/insights, explicitly capture Reader evidence into a private Notebook, create or reopen a Project Doc, explicitly adopt the private Notebook into Project Docs, inspect the browser-safe citation trace, restart the process, and confirm the persisted state still exists. The packaged reset/showcase workflow is a **demo-only convenience** that still belongs to the downstream `demo-native-showcase` branch.
 
 ## Planning Documents
 
@@ -45,7 +45,9 @@ The shipped product surface includes:
 - top-level workbench surfaces for `今日推荐`, `搜索`, `Library`, `Projects`, and `设置`
 - explicit `Personal` vs `Project / 项目名` context indicators
 - paper workspace panels for `AI 对话`, `私人笔记`, `共享评论`, and `关键信息`
+- explicit Reader evidence capture actions that send generated insights or reader excerpts into the current actor's private Notebook through server-derived session authority
 - project-level Project Docs shared knowledge center cues plus a reopenable Project Doc editor route
+- explicit private-Notebook-to-Project-Doc adoption and a browser-safe Project Doc citation trace panel for saved citations and source availability
 - server-backed project routes using Prisma/SQLite `Project` and `ProjectMember` authority instead of legacy JSON project arrays
 - browser-facing `/api/*` routes for spaces, credentials, jobs, library/import, server-owned paper file access, reading, notebooks, project docs, and the workbench compatibility endpoints
 - preserved `/spaces/...` routes so deep-link regression tests still guard compatibility
@@ -64,6 +66,10 @@ Personal-facing routes are workbench shorthand over server-side ownership and sc
 - `POST /api/import/pdf` accepts authenticated paper-file uploads, stores bytes under `JIXIA_STORAGE_ROOT`, computes the server checksum, reuses duplicate file-backed `PaperAsset` rows by checksum, and returns only browser-safe asset availability such as `asset.hasFile` instead of storage keys or checksums.
 - `GET|HEAD /api/library/:entryId/file` is the only browser-facing paper file route. The path uses a scoped `LibraryEntry.id`, derives the actor from the `jixia_session` cookie, authorizes personal/project access on the server, and never exposes raw `storageKey`, `papers/...` keys, absolute paths, or `JIXIA_STORAGE_ROOT` in browser DTOs.
 - `GET /api/reading/:entryId`, `POST /api/reading/notes`, `POST /api/reading/:entryId/project-comments`, and `POST /api/reading/:entryId/insights` back the paper workspace; private notes and project comments are separate server-authorized paths.
+- `POST /api/reading/:entryId/excerpts` persists durable Reader excerpts, and `POST /api/notebooks/capture` captures either a generated insight or a Reader excerpt into the actor's owner-only Notebook without accepting browser-supplied actor, owner, or project authority fields.
+- `POST /api/projects/:projectId/library/adoptions` is the explicit project-source adoption path; the browser sends only `{ sourceLibraryEntryId }`, while the server checks source readability plus project owner/editor membership before creating or reusing a project-scoped `LibraryEntry`.
+- `POST /api/project-docs/:documentId/notebook-adoptions` is the explicit Notebook-to-Project-Docs adoption path; the server verifies the actor can write the target Project Doc and owns the source Notebook before creating a new Project Doc version and safe citation provenance.
+- `GET /api/project-docs/:documentId/citation-trace` returns a ProjectMember-gated, browser-safe citation trace for the latest Project Doc version, including source availability/adoption-needed state without storage keys, checksums, private Notebook bodies, Reader private notes, credential refs, or actor authority fields.
 - `GET /api/projects/:projectId/writing-document` lets compatibility callers reopen the latest visible shared Project Doc, or truthfully report that the project has no shared Project Doc yet.
 - `GET /api/project-docs/:documentId` returns the latest Project Doc snapshot; when a document exists but has not been saved yet, the server returns an empty snapshot with `versionNumber: 0` instead of browser-authored fallback content.
 - `GET /api/writing/:spaceId/projects/:projectId/document` and `POST /api/writing/:spaceId/projects/:projectId/document` remain compatibility-only workbench endpoints for preserved legacy deep links; Project Docs remain the authoritative project writing runtime.
@@ -77,7 +83,7 @@ Current branch verification is maintained with:
 - `npm run typecheck`
 - `npm run build`
 
-Targeted verification also covers workbench routing/navigation, personal vs project context switching, discovery/search to Personal Library import, paper workspace persistence, Project Docs promotion/reopen, current-host beta runbook truthfulness, and server-first Prisma-backed project membership.
+Targeted verification also covers workbench routing/navigation, personal vs project context switching, discovery/search to Personal Library import, explicit project-source adoption, paper workspace persistence, Reader excerpt and insight capture into private Notebook, Project Docs creation/reopen, explicit Notebook adoption into Project Docs, citation trace visibility/safety, current-host beta runbook truthfulness, and server-first Prisma-backed project membership.
 
 ## Near-Term Direction
 
