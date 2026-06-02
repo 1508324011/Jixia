@@ -56,7 +56,7 @@ Node runtime is up before validating workbench behavior.
 
 The full happy path, when the upstream PubMed request returns at least one result, is:
 
-workbench entry -> settings ready -> PubMed search -> personal import -> Reader persistence -> Project Docs promotion -> Project Doc reopen -> restart -> reopen persisted state
+workbench entry -> settings ready -> PubMed search -> personal import -> explicit project-source adoption -> project Reader evidence persistence -> explicit Reader evidence capture into private Notebook -> Project Doc creation/reopen -> explicit Notebook adoption into Project Docs -> citation trace verification -> restart -> reopen persisted state
 
 Live PubMed is intentionally not backed by a synthetic fallback on `main`. Success
 depends on upstream PubMed availability, current network access, and the runtime
@@ -83,23 +83,34 @@ steps below to validate the full vertical slice.
     the truthful no-fallback degraded path described above rather than a blocker
     for startup/runtime acceptance.
 11. When a result was imported, open **Library** and confirm the imported paper is present on the Personal shelf.
-12. Click **Open reader** on that imported paper, and confirm the metadata-only asset message is shown when no server-owned file has been uploaded for that entry.
-13. In **Reader**, enter a short private note into **Private note**, then click **Save private note**.
-14. Enter a short project-visible comment into **Project comment**, then click **Save project comment**.
-15. Enter a short governed summary into **Insight summary**, then click **Save insight**.
-16. Confirm the saved private note, project comment, and governed insight remain visible in the paper workspace.
-17. Click **Promote latest insight to Writer**. This legacy button now creates or updates the server-owned Project Doc used as the project's shared knowledge center.
-18. Open **Projects** and confirm the top-level list now loads real server-visible projects.
-19. Open a concrete project from the list, then confirm the promoted document appears in **Project Docs 共享知识中心**.
-20. Click **Open Project Doc**.
-21. In **Project Doc editor**, update **Draft content**, click **Save draft**, then click **Reload draft**.
-22. Confirm the Project Doc editor reopens with the saved document content still present.
-23. Stop the server process and restart the app process with the same `.env` and `npm run start:server` command.
-24. Reopen `http://127.0.0.1:3000`, return to **Library**, **Reader**, and the same `/projects/:projectId` route, and confirm:
+12. In **Adopt personal source into project**, choose a visible target project, then click **Adopt into selected project** for the imported paper. This is the explicit boundary crossing that creates or reuses the server-owned project `LibraryEntry`; private notes and Notebook content stay personal.
+13. Follow **Open target project library**, then click **Open reader** for the adopted project source. Confirm the metadata-only asset message is shown when no server-owned file has been uploaded for that entry.
+14. In the project **Reader**, enter a short reader excerpt quote plus offsets/locator, then click **Save reader excerpt**.
+15. Enter a short private note into **Private note draft**, then click **Save private note**.
+16. Enter a short project-visible comment into **Project comment draft**, then click **Save project comment**.
+17. Click **Generate insight** / **Save insight** to persist a governed Reader insight backed by the project-scoped source.
+18. Confirm the saved reader excerpt, private note, project comment, and governed insight remain visible in the paper workspace.
+19. Click **Send latest excerpt to Notebook** and/or **Send latest insight to Notebook**. This is an explicit Reader-to-Notebook capture request: the browser sends source identifiers only, while the server derives the actor from the session, verifies source access, writes an owner-only Notebook version, and normalizes citations.
+20. Confirm the success message names the private **Reader evidence notebook**, then click **Open Notebook** if you want to inspect the captured private synthesis. The Notebook may show private capture notes because it remains owner-only.
+21. Return to the project Reader and click **Promote latest insight to Writer**. This creates or updates the server-owned Project Doc used as the project's shared knowledge center.
+22. Open **Projects** and confirm the top-level list now loads real server-visible projects.
+23. Open the same concrete project from the list, then confirm the promoted document appears in **Project Docs 共享知识中心**.
+24. Click **Open Project Doc**.
+25. In **Project Doc editor**, confirm the **Citation trace** panel is visible. Before citations exist it truthfully shows an empty state; after saved/adopted citations it shows browser-safe source rows and availability/adoption-needed status without storage keys, checksums, private note text, or actor authority fields.
+26. Click **Adopt a private Notebook into this Project Doc**. On the Notebook page, select the captured **Reader evidence notebook** and click **Adopt into Project Doc**. This is the explicit Notebook-to-Project-Docs adoption action; the server verifies ProjectMember write access and Notebook ownership before copying only safe source blocks into project scope.
+27. After the app navigates back to the Project Doc, confirm the adopted content appears in the shared document and the **Citation trace** panel reports the cited paper/source as available in the project library. If a citation source is not yet project-available, verify the UI shows the adoption-needed state instead of fabricating source details.
+28. In **Project Doc editor**, update **Draft content**, click **Save draft**, then click **Reload draft**.
+29. Confirm the Project Doc editor reopens with the saved document content and citation trace still present.
+30. Stop the server process and restart the app process with the same `.env` and `npm run start:server` command.
+31. Reopen `http://127.0.0.1:3000`, return to **Library**, the project **Reader**, **Notebook**, and the same `/projects/:projectId` Project Doc route, and confirm:
      - the imported personal-library paper still exists
-     - the saved private note still exists
-     - the saved project comment still exists
-     - the promoted Project Doc still reopens with its saved content
+     - the project-adopted library source still exists
+     - the saved reader excerpt still exists with its quote, offsets, and locator
+     - the saved private note still exists only in the reader owner's private context
+     - the saved project comment is visible to project members
+     - the private Reader evidence Notebook still reopens for its owner
+     - the explicitly adopted Project Doc still reopens with its saved content
+     - the Project Doc citation trace still shows browser-safe availability/adoption-needed state
 
 ## What this beta currently proves
 
@@ -111,6 +122,9 @@ steps below to validate the full vertical slice.
   file exists, while uploaded PDFs are read only through the session-authorized
   `GET|HEAD /api/library/:entryId/file` route
 - the paper workspace persists a private note separately from a project-visible comment
+- reader excerpts and governed insights can be explicitly captured into an owner-only private Notebook without browser-supplied actor or project authority
+- a private Notebook can be explicitly adopted into a Project Doc only through the server-owned adoption route after ProjectMember write access and Notebook ownership checks
+- Project Docs expose a browser-safe citation trace with truthful empty, available, adoption-needed, and error states instead of leaking private Notebook bodies, Reader private notes, storage internals, or credential/authority metadata
 - a governed insight can be promoted into Project Docs and reopened after reload and process restart
 
 ## What still belongs to demo-native-showcase
