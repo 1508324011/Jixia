@@ -97,6 +97,50 @@ export interface ProjectWorkspaceActivitySection {
   totalCount: number;
 }
 
+export type ProjectWorkspaceReviewKind =
+  | 'project-doc-review'
+  | 'job-attention'
+  | 'reader-comment'
+  | 'reader-excerpt';
+
+export type ProjectWorkspaceReviewPriority =
+  | 'review'
+  | 'attention'
+  | 'monitor'
+  | 'context';
+
+export interface ProjectWorkspaceReviewItem {
+  href?: string;
+  id: string;
+  kind: ProjectWorkspaceReviewKind;
+  occurredAt: string;
+  priority: ProjectWorkspaceReviewPriority;
+  projectId: string;
+  sourceId: string;
+  sourceLabel: string;
+  summary: string;
+  title: string;
+}
+
+export interface ProjectWorkspaceReviewSummary {
+  collaborationSignals: number;
+  documentsInReview: number;
+  jobsNeedingAttention: number;
+  newestReviewTimestamp?: string;
+  totalReviewItems: number;
+}
+
+export interface ProjectWorkspaceReviewSection {
+  emptyState: {
+    body: string;
+    title: string;
+  };
+  items: ProjectWorkspaceReviewItem[];
+  projectId: string;
+  summary: ProjectWorkspaceReviewSummary;
+  totalCount: number;
+}
+
 export type ProjectWorkspaceResourceKind =
   | 'project-doc'
   | 'library-entry'
@@ -140,6 +184,7 @@ export interface ProjectWorkspaceResponse {
   };
   membership: ProjectMemberRecord;
   project: ProjectRecord;
+  review: ProjectWorkspaceReviewSection;
   resources: ProjectWorkspaceResourcesSection;
 }
 

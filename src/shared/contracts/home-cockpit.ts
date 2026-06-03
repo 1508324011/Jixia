@@ -1,4 +1,8 @@
-import type { ScopeRef } from './projects';
+import type {
+  ProjectWorkspaceReviewKind,
+  ProjectWorkspaceReviewPriority,
+  ScopeRef,
+} from './projects';
 import type { SessionUser } from './session';
 
 export type HomeCockpitSectionId =
@@ -68,12 +72,47 @@ export interface HomeCockpitNotice {
   tone: HomeCockpitNoticeTone;
 }
 
+export interface HomeCockpitProjectReviewItem {
+  href?: string;
+  id: string;
+  kind: ProjectWorkspaceReviewKind;
+  occurredAt: string;
+  priority: ProjectWorkspaceReviewPriority;
+  projectId: string;
+  projectName: string;
+  sourceId: string;
+  sourceLabel: string;
+  summary: string;
+  title: string;
+}
+
+export interface HomeCockpitProjectReviewSummary {
+  collaborationSignals: number;
+  documentsInReview: number;
+  jobsNeedingAttention: number;
+  newestReviewTimestamp?: string;
+  projectsWithReviewItems: number;
+  totalReviewItems: number;
+  visibleProjects: number;
+}
+
+export interface HomeCockpitProjectReviewSection {
+  emptyState: {
+    body: string;
+    title: string;
+  };
+  items: HomeCockpitProjectReviewItem[];
+  summary: HomeCockpitProjectReviewSummary;
+  totalCount: number;
+}
+
 export interface HomeCockpitResponse {
   actor: HomeCockpitActor;
   contract: typeof homeCockpitContract;
   generatedAt: string;
   nextActions: HomeCockpitLinkAction[];
   notices: HomeCockpitNotice[];
+  projectReview: HomeCockpitProjectReviewSection;
   recentActivity: HomeCockpitActivityItem[];
   sections: HomeCockpitSummarySection[];
   workbench: HomeCockpitWorkbenchContext;
