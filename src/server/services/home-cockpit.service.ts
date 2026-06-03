@@ -3,6 +3,8 @@ import {
   type HomeCockpitActivityItem,
   type HomeCockpitActor,
   type HomeCockpitLinkAction,
+  type HomeCockpitProjectReviewItem,
+  type HomeCockpitProjectReviewSection,
   type HomeCockpitResponse,
   type HomeCockpitSummarySection,
 } from '@shared/contracts/home-cockpit';
@@ -15,6 +17,7 @@ import type { JobsRoutes } from '../routes/jobs.routes';
 import type { LibraryRoutes } from '../routes/library.routes';
 import type { NotebooksRoutes } from '../routes/notebooks.routes';
 import type { ProjectDocsRoutes } from '../routes/project-docs.routes';
+import type { ProjectWorkspaceRoutes } from '../routes/project-workspace.routes';
 import type { ProjectsRoutes } from '../routes/projects.routes';
 import type { SpacesRoutes } from '../routes/spaces.routes';
 
@@ -24,6 +27,7 @@ export interface HomeCockpitServiceStore {
   library: LibraryRoutes;
   notebooks: NotebooksRoutes;
   projectDocs: ProjectDocsRoutes;
+  projectWorkspace: ProjectWorkspaceRoutes;
   projects: ProjectsRoutes;
   spaces: SpacesRoutes;
 }
@@ -77,6 +81,90 @@ function compareActivity(
   }
 
   return left.id.localeCompare(right.id);
+}
+
+const homeProjectReviewLimit = 6;
+
+const emptyHomeProjectReviewSection = {
+  body: 'Project review and attention items will appear here when visible projects have Project Docs in review, governed jobs needing monitoring, or project Reader collaboration signals.',
+  title: 'No project review items yet',
+};
+
+function compareProjectReviewItems(
+  left: HomeCockpitProjectReviewItem,
+  right: HomeCockpitProjectReviewItem,
+): number {
+  const rightTime = new Date(right.occurredAt).getTime();
+  const leftTime = new Date(left.occurredAt).getTime();
+
+  if (rightTime !== leftTime) {
+    return rightTime - leftTime;
+  }
+
+  const projectComparison = left.projectName.localeCompare(right.projectName);
+
+  if (projectComparison !== 0) {
+    return projectComparison;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function buildProjectReviewSection(input: {
+  projects: ProjectListItem[];
+  workspaces: Awaited<ReturnType<ProjectWorkspaceRoutes['getWorkspace']>>[];
+}): HomeCockpitProjectReviewSection {
+  const projectNames = new Map(
+    input.projects.map((project) => [project.project.id, project.project.name]),
+  );
+  const reviewItems = input.workspaces.flatMap((workspace) =>
+    workspace.review.items.map((item): HomeCockpitProjectReviewItem => ({
+      href: item.href,
+      id: `project-review:${workspace.project.id}:${item.id}`,
+      kind: item.kind,
+      occurredAt: item.occurredAt,
+      priority: item.priority,
+      projectId: workspace.project.id,
+      projectName: projectNames.get(workspace.project.id) ?? workspace.project.name,
+      sourceId: item.sourceId,
+      sourceLabel: item.sourceLabel,
+      summary: item.summary,
+      title: item.title,
+    })),
+  ).sort(compareProjectReviewItems);
+  const newestReviewTimestamp = latestTimestamp(
+    ...input.workspaces.map((workspace) => workspace.review.summary.newestReviewTimestamp),
+  );
+  const totalReviewItems = input.workspaces.reduce(
+    (total, workspace) => total + workspace.review.summary.totalReviewItems,
+    0,
+  );
+
+  return {
+    emptyState: emptyHomeProjectReviewSection,
+    items: reviewItems.slice(0, homeProjectReviewLimit),
+    summary: {
+      collaborationSignals: input.workspaces.reduce(
+        (total, workspace) => total + workspace.review.summary.collaborationSignals,
+        0,
+      ),
+      documentsInReview: input.workspaces.reduce(
+        (total, workspace) => total + workspace.review.summary.documentsInReview,
+        0,
+      ),
+      jobsNeedingAttention: input.workspaces.reduce(
+        (total, workspace) => total + workspace.review.summary.jobsNeedingAttention,
+        0,
+      ),
+      newestReviewTimestamp,
+      projectsWithReviewItems: input.workspaces.filter(
+        (workspace) => workspace.review.summary.totalReviewItems > 0,
+      ).length,
+      totalReviewItems,
+      visibleProjects: input.projects.length,
+    },
+    totalCount: totalReviewItems,
+  };
 }
 
 function buildCollaborationSection(input: {
@@ -402,6 +490,15 @@ export function createHomeCockpitService(
         (document): document is { documentId: string; projectId: string; title: string; updatedAt: string } =>
           Boolean(document),
       );
+      const projectWorkspaces = await Promise.all(
+        projects.map((project) =>
+          store.projectWorkspace.getWorkspace(project.project.id, actorUserId),
+        ),
+      );
+      const projectReview = buildProjectReviewSection({
+        projects,
+        workspaces: projectWorkspaces,
+      });
 
       const sections = [
         buildCollaborationSection({ projects, spaces }),
@@ -441,6 +538,7 @@ export function createHomeCockpitService(
                 tone: 'warning' as const,
               }]),
         ],
+        projectReview,
         recentActivity: buildActivity({
           generatedAt,
           jobs,

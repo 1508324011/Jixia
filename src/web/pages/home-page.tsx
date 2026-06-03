@@ -5,6 +5,8 @@ import type {
   HomeCockpitActivityItem,
   HomeCockpitLinkAction,
   HomeCockpitNotice,
+  HomeCockpitProjectReviewItem,
+  HomeCockpitProjectReviewSection,
   HomeCockpitResponse,
   HomeCockpitSectionStatus,
   HomeCockpitSummarySection,
@@ -16,6 +18,23 @@ const sectionStatusLabels: Record<HomeCockpitSectionStatus, string> = {
   active: 'Active',
   attention: 'Needs attention',
   empty: 'Empty',
+};
+
+const emptyProjectReviewSection: HomeCockpitProjectReviewSection = {
+  emptyState: {
+    body: 'Project review and attention items will appear here when visible projects have Project Docs in review, governed jobs needing monitoring, or project Reader collaboration signals.',
+    title: 'No project review items yet',
+  },
+  items: [],
+  summary: {
+    collaborationSignals: 0,
+    documentsInReview: 0,
+    jobsNeedingAttention: 0,
+    projectsWithReviewItems: 0,
+    totalReviewItems: 0,
+    visibleProjects: 0,
+  },
+  totalCount: 0,
 };
 
 function formatTimestamp(timestamp: string): string {
@@ -97,10 +116,44 @@ function HomeNotice({ notice }: { notice: HomeCockpitNotice }) {
   );
 }
 
+function HomeProjectReviewItem({ item }: { item: HomeCockpitProjectReviewItem }) {
+  const body = (
+    <>
+      <strong>{item.title}</strong>
+      <span className="quiet-copy">{item.projectName} · {item.sourceLabel}</span>
+      <span className="quiet-copy">{item.summary}</span>
+      <time className="quiet-copy" dateTime={item.occurredAt}>
+        {formatTimestamp(item.occurredAt)} · {item.priority}
+      </time>
+    </>
+  );
+
+  return (
+    <li className="recent-opened-panel__item">
+      {item.href ? (
+        <Link className="panel-link" to={item.href}>
+          {body}
+        </Link>
+      ) : (
+        <div className="stack-xs">{body}</div>
+      )}
+    </li>
+  );
+}
+
+function resolveProjectReviewSection(
+  cockpit: HomeCockpitResponse,
+): HomeCockpitProjectReviewSection {
+  return cockpit.projectReview ?? emptyProjectReviewSection;
+}
+
 export function HomePage() {
   const [cockpit, setCockpit] = useState<HomeCockpitResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const projectReview = cockpit
+    ? resolveProjectReviewSection(cockpit)
+    : emptyProjectReviewSection;
 
   const loadCockpit = useCallback(
     async (shouldCommit: () => boolean = () => true): Promise<void> => {
@@ -150,6 +203,7 @@ export function HomePage() {
 
     return (
       cockpit.sections.every((section) => section.status === 'empty') &&
+      resolveProjectReviewSection(cockpit).totalCount === 0 &&
       cockpit.recentActivity.length === 0
     );
   }, [cockpit]);
@@ -238,6 +292,36 @@ export function HomePage() {
                   </div>
                 ))}
               </div>
+            </section>
+
+            <section className="panel" aria-label="Project review and attention">
+              <h2 className="panel-title">Project review and attention</h2>
+              <dl className="home-cockpit-metrics">
+                <div className="home-cockpit-metric">
+                  <dt>Total review items</dt>
+                  <dd>{projectReview.summary.totalReviewItems}</dd>
+                </div>
+                <div className="home-cockpit-metric">
+                  <dt>Documents in review</dt>
+                  <dd>{projectReview.summary.documentsInReview}</dd>
+                </div>
+                <div className="home-cockpit-metric">
+                  <dt>Jobs needing attention</dt>
+                  <dd>{projectReview.summary.jobsNeedingAttention}</dd>
+                </div>
+              </dl>
+              {projectReview.items.length > 0 ? (
+                <ul className="recent-opened-panel__list">
+                  {projectReview.items.map((item) => (
+                    <HomeProjectReviewItem key={item.id} item={item} />
+                  ))}
+                </ul>
+              ) : (
+                <div className="stack-xs">
+                  <h3 className="panel-title">{projectReview.emptyState.title}</h3>
+                  <p className="quiet-copy">{projectReview.emptyState.body}</p>
+                </div>
+              )}
             </section>
 
             <section className="panel" aria-label="Recent activity">

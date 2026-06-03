@@ -39,6 +39,8 @@ import type {
   ProjectListItem,
   ProjectWorkspaceActivityKind,
   ProjectWorkspaceResourceKind,
+  ProjectWorkspaceReviewKind,
+  ProjectWorkspaceReviewPriority,
   ProjectMemberRecord,
   ProjectMemberRole,
   ProjectRecord,
@@ -273,6 +275,59 @@ describe('core contracts', () => {
       },
       membership,
       project,
+      review: {
+        emptyState: {
+          body: 'Project review and attention items will appear when shared Project Docs enter review, project jobs need monitoring, or project Reader collaboration creates comments and excerpts.',
+          title: 'No project review items yet',
+        },
+        items: [
+          {
+            href: '/projects/project_001/library/entry_001/reader',
+            id: 'reader-comment:comment_001',
+            kind: 'reader-comment',
+            occurredAt: '2026-05-03T00:08:30.000Z',
+            priority: 'context',
+            projectId: project.id,
+            sourceId: 'comment_001',
+            sourceLabel: 'Reader comment',
+            summary: 'Recent project Reader comment · Shared synthesis source',
+            title: 'Shared project comment',
+          },
+          {
+            href: '/projects/project_001/library/entry_001/reader',
+            id: 'reader-excerpt:excerpt_001',
+            kind: 'reader-excerpt',
+            occurredAt: '2026-05-03T00:08:00.000Z',
+            priority: 'context',
+            projectId: project.id,
+            sourceId: 'excerpt_001',
+            sourceLabel: 'Reader excerpt',
+            summary: 'Recent project Reader excerpt · Shared synthesis source · loc-1',
+            title: 'Evidence quote',
+          },
+          {
+            href: '/jobs?scopeType=project&scopeId=project_001&jobId=job_001',
+            id: 'job-attention:job_001',
+            kind: 'job-attention',
+            occurredAt: '2026-05-03T00:07:00.000Z',
+            priority: 'monitor',
+            projectId: project.id,
+            sourceId: 'job_001',
+            sourceLabel: 'Project job',
+            summary: 'Governed project job needs monitoring · queued',
+            title: 'ai.summary',
+          },
+        ],
+        projectId: project.id,
+        summary: {
+          collaborationSignals: 2,
+          documentsInReview: 0,
+          jobsNeedingAttention: 1,
+          newestReviewTimestamp: '2026-05-03T00:08:30.000Z',
+          totalReviewItems: 3,
+        },
+        totalCount: 3,
+      },
       resources: {
         emptyState: {
           body: 'Project resources will appear when Project Docs, project Library entries, Reader excerpts, or governed jobs exist.',
@@ -335,6 +390,9 @@ describe('core contracts', () => {
     expect(workspace.activity.items[0]?.kind).toBe('project-doc');
     expect(workspace.activity.items[0]?.href).toBe('/projects/project_001/writing/project-doc_001');
     expect(workspace.activity.items[0]).not.toHaveProperty('actorUserId');
+    expect(workspace.review.summary.totalReviewItems).toBe(3);
+    expect(workspace.review.items[0]?.sourceId).toBe('comment_001');
+    expect(workspace.review.items[0]).not.toHaveProperty('actorUserId');
     expect(workspace.resources.items[0]?.title).toBe('Shared synthesis');
     expect(workspace.links.libraryHref).toBe('/projects/project_001/library');
     expect(workspace.docs.documents[0]?.openHref).toBe('/projects/project_001/writing/project-doc_001');
@@ -350,6 +408,12 @@ describe('core contracts', () => {
     >();
     expectTypeOf<ProjectWorkspaceResourceKind>().toEqualTypeOf<
       'project-doc' | 'library-entry' | 'reader-excerpt' | 'job'
+    >();
+    expectTypeOf<ProjectWorkspaceReviewKind>().toEqualTypeOf<
+      'project-doc-review' | 'job-attention' | 'reader-comment' | 'reader-excerpt'
+    >();
+    expectTypeOf<ProjectWorkspaceReviewPriority>().toEqualTypeOf<
+      'review' | 'attention' | 'monitor' | 'context'
     >();
   });
 
@@ -386,6 +450,37 @@ describe('core contracts', () => {
           tone: 'info',
         },
       ],
+      projectReview: {
+        emptyState: {
+          body: 'Project review and attention items will appear here when visible projects have Project Docs in review, governed jobs needing monitoring, or project Reader collaboration signals.',
+          title: 'No project review items yet',
+        },
+        items: [
+          {
+            href: '/projects/project_001/writing/project-doc_001',
+            id: 'project-review:project_001:project-doc-review:project-doc_001',
+            kind: 'project-doc-review',
+            occurredAt: '2026-05-17T00:00:00.000Z',
+            priority: 'review',
+            projectId: 'project_001',
+            projectName: 'Project Alpha',
+            sourceId: 'project-doc_001',
+            sourceLabel: 'Project Doc',
+            summary: 'Project Doc is in review · version 1',
+            title: 'Shared synthesis',
+          },
+        ],
+        summary: {
+          collaborationSignals: 0,
+          documentsInReview: 1,
+          jobsNeedingAttention: 0,
+          newestReviewTimestamp: '2026-05-17T00:00:00.000Z',
+          projectsWithReviewItems: 1,
+          totalReviewItems: 1,
+          visibleProjects: 1,
+        },
+        totalCount: 1,
+      },
       recentActivity: [
         {
           context: 'ai.summary · queued',
@@ -419,6 +514,8 @@ describe('core contracts', () => {
     expect(response.workbench.route).toBe('/home');
     expect(response.workbench.scope).toEqual({ id: 'user_001', type: 'user' });
     expect(response.sections[0]?.id).toBe('collaboration');
+    expect(response.projectReview.summary.documentsInReview).toBe(1);
+    expect(response.projectReview.items[0]?.sourceId).toBe('project-doc_001');
     expect(response.recentActivity[0]?.kind).toBe('job');
 
     expectTypeOf<HomeCockpitWorkbenchContext['scope']>().toEqualTypeOf<ScopeRef>();

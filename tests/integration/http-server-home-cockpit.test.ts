@@ -50,7 +50,7 @@ describe('http server Home cockpit API', () => {
             }>,
         );
 
-        await fetch(`${server.url}/api/credentials`, {
+        const credential = await fetch(`${server.url}/api/credentials`, {
           body: JSON.stringify({
             provider: 'openai',
             rawSecret: 'home-cockpit-test-credential',
@@ -59,7 +59,39 @@ describe('http server Home cockpit API', () => {
             'Content-Type': 'application/json',
           }),
           method: 'POST',
-        });
+        }).then(
+          (response) => response.json() as Promise<{ credentialRef: string }>,
+        );
+
+        const reviewDocument = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({
+            projectId: createdProject.project.id,
+            publishState: 'review',
+            title: 'Home Cockpit Review Draft',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ id: string; title: string }>,
+        );
+
+        const projectJob = await fetch(`${server.url}/api/jobs`, {
+          body: JSON.stringify({
+            credentialRef: credential.credentialRef,
+            kind: 'ai.summary',
+            payload: { instruction: 'summarize project review status' },
+            scope: { id: createdProject.project.id, type: 'project' },
+            spaceId: createdProject.project.spaceId,
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ id: string; status: string }>,
+        );
 
         await fetch(`${server.url}/api/notebooks`, {
           body: JSON.stringify({ title: 'Home Cockpit Notebook' }),
@@ -120,6 +152,35 @@ describe('http server Home cockpit API', () => {
             }),
           ]),
         );
+        expect(cockpit.projectReview.summary).toEqual(
+          expect.objectContaining({
+            documentsInReview: 1,
+            jobsNeedingAttention: 1,
+            projectsWithReviewItems: 1,
+            totalReviewItems: 2,
+            visibleProjects: 1,
+          }),
+        );
+        expect(cockpit.projectReview.items).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              kind: 'job-attention',
+              priority: 'monitor',
+              projectId: createdProject.project.id,
+              sourceId: projectJob.id,
+            }),
+            expect.objectContaining({
+              kind: 'project-doc-review',
+              priority: 'review',
+              projectId: createdProject.project.id,
+              sourceId: reviewDocument.id,
+              title: 'Home Cockpit Review Draft',
+            }),
+          ]),
+        );
+        expect(cockpit.projectReview.items[0]).not.toHaveProperty('credentialRef');
+        expect(cockpit.projectReview.items[0]).not.toHaveProperty('payload');
+        expect(cockpit.projectReview.items[0]).not.toHaveProperty('actorUserId');
         expect(cockpit.notices.map((notice) => notice.id)).toContain(
           'server-owned-read-model',
         );
@@ -141,6 +202,12 @@ describe('http server Home cockpit API', () => {
         expect(bobCockpit.recentActivity).not.toEqual(
           expect.arrayContaining([
             expect.objectContaining({ title: 'Home Cockpit Project' }),
+          ]),
+        );
+        expect(bobCockpit.projectReview.summary.totalReviewItems).toBe(0);
+        expect(bobCockpit.projectReview.items).not.toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ projectId: createdProject.project.id }),
           ]),
         );
       } finally {

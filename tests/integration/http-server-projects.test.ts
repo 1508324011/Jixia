@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
+import type { ProjectWorkspaceResponse } from '../../src/shared/contracts/projects';
+
 import {
   createLibraryRepository,
   createNotebookRepository,
@@ -449,6 +451,7 @@ describe('http server project api', () => {
           const document = await projectDocRepository.createDocument({
             createdByUserId: 'user-alice',
             projectId: project.project.id,
+            publishState: 'review',
             title: 'Workspace indexed synthesis',
           });
           await projectDocRepository.saveVersion({
@@ -533,6 +536,7 @@ describe('http server project api', () => {
             }>;
             totalCount: number;
           };
+          review: ProjectWorkspaceResponse['review'];
         };
 
         expect(ownerResponse.status).toBe(200);
@@ -570,7 +574,7 @@ describe('http server project api', () => {
           projectId: project.project.id,
           sourceId: ownerWorkspace.docs.documents[0]?.documentId,
           sourceLabel: 'Project Doc',
-          summary: 'Project Doc draft · version 1',
+          summary: 'Project Doc review · version 1',
           title: 'Workspace indexed synthesis',
         });
         expect(ownerWorkspace.activity.items[2]).toMatchObject({
@@ -590,6 +594,70 @@ describe('http server project api', () => {
         });
         for (const activity of ownerWorkspace.activity.items) {
           expect(activity).not.toHaveProperty('actorUserId');
+        }
+        expect(ownerWorkspace.review.totalCount).toBe(4);
+        expect(ownerWorkspace.review.summary).toEqual(
+          expect.objectContaining({
+            collaborationSignals: 2,
+            documentsInReview: 1,
+            jobsNeedingAttention: 1,
+            totalReviewItems: 4,
+          }),
+        );
+        expect(ownerWorkspace.review.summary.newestReviewTimestamp).toBeDefined();
+        expect(ownerWorkspace.review.items.map((item) => item.kind)).toEqual([
+          'job-attention',
+          'project-doc-review',
+          'reader-excerpt',
+          'reader-comment',
+        ]);
+        expect(ownerWorkspace.review.items).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              kind: 'project-doc-review',
+              priority: 'review',
+              projectId: project.project.id,
+              sourceLabel: 'Project Doc',
+              summary: 'Project Doc is in review · version 1',
+              title: 'Workspace indexed synthesis',
+            }),
+            expect.objectContaining({
+              kind: 'job-attention',
+              priority: 'monitor',
+              projectId: project.project.id,
+              sourceLabel: 'Project job',
+              summary: 'Governed project job needs monitoring · queued',
+              title: 'ai.summary',
+            }),
+            expect.objectContaining({
+              kind: 'reader-excerpt',
+              priority: 'context',
+              projectId: project.project.id,
+              sourceLabel: 'Reader excerpt',
+              title: 'Project reader excerpt quote',
+            }),
+            expect.objectContaining({
+              kind: 'reader-comment',
+              priority: 'context',
+              projectId: project.project.id,
+              sourceLabel: 'Reader comment',
+              title: 'Project-scoped reader comment body',
+            }),
+          ]),
+        );
+        for (const reviewItem of ownerWorkspace.review.items) {
+          expect(reviewItem).not.toHaveProperty('actorUserId');
+          expect(reviewItem).not.toHaveProperty('credentialRef');
+          expect(reviewItem).not.toHaveProperty('payload');
+          expect(reviewItem).not.toHaveProperty('storageKey');
+          expect(reviewItem).not.toHaveProperty('checksum');
+        }
+        const serializedWorkspaceReview = JSON.stringify(ownerWorkspace.review.items);
+        expect(serializedWorkspaceReview).not.toContain('workspace-job-secret');
+        expect(serializedWorkspaceReview).not.toContain('storageKey');
+        expect(serializedWorkspaceReview).not.toContain('checksum');
+        for (const sentinel of privateLeakSentinels) {
+          expect(serializedWorkspaceReview).not.toContain(sentinel);
         }
         const serializedWorkspaceActivity = JSON.stringify(ownerWorkspace.activity.items);
         for (const sentinel of privateLeakSentinels) {
@@ -613,7 +681,7 @@ describe('http server project api', () => {
           kind: 'project-doc',
           projectId: project.project.id,
           sourceId: ownerWorkspace.docs.documents[0]?.documentId,
-          subtitle: 'draft · version 1',
+          subtitle: 'review · version 1',
           title: 'Workspace indexed synthesis',
         });
         expect(ownerWorkspace.resources.items[2]).toMatchObject({
@@ -714,6 +782,7 @@ describe('http server project api', () => {
             items: unknown[];
             totalCount: number;
           };
+          review: ProjectWorkspaceResponse['review'];
         };
 
         expect(emptyResponse.status).toBe(200);
@@ -725,6 +794,17 @@ describe('http server project api', () => {
         expect(emptyWorkspace.activity.totalCount).toBe(0);
         expect(emptyWorkspace.activity.emptyState.title).toBe('No project activity yet');
         expect(emptyWorkspace.activity.emptyState.body).toMatch(/Project Docs, project Library entries, Reader comments or excerpts, and governed project jobs/i);
+        expect(emptyWorkspace.review.items).toEqual([]);
+        expect(emptyWorkspace.review.totalCount).toBe(0);
+        expect(emptyWorkspace.review.summary).toEqual({
+          collaborationSignals: 0,
+          documentsInReview: 0,
+          jobsNeedingAttention: 0,
+          newestReviewTimestamp: undefined,
+          totalReviewItems: 0,
+        });
+        expect(emptyWorkspace.review.emptyState.title).toBe('No project review items yet');
+        expect(emptyWorkspace.review.emptyState.body).toMatch(/Project Docs enter review, project jobs need monitoring, or project Reader collaboration/i);
         expect(emptyWorkspace.resources.items).toEqual([]);
         expect(emptyWorkspace.resources.totalCount).toBe(0);
         expect(emptyWorkspace.resources.emptyState.title).toBe('No project resources yet');
@@ -813,6 +893,62 @@ describe('http server project api', () => {
 
         expect(response.status).toBe(401);
         expect(payload.error).toMatch(/server-derived actor session/i);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects legacy actor override headers on project workspace reads', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-workspace-legacy-'));
+
+    try {
+      const server = await startTestServer({
+        JIXIA_ALLOW_LEGACY_ACTOR_OVERRIDE: 'true',
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-project-workspace-legacy.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'Workspace Legacy Override' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const createdProject = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({
+            name: 'Legacy Override Workspace Project',
+            spaceId: createdSpace.id,
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+
+        const legacyActorHeaderResponse = await fetch(
+          `${server.url}/api/projects/${createdProject.project.id}/workspace`,
+          { headers: { 'x-jixia-actor': 'user-alice' } },
+        );
+        const legacyBearerResponse = await fetch(
+          `${server.url}/api/projects/${createdProject.project.id}/workspace`,
+          { headers: { Authorization: 'Bearer user-alice' } },
+        );
+
+        for (const response of [legacyActorHeaderResponse, legacyBearerResponse]) {
+          const payload = (await response.json()) as { error: string };
+
+          expect(response.status).toBe(401);
+          expect(payload.error).toMatch(/server-derived actor session/i);
+        }
       } finally {
         await server.close();
       }

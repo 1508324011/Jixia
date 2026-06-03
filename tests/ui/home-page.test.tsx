@@ -42,6 +42,37 @@ function createHomeCockpitFixture(
         tone: 'info',
       },
     ],
+    projectReview: {
+      emptyState: {
+        body: 'Project review and attention items will appear here when visible projects have Project Docs in review, governed jobs needing monitoring, or project Reader collaboration signals.',
+        title: 'No project review items yet',
+      },
+      items: [
+        {
+          href: '/projects/project-alpha/writing/project-doc-alpha',
+          id: 'project-review:project-alpha:project-doc-review:project-doc-alpha',
+          kind: 'project-doc-review',
+          occurredAt: '2026-05-17T11:15:00.000Z',
+          priority: 'review',
+          projectId: 'project-alpha',
+          projectName: 'Project Alpha',
+          sourceId: 'project-doc-alpha',
+          sourceLabel: 'Project Doc',
+          summary: 'Project Doc is in review · version 2',
+          title: 'Project Alpha review draft',
+        },
+      ],
+      summary: {
+        collaborationSignals: 0,
+        documentsInReview: 1,
+        jobsNeedingAttention: 0,
+        newestReviewTimestamp: '2026-05-17T11:15:00.000Z',
+        projectsWithReviewItems: 1,
+        totalReviewItems: 1,
+        visibleProjects: 1,
+      },
+      totalCount: 1,
+    },
     recentActivity: [
       {
         context: 'owner · space-alpha',
@@ -202,6 +233,9 @@ describe('home page', () => {
     expect(screen.getByRole('heading', { name: 'Governed jobs' })).toBeInTheDocument();
     expect(screen.getByText('Visible projects')).toBeInTheDocument();
     expect(screen.getByText('Project Alpha')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Project review and attention' })).toBeInTheDocument();
+    expect(screen.getByText('Project Alpha review draft')).toBeInTheDocument();
+    expect(screen.getByText('Documents in review')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review today\'s recommendations' })).toHaveAttribute('href', '/today');
     expect(screen.getByRole('link', { name: 'Open Jobs' })).toHaveAttribute('href', '/jobs');
     expect(screen.getByRole('heading', { name: 'Server-owned cockpit' })).toBeInTheDocument();
@@ -213,6 +247,22 @@ describe('home page', () => {
         cockpit: createHomeCockpitFixture({
           nextActions: [],
           recentActivity: [],
+          projectReview: {
+            emptyState: {
+              body: 'Project review and attention items will appear here when visible projects have Project Docs in review, governed jobs needing monitoring, or project Reader collaboration signals.',
+              title: 'No project review items yet',
+            },
+            items: [],
+            summary: {
+              collaborationSignals: 0,
+              documentsInReview: 0,
+              jobsNeedingAttention: 0,
+              projectsWithReviewItems: 0,
+              totalReviewItems: 0,
+              visibleProjects: 0,
+            },
+            totalCount: 0,
+          },
           sections: createHomeCockpitFixture().sections.map((section) => ({
             ...section,
             metrics: section.metrics.map((metric) => ({ ...metric, value: 0 })),
