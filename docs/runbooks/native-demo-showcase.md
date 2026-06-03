@@ -56,7 +56,7 @@ Node runtime is up before validating workbench behavior.
 
 The full happy path, when the upstream PubMed request returns at least one result, is:
 
-workbench entry -> settings ready -> PubMed search -> personal import -> explicit project-source adoption -> project Reader evidence persistence -> explicit Reader evidence capture into private Notebook -> Project Doc creation/reopen -> explicit Notebook adoption into Project Docs -> citation trace verification -> restart -> reopen persisted state
+workbench entry -> Home project review check -> settings ready -> PubMed search -> personal import -> explicit project-source adoption -> project Reader evidence persistence -> explicit Reader evidence capture into private Notebook -> Project Workspace review check -> Project Doc creation/reopen -> explicit Notebook adoption into Project Docs -> citation trace verification -> restart -> reopen persisted state
 
 Live PubMed is intentionally not backed by a synthetic fallback on `main`. Success
 depends on upstream PubMed availability, current network access, and the runtime
@@ -71,7 +71,7 @@ steps below to validate the full vertical slice.
 
 1. Open `http://127.0.0.1:3000` and confirm the browser is redirected to **登录**.
 2. Keep the default lab user or choose another lab user, then click **进入工作台**.
-3. Confirm the browser lands in **个人工作台**.
+3. Confirm the browser lands in **个人工作台** and that **Project review and attention** renders server-provided project review items or its server-provided empty state.
 4. Open **设置**.
 5. Confirm the page initially reports **API key not configured**.
 6. Enter a temporary browser-side value in **API Key**, keep the default import target on **Personal Library**, then click **保存设置**.
@@ -94,7 +94,7 @@ steps below to validate the full vertical slice.
 20. Confirm the success message names the private **Reader evidence notebook**, then click **Open Notebook** if you want to inspect the captured private synthesis. The Notebook may show private capture notes because it remains owner-only.
 21. Return to the project Reader and click **Promote latest insight to Writer**. This creates or updates the server-owned Project Doc used as the project's shared knowledge center.
 22. Open **Projects** and confirm the top-level list now loads real server-visible projects.
-23. Open the same concrete project from the list, then confirm the promoted document appears in **Project Docs 共享知识中心**.
+23. Open the same concrete project from the list, then confirm the promoted document appears in **Project Docs 共享知识中心** and that the project page renders **Project review and attention** from the server workspace DTO.
 24. Click **Open Project Doc**.
 25. In **Project Doc editor**, confirm the **Citation trace** panel is visible. Before citations exist it truthfully shows an empty state; after saved/adopted citations it shows browser-safe source rows and availability/adoption-needed status without storage keys, checksums, private note text, or actor authority fields.
 26. Click **Adopt a private Notebook into this Project Doc**. On the Notebook page, select the captured **Reader evidence notebook** and click **Adopt into Project Doc**. This is the explicit Notebook-to-Project-Docs adoption action; the server verifies ProjectMember write access and Notebook ownership before copying only safe source blocks into project scope.
@@ -125,6 +125,7 @@ steps below to validate the full vertical slice.
 - reader excerpts and governed insights can be explicitly captured into an owner-only private Notebook without browser-supplied actor or project authority
 - a private Notebook can be explicitly adopted into a Project Doc only through the server-owned adoption route after ProjectMember write access and Notebook ownership checks
 - Project Docs expose a browser-safe citation trace with truthful empty, available, adoption-needed, and error states instead of leaking private Notebook bodies, Reader private notes, storage internals, or credential/authority metadata
+- Home and Project Workspace expose server-owned project review/attention read models without browser-side authority or visibility inference
 - a governed insight can be promoted into Project Docs and reopened after reload and process restart
 
 ## What still belongs to demo-native-showcase

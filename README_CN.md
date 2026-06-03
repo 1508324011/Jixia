@@ -19,7 +19,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 
 - `docs/runbooks/native-demo-showcase.md`
 
-这份 runbook 记录的是 `main` 上的**当前主机 beta 路径**：原生启动应用、进入 workbench、配置设置、检索 PubMed、导入到 Personal Library、打开 Reader、持久化私人笔记 / 项目评论 / insight、推进到 Project Docs、重新打开 Project Doc，并在重启进程后确认状态仍然存在。打包、reset、showcase 这一类能力仍然属于下游 `demo-native-showcase` 分支上的 **demo-only convenience**。
+这份 runbook 记录的是 `main` 上的**当前主机 beta 路径**：原生启动应用、进入 workbench、配置设置、检索 PubMed、导入到 Personal Library、显式把来源采纳到目标 Project Library、打开项目 Reader、持久化 excerpt / 私人笔记 / 项目评论 / insight、显式把 Reader 证据捕获到 actor 私有 Notebook、创建或重新打开 Project Doc、显式把私有 Notebook 采纳到 Project Docs、检查浏览器安全的 citation trace，并在重启进程后确认状态仍然存在。打包、reset、showcase 这一类能力仍然属于下游 `demo-native-showcase` 分支上的 **demo-only convenience**。
 
 ## 计划文档
 
@@ -45,7 +45,9 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 - `今日推荐`、`搜索`、`Library`、`Projects`、`设置` 五个顶层入口
 - 明确的 `Personal` 与 `Project / 项目名` 上下文提示
 - `AI 对话`、`私人笔记`、`共享评论`、`关键信息` 四个 paper workspace 面板
+- 显式 Reader 证据捕获动作，可把生成的 insight 或 Reader excerpt 送入当前 actor 的私有 Notebook，权限仍由服务端 session 派生
 - 项目级 Project Docs 共享知识中心，以及可重新打开的 Project Doc 编辑器路径
+- 显式 private-Notebook-to-Project-Doc 采纳路径，以及针对已保存 citation/source availability 的浏览器安全 Project Doc citation trace 面板
 - Project 与 ProjectMember 继续由 Prisma/SQLite 作为权威状态，不依赖旧 JSON project 数组
 - 面向 discovery、settings、personal-library import/list、server-owned paper file access、reading detail / mutation、notebook、project-doc 与 workbench 兼容端点的浏览器接口
 - 继续保留 legacy `/spaces/...` 路由，用回归测试守住兼容性
@@ -57,12 +59,20 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 - `/login` 是真实的 session 入口页；根路由仍然会先跳到 `/home`，而未登录浏览器会由受保护路由边界再重定向到 `/login?redirect=...`。
 - `POST /api/session/login`、`GET /api/session/me` 与 `POST /api/session/logout` 负责管理浏览器使用的服务端 `jixia_session` cookie。
 - `POST /api/session/login` 只接受受限的 `{ loginProfileKey }` 选择器来映射预置的实验室 / demo 用户；`userId`、`email`、`actorUserId` 等调用方自带身份字段如果出现在 query 或 body 中，会被拒绝，而不会拿来铸造登录权限。
+- `GET /api/home-cockpit` 会从服务端可见的 spaces、projects、personal library entries、notebooks、settings、Project Docs、受治理作业，以及 actor 可见的项目 review/attention 聚合中构建已认证 Home cockpit read model。浏览器 Home 只消费这个传输安全 DTO，而不是本地 dashboard fixture。
+- `GET /api/projects/:projectId/workspace` 会返回一个由 ProjectMember 授权的 Project Workspace read model，其中包含服务端派生的 Project Docs、resources、activity 与 review/attention 区段。其来源是项目级 Project Docs、Library entries、Reader comments/excerpts 与受治理 jobs；响应体不返回私人笔记、原始 job payload、credential secrets、storage keys、checksums 或文件系统路径。
 - `GET /api/discovery/today` 与 `GET /api/discovery/search?query=...` 提供当前 discovery 切片。
 - `GET /api/settings/me` 与 `POST /api/settings/me` 会通过 Prisma-backed per-user workbench settings 与加密后的 provider credential secret 行持久化浏览器可见的 settings 状态，同时不把原始 API key 暴露到响应体或 settings 记录中。
 - `GET /api/library/personal` 与 `POST /api/library/personal/import` 由服务端托管个人导入归属。
 - `POST /api/import/pdf` 是登录用户的论文文件上传入口：服务端把文件字节写入 `JIXIA_STORAGE_ROOT`，计算 checksum，用 checksum 复用全局 file-backed `PaperAsset`，响应体只返回 `asset.hasFile` 这类浏览器安全的可用性字段，不返回 storage key 或 checksum。
 - `GET|HEAD /api/library/:entryId/file` 是浏览器唯一的论文文件读取入口。路径参数是带 scope 的 `LibraryEntry.id`，服务端从 `jixia_session` cookie 派生 actor，再按个人 / 项目成员权限授权；浏览器 DTO 不暴露原始 `storageKey`、`papers/...` key、绝对文件路径或 `JIXIA_STORAGE_ROOT`。
 - `GET /api/reading/:entryId`、`POST /api/reading/notes`、`POST /api/reading/:entryId/project-comments`、`POST /api/reading/:entryId/insights` 支撑 paper workspace；私人笔记与项目评论走分离的 server-authorized 写入路径。
+- `POST /api/reading/:entryId/excerpts` 持久化 Reader excerpt；`POST /api/notebooks/capture` 可以把生成的 insight 或 Reader excerpt 捕获到 actor owner-only Notebook，且不接受浏览器传入的 actor、owner 或 project authority 字段。
+- `POST /api/projects/:projectId/library/adoptions` 是显式的项目来源采纳路径。浏览器只发送 `{ sourceLibraryEntryId }`，服务端检查来源可读性与目标项目 owner/editor 成员资格后，才创建或复用 project-scoped `LibraryEntry`。
+- `POST /api/project-docs/:documentId/notebook-adoptions` 是显式的 Notebook-to-Project-Docs 采纳路径。服务端验证 actor 可写目标 Project Doc 且拥有来源 Notebook 后，才创建新的 Project Doc 版本与安全 citation provenance。
+- `GET /api/project-docs/:documentId/citation-trace` 返回 ProjectMember-gated、浏览器安全的最新 Project Doc citation trace，包括 source availability / adoption-needed 状态，但不包含 storage keys、checksums、私有 Notebook 正文、Reader 私人笔记、credential refs 或 actor authority 字段。
+- `GET /api/projects/:projectId/writing-document` 让兼容调用方重新打开最新可见的共享 Project Doc；如果项目尚无共享 Project Doc，服务端会真实返回空状态。
+- `GET /api/project-docs/:documentId` 返回最新 Project Doc snapshot；如果文档存在但尚未保存版本，服务端返回 `versionNumber: 0` 的空 snapshot，而不是浏览器生成的 fallback 内容。
 - `GET /api/projects/:projectId/writing/document` 与 `POST /api/projects/:projectId/writing/document` 是由 Project Docs 支撑的 project-first workbench 兼容端点；Project Docs 是项目共享知识中心的权威运行时。
 - `GET /api/writing/:spaceId/projects/:projectId/document` 与 `POST /api/writing/:spaceId/projects/:projectId/document` 只保留为 legacy deep link 的兼容 workbench 端点；Project Docs 仍然是项目写作的权威运行时。
 
