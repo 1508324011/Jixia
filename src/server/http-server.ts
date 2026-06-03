@@ -1551,7 +1551,10 @@ async function handleApiRequest(
       /^\/api\/projects\/([^/]+)\/workspace$/,
     );
     if (projectWorkspaceMatch && method === "GET") {
-      const actor = await getActor(request, actorOptions);
+      const actor = await getActor(request, {
+        allowLegacyTestOverride: false,
+        sessionRoutes: app.session,
+      });
       const [, projectId] = projectWorkspaceMatch;
       rejectLegacyIdentityQueryFields(actor, requestUrl);
       sendJson(
