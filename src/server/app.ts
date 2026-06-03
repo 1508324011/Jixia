@@ -1107,6 +1107,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
         library: libraryRoutes,
         notebooks: notebooksRoutes,
         projectDocs: projectDocsRoutes,
+        projectWorkspace: projectWorkspaceRoutes,
         projects: projectsRoutes,
         spaces: spacesRoutes,
       }),
