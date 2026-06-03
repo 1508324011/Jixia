@@ -169,6 +169,42 @@ describe('project workspace service activity/resources projection', () => {
       title: 'Activity doc 10',
     });
     expect(workspace.activity.items[0]).not.toHaveProperty('actorUserId');
+    expect(workspace.review.totalCount).toBe(8);
+    expect(workspace.review.summary).toMatchObject({
+      collaborationSignals: 2,
+      documentsInReview: 5,
+      jobsNeedingAttention: 1,
+      newestReviewTimestamp: '2026-05-18T00:10:30.000Z',
+      totalReviewItems: 8,
+    });
+    expect(workspace.review.items.map((item) => item.sourceId)).toEqual([
+      'project-doc-10',
+      'project-doc-08',
+      'project-doc-06',
+      'project-doc-04',
+      'job-01',
+      'project-doc-02',
+      'project-comment-01',
+      'reader-excerpt-01',
+    ]);
+    expect(workspace.review.items[0]).toMatchObject({
+      href: '/projects/project-activity/writing/project-doc-10',
+      kind: 'project-doc-review',
+      priority: 'review',
+      projectId: 'project-activity',
+      sourceLabel: 'Project Doc',
+      summary: 'Project Doc is in review · version 10',
+      title: 'Activity doc 10',
+    });
+    expect(workspace.review.items.find((item) => item.sourceId === 'job-01')).toMatchObject({
+      kind: 'job-attention',
+      priority: 'monitor',
+      sourceId: 'job-01',
+      sourceLabel: 'Project job',
+    });
+    expect(workspace.review.items[0]).not.toHaveProperty('credentialRef');
+    expect(workspace.review.items[0]).not.toHaveProperty('payload');
+    expect(workspace.review.items[0]).not.toHaveProperty('actorUserId');
     expect(workspace.resources.totalCount).toBe(13);
     expect(workspace.resources.items[0]).toMatchObject({
       href: '/projects/project-activity/writing/project-doc-10',
@@ -185,5 +221,58 @@ describe('project workspace service activity/resources projection', () => {
     expect(workspace.resources.items.some((item) => item.kind === 'job')).toBe(true);
     expect(workspace.docs.canCreate).toBe(false);
     expect(workspace.docs.createDisabledReason).toMatch(/viewers can read/i);
+  });
+
+  it('returns deterministic empty review and activity states without fake data', async () => {
+    const projectRepository = {
+      getProjectForActor: async () => ({
+        membership: {
+          joinedAt: '2026-05-18T00:00:00.000Z',
+          projectId: 'project-empty',
+          role: 'owner',
+          userId: 'user-alice',
+        },
+        project: {
+          createdAt: '2026-05-18T00:00:00.000Z',
+          createdByUserId: 'user-alice',
+          id: 'project-empty',
+          name: 'Empty Project',
+          spaceId: 'space-empty',
+          status: 'active',
+          updatedAt: '2026-05-18T00:00:00.000Z',
+        },
+      }),
+    } as unknown as ProjectRepository;
+    const service = createProjectWorkspaceService({
+      jobRepository: {
+        listJobsForScope: async (): Promise<PersistedJobRecord[]> => [],
+      } as unknown as JobRepository,
+      libraryRepository: {
+        listLibraryEntriesForScope: async (): Promise<PersistedLibraryEntryView[]> => [],
+      } as unknown as LibraryRepository,
+      projectDocRepository: {
+        listDocumentsForProject: async (): Promise<PersistedProjectDocIndexItem[]> => [],
+      } as unknown as ProjectDocRepository,
+      projectRepository,
+      readingRepository: {
+        listProjectCommentsForEntry: async (): Promise<PersistedProjectReadingCommentRecord[]> => [],
+        listReaderExcerptsForEntry: async (): Promise<PersistedReaderExcerptRecord[]> => [],
+      } as unknown as ReadingRepository,
+    });
+
+    const workspace = await service.getWorkspace('project-empty', 'user-alice');
+
+    expect(workspace.activity.items).toEqual([]);
+    expect(workspace.activity.emptyState.title).toBe('No project activity yet');
+    expect(workspace.review.items).toEqual([]);
+    expect(workspace.review.summary).toEqual({
+      collaborationSignals: 0,
+      documentsInReview: 0,
+      jobsNeedingAttention: 0,
+      newestReviewTimestamp: undefined,
+      totalReviewItems: 0,
+    });
+    expect(workspace.review.emptyState.title).toBe('No project review items yet');
+    expect(workspace.review.emptyState.body).toMatch(/Project review and attention items will appear/i);
   });
 });

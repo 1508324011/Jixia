@@ -1,6 +1,8 @@
 import type {
   ProjectWorkspaceActivityItem,
   ProjectWorkspaceDocIndexItem,
+  ProjectWorkspaceReviewItem,
+  ProjectWorkspaceReviewSection,
   ProjectWorkspaceResourceItem,
   ProjectWorkspaceResponse,
 } from '@shared/contracts/projects';
@@ -46,7 +48,13 @@ const emptyProjectResourcesSection = {
   title: 'No project resources yet',
 };
 
+const emptyProjectReviewSection = {
+  body: 'Project review and attention items will appear when shared Project Docs enter review, project jobs need monitoring, or project Reader collaboration creates comments and excerpts.',
+  title: 'No project review items yet',
+};
+
 const projectWorkspaceActivityLimit = 8;
+const projectWorkspaceReviewLimit = 8;
 
 function sortTimestamp(value?: string): number {
   return value ? new Date(value).getTime() : 0;
@@ -136,6 +144,26 @@ function compareWorkspaceResourceItems(
   return left.id.localeCompare(right.id);
 }
 
+function compareWorkspaceReviewItems(
+  left: ProjectWorkspaceReviewItem,
+  right: ProjectWorkspaceReviewItem,
+): number {
+  const rightTime = new Date(right.occurredAt).getTime();
+  const leftTime = new Date(left.occurredAt).getTime();
+
+  if (rightTime !== leftTime) {
+    return rightTime - leftTime;
+  }
+
+  const kindComparison = left.kind.localeCompare(right.kind);
+
+  if (kindComparison !== 0) {
+    return kindComparison;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
 function buildProjectDocActivityItem(
   document: ProjectWorkspaceDocIndexItem,
 ): ProjectWorkspaceActivityItem {
@@ -174,6 +202,27 @@ function buildProjectDocResourceItem(
       : `${document.publishState} · no saved version yet`,
     title: document.title,
     updatedAt: document.updatedAt,
+  };
+}
+
+function buildProjectDocReviewItem(
+  document: ProjectWorkspaceDocIndexItem,
+): ProjectWorkspaceReviewItem {
+  const versionNumber = document.latestVersion?.versionNumber ?? 0;
+
+  return {
+    href: document.openHref,
+    id: `project-doc-review:${document.documentId}`,
+    kind: 'project-doc-review',
+    occurredAt: document.latestVersion?.capturedAt ?? document.updatedAt,
+    priority: 'review',
+    projectId: document.projectId,
+    sourceId: document.documentId,
+    sourceLabel: 'Project Doc',
+    summary: versionNumber > 0
+      ? `Project Doc is in review · version ${versionNumber}`
+      : 'Project Doc is in review · no saved version yet',
+    title: document.title,
   };
 }
 
@@ -232,6 +281,25 @@ function buildProjectCommentActivityItem(
   };
 }
 
+function buildProjectCommentReviewItem(
+  projectId: string,
+  libraryEntry: PersistedLibraryEntryView,
+  comment: PersistedProjectReadingCommentRecord,
+): ProjectWorkspaceReviewItem {
+  return {
+    href: buildProjectLibraryHref(projectId, libraryEntry.entry.id),
+    id: `reader-comment:${comment.id}`,
+    kind: 'reader-comment',
+    occurredAt: comment.createdAt,
+    priority: 'context',
+    projectId,
+    sourceId: comment.id,
+    sourceLabel: 'Reader comment',
+    summary: `Recent project Reader comment · ${libraryEntry.asset.title}`,
+    title: truncateText(comment.body),
+  };
+}
+
 function buildProjectExcerptActivityItem(
   projectId: string,
   libraryEntry: PersistedLibraryEntryView,
@@ -264,6 +332,25 @@ function buildProjectExcerptResourceItem(
     subtitle: `Reader excerpt · ${libraryEntry.asset.title}${excerpt.locator ? ` · ${excerpt.locator}` : ''}`,
     title: truncateText(excerpt.quote),
     updatedAt: excerpt.updatedAt,
+  };
+}
+
+function buildProjectExcerptReviewItem(
+  projectId: string,
+  libraryEntry: PersistedLibraryEntryView,
+  excerpt: PersistedReaderExcerptRecord,
+): ProjectWorkspaceReviewItem {
+  return {
+    href: buildProjectLibraryHref(projectId, libraryEntry.entry.id),
+    id: `reader-excerpt:${excerpt.id}`,
+    kind: 'reader-excerpt',
+    occurredAt: excerpt.updatedAt,
+    priority: 'context',
+    projectId,
+    sourceId: excerpt.id,
+    sourceLabel: 'Reader excerpt',
+    summary: `Recent project Reader excerpt · ${libraryEntry.asset.title}${excerpt.locator ? ` · ${excerpt.locator}` : ''}`,
+    title: truncateText(excerpt.quote),
   };
 }
 
@@ -301,6 +388,60 @@ function buildProjectJobResourceItem(
     subtitle: `Project job · ${job.status}`,
     title: job.kind,
     updatedAt: job.updatedAt,
+  };
+}
+
+function isProjectJobReviewCandidate(job: PersistedJobRecord): boolean {
+  return job.status === 'failed' || job.status === 'queued' || job.status === 'running';
+}
+
+function buildProjectJobReviewItem(
+  projectId: string,
+  job: PersistedJobRecord,
+): ProjectWorkspaceReviewItem {
+  const isFailed = job.status === 'failed';
+
+  return {
+    href: buildProjectJobHref(projectId, job.id),
+    id: `job-attention:${job.id}`,
+    kind: 'job-attention',
+    occurredAt: job.updatedAt,
+    priority: isFailed ? 'attention' : 'monitor',
+    projectId,
+    sourceId: job.id,
+    sourceLabel: 'Project job',
+    summary: isFailed
+      ? `Failed governed project job · ${job.status}`
+      : `Governed project job needs monitoring · ${job.status}`,
+    title: job.kind,
+  };
+}
+
+function buildProjectReviewSection(
+  projectId: string,
+  reviewItems: ProjectWorkspaceReviewItem[],
+): ProjectWorkspaceReviewSection {
+  const sortedReviewItems = [...reviewItems].sort(compareWorkspaceReviewItems);
+  const newestReviewTimestamp = sortedReviewItems[0]?.occurredAt;
+
+  return {
+    emptyState: emptyProjectReviewSection,
+    items: sortedReviewItems.slice(0, projectWorkspaceReviewLimit),
+    projectId,
+    summary: {
+      collaborationSignals: sortedReviewItems.filter(
+        (item) => item.kind === 'reader-comment' || item.kind === 'reader-excerpt',
+      ).length,
+      documentsInReview: sortedReviewItems.filter(
+        (item) => item.kind === 'project-doc-review',
+      ).length,
+      jobsNeedingAttention: sortedReviewItems.filter(
+        (item) => item.kind === 'job-attention',
+      ).length,
+      newestReviewTimestamp,
+      totalReviewItems: sortedReviewItems.length,
+    },
+    totalCount: sortedReviewItems.length,
   };
 }
 
@@ -378,6 +519,22 @@ export function createProjectWorkspaceService(
         ),
         ...projectJobs.map((job) => buildProjectJobResourceItem(projectId, job)),
       ].sort(compareWorkspaceResourceItems);
+      const reviewItems = [
+        ...docIndexDocuments
+          .filter((document) => document.publishState === 'review')
+          .map(buildProjectDocReviewItem),
+        ...projectJobs
+          .filter(isProjectJobReviewCandidate)
+          .map((job) => buildProjectJobReviewItem(projectId, job)),
+        ...projectScopedSignals.flatMap(({ comments, excerpts, libraryEntry }) => [
+          ...comments.map((comment) =>
+            buildProjectCommentReviewItem(projectId, libraryEntry, comment),
+          ),
+          ...excerpts.map((excerpt) =>
+            buildProjectExcerptReviewItem(projectId, libraryEntry, excerpt),
+          ),
+        ]),
+      ];
 
       return {
         activity: {
@@ -406,6 +563,7 @@ export function createProjectWorkspaceService(
         },
         membership: project.membership,
         project: project.project,
+        review: buildProjectReviewSection(projectId, reviewItems),
         resources: {
           emptyState: emptyProjectResourcesSection,
           items: resourceItems,
