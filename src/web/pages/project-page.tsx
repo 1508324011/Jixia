@@ -1,6 +1,8 @@
 import type { SyntheticEvent } from 'react';
 import type {
   ProjectWorkspaceActivityKind,
+  ProjectWorkspaceReviewKind,
+  ProjectWorkspaceReviewSection,
   ProjectWorkspaceResourceKind,
 } from '@shared/contracts/projects';
 import { useState } from 'react';
@@ -12,10 +14,30 @@ import { useProjectWorkspace } from '../presenters/project-workspace-presenter';
 
 const projectTabs = ['概览', '共享 Library', 'Project Docs', '活动'];
 
+function createEmptyProjectReviewSection(projectId: string): ProjectWorkspaceReviewSection {
+  return {
+    emptyState: {
+      body: 'Project review and attention items will appear when shared Project Docs enter review, project jobs need monitoring, or project Reader collaboration creates comments and excerpts.',
+      title: 'No project review items yet',
+    },
+    items: [],
+    projectId,
+    summary: {
+      collaborationSignals: 0,
+      documentsInReview: 0,
+      jobsNeedingAttention: 0,
+      totalReviewItems: 0,
+    },
+    totalCount: 0,
+  };
+}
+
 function describeWorkspaceKind(
-  kind: ProjectWorkspaceActivityKind | ProjectWorkspaceResourceKind,
+  kind: ProjectWorkspaceActivityKind | ProjectWorkspaceResourceKind | ProjectWorkspaceReviewKind,
 ): string {
   switch (kind) {
+    case 'project-doc-review':
+      return 'Project Doc review';
     case 'project-doc':
       return 'Project Doc';
     case 'library-entry':
@@ -24,6 +46,8 @@ function describeWorkspaceKind(
       return 'Reader comment';
     case 'reader-excerpt':
       return 'Reader excerpt';
+    case 'job-attention':
+      return 'Project job attention';
     case 'job':
       return 'Project job';
     default:
@@ -130,6 +154,8 @@ export function ProjectPage() {
   const spaceId = project.project.spaceId;
   const docs = workspace.docs.documents;
   const activityItems = workspace.activity.items;
+  const review = workspace.review ?? createEmptyProjectReviewSection(workspace.project.id);
+  const reviewItems = review.items;
   const resourceItems = workspace.resources.items;
 
   return (
@@ -246,6 +272,55 @@ export function ProjectPage() {
               <Link className="panel-link" to={workspace.links.libraryHref}>
                 Open project library
               </Link>
+            </article>
+          )}
+        </div>
+      </section>
+
+      <section className="panel" aria-label="Project review and attention">
+        <h2 className="panel-title">Project review and attention</h2>
+        <p className="quiet-copy">
+          Server-derived review queue from Project Docs, governed project jobs, and project-scoped Reader collaboration signals.
+        </p>
+        <dl className="home-cockpit-metrics">
+          <div className="home-cockpit-metric">
+            <dt>Total review items</dt>
+            <dd>{review.summary.totalReviewItems}</dd>
+          </div>
+          <div className="home-cockpit-metric">
+            <dt>Documents in review</dt>
+            <dd>{review.summary.documentsInReview}</dd>
+          </div>
+          <div className="home-cockpit-metric">
+            <dt>Jobs needing attention</dt>
+            <dd>{review.summary.jobsNeedingAttention}</dd>
+          </div>
+          <div className="home-cockpit-metric">
+            <dt>Reader collaboration</dt>
+            <dd>{review.summary.collaborationSignals}</dd>
+          </div>
+        </dl>
+        <div className="panel-grid" aria-label="project review queue">
+          {reviewItems.length > 0 ? (
+            reviewItems.map((item) => (
+              <article className="panel" key={item.id}>
+                <p className="page-kicker">{item.sourceLabel ?? describeWorkspaceKind(item.kind)}</p>
+                <h3 className="panel-title">{item.title}</h3>
+                <p className="quiet-copy">{item.summary}</p>
+                <p className="quiet-copy">Priority · {item.priority}</p>
+                <p className="quiet-copy">Source · {item.sourceId}</p>
+                <p className="quiet-copy">Occurred {item.occurredAt}</p>
+                {item.href ? (
+                  <Link className="panel-link" to={item.href}>
+                    Open review item
+                  </Link>
+                ) : null}
+              </article>
+            ))
+          ) : (
+            <article className="panel">
+              <h3 className="panel-title">{review.emptyState.title}</h3>
+              <p className="quiet-copy">{review.emptyState.body}</p>
             </article>
           )}
         </div>
