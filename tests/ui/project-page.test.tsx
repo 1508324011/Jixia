@@ -113,7 +113,7 @@ function createProjectWorkspaceFixture(
     },
     resources: {
       emptyState: {
-        body: 'Project resources will appear when the team creates Project Docs, adopts literature into the project-scoped Library, captures Reader excerpts, or opens governed jobs.',
+        body: 'Project resources will appear when the team creates Project Docs, explicitly adopts literature from Personal Library into the project-scoped Library, captures Reader excerpts, or opens governed jobs.',
         title: 'No project resources yet',
       },
       items: [],
@@ -177,6 +177,7 @@ describe('project page', () => {
     expect(screen.getByText('Project Doc is in review · version 2')).toBeInTheDocument();
     expect(screen.getByText('Documents in review')).toBeInTheDocument();
     expect(screen.getByText('Source · project-doc-alpha')).toBeInTheDocument();
+    expect(screen.getByText(/引用来自项目可见的 LibraryEntry/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open review item' })).toHaveAttribute(
       'href',
       '/projects/project-alpha/writing/project-doc-alpha',

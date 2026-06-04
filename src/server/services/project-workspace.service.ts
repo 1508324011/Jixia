@@ -34,7 +34,7 @@ export interface ProjectWorkspaceService {
 }
 
 const emptyProjectDocsIndex = {
-  body: 'No Project Docs have been created for this project yet. Use Project Docs to maintain shared background, evidence, rationale, conclusions, and formal drafts for the team.',
+  body: 'No Project Docs have been created for this project yet. Use Project Docs to deliberately synthesize adopted project Library sources, Reader evidence, rationale, conclusions, and formal drafts for the team.',
   title: 'No Project Docs yet',
 };
 
@@ -44,7 +44,7 @@ const emptyProjectActivitySection = {
 };
 
 const emptyProjectResourcesSection = {
-  body: 'Project resources will appear when the team creates Project Docs, adopts literature into the project-scoped Library, captures Reader excerpts, or opens governed jobs.',
+  body: 'Project resources will appear when the team creates Project Docs, explicitly adopts literature from Personal Library into the project-scoped Library, captures Reader excerpts, or opens governed jobs.',
   title: 'No project resources yet',
 };
 

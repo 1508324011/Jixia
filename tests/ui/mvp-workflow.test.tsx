@@ -300,7 +300,7 @@ describe('mvp workflow shell', () => {
       screen.getByText('Project library · server-owned collaboration context'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Review imported literature entries, metadata, and reading readiness/),
+      screen.getByText(/Review project-scoped LibraryEntry records created by explicit adoption/),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Open reader' }));

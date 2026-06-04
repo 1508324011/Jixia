@@ -86,7 +86,7 @@ describe('project writer flow', () => {
         canCreate: true,
         documents: [],
         emptyState: {
-          body: 'No Project Docs have been created for this project yet. Use Project Docs to maintain shared background, evidence, rationale, conclusions, and formal drafts for the team.',
+          body: 'No Project Docs have been created for this project yet. Use Project Docs to deliberately synthesize adopted project Library sources, Reader evidence, rationale, conclusions, and formal drafts for the team.',
           title: 'No Project Docs yet',
         },
         projectId: 'project-1',
@@ -114,7 +114,7 @@ describe('project writer flow', () => {
       },
       resources: {
         emptyState: {
-          body: 'Project resources will appear when the team creates Project Docs, adopts literature into the project-scoped Library, captures Reader excerpts, or opens governed jobs.',
+          body: 'Project resources will appear when the team creates Project Docs, explicitly adopts literature from Personal Library into the project-scoped Library, captures Reader excerpts, or opens governed jobs.',
           title: 'No project resources yet',
         },
         items: [],
@@ -302,7 +302,7 @@ describe('project writer flow', () => {
       },
       resources: {
         emptyState: {
-          body: 'Project resources will appear when the team creates Project Docs, adopts literature into the project-scoped Library, captures Reader excerpts, or opens governed jobs.',
+          body: 'Project resources will appear when the team creates Project Docs, explicitly adopts literature from Personal Library into the project-scoped Library, captures Reader excerpts, or opens governed jobs.',
           title: 'No project resources yet',
         },
         items: [
@@ -2273,6 +2273,6 @@ describe('project writer flow', () => {
 
     expect(await screen.findByText('No Project Docs yet')).toBeInTheDocument();
     expect(screen.getByText('Create a shared Project Doc from governed Reader evidence.')).toBeInTheDocument();
-    expect(screen.queryByText('Writer preview unavailable')).not.toBeInTheDocument();
+    expect(screen.queryByText('Project Docs preview unavailable')).not.toBeInTheDocument();
   });
 });
