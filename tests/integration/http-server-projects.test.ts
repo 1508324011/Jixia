@@ -808,7 +808,7 @@ describe('http server project api', () => {
         expect(emptyWorkspace.resources.items).toEqual([]);
         expect(emptyWorkspace.resources.totalCount).toBe(0);
         expect(emptyWorkspace.resources.emptyState.title).toBe('No project resources yet');
-        expect(emptyWorkspace.resources.emptyState.body).toMatch(/Project Docs, adopts literature into the project-scoped Library, captures Reader excerpts, or opens governed jobs/i);
+        expect(emptyWorkspace.resources.emptyState.body).toMatch(/Project Docs, explicitly adopts literature from Personal Library into the project-scoped Library, captures Reader excerpts, or opens governed jobs/i);
         expect(emptyWorkspace.links.writerHref).toBeUndefined();
       } finally {
         await server.close();

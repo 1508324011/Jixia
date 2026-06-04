@@ -125,8 +125,8 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
         });
         setAdoptionMessage(
           response.reused
-            ? `${response.entry.asset.title} was already available in ${response.project.project.name}.`
-            : `${response.entry.asset.title} is now available in ${response.project.project.name}.`,
+            ? `${response.entry.asset.title} already has a project LibraryEntry in ${response.project.project.name}.`
+            : `${response.entry.asset.title} is now available as a project LibraryEntry in ${response.project.project.name}.`,
         );
         setAdoptionTargetPath(`/projects/${response.project.project.id}/library`);
       } catch (error) {
@@ -151,8 +151,8 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
     ? "Personal library · imported references · ready to sort"
     : "Project library · server-owned collaboration context";
   const description = isPersonalMode
-    ? "Review imported literature entries and decide what stays personal versus what should move into a project workspace."
-    : "Review imported literature entries, metadata, and reading readiness inside the selected project. This slice reads the scoped library API through ProjectMember authority while Space stays governance-only.";
+    ? "Review imported literature entries and decide what stays personal versus what should be explicitly adopted into a project workspace."
+    : "Review project-scoped LibraryEntry records created by explicit adoption or server-owned project sources. This slice reads the scoped library API through ProjectMember authority while Space stays governance-only.";
 
   return (
     <main className="page-shell">
@@ -314,9 +314,10 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
           <article className="panel">
             <h2 className="panel-title">No project literature yet</h2>
             <p className="quiet-copy">
-              Use Search to import a DOI, PMID, or arXiv source into this visible
+              Use Search to import a DOI, PMID, or arXiv source into Personal
+              Library, then explicitly adopt that personal source into this
               project. The project library remains empty until the server returns
-              a scoped entry for this ProjectMember context.
+              a scoped project LibraryEntry for this ProjectMember context.
             </p>
           </article>
         ) : null}

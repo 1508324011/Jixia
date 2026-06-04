@@ -35,7 +35,7 @@ export function ProjectWriterList({ projectId }: ProjectWriterListProps) {
           } else {
             setDocument(null);
             setLoadError(
-              error instanceof Error ? error.message : 'Failed to load the Writer preview.',
+              error instanceof Error ? error.message : 'Failed to load the Project Docs preview.',
             );
           }
         }
@@ -54,20 +54,20 @@ export function ProjectWriterList({ projectId }: ProjectWriterListProps) {
   }, [projectId]);
 
   return (
-    <div className="panel-grid" aria-label="project writer documents">
+    <div className="panel-grid" aria-label="project docs documents">
       {isLoading ? (
         <article className="panel">
-          <h3 className="panel-title">Loading Writer preview…</h3>
-          <p className="quiet-copy">Checking whether a promoted draft already exists.</p>
+          <h3 className="panel-title">Loading Project Docs preview…</h3>
+          <p className="quiet-copy">Checking whether a shared Project Doc already exists.</p>
         </article>
       ) : loadError ? (
         <article className="panel">
-          <h3 className="panel-title">Writer preview unavailable</h3>
+          <h3 className="panel-title">Project Docs preview unavailable</h3>
           <p className="quiet-copy">{loadError}</p>
         </article>
       ) : document ? (
         <article className="panel">
-          <h3 className="panel-title">Known Writer draft</h3>
+          <h3 className="panel-title">Known Project Doc</h3>
           <p className="quiet-copy">
             Open the server-owned project document that was already shared with this project.
           </p>
@@ -75,14 +75,14 @@ export function ProjectWriterList({ projectId }: ProjectWriterListProps) {
             className="panel-link"
             to={`/projects/${projectId}/writing/${document.id}`}
           >
-            打开 Writer 文稿
+            Open Project Doc
           </Link>
         </article>
       ) : (
         <article className="panel">
-          <h3 className="panel-title">No Writer draft selected yet</h3>
+          <h3 className="panel-title">No Project Doc selected yet</h3>
           <p className="quiet-copy">
-            Promote a governed Reader insight to create a project document before reopening it here.
+            Use Project Docs to turn governed Reader evidence or adopted Library sources into shared project knowledge before reopening it here.
           </p>
           <Link className="panel-link" to={`/projects/${projectId}/library`}>
             Open project library

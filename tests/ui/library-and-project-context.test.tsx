@@ -41,7 +41,7 @@ const projectWorkspaceFixture = {
     canCreate: true,
     documents: [],
     emptyState: {
-      body: 'Adopt a source into the project library, then promote it into Writer.',
+      body: 'Adopt a Personal Library source into the project Library, then cite or synthesize it deliberately in Project Docs.',
       title: 'No shared project docs yet',
     },
     projectId: projectFixture.project.id,
@@ -56,7 +56,7 @@ const projectWorkspaceFixture = {
   project: projectFixture.project,
   resources: {
     emptyState: {
-      body: 'Project resources will appear when the team creates Project Docs or adopts literature into the project-scoped Library.',
+      body: 'Project resources will appear when the team creates Project Docs or explicitly adopts literature from Personal Library into the project-scoped Library.',
       title: 'No project resources yet',
     },
     items: [],
@@ -163,6 +163,61 @@ describe('library and project context', () => {
     expect(screen.getByRole('tab', { name: 'Project Docs' })).toBeInTheDocument();
   });
 
+
+  it('keeps the project library empty state on the explicit Personal Library adoption path', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+        const url = new URL(requestUrl, window.location.origin);
+
+        if (url.pathname === '/api/session/me') {
+          return Response.json({
+            user: {
+              displayName: 'Alice',
+              email: 'alice@example.test',
+              id: 'user-alice',
+            },
+          });
+        }
+
+        if (url.pathname === '/api/projects') {
+          return Response.json([projectFixture]);
+        }
+
+        if (url.pathname === '/api/library') {
+          expect(url.searchParams.get('scopeId')).toBe('project-recovery');
+          expect(url.searchParams.get('scopeType')).toBe('project');
+          expect(url.searchParams.get('spaceId')).toBe('space-recovery');
+
+          return Response.json([]);
+        }
+
+        throw new Error(`Unexpected fetch request: ${requestUrl}`);
+      }),
+    );
+
+    renderWorkbench('/projects/project-recovery/library');
+
+    expect(
+      await screen.findByRole('heading', { name: 'No project literature yet' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Use Search to import a DOI, PMID, or arXiv source into Personal Library/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/then explicitly adopt that personal source into this project/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Use Search to import a DOI, PMID, or arXiv source into this visible project/),
+    ).not.toBeInTheDocument();
+  });
+
   it('adopts a personal library source into a visible project with the narrow server DTO', async () => {
     const user = userEvent.setup();
 
@@ -230,7 +285,7 @@ describe('library and project context', () => {
 
     expect(
       await screen.findByText(
-        'Personal source ready for project citation is now available in Project-first Recovery.',
+        'Personal source ready for project citation is now available as a project LibraryEntry in Project-first Recovery.',
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open target project library' })).toHaveAttribute(
@@ -307,7 +362,7 @@ describe('library and project context', () => {
     ).toBeInTheDocument();
     expect(
       screen.queryByText(
-        'Personal source ready for project citation is now available in Project-first Recovery.',
+        'Personal source ready for project citation is now available as a project LibraryEntry in Project-first Recovery.',
       ),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open target project library' })).not.toBeInTheDocument();
