@@ -10,6 +10,7 @@ import type {
   CreateNoteRequest,
   CreateProjectCommentRequest,
   CreateReaderExcerptServiceRequest,
+  GetReadingStateRequest,
   GetReadingDetailRequest,
   ListReaderExcerptsRequest,
   ReadingService,
@@ -28,6 +29,7 @@ export interface ReadingRoutes {
   createWorkbenchProjectComment: ReadingService["createWorkbenchProjectComment"];
   getDetail(input: GetReadingDetailRequest): Promise<ReadingDetail | null>;
   getGeneratedInsightSource: ReadingService["getGeneratedInsightSource"];
+  getReadingState: ReadingService["getReadingState"];
   getReaderExcerptSource: ReadingService["getReaderExcerptSource"];
   getWorkbenchDetail: ReadingService["getWorkbenchDetail"];
   listReaderExcerpts(input: ListReaderExcerptsRequest): Promise<ReaderExcerptRecord[]>;
@@ -63,6 +65,9 @@ export function createReadingRoutes(service: ReadingService): ReadingRoutes {
     },
     getGeneratedInsightSource(input) {
       return service.getGeneratedInsightSource(input);
+    },
+    getReadingState(input: GetReadingStateRequest) {
+      return service.getReadingState(input);
     },
     getReaderExcerptSource(input) {
       return service.getReaderExcerptSource(input);

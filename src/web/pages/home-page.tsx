@@ -11,6 +11,10 @@ import type {
   HomeCockpitSectionStatus,
   HomeCockpitSummarySection,
 } from '@shared/contracts/home-cockpit';
+import type {
+  TodayContinuationAction,
+  TodayContinuationResponse,
+} from '@shared/contracts/today-continuation';
 
 import { apiClient } from '../lib/http-client';
 
@@ -53,6 +57,95 @@ function HomeActionLink({ action }: { action: HomeCockpitLinkAction }) {
     >
       {action.label}
     </Link>
+  );
+}
+
+function HomeContinuationActionLink({ action }: { action: TodayContinuationAction }) {
+  return (
+    <Link
+      className={
+        action.priority === 'high'
+          ? 'action-button'
+          : 'action-button action-button-secondary'
+      }
+      to={action.href}
+    >
+      {action.label}
+    </Link>
+  );
+}
+
+function isEmptyContinuation(continuation: TodayContinuationResponse): boolean {
+  return continuation.sections.every((section) => section.totalCount === 0) &&
+    continuation.nextActions.length === 0;
+}
+
+function HomeContinuationSummary({
+  continuation,
+  errorMessage,
+  isLoading,
+}: {
+  continuation: TodayContinuationResponse | null;
+  errorMessage: string | null;
+  isLoading: boolean;
+}) {
+  return (
+    <section className="panel" aria-label="Today continuation summary">
+      <h2 className="panel-title">Today continuation</h2>
+      {isLoading ? (
+        <p className="quiet-copy">Loading server-derived continuation summary…</p>
+      ) : null}
+      {!isLoading && errorMessage ? (
+        <p className="quiet-copy">Unable to load continuation summary: {errorMessage}</p>
+      ) : null}
+      {!isLoading && !errorMessage && continuation ? (
+        <>
+          <div className="context-bar">
+            <span className="status-badge">{continuation.contract}</span>
+            <Link className="panel-link" to="/today">
+              Open Today
+            </Link>
+          </div>
+          <dl className="home-cockpit-metrics">
+            <div className="home-cockpit-metric">
+              <dt>Readings</dt>
+              <dd>{continuation.summary.inProgressReadings}</dd>
+            </div>
+            <div className="home-cockpit-metric">
+              <dt>Imports</dt>
+              <dd>{continuation.summary.unreadImports}</dd>
+            </div>
+            <div className="home-cockpit-metric">
+              <dt>Drafts</dt>
+              <dd>{continuation.summary.notebookDrafts}</dd>
+            </div>
+            <div className="home-cockpit-metric">
+              <dt>Review</dt>
+              <dd>{continuation.summary.projectReviewItems}</dd>
+            </div>
+            <div className="home-cockpit-metric">
+              <dt>AI jobs</dt>
+              <dd>{continuation.summary.aiJobsNeedingAction}</dd>
+            </div>
+          </dl>
+          {isEmptyContinuation(continuation) ? (
+            <div className="stack-xs">
+              <h3 className="panel-title">{continuation.emptyState.title}</h3>
+              <p className="quiet-copy">{continuation.emptyState.body}</p>
+            </div>
+          ) : (
+            <div className="stack-sm">
+              {continuation.nextActions.slice(0, 2).map((action) => (
+                <div key={action.id} className="stack-xs">
+                  <HomeContinuationActionLink action={action} />
+                  <p className="quiet-copy">{action.reason}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : null}
+    </section>
   );
 }
 
@@ -149,8 +242,11 @@ function resolveProjectReviewSection(
 
 export function HomePage() {
   const [cockpit, setCockpit] = useState<HomeCockpitResponse | null>(null);
+  const [continuation, setContinuation] = useState<TodayContinuationResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isContinuationLoading, setIsContinuationLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [continuationErrorMessage, setContinuationErrorMessage] = useState<string | null>(null);
   const projectReview = cockpit
     ? resolveProjectReviewSection(cockpit)
     : emptyProjectReviewSection;
@@ -186,15 +282,47 @@ export function HomePage() {
     [],
   );
 
+  const loadContinuation = useCallback(
+    async (shouldCommit: () => boolean = () => true): Promise<void> => {
+      setIsContinuationLoading(true);
+      setContinuationErrorMessage(null);
+
+      try {
+        const response = await apiClient.getTodayContinuation();
+
+        if (!shouldCommit()) {
+          return;
+        }
+
+        setContinuation(response);
+      } catch (error) {
+        if (!shouldCommit()) {
+          return;
+        }
+
+        setContinuation(null);
+        setContinuationErrorMessage(
+          error instanceof Error ? error.message : 'Unable to load today continuation.',
+        );
+      } finally {
+        if (shouldCommit()) {
+          setIsContinuationLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     let isMounted = true;
 
     void loadCockpit(() => isMounted);
+    void loadContinuation(() => isMounted);
 
     return () => {
       isMounted = false;
     };
-  }, [loadCockpit]);
+  }, [loadCockpit, loadContinuation]);
 
   const isEmptyCockpit = useMemo(() => {
     if (!cockpit) {
@@ -282,6 +410,12 @@ export function HomePage() {
           </div>
 
           <aside className="stack-sm" aria-label="Home cockpit side rail">
+            <HomeContinuationSummary
+              continuation={continuation}
+              errorMessage={continuationErrorMessage}
+              isLoading={isContinuationLoading}
+            />
+
             <section className="panel" aria-label="Next actions">
               <h2 className="panel-title">Next actions</h2>
               <div className="stack-sm">

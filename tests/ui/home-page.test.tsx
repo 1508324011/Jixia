@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { HomeCockpitResponse } from '../../src/shared/contracts/home-cockpit';
+import type { TodayContinuationResponse } from '../../src/shared/contracts/today-continuation';
 import { App } from '../../src/web/app';
 
 function jsonResponse(payload: unknown, status = 200): Response {
@@ -154,13 +155,147 @@ function createHomeCockpitFixture(
   };
 }
 
+function createTodayContinuationFixture(
+  overrides: Partial<TodayContinuationResponse> = {},
+): TodayContinuationResponse {
+  return {
+    contract: 'jixia.today.continuation.v1',
+    emptyState: {
+      body: 'No personal reading, imports, Notebook drafts, visible project review items, or governed AI jobs need action right now.',
+      href: '/search',
+      title: 'No continuation items for today',
+    },
+    generatedAt: '2026-06-04T12:00:00.000Z',
+    nextActions: [
+      {
+        description: 'Reading progress 64% · continue from the personal Reader.',
+        href: '/library/entry-alpha/reader',
+        id: 'action:reader:entry-alpha',
+        label: 'Continue reading',
+        priority: 'high',
+        reason: 'pmid:111111 · Home continuation paper',
+        source: 'reader',
+      },
+      {
+        description: 'Governed personal job status · queued',
+        href: '/jobs?jobId=job-alpha',
+        id: 'action:ai-job:job-alpha',
+        label: 'Check AI job',
+        priority: 'medium',
+        reason: 'Personal AI job · today.personal.summary',
+        source: 'ai_job',
+      },
+    ],
+    sections: [
+      {
+        description: 'Personal Library entries where this actor has meaningful incomplete reading progress.',
+        emptyState: {
+          body: 'Personal Library entries with meaningful saved reading progress will appear here.',
+          href: '/library',
+          title: 'No in-progress readings',
+        },
+        items: [
+          {
+            href: '/library/entry-alpha/reader',
+            id: 'reader:entry-alpha',
+            kind: 'in_progress_reading',
+            priority: 'high',
+            sourceLabel: 'pmid:111111',
+            summary: 'Reading progress 64% · continue from the personal Reader.',
+            timestamp: '2026-06-04T11:30:00.000Z',
+            title: 'Home continuation paper',
+          },
+        ],
+        kind: 'in_progress_reading',
+        title: 'Continue reading',
+        totalCount: 1,
+      },
+      {
+        description: 'Personal Library entries that are imported but have no meaningful reading progress yet.',
+        emptyState: {
+          body: 'Recently imported personal Library entries without meaningful reading progress will appear here as continuation hints.',
+          href: '/library',
+          title: 'No unread personal imports',
+        },
+        items: [],
+        kind: 'new_imports',
+        title: 'New imports to triage',
+        totalCount: 0,
+      },
+      {
+        description: 'Owner-scoped private Notebook documents that can be resumed without exposing note bodies.',
+        emptyState: {
+          body: 'Private Notebook documents owned by this actor will appear here as conservative synthesis continuation hints.',
+          href: '/notebook',
+          title: 'No private Notebook drafts',
+        },
+        items: [],
+        kind: 'notebook_drafts',
+        title: 'Private Notebook drafts',
+        totalCount: 0,
+      },
+      {
+        description: 'Project workspace review and attention items from projects visible to this actor.',
+        emptyState: {
+          body: 'Review items from projects visible through persisted project membership will appear here.',
+          href: '/projects',
+          title: 'No visible project review items',
+        },
+        items: [],
+        kind: 'project_review',
+        title: 'Visible project review',
+        totalCount: 0,
+      },
+      {
+        description: 'Server-classified governed job statuses for personal and visible project scopes.',
+        emptyState: {
+          body: 'Governed jobs that are failed, queued, or running will appear here with links to the Jobs or AI Workspace surfaces.',
+          href: '/ai-workspace',
+          title: 'No AI jobs need action',
+        },
+        items: [
+          {
+            href: '/jobs?jobId=job-alpha',
+            id: 'ai-job:job-alpha',
+            kind: 'ai_jobs',
+            priority: 'medium',
+            sourceLabel: 'Personal AI job',
+            summary: 'Governed personal job status · queued',
+            timestamp: '2026-06-04T11:00:00.000Z',
+            title: 'today.personal.summary',
+          },
+        ],
+        kind: 'ai_jobs',
+        title: 'Governed AI jobs needing action',
+        totalCount: 1,
+      },
+    ],
+    summary: {
+      aiJobsNeedingAction: 1,
+      inProgressReadings: 1,
+      notebookDrafts: 0,
+      projectReviewItems: 0,
+      unreadImports: 0,
+    },
+    ...overrides,
+  };
+}
+
 type HomeCockpitFetchMode =
   | { type: 'error'; message: string; status?: number }
   | { type: 'success'; cockpit: HomeCockpitResponse };
 
+type HomeContinuationFetchMode =
+  | { type: 'error'; message: string; status?: number }
+  | { type: 'success'; continuation: TodayContinuationResponse };
+
 function renderHomePage(
   mode: HomeCockpitFetchMode = {
     cockpit: createHomeCockpitFixture(),
+    type: 'success',
+  },
+  continuationMode: HomeContinuationFetchMode = {
+    continuation: createTodayContinuationFixture(),
     type: 'success',
   },
 ) {
@@ -201,6 +336,39 @@ function renderHomePage(
         return jsonResponse(mode.cockpit);
       }
 
+      if (requestUrl.endsWith('/api/today/continuation')) {
+        expect(init?.body).toBeUndefined();
+        expect(init?.credentials).toBe('same-origin');
+        const url = new URL(requestUrl);
+        for (const fieldName of [
+          'actorUserId',
+          'requestedByUserId',
+          'userId',
+          'authorUserId',
+          'startedByUserId',
+          'actorSpaceId',
+          'createdByUserId',
+          'ownerId',
+          'projectId',
+          'scope',
+          'scopeType',
+          'scopeId',
+          'spaceId',
+          'visibility',
+        ]) {
+          expect(url.searchParams.get(fieldName)).toBeNull();
+        }
+
+        if (continuationMode.type === 'error') {
+          return jsonResponse(
+            { error: continuationMode.message },
+            continuationMode.status ?? 500,
+          );
+        }
+
+        return jsonResponse(continuationMode.continuation);
+      }
+
       throw new Error(`Unexpected fetch: ${requestUrl}`);
     }),
   );
@@ -233,6 +401,11 @@ describe('home page', () => {
     expect(screen.getByRole('heading', { name: 'Governed jobs' })).toBeInTheDocument();
     expect(screen.getByText('Visible projects')).toBeInTheDocument();
     expect(screen.getByText('Project Alpha')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Today continuation' })).toBeInTheDocument();
+    expect(screen.getByText('jixia.today.continuation.v1')).toBeInTheDocument();
+    expect(screen.getByText('Readings')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Continue reading' })).toHaveAttribute('href', '/library/entry-alpha/reader');
+    expect(screen.getByText('pmid:111111 · Home continuation paper')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Project review and attention' })).toBeInTheDocument();
     expect(screen.getByText('Project Alpha review draft')).toBeInTheDocument();
     expect(screen.getByText('Documents in review')).toBeInTheDocument();
@@ -271,6 +444,24 @@ describe('home page', () => {
         }),
         type: 'success',
       },
+      {
+        continuation: createTodayContinuationFixture({
+          nextActions: [],
+          sections: createTodayContinuationFixture().sections.map((section) => ({
+            ...section,
+            items: [],
+            totalCount: 0,
+          })),
+          summary: {
+            aiJobsNeedingAction: 0,
+            inProgressReadings: 0,
+            notebookDrafts: 0,
+            projectReviewItems: 0,
+            unreadImports: 0,
+          },
+        }),
+        type: 'success',
+      },
     );
 
     expect(
@@ -280,6 +471,7 @@ describe('home page', () => {
       screen.getByText(/This is a successful empty Home cockpit response/),
     ).toBeInTheDocument();
     expect(screen.getByText('No server-visible activity is available for this actor yet.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'No continuation items for today' })).toBeInTheDocument();
   });
 
   it('renders an explicit error state without stale cockpit data', async () => {
@@ -335,6 +527,11 @@ describe('home page', () => {
           }
 
           return jsonResponse(createHomeCockpitFixture());
+        }
+
+        if (requestUrl.endsWith('/api/today/continuation')) {
+          expect(init?.body).toBeUndefined();
+          return jsonResponse(createTodayContinuationFixture());
         }
 
         throw new Error(`Unexpected fetch: ${requestUrl}`);

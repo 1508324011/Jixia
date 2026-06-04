@@ -11,6 +11,7 @@ import * as projects from '../../src/shared/contracts/projects';
 import * as projectDocs from '../../src/shared/contracts/project-docs';
 import * as reading from '../../src/shared/contracts/reading';
 import * as spaces from '../../src/shared/contracts/spaces';
+import * as todayContinuation from '../../src/shared/contracts/today-continuation';
 import * as writing from '../../src/shared/contracts/writing';
 
 import type {
@@ -105,6 +106,12 @@ import type {
   JobStatus,
   JobStatusQuery,
 } from '../../src/shared/contracts/jobs';
+import type {
+  TodayContinuationActionSource,
+  TodayContinuationPriority,
+  TodayContinuationResponse,
+  TodayContinuationSectionKind,
+} from '../../src/shared/contracts/today-continuation';
 
 describe('core contracts', () => {
   it('exports space payloads for creation and membership queries', () => {
@@ -524,6 +531,121 @@ describe('core contracts', () => {
     >();
     expectTypeOf<HomeCockpitSectionStatus>().toEqualTypeOf<
       'empty' | 'active' | 'attention'
+    >();
+  });
+
+  it('exports the browser-safe Today continuation read-model contract', () => {
+    expect(todayContinuation.todayContinuationContract).toBe('jixia.today.continuation.v1');
+
+    const response: TodayContinuationResponse = {
+      contract: todayContinuation.todayContinuationContract,
+      emptyState: {
+        body: 'No personal continuation facts need action right now.',
+        href: '/search',
+        title: 'No continuation items for today',
+      },
+      generatedAt: '2026-06-04T00:00:00.000Z',
+      nextActions: [
+        {
+          description: 'Continue from the personal Reader.',
+          href: '/library/entry_001/reader',
+          id: 'action:reader:entry_001',
+          label: 'Continue reading',
+          priority: 'high',
+          reason: 'Reading progress 64% · Jixia continuation paper',
+          source: 'reader',
+        },
+      ],
+      sections: [
+        {
+          description: 'Personal Library entries where this actor has meaningful incomplete reading progress.',
+          emptyState: {
+            body: 'Personal Library entries with meaningful saved reading progress will appear here.',
+            href: '/library',
+            title: 'No in-progress readings',
+          },
+          items: [
+            {
+              href: '/library/entry_001/reader',
+              id: 'reader:entry_001',
+              kind: 'in_progress_reading',
+              priority: 'high',
+              sourceLabel: 'pmid:123456',
+              summary: 'Reading progress 64% · continue from the personal Reader.',
+              timestamp: '2026-06-04T00:00:00.000Z',
+              title: 'Jixia continuation paper',
+            },
+          ],
+          kind: 'in_progress_reading',
+          title: 'Continue reading',
+          totalCount: 1,
+        },
+        {
+          description: 'Server-classified governed job statuses for personal and visible project scopes.',
+          emptyState: {
+            body: 'Governed jobs that are failed, queued, or running will appear here.',
+            href: '/ai-workspace',
+            title: 'No AI jobs need action',
+          },
+          items: [
+            {
+              href: '/jobs?jobId=job_001',
+              id: 'ai-job:job_001',
+              kind: 'ai_jobs',
+              priority: 'medium',
+              sourceLabel: 'Personal AI job',
+              summary: 'Governed personal job status · queued',
+              timestamp: '2026-06-04T00:00:00.000Z',
+              title: 'ai.summary',
+            },
+          ],
+          kind: 'ai_jobs',
+          title: 'Governed AI jobs needing action',
+          totalCount: 1,
+        },
+      ],
+      summary: {
+        aiJobsNeedingAction: 1,
+        inProgressReadings: 1,
+        notebookDrafts: 0,
+        projectReviewItems: 0,
+        unreadImports: 0,
+      },
+    };
+
+    const serialized = JSON.stringify(response);
+
+    expect(response.contract).toBe(todayContinuation.todayContinuationContract);
+    expect(response.sections[0]?.items[0]?.href).toBe('/library/entry_001/reader');
+    expect(response.nextActions[0]?.source).toBe('reader');
+    expect(serialized).not.toContain('storageKey');
+    expect(serialized).not.toContain('checksum');
+    expect(serialized).not.toContain('JIXIA_STORAGE_ROOT');
+    expect(serialized).not.toContain('papers/');
+    expect(serialized).not.toContain('payload');
+    expect(serialized).not.toContain('credentialRef');
+    expect(serialized).not.toContain('rawSecret');
+    expect(serialized).not.toContain('apiKey');
+    expect(serialized).not.toContain('encryptedSecret');
+    expect(serialized).not.toContain('actorUserId');
+    expect(serialized).not.toContain('requestedByUserId');
+    expect(serialized).not.toContain('authorUserId');
+    expect(serialized).not.toContain('startedByUserId');
+    expect(serialized).not.toContain('actorSpaceId');
+    expect(serialized).not.toContain('createdByUserId');
+    expect(serialized).not.toContain('ownerId');
+    expect(serialized).not.toContain('projectId');
+    expect(serialized).not.toContain('scopeId');
+    expect(serialized).not.toContain('scopeType');
+    expect(serialized).not.toContain('spaceId');
+    expect(serialized).not.toContain('visibility');
+
+    expectTypeOf<TodayContinuationSectionKind>().toEqualTypeOf<
+      'in_progress_reading' | 'new_imports' | 'notebook_drafts' | 'project_review' | 'ai_jobs'
+    >();
+    expectTypeOf<TodayContinuationPriority>().toEqualTypeOf<'high' | 'medium' | 'low'>();
+    expectTypeOf<TodayContinuationActionSource>().toEqualTypeOf<
+      'library' | 'reader' | 'notebook' | 'project' | 'ai_job'
     >();
   });
 

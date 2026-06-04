@@ -13,6 +13,7 @@ import type {
 
 import type {
   PersistedLibraryEntryView,
+  PersistedReadingStateRecord,
   ReadingRepository,
 } from "../../db";
 
@@ -68,6 +69,11 @@ export interface GetReadingDetailRequest extends GetReadingDetailQuery {
   libraryEntryId: string;
 }
 
+export interface GetReadingStateRequest {
+  actorUserId: string;
+  libraryEntryId: string;
+}
+
 export interface ReadingStore {
   libraryService: LibraryService;
   readingRepository: ReadingRepository;
@@ -100,6 +106,9 @@ export interface ReadingService {
     generatedInsightId: string;
     libraryEntryId: string;
   }): Promise<GeneratedInsightRecord>;
+  getReadingState(
+    input: GetReadingStateRequest,
+  ): Promise<PersistedReadingStateRecord | null>;
   getReaderExcerptSource(input: {
     actorSpaceId?: string;
     actorUserId: string;
@@ -292,6 +301,16 @@ export function createReadingService(store: ReadingStore): ReadingService {
       }
 
       return insight;
+    },
+    async getReadingState(
+      input: GetReadingStateRequest,
+    ): Promise<PersistedReadingStateRecord | null> {
+      await getAuthorizedLibraryContext(store, input);
+
+      return store.readingRepository.getReadingState(
+        input.libraryEntryId,
+        input.actorUserId,
+      );
     },
     async getReaderExcerptSource(input: {
       actorSpaceId?: string;
