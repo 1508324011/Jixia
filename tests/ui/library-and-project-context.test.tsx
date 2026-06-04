@@ -203,7 +203,9 @@ describe('library and project context', () => {
           url.pathname === '/api/projects/project-recovery/library/adoptions' &&
           init?.method === 'POST'
         ) {
-          expect(JSON.parse(String(init.body))).toEqual({
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          expect(Object.keys(body)).toEqual(['sourceLibraryEntryId']);
+          expect(body).toEqual({
             sourceLibraryEntryId: 'entry-personal-source',
           });
 
@@ -273,7 +275,9 @@ describe('library and project context', () => {
           url.pathname === '/api/projects/project-recovery/library/adoptions' &&
           init?.method === 'POST'
         ) {
-          expect(JSON.parse(String(init.body))).toEqual({
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          expect(Object.keys(body)).toEqual(['sourceLibraryEntryId']);
+          expect(body).toEqual({
             sourceLibraryEntryId: 'entry-personal-source',
           });
 
