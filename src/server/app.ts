@@ -85,6 +85,10 @@ import {
   createHomeCockpitRoutes,
   type HomeCockpitRoutes,
 } from './routes/home-cockpit.routes';
+import {
+  createTodayContinuationRoutes,
+  type TodayContinuationRoutes,
+} from './routes/today-continuation.routes';
 import { createCommandSearchService } from './services/command-search.service';
 import type { CommandSearchService } from './services/command-search.service';
 import {
@@ -103,6 +107,7 @@ import { createSecretBox, hasSecretBoxKey } from './security/secret-box';
 import { createAuditService } from './services/audit.service';
 import { createImportService } from './services/import.service';
 import { createHomeCockpitService } from './services/home-cockpit.service';
+import { createTodayContinuationService } from './services/today-continuation.service';
 import { createJobBus } from './jobs/job-bus';
 import { createJobRunner, type JobExecutor } from './jobs/job-runner';
 import { createLibraryService } from './services/library.service';
@@ -234,6 +239,7 @@ export interface JixiaApp {
   reading: ReadingRoutes;
   session: SessionRoutes;
   spaces: SpacesRoutes;
+  todayContinuation: TodayContinuationRoutes;
 }
 
 function createState(): JixiaAppState {
@@ -1083,6 +1089,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const spacesRoutes = createSpacesRoutes(spacesService);
   const credentialsRoutes = createCredentialsRoutes(credentialsService);
   const libraryRoutes = createLibraryRoutes(libraryService);
+  const readingRoutes = createReadingRoutes(readingService);
   const commandSearchService = createCommandSearchService({
     jobs: jobsRoutes,
     library: libraryRoutes,
@@ -1125,8 +1132,18 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     projectDocs: projectDocsRoutes,
     projectWorkspace: projectWorkspaceRoutes,
     projects: projectsRoutes,
-    reading: createReadingRoutes(readingService),
+    reading: readingRoutes,
     session: sessionRoutes,
     spaces: spacesRoutes,
+    todayContinuation: createTodayContinuationRoutes(
+      createTodayContinuationService({
+        jobs: jobsRoutes,
+        library: libraryRoutes,
+        notebooks: notebooksRoutes,
+        projectWorkspace: projectWorkspaceRoutes,
+        projects: projectsRoutes,
+        reading: readingRoutes,
+      }),
+    ),
   };
 }

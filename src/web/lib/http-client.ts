@@ -67,6 +67,7 @@ import type {
 import type { PublishState } from "@shared/contracts/writing";
 import type { WritingDocumentResponse } from "@shared/contracts/writing";
 import type { SessionUser } from "@shared/contracts/session";
+import type { TodayContinuationResponse } from "@shared/contracts/today-continuation";
 
 export class ApiError extends Error {
   constructor(
@@ -368,6 +369,9 @@ export const apiClient = {
   },
   getTodayRecommendations(): Promise<DiscoveryTodayResponse> {
     return requestJson("/api/discovery/today");
+  },
+  getTodayContinuation(): Promise<TodayContinuationResponse> {
+    return requestJson("/api/today/continuation");
   },
   getHomeCockpit(): Promise<HomeCockpitResponse> {
     return requestJson("/api/home-cockpit");

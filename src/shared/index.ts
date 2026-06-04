@@ -16,4 +16,5 @@ export * from "./contracts/reading";
 export * from "./contracts/session";
 export * from "./contracts/settings";
 export * from "./contracts/spaces";
+export * from "./contracts/today-continuation";
 export * from "./contracts/writing";

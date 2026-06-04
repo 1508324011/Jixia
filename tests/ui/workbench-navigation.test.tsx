@@ -185,6 +185,95 @@ describe('workbench navigation', () => {
           );
         }
 
+        if (url.endsWith('/api/today/continuation')) {
+          expect(init?.body).toBeUndefined();
+          return new Response(
+            JSON.stringify({
+              contract: 'jixia.today.continuation.v1',
+              emptyState: {
+                body: 'No personal reading, imports, Notebook drafts, visible project review items, or governed AI jobs need action right now.',
+                href: '/search',
+                title: 'No continuation items for today',
+              },
+              generatedAt: '2026-06-04T12:00:00.000Z',
+              nextActions: [],
+              sections: [
+                {
+                  description: 'Personal Library entries where this actor has meaningful incomplete reading progress.',
+                  emptyState: {
+                    body: 'Personal Library entries with meaningful saved reading progress will appear here.',
+                    href: '/library',
+                    title: 'No in-progress readings',
+                  },
+                  items: [],
+                  kind: 'in_progress_reading',
+                  title: 'Continue reading',
+                  totalCount: 0,
+                },
+                {
+                  description: 'Personal Library entries that are imported but have no meaningful reading progress yet.',
+                  emptyState: {
+                    body: 'Recently imported personal Library entries without meaningful reading progress will appear here as continuation hints.',
+                    href: '/library',
+                    title: 'No unread personal imports',
+                  },
+                  items: [],
+                  kind: 'new_imports',
+                  title: 'New imports to triage',
+                  totalCount: 0,
+                },
+                {
+                  description: 'Owner-scoped private Notebook documents that can be resumed without exposing note bodies.',
+                  emptyState: {
+                    body: 'Private Notebook documents owned by this actor will appear here as conservative synthesis continuation hints.',
+                    href: '/notebook',
+                    title: 'No private Notebook drafts',
+                  },
+                  items: [],
+                  kind: 'notebook_drafts',
+                  title: 'Private Notebook drafts',
+                  totalCount: 0,
+                },
+                {
+                  description: 'Project workspace review and attention items from projects visible to this actor.',
+                  emptyState: {
+                    body: 'Review items from projects visible through persisted project membership will appear here.',
+                    href: '/projects',
+                    title: 'No visible project review items',
+                  },
+                  items: [],
+                  kind: 'project_review',
+                  title: 'Visible project review',
+                  totalCount: 0,
+                },
+                {
+                  description: 'Server-classified governed job statuses for personal and visible project scopes.',
+                  emptyState: {
+                    body: 'Governed jobs that are failed, queued, or running will appear here with links to the Jobs or AI Workspace surfaces.',
+                    href: '/ai-workspace',
+                    title: 'No AI jobs need action',
+                  },
+                  items: [],
+                  kind: 'ai_jobs',
+                  title: 'Governed AI jobs needing action',
+                  totalCount: 0,
+                },
+              ],
+              summary: {
+                aiJobsNeedingAction: 0,
+                inProgressReadings: 0,
+                notebookDrafts: 0,
+                projectReviewItems: 0,
+                unreadImports: 0,
+              },
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
         if (url.endsWith('/api/session/me')) {
           return new Response(
             JSON.stringify({

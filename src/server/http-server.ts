@@ -404,6 +404,47 @@ function rejectLegacyIdentityQueryFields(
   );
 }
 
+function rejectTodayContinuationAuthorityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "createdByUserId"),
+    "createdByUserId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "spaceId"),
+    "spaceId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scope"),
+    "scope",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeId"),
+    "scopeId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeType"),
+    "scopeType",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "visibility"),
+    "visibility",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "projectId"),
+    "projectId",
+  );
+}
+
 function rejectNotebookAuthorityQueryFields(
   actor: { userId: string },
   requestUrl: URL,
@@ -1393,6 +1434,39 @@ async function handleApiRequest(
       }
 
       sendJson(response, 200, await app.homeCockpit.getHomeCockpit(user), method);
+      return true;
+    }
+
+    if (pathname === "/api/today/continuation" && method === "GET") {
+      const actor = await getActor(request, actorOptions);
+      rejectTodayContinuationAuthorityQueryFields(actor, requestUrl);
+
+      const sessionToken = readSessionTokenFromCookieHeader(
+        readSingleHeader(request.headers.cookie),
+      );
+
+      if (!sessionToken) {
+        throw new Error(
+          "Project API requires a server-derived actor session from the session cookie.",
+        );
+      }
+
+      const user = await app.session.getCurrentUserFromToken(sessionToken, {
+        userAgent: readSingleHeader(request.headers["user-agent"]) ?? undefined,
+      });
+
+      if (!user || user.id !== actor.userId) {
+        throw new Error(
+          "Project API requires a server-derived actor session from the session cookie.",
+        );
+      }
+
+      sendJson(
+        response,
+        200,
+        await app.todayContinuation.getTodayContinuation({ userId: user.id }),
+        method,
+      );
       return true;
     }
 
