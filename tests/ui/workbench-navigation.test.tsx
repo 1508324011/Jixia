@@ -112,6 +112,90 @@ describe('workbench navigation', () => {
     expect(resolveWorkbenchNavigationTarget(aiWorkspaceItem, aiWorkspaceContext)).toBe('/ai-workspace');
   });
 
+  it('keeps top-level Search manual imports personal-only', async () => {
+    const user = userEvent.setup();
+    const personalImportBodies: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const requestUrl = input.toString();
+      const url = new URL(requestUrl, window.location.origin);
+
+      if (url.pathname === '/api/session/me') {
+        return Response.json({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+      }
+
+      if (url.pathname === '/api/projects') {
+        return Response.json([projectFixture]);
+      }
+
+      if (url.pathname === '/api/library/personal/import' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        personalImportBodies.push(body);
+
+        expect(Object.keys(body).sort()).toEqual(['sourceLocator', 'sourceType']);
+        expect(body).toEqual({
+          sourceLocator: '10.1000/manual-source',
+          sourceType: 'doi',
+        });
+        expect(body).not.toHaveProperty('projectId');
+        expect(body).not.toHaveProperty('scope');
+        expect(body).not.toHaveProperty('spaceId');
+        expect(body).not.toHaveProperty('visibility');
+
+        return Response.json(
+          {
+            asset: {
+              canonicalId: 'doi:10.1000/manual-source',
+              id: 'asset-manual-source',
+              title: 'Manual personal source',
+            },
+            entry: {
+              id: 'entry-manual-source',
+              paperAssetId: 'asset-manual-source',
+              scope: { id: 'user-alice', type: 'user' },
+              scopeId: 'user-alice',
+              scopeType: 'user',
+              spaceId: 'personal-space-user-alice',
+              visibility: 'private',
+            },
+          },
+          { status: 201 },
+        );
+      }
+
+      throw new Error(`Unexpected fetch request: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench('/search');
+
+    expect(await screen.findByRole('heading', { name: '外部搜索' })).toBeInTheDocument();
+    expect(screen.queryByText('Project import surface')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Target space')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Visible project')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Identifier'), '10.1000/manual-source');
+    await user.click(screen.getByRole('button', { name: 'Import into personal Library' }));
+
+    expect(await screen.findByText('Imported title · Manual personal source')).toBeInTheDocument();
+    expect(
+      screen.getByText('Saved in Personal Library. Adopt it into a project from Library when needed.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole('link', { name: 'Open personal Library' }).map((link) => link.getAttribute('href')),
+    ).toContain('/library');
+    expect(personalImportBodies).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.some(([requestInput]) => requestInput.toString().includes('/api/import/paper')),
+    ).toBe(false);
+  });
+
   it('sidebar switches among approved top-level surfaces', async () => {
     const user = userEvent.setup();
     const personalLibraryEntries: Array<{
@@ -375,6 +459,10 @@ describe('workbench navigation', () => {
         }
 
         if (url.endsWith('/api/library/personal/import') && init?.method === 'POST') {
+          expect(JSON.parse(String(init.body))).toEqual({
+            sourceLocator: discoveryItems[0].sourceLocator,
+            sourceType: discoveryItems[0].sourceType,
+          });
           discoveryItems[0] = {
             ...discoveryItems[0],
             imported: true,

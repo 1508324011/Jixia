@@ -12,15 +12,9 @@ import { useSearchPresenter } from "../presenters/search-presenter";
 export function SearchPage() {
   const {
     error,
-    importPaper,
+    importPersonalSource,
     importedRecord,
     isImporting,
-    projects,
-    selectedProjectId,
-    setSelectedProjectId,
-    selectedSpaceId,
-    setSelectedSpaceId,
-    spaces,
   } = useSearchPresenter();
   const [sourceLocator, setSourceLocator] = useState("");
   const [sourceType, setSourceType] =
@@ -131,8 +125,7 @@ export function SearchPage() {
 
       <section aria-label="context bar" className="context-bar">
         <span>
-          Discovery workspace · {selectedSpaceId || "No space"} /
-          {selectedProjectId || "No project"}
+          Discovery workspace · Personal Library import only
         </span>
         <span className="status-badge">import-ready</span>
         <span className="status-badge">server-first</span>
@@ -147,38 +140,14 @@ export function SearchPage() {
         </section>
       ) : null}
 
-      <section className="panel-grid" aria-label="project import layout">
+      <section className="panel-grid" aria-label="personal import layout">
         <article className="panel">
-          <h2 className="panel-title">Project import surface</h2>
-          <label className="quiet-copy" htmlFor="search-space-select">
-            Target space
-          </label>
-          <select
-            id="search-space-select"
-            value={selectedSpaceId}
-            onChange={(event) => setSelectedSpaceId(event.target.value)}
-          >
-            {spaces.map((space) => (
-              <option key={space.id} value={space.id}>
-                {space.name}
-              </option>
-            ))}
-          </select>
-          <label className="quiet-copy" htmlFor="search-project-select">
-            Visible project
-          </label>
-          <select
-            id="search-project-select"
-            value={selectedProjectId}
-            onChange={(event) => setSelectedProjectId(event.target.value)}
-          >
-            <option value="">No project selected</option>
-            {projects.map((item) => (
-              <option key={item.project.id} value={item.project.id}>
-                {item.project.name}
-              </option>
-            ))}
-          </select>
+          <h2 className="panel-title">Manual personal import</h2>
+          <p className="quiet-copy">
+            Import a known DOI, PMID, or arXiv identifier into your Personal Library
+            first. To share it with a project, open Library and adopt the personal
+            source into a visible project.
+          </p>
           <label className="quiet-copy" htmlFor="search-source-type">
             Source type
           </label>
@@ -207,19 +176,16 @@ export function SearchPage() {
             type="button"
             disabled={isImporting || sourceLocator.trim().length === 0}
             onClick={() =>
-              void importPaper({
+              void importPersonalSource({
                 sourceLocator: sourceLocator.trim(),
                 sourceType,
               })
             }
           >
-            {isImporting ? "Importing…" : "Import into library"}
+            {isImporting ? "Importing…" : "Import into personal Library"}
           </button>
-          <Link
-            className="panel-link"
-            to={selectedProjectId ? `/projects/${selectedProjectId}/library` : "/projects"}
-          >
-            Open project library
+          <Link className="panel-link" to="/library">
+            Open personal Library
           </Link>
         </article>
 
@@ -230,21 +196,18 @@ export function SearchPage() {
               <p className="quiet-copy">Imported title · {importedRecord.asset.title}</p>
               <p className="quiet-copy">Canonical id · {importedRecord.asset.canonicalId}</p>
               <p className="quiet-copy">
-                Entry visibility · {importedRecord.entry.visibility} · Scope ·{" "}
-                {importedRecord.entry.scope.type}/{importedRecord.entry.scope.id}
+                Saved in Personal Library. Adopt it into a project from Library when
+                needed.
               </p>
-              <Link
-                className="panel-link"
-                to={selectedProjectId ? `/projects/${selectedProjectId}/library` : "/projects"}
-              >
-                Open imported library lane
+              <Link className="panel-link" to="/library">
+                Open personal Library
               </Link>
             </>
           ) : (
             <p className="quiet-copy">
               Enter a DOI, PMID, or arXiv identifier to import metadata through the
-              server. Imports create or reuse scoped LibraryEntry records without
-              letting the browser choose ownership.
+              server. Imports create or reuse actor-owned Personal Library entries
+              without letting the browser choose project scope or ownership.
             </p>
           )}
         </article>
