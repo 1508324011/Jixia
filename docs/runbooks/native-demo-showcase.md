@@ -143,9 +143,14 @@ The following are still demo-only convenience features and should not be confuse
 
 If you need those conveniences, switch to `demo-native-showcase`. If you need the product-truth browser path on the current host, stay on `main` and use this runbook.
 
-## Manual walkthrough notes
+## Historical manual walkthrough notes
 
-Current-host pass completed on 2026-03-23 with `JIXIA_STORAGE_ROOT=/home/zhurui/.local/share/jixia-beta/storage` and the built app served from `npm run start:server`.
+The following bullets are archived evidence from a 2026-03-23 Task 11
+current-host pass. They are not a fresh verification claim for current `main`;
+rerun the startup, `/health`, `/api/health`, browser-flow, and restart checks
+above before reporting a new current-host pass.
+
+- Archived environment: `JIXIA_STORAGE_ROOT=/home/zhurui/.local/share/jixia-beta/storage` with the built app served from `npm run start:server`.
 
 - The root route still redirects straight to `/home`, but unauthenticated browsers are now redirected into `/login?redirect=/home` and establish a real `jixia_session` cookie before entering the workbench.
 - Live PubMed search returned a real result set for `tumor board biomarkers` during this manual pass; the first rendered identifier was `PubMed · pmid:38181798`. Future current-host passes may instead see an empty-result or provider-failure state depending on upstream/network conditions, and that degraded state is acceptable when the UI remains truthful and does not synthesize fallback titles.

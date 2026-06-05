@@ -55,6 +55,9 @@ describe('workbench beta runbook contract', () => {
     expect(runbook).toContain('paper');
     expect(runbook).toContain('demo-native-showcase');
     expect(runbook).toContain('demo-only convenience');
+    expect(runbook).toContain('archived evidence from a 2026-03-23 Task 11');
+    expect(runbook).toContain('not a fresh verification claim for current `main`');
+    expect(runbook).not.toContain('Current-host pass completed on 2026-03-23');
 
     expect(readme).toContain('docs/runbooks/native-demo-showcase.md');
     expect(readme).toContain('current-host beta path');
