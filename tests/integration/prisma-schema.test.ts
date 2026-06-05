@@ -71,6 +71,9 @@ describe('prisma schema', () => {
     expect(schema).toContain('model Job');
     expect(schema).toContain('model JobEvent');
     expect(schema).toContain('model AuditLog');
+    expect(schema).toContain('model AiSession');
+    expect(schema).toContain('model AiContextPack');
+    expect(schema).toContain('model AiContextItem');
 
     expect(schema).toMatch(/model Space[\s\S]*\n\s+kind\s+SpaceKind/);
     expect(schema).toMatch(/model Project[\s\S]*\n\s+spaceId\s+String/);
@@ -223,6 +226,37 @@ describe('prisma schema', () => {
     );
     expect(schema).toMatch(/model JobEvent[\s\S]*@@index\(\[jobId\]\)/);
     expect(schema).toMatch(/model AuditLog[\s\S]*@@index\(\[jobId\]\)/);
+    expect(schema).toMatch(/model AiSession[\s\S]*\n\s+scopeType\s+String/);
+    expect(schema).toMatch(/model AiSession[\s\S]*\n\s+scopeId\s+String/);
+    expect(schema).toMatch(/model AiSession[\s\S]*\n\s+createdByUserId\s+String/);
+    expect(schema).toMatch(
+      /model AiSession[\s\S]*@@index\(\[scopeType, scopeId, createdAt\]\)/,
+    );
+    expect(schema).toMatch(/model AiContextPack[\s\S]*\n\s+sessionId\s+String/);
+    expect(schema).toMatch(
+      /model AiContextPack[\s\S]*@@index\(\[sessionId, createdAt\]\)/,
+    );
+    expect(schema).toMatch(/model AiContextItem[\s\S]*\n\s+sourceType\s+String/);
+    expect(schema).toMatch(/model AiContextItem[\s\S]*\n\s+sourceId\s+String/);
+    expect(schema).toMatch(/model AiContextItem[\s\S]*\n\s+sourceVersionId\s+String\?/);
+    expect(schema).toMatch(/model AiContextItem[\s\S]*\n\s+sourceDocumentId\s+String\?/);
+    expect(schema).toMatch(/model AiContextItem[\s\S]*\n\s+sourceLibraryEntryId\s+String\?/);
+    expect(schema).toMatch(
+      /model AiContextItem[\s\S]*@@index\(\[sourceType, sourceId\]\)/,
+    );
+    expect(
+      existsSync('prisma/migrations/20260605000000_ai_workspace_context_packs/migration.sql'),
+    ).toBe(true);
+    const aiWorkspaceMigration = readFileSync(
+      'prisma/migrations/20260605000000_ai_workspace_context_packs/migration.sql',
+      'utf8',
+    );
+    expect(aiWorkspaceMigration).toContain('CREATE TABLE IF NOT EXISTS "AiSession"');
+    expect(aiWorkspaceMigration).toContain('CREATE TABLE IF NOT EXISTS "AiContextPack"');
+    expect(aiWorkspaceMigration).toContain('CREATE TABLE IF NOT EXISTS "AiContextItem"');
+    expect(aiWorkspaceMigration).toContain('"sourceType" TEXT NOT NULL');
+    expect(aiWorkspaceMigration).toContain('"sourceId" TEXT NOT NULL');
+    expect(aiWorkspaceMigration).toContain('AiContextItem_sourceType_sourceId_idx');
   });
 
   it('repairs upgraded citation tables with reader excerpt foreign keys', async () => {

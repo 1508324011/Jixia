@@ -42,7 +42,7 @@ export interface JobsViewModel {
   isRunningJob: boolean;
   jobs: JobRecord[];
   projects: ProjectListItem[];
-  refresh(): Promise<void>;
+  refresh(requestedScopeKey?: string, requestedJobId?: string | null): Promise<void>;
   cancelActiveJob(): Promise<void>;
   runSelectedJob(): Promise<void>;
   selectedCredentialRef: string;

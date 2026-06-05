@@ -7,6 +7,23 @@ export {
 } from './client';
 
 export {
+  createAiWorkspaceRepository,
+  initializeAiWorkspacePersistence,
+  type AiWorkspaceRepository,
+  type CreateAiContextItemParams,
+  type CreateAiContextPackParams,
+  type CreateAiSessionParams,
+  type PersistedAiContextItemRecord,
+  type PersistedAiContextPackDetail,
+  type PersistedAiContextPackRecord,
+  type PersistedAiContextPackWithSession,
+  type PersistedAiContextSourceType,
+  type PersistedAiSessionRecord,
+  type PersistedAiWorkspaceScopeRef,
+  type PersistedAiWorkspaceScopeType,
+} from './repositories/ai-workspace.repository';
+
+export {
   createCredentialsRepository,
   initializeCredentialPersistence,
   type BootstrapLegacyCredentialAuthorityInput,

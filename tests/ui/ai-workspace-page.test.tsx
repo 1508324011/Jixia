@@ -74,6 +74,13 @@ describe('AI Workspace page', () => {
         return jsonResponse([]);
       }
 
+      if (requestUrl.endsWith('/api/ai-workspace/sessions')) {
+        return jsonResponse({
+          contract: 'jixia-ai-workspace-context-packs-v1',
+          sessions: [],
+        });
+      }
+
       throw new Error(`Unexpected fetch: ${requestUrl}`);
     });
 
@@ -86,21 +93,46 @@ describe('AI Workspace page', () => {
     expect(screen.getByRole('heading', { name: 'Credential setup required' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'No visible project scopes' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Configure credentials in Settings' })).toHaveAttribute('href', '/settings');
-    expect(screen.getByRole('button', { name: 'Launch governed AI run' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Launch context-pack AI run' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Launch context-pack AI job' })).toBeDisabled();
+    expect(screen.getByRole('heading', { name: 'Server-owned AI sessions' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Context packs inherit session scope' })).toBeInTheDocument();
+    expect(screen.getByText(/authorized source references only/i)).toBeInTheDocument();
     expect(screen.queryByText(/Chat history/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Send message/i })).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/Ask anything/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/API Key/i)).not.toBeInTheDocument();
   });
 
-  it('launches a governed project AI run through jobs APIs only', async () => {
+  it('launches a governed project AI run through context-pack refs only', async () => {
     const user = userEvent.setup();
     let createdProjectJob = false;
+    const aiSession = {
+      createdAt: '2026-05-24T00:00:00.000Z',
+      id: 'session-project-1',
+      scope: { id: 'project-alpha', type: 'project' as const },
+      title: 'Project synthesis session',
+      updatedAt: '2026-05-24T00:00:00.000Z',
+    };
+    const aiPack = {
+      createdAt: '2026-05-24T00:00:00.000Z',
+      id: 'pack-project-1',
+      itemCount: 1,
+      sessionId: aiSession.id,
+      title: 'Selected project evidence',
+      updatedAt: '2026-05-24T00:00:00.000Z',
+    };
+    const contextItem = {
+      contextPackId: aiPack.id,
+      createdAt: '2026-05-24T00:00:00.000Z',
+      id: 'item-project-1',
+      source: { libraryEntryId: 'entry-project-1', sourceType: 'projectLibraryEntry' as const },
+    };
     const projectJob = {
       createdAt: '2026-05-24T00:01:00.000Z',
       credentialRef: 'cred-alice',
       id: 'job-project-1',
-      kind: 'ai.summary',
+      kind: 'ai-workspace.context-pack',
       scope: { id: 'project-alpha', type: 'project' as const },
       scopeId: 'project-alpha',
       scopeType: 'project',
@@ -164,6 +196,37 @@ describe('AI Workspace page', () => {
         ]);
       }
 
+      if (requestUrl.endsWith('/api/ai-workspace/sessions')) {
+        return jsonResponse({
+          contract: 'jixia-ai-workspace-context-packs-v1',
+          sessions: [],
+        });
+      }
+
+      if (requestUrl.endsWith('/api/ai-workspace/projects/project-alpha/sessions')) {
+        return jsonResponse({
+          contract: 'jixia-ai-workspace-context-packs-v1',
+          sessions: [aiSession],
+        });
+      }
+
+      if (requestUrl.endsWith('/api/ai-workspace/sessions/session-project-1/context-packs')) {
+        return jsonResponse({
+          contract: 'jixia-ai-workspace-context-packs-v1',
+          packs: [aiPack],
+          session: aiSession,
+        });
+      }
+
+      if (requestUrl.endsWith('/api/ai-workspace/context-packs/pack-project-1')) {
+        return jsonResponse({
+          contract: 'jixia-ai-workspace-context-packs-v1',
+          items: [contextItem],
+          pack: aiPack,
+          session: aiSession,
+        });
+      }
+
       if (requestUrl.includes('/api/jobs?')) {
         const url = new URL(requestUrl);
         expect(url.searchParams.get('actorUserId')).toBeNull();
@@ -176,7 +239,7 @@ describe('AI Workspace page', () => {
         return jsonResponse([]);
       }
 
-      if (requestUrl.endsWith('/api/jobs') && init?.method === 'POST') {
+      if (requestUrl.endsWith('/api/ai-workspace/jobs') && init?.method === 'POST') {
         const headers = new Headers(init.headers);
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
 
@@ -184,20 +247,23 @@ describe('AI Workspace page', () => {
         expect(headers.has('Authorization')).toBe(false);
         expect(headers.has('x-jixia-actor')).toBe(false);
         expect(body).toMatchObject({
+          contextPackId: 'pack-project-1',
           credentialRef: 'cred-alice',
-          kind: 'ai.summary',
-          scope: { id: 'project-alpha', type: 'project' },
-          spaceId: 'space-project-alpha',
         });
         expect(JSON.stringify(body)).not.toMatch(
-          /actorUserId|requestedByUserId|authorUserId|startedByUserId|actorSpaceId|ownerId|createdByUserId|rawSecret|apiKey|password|token|secret/i,
+          /actorUserId|requestedByUserId|authorUserId|startedByUserId|actorSpaceId|ownerId|createdByUserId|scope|spaceId|projectId|visibility|rawContext|notebookDocumentVersion|storageKey|checksum|rawSecret|apiKey|password|token|secret/i,
         );
 
         createdProjectJob = true;
 
         return jsonResponse({
-          ...projectJob,
-          status: 'queued',
+          contextPack: aiPack,
+          itemRefs: [contextItem.source],
+          job: {
+            ...projectJob,
+            status: 'queued',
+          },
+          session: aiSession,
         });
       }
 
@@ -251,13 +317,14 @@ describe('AI Workspace page', () => {
     await screen.findByRole('option', { name: 'Project · Project Alpha' });
 
     await user.selectOptions(screen.getByLabelText('AI Workspace scope'), 'project:project-alpha');
+    expect(await screen.findByText('Project Library entry · entry-project-1')).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByRole('link', { name: 'Open Jobs runtime' })).toHaveAttribute(
         'href',
         '/jobs?scopeId=project-alpha&scopeType=project',
       ),
     );
-    await user.click(screen.getByRole('button', { name: 'Launch governed AI run' }));
+    await user.click(screen.getByRole('button', { name: 'Launch context-pack AI job' }));
 
     expect(await screen.findByText('Project AI run completed.')).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'job.completed' })).toBeInTheDocument();
@@ -346,6 +413,13 @@ describe('AI Workspace page', () => {
             status: cancelRequested ? 'cancelled' : 'queued',
           },
         ]);
+      }
+
+      if (requestUrl.endsWith('/api/ai-workspace/sessions')) {
+        return jsonResponse({
+          contract: 'jixia-ai-workspace-context-packs-v1',
+          sessions: [],
+        });
       }
 
       if (requestUrl.endsWith('/api/jobs/job-personal-1/cancel') && init?.method === 'POST') {

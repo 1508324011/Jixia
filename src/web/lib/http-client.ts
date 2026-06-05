@@ -1,4 +1,17 @@
 import type { CredentialRecord } from "@shared/contracts/credentials";
+import type {
+  AiContextItemRecord,
+  AiContextPackDetail,
+  AiContextPackRecord,
+  AiWorkspaceSessionRecord,
+  CreateAiContextItemRequest,
+  CreateAiContextPackRequest,
+  CreateAiWorkspaceJobRequest,
+  CreateAiWorkspaceJobResponse,
+  CreateAiWorkspaceSessionRequest,
+  ListAiContextPacksResponse,
+  ListAiWorkspaceSessionsResponse,
+} from "@shared/contracts/ai-workspace";
 import type { CommandSearchResponse } from "@shared/contracts/command-search";
 import type {
   DiscoverySearchResponse,
@@ -414,6 +427,45 @@ export const apiClient = {
       method: "POST",
     });
   },
+  addAiWorkspaceContextItem(
+    contextPackId: string,
+    input: CreateAiContextItemRequest,
+  ): Promise<AiContextItemRecord> {
+    return requestJson(`/api/ai-workspace/context-packs/${contextPackId}/items`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  createAiWorkspaceContextPack(
+    sessionId: string,
+    input: CreateAiContextPackRequest,
+  ): Promise<AiContextPackRecord> {
+    return requestJson(`/api/ai-workspace/sessions/${sessionId}/context-packs`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  createAiWorkspaceJob(
+    input: CreateAiWorkspaceJobRequest,
+  ): Promise<CreateAiWorkspaceJobResponse> {
+    return requestJson("/api/ai-workspace/jobs", {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  createAiWorkspaceSession(
+    scope: ScopeRef,
+    input: CreateAiWorkspaceSessionRequest,
+  ): Promise<AiWorkspaceSessionRecord> {
+    const path = scope.type === "project"
+      ? `/api/ai-workspace/projects/${scope.id}/sessions`
+      : "/api/ai-workspace/sessions";
+
+    return requestJson(path, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
   createJob(input: CreateJobPayload): Promise<JobRecord> {
     return requestJson("/api/jobs", {
       body: JSON.stringify(input),
@@ -502,6 +554,25 @@ export const apiClient = {
   },
   listCredentials(): Promise<CredentialRecord[]> {
     return requestJson("/api/credentials");
+  },
+  getAiWorkspaceContextPack(
+    contextPackId: string,
+  ): Promise<AiContextPackDetail> {
+    return requestJson(`/api/ai-workspace/context-packs/${contextPackId}`);
+  },
+  listAiWorkspaceContextPacks(
+    sessionId: string,
+  ): Promise<ListAiContextPacksResponse> {
+    return requestJson(`/api/ai-workspace/sessions/${sessionId}/context-packs`);
+  },
+  listAiWorkspaceSessions(
+    scope: ScopeRef,
+  ): Promise<ListAiWorkspaceSessionsResponse> {
+    const path = scope.type === "project"
+      ? `/api/ai-workspace/projects/${scope.id}/sessions`
+      : "/api/ai-workspace/sessions";
+
+    return requestJson(path);
   },
   listPersonalLibraryEntries(): Promise<LibraryListResponse> {
     return requestJson("/api/library/personal");
