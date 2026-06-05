@@ -98,7 +98,7 @@ The handoff note in `docs/plans/2026-03-21-jixia-task-10-ui-direction-notes.md` 
 
 ## Task 11 Operator Runbook
 
-Task 11 turns the verified web interaction shell into a reproducibly runnable lab-server package. The current runtime starts a Node 22 HTTP server, serves the built browser app from `dist/`, exposes `/health`, and persists uploaded paper bytes plus local key material under the configured storage root while Prisma/SQLite backs project collaboration, provider credential secrets, and workbench settings. This is the Prisma-backed project collaboration path for lab-server operation.
+Task 11 turns the verified web interaction shell into a reproducibly runnable lab-server package. The current runtime starts a Node 22 HTTP server, serves the built browser app from `dist/`, exposes `/health` plus the API-scoped `/api/health` mirror, and persists uploaded paper bytes plus local key material under the configured storage root while Prisma/SQLite backs project collaboration, provider credential secrets, and workbench settings. This is the Prisma-backed project collaboration path for lab-server operation.
 
 ### Prerequisites
 
@@ -129,9 +129,9 @@ npm run build
 npm run start:server
 ```
 
-After startup, the server serves the built workbench shell from `dist/`, responds on `/health`, and exposes the current beta browser/API surface under `/api/`.
+After startup, the server serves the built workbench shell from `dist/`, responds on `/health` and `/api/health`, and exposes the current beta browser/API surface under `/api/`.
 
-Use `http://127.0.0.1:3000/health` as the first runtime sanity check. A healthy Task 11 process returns `{"service":"jixia-server","status":"ok"}`.
+Use `http://127.0.0.1:3000/health` as the first runtime sanity check, then verify the API-scoped mirror at `http://127.0.0.1:3000/api/health` when checking the browser/API handoff. A healthy Task 11 process returns `{"service":"jixia-server","status":"ok"}` from both endpoints.
 
 ### Optional Docker Compose packaging path
 

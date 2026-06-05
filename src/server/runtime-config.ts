@@ -5,6 +5,8 @@ import { resolveStorageRoot, type StorageRootEnv } from './storage/storage-root'
 const DEFAULT_DATABASE_URL = 'file:./prisma/dev.db';
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 3000;
+const DECIMAL_PORT_PATTERN = /^\d+$/;
+const MAX_PORT = 65535;
 
 export interface RuntimeConfigEnv extends StorageRootEnv {
   JIXIA_ALLOW_LEGACY_ACTOR_OVERRIDE?: string;
@@ -34,9 +36,17 @@ function readPort(value: string | undefined): number {
     return DEFAULT_PORT;
   }
 
-  const parsedPort = Number.parseInt(normalized, 10);
+  if (!DECIMAL_PORT_PATTERN.test(normalized)) {
+    return DEFAULT_PORT;
+  }
 
-  if (!Number.isSafeInteger(parsedPort) || parsedPort <= 0) {
+  const parsedPort = Number(normalized);
+
+  if (
+    !Number.isSafeInteger(parsedPort) ||
+    parsedPort <= 0 ||
+    parsedPort > MAX_PORT
+  ) {
     return DEFAULT_PORT;
   }
 
