@@ -197,10 +197,56 @@ describe('workbench http contracts', () => {
       });
       expect(settings.apiKey).toBeUndefined();
 
+      const rawSecretSettingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        body: JSON.stringify({
+          apiKey: 'fixture-settings-secret',
+          defaultImportTarget: 'personal-library',
+        }),
+        headers: withSessionCookie(aliceCookie, {
+          'Content-Type': 'application/json',
+        }),
+        method: 'POST',
+      });
+      expect(rawSecretSettingsResponse.status).toBe(400);
+      await expect(rawSecretSettingsResponse.json()).resolves.toMatchObject({
+        error: expect.stringMatching(/credential/i),
+      });
+
+      const projectWorkspaceSettingsResponse = await fetch(`${baseUrl}/api/settings/me`, {
+        body: JSON.stringify({
+          defaultImportTarget: 'project-workspace',
+        }),
+        headers: withSessionCookie(aliceCookie, {
+          'Content-Type': 'application/json',
+        }),
+        method: 'POST',
+      });
+      expect(projectWorkspaceSettingsResponse.status).toBe(400);
+      await expect(projectWorkspaceSettingsResponse.json()).resolves.toMatchObject({
+        error: expect.stringMatching(/defaultImportTarget/i),
+      });
+
+      const credentialResponse = await fetch(`${baseUrl}/api/credentials`, {
+        body: JSON.stringify({
+          provider: 'workbench-api-key',
+          rawSecret: 'fixture-settings-credential',
+        }),
+        headers: withSessionCookie(aliceCookie, {
+          'Content-Type': 'application/json',
+        }),
+        method: 'POST',
+      });
+      expect(credentialResponse.status).toBe(200);
+
+      const credential = await credentialResponse.json();
+      expect(credential).toMatchObject({
+        provider: 'workbench-api-key',
+      });
+      expect(credential.rawSecret).toBeUndefined();
+
       const savedResponse = await fetch(`${baseUrl}/api/settings/me`, {
         body: JSON.stringify({
-          apiKey: 'sk-test-secret',
-          defaultImportTarget: 'project-workspace',
+          defaultImportTarget: 'personal-library',
         }),
         headers: withSessionCookie(aliceCookie, {
           'Content-Type': 'application/json',
@@ -212,7 +258,7 @@ describe('workbench http contracts', () => {
       const savedSettings = await savedResponse.json();
       expect(savedSettings).toMatchObject({
         apiKeyConfigured: true,
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
 
       const spoofedSettingsSaveResponse = await fetch(`${baseUrl}/api/settings/me`, {
@@ -235,7 +281,7 @@ describe('workbench http contracts', () => {
       const persistedSettings = await persistedSettingsResponse.json();
       expect(persistedSettings).toMatchObject({
         apiKeyConfigured: true,
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
 
       const persistedStatePath = join(storageRoot, 'server-state.json');
@@ -253,15 +299,15 @@ describe('workbench http contracts', () => {
           where: { userId: 'user-alice' },
         })).resolves.toMatchObject({
           credentialRef: expect.any(String),
-          defaultImportTarget: 'project-workspace',
+          defaultImportTarget: 'personal-library',
         });
       } finally {
         await prisma.$disconnect();
       }
 
-      expect(persistedStateText).not.toContain('sk-test-secret');
+      expect(persistedStateText).not.toContain('fixture-settings-credential');
       expect(persistedStateText).not.toContain(
-        Buffer.from('sk-test-secret', 'utf8').toString('base64'),
+        Buffer.from('fixture-settings-credential', 'utf8').toString('base64'),
       );
       expect(persistedStateText).not.toContain('encryptedSecret');
       expect(persistedStateText).not.toContain('workbenchSettings');
@@ -290,14 +336,14 @@ describe('workbench http contracts', () => {
         `${baseUrl}/api/writing/space-alpha/projects/project-alpha/document`,
       );
       const sharedSpace = await fetch(`${baseUrl}/api/spaces`, {
-        body: JSON.stringify({ kind: 'shared', name: 'Writer Space' }),
+        body: JSON.stringify({ kind: 'shared', name: 'Project Docs Space' }),
         headers: withSessionCookie(aliceCookie, {
           'Content-Type': 'application/json',
         }),
         method: 'POST',
       }).then((response) => response.json() as Promise<{ id: string }>);
       const project = await fetch(`${baseUrl}/api/projects`, {
-        body: JSON.stringify({ name: 'Writer Project', spaceId: sharedSpace.id }),
+        body: JSON.stringify({ name: 'Project Docs Project', spaceId: sharedSpace.id }),
         headers: withSessionCookie(aliceCookie, {
           'Content-Type': 'application/json',
         }),
@@ -343,10 +389,10 @@ describe('workbench http contracts', () => {
       ).catch((error) => error);
       const writingSaveFromClient = await demoApi.saveWritingDocument({
         citations: [{ paperAssetId: importedProjectRecord.asset.id }],
-        content: 'Writer draft content',
+        content: 'Project Doc draft content',
         projectId: project.project.id,
         spaceId: sharedSpace.id,
-        title: 'Writer draft title',
+        title: 'Project Doc draft title',
       });
       const structuredWorkbenchSave = await demoApi.saveWritingDocument({
         citations: [],
@@ -354,7 +400,7 @@ describe('workbench http contracts', () => {
           blocks: [
             {
               level: 2,
-              text: 'Structured Writer draft',
+              text: 'Structured Project Doc draft',
               type: 'heading',
             },
             {
@@ -381,7 +427,7 @@ describe('workbench http contracts', () => {
         },
         projectId: project.project.id,
         spaceId: sharedSpace.id,
-        title: 'Structured Writer draft title',
+        title: 'Structured Project Doc draft title',
       });
       const reloadedWritingDocument = await demoApi.getWritingDocument(
         sharedSpace.id,
@@ -453,27 +499,27 @@ describe('workbench http contracts', () => {
       );
       expect(writingReadWithoutActor.status).toBe(401);
       expect(writingDocumentFromClient).toBeInstanceOf(Error);
-      expect((writingDocumentFromClient as Error).message).toContain('No Writer document exists');
+      expect((writingDocumentFromClient as Error).message).toContain('No Project Doc exists');
       expect(writingSaveFromClient.document).toMatchObject({
         projectId: project.project.id,
         spaceId: sharedSpace.id,
       });
       expect(writingSaveFromClient.document.latestSnapshot).toMatchObject({
-        content: 'Writer draft content',
+        content: 'Project Doc draft content',
         doc: expect.objectContaining({
           projectId: project.project.id,
           spaceId: sharedSpace.id,
-          title: 'Writer draft title',
+          title: 'Project Doc draft title',
         }),
       });
       expect(structuredWorkbenchSave.document.latestSnapshot).toMatchObject({
         content:
-          '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+          '## Structured Project Doc draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
         documentContent: {
           blocks: [
             {
               level: 2,
-              text: 'Structured Writer draft',
+              text: 'Structured Project Doc draft',
               type: 'heading',
             },
             {
@@ -512,7 +558,7 @@ describe('workbench http contracts', () => {
         documentId: writingSaveFromClient.document.documentId,
         latestSnapshot: expect.objectContaining({
           content:
-            '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+            '## Structured Project Doc draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
           documentContent: structuredWorkbenchSave.document.latestSnapshot?.documentContent,
         }),
         projectId: project.project.id,
@@ -522,7 +568,7 @@ describe('workbench http contracts', () => {
         documentId: writingSaveFromClient.document.documentId,
         latestSnapshot: expect.objectContaining({
           content:
-            '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+            '## Structured Project Doc draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
           documentContent: structuredWorkbenchSave.document.latestSnapshot?.documentContent,
         }),
         projectId: project.project.id,
@@ -536,7 +582,7 @@ describe('workbench http contracts', () => {
         documentId: writingSaveFromClient.document.documentId,
         latestSnapshot: expect.objectContaining({
           content:
-            '## Structured Writer draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
+            '## Structured Project Doc draft\n\nStructured workbench paragraph.\n\n> structured project quote\n\nAI suggestion: Use this project-scoped evidence in the synthesis.',
           documentContent: structuredWorkbenchSave.document.latestSnapshot?.documentContent,
         }),
       });
@@ -727,7 +773,7 @@ describe('workbench http contracts', () => {
           body: JSON.stringify({
             citations: [],
             content: 'Legacy query writer actor should be rejected.',
-            title: 'Legacy Query Writer',
+            title: 'Legacy Query Project Doc',
           }),
           headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
@@ -739,7 +785,7 @@ describe('workbench http contracts', () => {
             actorUserId: 'user-alice',
             citations: [],
             content: 'Legacy matching writer actor should be rejected.',
-            title: 'Legacy Writer',
+            title: 'Legacy Project Doc',
           }),
           headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
@@ -965,7 +1011,7 @@ describe('workbench http contracts', () => {
         firstApp.credentials.getWorkbenchSettings('user-alice'),
       ).resolves.toEqual({
         apiKeyConfigured: true,
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
       await firstApp.close();
 
@@ -975,7 +1021,7 @@ describe('workbench http contracts', () => {
         prisma.workbenchSettings.findUnique({ where: { userId: 'user-alice' } }),
       ).resolves.toMatchObject({
         credentialRef: 'cred-legacy',
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
 
       const cleanedState = readFileSync(join(storageRoot, 'server-state.json'), 'utf8');
@@ -1017,7 +1063,7 @@ describe('workbench http contracts', () => {
         secondApp.credentials.getWorkbenchSettings('user-alice'),
       ).resolves.toEqual({
         apiKeyConfigured: true,
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
       await secondApp.close();
 
@@ -1027,7 +1073,7 @@ describe('workbench http contracts', () => {
         prisma.workbenchSettings.findUnique({ where: { userId: 'user-alice' } }),
       ).resolves.toMatchObject({
         credentialRef: 'cred-legacy',
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
     } finally {
       await prisma.$disconnect();
@@ -1035,7 +1081,7 @@ describe('workbench http contracts', () => {
     }
   });
 
-  it('keeps settings durable through Prisma and fails closed when credential rows cannot be decrypted', async () => {
+  it('keeps settings durable through Prisma without accepting credential material through settings', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-key-'));
     const databaseUrl = `file:${join(storageRoot, 'jixia-workbench-key.db')}`;
     const env = {
@@ -1047,17 +1093,23 @@ describe('workbench http contracts', () => {
     try {
       const firstApp = createJixiaApp({ env });
 
+      const credential = await firstApp.credentials.createCredential(
+        {
+          provider: 'workbench-api-key',
+          rawSecret: 'durable-credential-fixture',
+        },
+        'user-alice',
+      );
       await expect(
         firstApp.credentials.saveWorkbenchSettings(
           {
-            apiKey: 'durable-api-key',
-            defaultImportTarget: 'project-workspace',
+            defaultImportTarget: 'personal-library',
           },
           'user-alice',
         ),
       ).resolves.toEqual({
         apiKeyConfigured: true,
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
       await firstApp.close();
 
@@ -1067,7 +1119,13 @@ describe('workbench http contracts', () => {
         secondApp.credentials.getWorkbenchSettings('user-alice'),
       ).resolves.toEqual({
         apiKeyConfigured: true,
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
+      });
+      await expect(
+        secondApp.credentials.getStoredCredential(credential.credentialRef, 'user-alice'),
+      ).resolves.toMatchObject({
+        credentialRef: credential.credentialRef,
+        provider: 'workbench-api-key',
       });
       await secondApp.close();
 
@@ -1079,26 +1137,21 @@ describe('workbench http contracts', () => {
         wrongKeyApp.credentials.getWorkbenchSettings('user-alice'),
       ).resolves.toEqual({
         apiKeyConfigured: false,
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
       const savedWorkbenchSettings = await prisma.workbenchSettings.findUniqueOrThrow({
         where: { userId: 'user-alice' },
       });
-      const savedCredentialRef = savedWorkbenchSettings.credentialRef;
-
-      expect(savedCredentialRef).toEqual(expect.stringMatching(/^cred-/));
-      if (!savedCredentialRef) {
-        throw new Error('Expected durable workbench settings to reference a credential.');
-      }
+      expect(savedWorkbenchSettings.credentialRef).toBe(credential.credentialRef);
 
       await expect(
-        wrongKeyApp.credentials.getStoredCredential(savedCredentialRef, 'user-alice'),
+        wrongKeyApp.credentials.getStoredCredential(credential.credentialRef, 'user-alice'),
       ).resolves.toBeNull();
       await expect(
-        wrongKeyApp.credentials.saveWorkbenchSettings(
+        wrongKeyApp.credentials.createCredential(
           {
-            apiKey: 'must-not-overwrite-with-wrong-key',
-            defaultImportTarget: 'personal-library',
+            provider: 'workbench-api-key',
+            rawSecret: 'must-not-overwrite-with-wrong-key',
           },
           'user-alice',
         ),
@@ -1116,13 +1169,13 @@ describe('workbench http contracts', () => {
         danglingCredentialApp.credentials.getWorkbenchSettings('user-alice'),
       ).resolves.toEqual({
         apiKeyConfigured: false,
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
       await expect(
-        danglingCredentialApp.credentials.saveWorkbenchSettings(
+        danglingCredentialApp.credentials.createCredential(
           {
-            apiKey: 'must-not-recreate-dangling-secret',
-            defaultImportTarget: 'personal-library',
+            provider: 'workbench-api-key',
+            rawSecret: 'must-not-recreate-dangling-secret',
           },
           'user-alice',
         ),
@@ -1137,7 +1190,7 @@ describe('workbench http contracts', () => {
     }
   });
 
-  it('rotates the persisted workbench credential secret without creating duplicate credential rows', async () => {
+  it('keeps credential mutation dedicated and does not rotate secrets through settings payloads', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-workbench-rotation-'));
     const databaseUrl = `file:${join(storageRoot, 'jixia-workbench-rotation.db')}`;
     const env = {
@@ -1149,10 +1202,16 @@ describe('workbench http contracts', () => {
     try {
       const app = createJixiaApp({ env });
 
+      const firstCredential = await app.credentials.createCredential(
+        {
+          provider: 'workbench-api-key',
+          rawSecret: 'first-credential-fixture',
+        },
+        'user-alice',
+      );
       await expect(
         app.credentials.saveWorkbenchSettings(
           {
-            apiKey: 'first-api-key',
             defaultImportTarget: 'personal-library',
           },
           'user-alice',
@@ -1167,30 +1226,26 @@ describe('workbench http contracts', () => {
       });
       const firstSettingsCredentialRef = firstSettings?.credentialRef;
 
-      expect(firstSettingsCredentialRef).toEqual(expect.any(String));
-      if (!firstSettingsCredentialRef) {
-        throw new Error('Expected first settings save to bind a credential ref.');
-      }
+      expect(firstSettingsCredentialRef).toBe(firstCredential.credentialRef);
 
       await expect(prisma.providerCredential.findMany()).resolves.toHaveLength(1);
       await expect(prisma.providerCredentialSecret.findMany()).resolves.toHaveLength(1);
 
       const firstCredentialRow = await prisma.providerCredential.findUniqueOrThrow({
         include: { secret: true },
-        where: { id: firstSettingsCredentialRef },
+        where: { id: firstCredential.credentialRef },
       });
 
-      await expect(
-        app.credentials.saveWorkbenchSettings(
-          {
-            apiKey: 'second-api-key',
-            defaultImportTarget: 'project-workspace',
-          },
-          'user-alice',
-        ),
-      ).resolves.toEqual({
+      const secondCredential = await app.credentials.createCredential(
+        {
+          provider: 'workbench-api-key',
+          rawSecret: 'second-credential-fixture',
+        },
+        'user-alice',
+      );
+      await expect(app.credentials.getWorkbenchSettings('user-alice')).resolves.toEqual({
         apiKeyConfigured: true,
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
 
       const secondSettings = await prisma.workbenchSettings.findUniqueOrThrow({
@@ -1201,13 +1256,16 @@ describe('workbench http contracts', () => {
       });
       const secretRows = await prisma.providerCredentialSecret.findMany();
 
-      expect(secondSettings.credentialRef).toBe(firstSettingsCredentialRef);
-      expect(secondSettings.defaultImportTarget).toBe('project-workspace');
+      expect(secondCredential.credentialRef).toBe(firstCredential.credentialRef);
+      expect(secondSettings.credentialRef).toBe(firstCredential.credentialRef);
+      expect(secondSettings.defaultImportTarget).toBe('personal-library');
       expect(credentialRows).toHaveLength(1);
       expect(secretRows).toHaveLength(1);
-      expect(credentialRows[0]?.id).toBe(firstSettingsCredentialRef);
-      expect(credentialRows[0]?.provider).toBe('workbench-api-key');
-      expect(credentialRows[0]?.secret?.encryptedSecret).not.toBe(
+      expect(credentialRows[0]?.id).toBe(firstCredential.credentialRef);
+      expect(credentialRows.every((row) => row.provider === 'workbench-api-key')).toBe(true);
+      expect(
+        credentialRows[0]?.secret?.encryptedSecret,
+      ).not.toBe(
         firstCredentialRow.secret?.encryptedSecret,
       );
 
@@ -1335,7 +1393,7 @@ describe('workbench http contracts', () => {
 
       expect(settings).toEqual({
         apiKeyConfigured: true,
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
       expect(jobs).toEqual([]);
 
@@ -1345,7 +1403,7 @@ describe('workbench http contracts', () => {
         prisma.workbenchSettings.findUnique({ where: { userId: 'user-alice' } }),
       ).resolves.toMatchObject({
         credentialRef: 'cred-legacy',
-        defaultImportTarget: 'project-workspace',
+        defaultImportTarget: 'personal-library',
       });
 
       await app.close();

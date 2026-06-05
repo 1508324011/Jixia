@@ -127,6 +127,12 @@ function optionalDate(value: string | undefined): Date | undefined {
   return value ? new Date(value) : undefined;
 }
 
+function normalizePersistedDefaultImportTarget(
+  _value: PersistedDefaultImportTarget,
+): PersistedDefaultImportTarget {
+  return 'personal-library';
+}
+
 function mapCredential(
   credential: ProviderCredential,
 ): PersistedCredentialRecord {
@@ -161,7 +167,9 @@ function mapWorkbenchSettings(
     createdAt: toIsoString(settings.createdAt),
     credentialRef: settings.credentialRef,
     defaultImportTarget:
-      settings.defaultImportTarget as PersistedDefaultImportTarget,
+      normalizePersistedDefaultImportTarget(
+        settings.defaultImportTarget as PersistedDefaultImportTarget,
+      ),
     updatedAt: toIsoString(settings.updatedAt),
     userId: settings.userId,
   };
@@ -381,7 +389,9 @@ export function createCredentialsRepository(
           data: {
             createdAt: optionalDate(settings.updatedAt),
             credentialRef,
-            defaultImportTarget: settings.defaultImportTarget,
+            defaultImportTarget: normalizePersistedDefaultImportTarget(
+              settings.defaultImportTarget,
+            ),
             updatedAt: optionalDate(settings.updatedAt) ?? new Date(),
             userId: settings.userId,
           },
@@ -573,13 +583,13 @@ export function createCredentialsRepository(
         create: {
           createdAt: optionalDate(input.createdAt),
           credentialRef: input.credentialRef,
-          defaultImportTarget: input.defaultImportTarget,
+          defaultImportTarget: normalizePersistedDefaultImportTarget(input.defaultImportTarget),
           updatedAt: optionalDate(input.updatedAt),
           userId: input.userId,
         },
         update: {
           credentialRef: input.credentialRef,
-          defaultImportTarget: input.defaultImportTarget,
+          defaultImportTarget: normalizePersistedDefaultImportTarget(input.defaultImportTarget),
           updatedAt: optionalDate(input.updatedAt) ?? new Date(),
         },
         where: { userId: input.userId },

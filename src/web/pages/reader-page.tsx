@@ -8,7 +8,7 @@ import { PaperWorkspaceTabs } from "../components/paper-workspace-tabs";
 import { apiClient } from "../lib/http-client";
 import { useReaderPresenter } from "../presenters/reader-presenter";
 
-const DEFAULT_WRITER_TITLE = "Tumor board literature synthesis";
+const DEFAULT_PROJECT_DOC_TITLE = "Tumor board literature synthesis";
 
 export function ReaderPage() {
   const {
@@ -33,19 +33,19 @@ export function ReaderPage() {
   const [insightSummary, setInsightSummary] = useState("");
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [promotedDocumentId, setPromotedDocumentId] = useState<string | null>(null);
+  const [projectDocDraftDocumentId, setProjectDocDraftDocumentId] = useState<string | null>(null);
   const [capturedNotebookId, setCapturedNotebookId] = useState<string | null>(null);
   const [isSavingPrivateNote, setIsSavingPrivateNote] = useState(false);
   const [isSavingExcerpt, setIsSavingExcerpt] = useState(false);
   const [isSavingInsight, setIsSavingInsight] = useState(false);
-  const [isPromoting, setIsPromoting] = useState(false);
+  const [isPreparingProjectDocDraft, setIsPreparingProjectDocDraft] = useState(false);
   const [projectReaderCommentBody, setProjectReaderCommentBody] = useState(
     "This paper matters for the shared review.",
   );
   const [isCapturingNotebook, setIsCapturingNotebook] = useState(false);
 
   useEffect(() => {
-    setPromotedDocumentId(null);
+    setProjectDocDraftDocumentId(null);
     setCapturedNotebookId(null);
     setSuccessMessage(null);
     setMutationError(null);
@@ -104,20 +104,20 @@ export function ReaderPage() {
   );
   const latestInsight = detail?.insights.at(-1) ?? null;
   const latestExcerpt = excerpts.at(-1) ?? null;
-  const workbenchWritingPath = promotedDocumentId
-    ? `/projects/${projectId}/writing/${promotedDocumentId}`
+  const workbenchWritingPath = projectDocDraftDocumentId
+    ? `/projects/${projectId}/writing/${projectDocDraftDocumentId}`
     : null;
   const personalFileRoute = detail?.asset.hasFile
     ? apiClient.getLibraryEntryFileUrl(detail.entry.id)
     : null;
 
-  async function promoteInsightToWriter(
+  async function saveInsightToProjectDocs(
     targetProjectId: string,
     insight: GeneratedInsightRecord,
   ): Promise<string> {
     const createdDocument = await apiClient.createProjectDoc({
       projectId: targetProjectId,
-      title: DEFAULT_WRITER_TITLE,
+      title: DEFAULT_PROJECT_DOC_TITLE,
     });
 
     const savedSnapshot = await apiClient.saveProjectDocVersion(
@@ -131,7 +131,7 @@ export function ReaderPage() {
           blocks: [
             {
               level: 2,
-              text: "Promoted Reader insight",
+              text: "Reader insight for Project Docs",
               type: "heading",
             },
             {
@@ -189,7 +189,7 @@ export function ReaderPage() {
             <PaperWorkspaceTabs />
             <p className="quiet-copy">
               Legacy `/spaces/...` reader routes stay compatibility-only. Open the canonical
-              `/projects/:projectId` workspace to reach a real Writer document.
+              `/projects/:projectId` route to reach a real Project Doc.
             </p>
           </aside>
         </section>
@@ -236,7 +236,7 @@ export function ReaderPage() {
 
   async function handlePersonalProjectCommentAttempt(): Promise<void> {
     setMutationError(
-      "Open a real project workspace before saving project comments.",
+      "Open a real project before saving project comments.",
     );
   }
 
@@ -340,13 +340,13 @@ export function ReaderPage() {
     }
   }
 
-  async function handlePromoteLatestInsight(): Promise<void> {
+  async function handleSaveLatestInsightToProjectDocs(): Promise<void> {
     if (!detail || !latestInsight) {
       return;
     }
 
     setMutationError(
-      "Open a real project workspace before promoting personal reading insights into Writer.",
+      "Open a real project before drafting in Project Docs.",
     );
   }
 
@@ -435,35 +435,35 @@ export function ReaderPage() {
     const contextProjectId = project?.project.id ?? projectId;
     const latestProjectInsight = insights.at(-1) ?? null;
     const latestProjectExcerpt = projectExcerpts.at(-1) ?? null;
-    const projectWritingPath = promotedDocumentId
-      ? `/projects/${contextProjectId}/writing/${promotedDocumentId}`
+    const projectWritingPath = projectDocDraftDocumentId
+      ? `/projects/${contextProjectId}/writing/${projectDocDraftDocumentId}`
       : null;
     const projectFileRoute = asset?.hasFile && entry
       ? apiClient.getLibraryEntryFileUrl(entry.id)
       : null;
 
-    async function handleProjectPromoteLatestInsight(): Promise<void> {
+    async function handleProjectSaveLatestInsightToProjectDocs(): Promise<void> {
       if (!project || !latestProjectInsight) {
         return;
       }
 
-      setIsPromoting(true);
+      setIsPreparingProjectDocDraft(true);
       setMutationError(null);
       setSuccessMessage(null);
 
       try {
-        const nextDocumentId = await promoteInsightToWriter(
+        const nextDocumentId = await saveInsightToProjectDocs(
           project.project.id,
           latestProjectInsight,
         );
-        setPromotedDocumentId(nextDocumentId);
-        setSuccessMessage(`Promoted latest insight into Writer as ${nextDocumentId}.`);
+        setProjectDocDraftDocumentId(nextDocumentId);
+        setSuccessMessage(`Saved latest insight to Project Docs as ${nextDocumentId}.`);
       } catch (error) {
         setMutationError(
-          error instanceof Error ? error.message : "Failed to promote the latest insight.",
+          error instanceof Error ? error.message : "Failed to save the latest insight to Project Docs.",
         );
       } finally {
-        setIsPromoting(false);
+        setIsPreparingProjectDocDraft(false);
       }
     }
 
@@ -623,7 +623,7 @@ export function ReaderPage() {
           <aside className="panel paper-workspace">
             <h2 className="panel-title">Workbench</h2>
             <p className="quiet-copy">
-              <span className="status-badge">quoted evidence</span> · governed AI · Writer promotion
+              <span className="status-badge">quoted evidence</span> · governed AI · Project Docs save
             </p>
             <p className="quiet-copy">Governed action source · queued → running → succeeded</p>
             <PaperWorkspaceTabs />
@@ -731,15 +731,15 @@ export function ReaderPage() {
             <button
               className="panel-link"
               type="button"
-              disabled={!latestProjectInsight || isMutating || isPromoting || isCapturingNotebook}
-              onClick={() => void handleProjectPromoteLatestInsight()}
+              disabled={!latestProjectInsight || isMutating || isPreparingProjectDocDraft || isCapturingNotebook}
+              onClick={() => void handleProjectSaveLatestInsightToProjectDocs()}
             >
-              {isPromoting ? "Promoting…" : "Promote latest insight to Writer"}
+              {isPreparingProjectDocDraft ? "Preparing Project Doc draft…" : "Use latest insight in Project Doc draft"}
             </button>
             <button
               className="panel-link"
               type="button"
-              disabled={!latestProjectInsight || isMutating || isPromoting || isCapturingNotebook}
+              disabled={!latestProjectInsight || isMutating || isPreparingProjectDocDraft || isCapturingNotebook}
               onClick={() => void handleProjectCaptureInsightToNotebook()}
             >
               {isCapturingNotebook ? "Sending to Notebook…" : "Send latest insight to Notebook"}
@@ -747,7 +747,7 @@ export function ReaderPage() {
             <button
               className="panel-link"
               type="button"
-              disabled={!latestProjectExcerpt || isMutating || isPromoting || isCapturingNotebook}
+              disabled={!latestProjectExcerpt || isMutating || isPreparingProjectDocDraft || isCapturingNotebook}
               onClick={() => void handleProjectCaptureExcerptToNotebook()}
             >
               {isCapturingNotebook ? "Sending excerpt to Notebook…" : "Send latest excerpt to Notebook"}
@@ -761,11 +761,11 @@ export function ReaderPage() {
             ) : null}
             {projectWritingPath ? (
               <Link className="panel-link" to={projectWritingPath}>
-                Open writing
+                Open Project Doc
               </Link>
             ) : (
               <p className="quiet-copy">
-                This reader entry is not currently available in the selected project Writer flow.
+                This reader entry is not currently available in the selected Project Docs flow.
               </p>
             )}
             <div className="shell-grid">
@@ -866,7 +866,7 @@ export function ReaderPage() {
         <aside className="panel paper-workspace">
           <h2 className="panel-title">Workbench</h2>
           <p className="quiet-copy">
-            <span className="status-badge">quoted evidence</span> · governed AI · Writer promotion
+            <span className="status-badge">quoted evidence</span> · governed AI · Project Docs save
           </p>
           <PaperWorkspaceTabs />
 
@@ -889,7 +889,7 @@ export function ReaderPage() {
                   isSavingPrivateNote ||
                   isSavingExcerpt ||
                   isSavingInsight ||
-                  isPromoting ||
+                  isPreparingProjectDocDraft ||
                   isCapturingNotebook
                 }
                 onClick={() =>
@@ -957,7 +957,7 @@ export function ReaderPage() {
                   isSavingPrivateNote ||
                   isSavingExcerpt ||
                   isSavingInsight ||
-                  isPromoting ||
+                  isPreparingProjectDocDraft ||
                   isCapturingNotebook
                 }
                 onClick={() => void handleSaveExcerpt()}
@@ -982,7 +982,7 @@ export function ReaderPage() {
                   isSavingPrivateNote ||
                   isSavingExcerpt ||
                   isSavingInsight ||
-                  isPromoting ||
+                  isPreparingProjectDocDraft ||
                   isCapturingNotebook
                 }
                 onClick={() => void handlePersonalProjectCommentAttempt()}
@@ -1007,7 +1007,7 @@ export function ReaderPage() {
                   isSavingPrivateNote ||
                   isSavingExcerpt ||
                   isSavingInsight ||
-                  isPromoting ||
+                  isPreparingProjectDocDraft ||
                   isCapturingNotebook
                 }
                 onClick={() => void handleSaveInsight()}
@@ -1023,12 +1023,12 @@ export function ReaderPage() {
                   isSavingPrivateNote ||
                   isSavingExcerpt ||
                   isSavingInsight ||
-                  isPromoting ||
+                  isPreparingProjectDocDraft ||
                   isCapturingNotebook
                 }
-                onClick={() => void handlePromoteLatestInsight()}
+                onClick={() => void handleSaveLatestInsightToProjectDocs()}
               >
-                {isPromoting ? "Promoting latest insight…" : "Promote latest insight to Writer"}
+                {isPreparingProjectDocDraft ? "Preparing Project Doc draft…" : "Use latest insight in Project Doc draft"}
               </button>
 
               <button
@@ -1039,7 +1039,7 @@ export function ReaderPage() {
                   isSavingPrivateNote ||
                   isSavingExcerpt ||
                   isSavingInsight ||
-                  isPromoting ||
+                  isPreparingProjectDocDraft ||
                   isCapturingNotebook
                 }
                 onClick={() => void handleCapturePersonalInsightToNotebook()}
@@ -1055,7 +1055,7 @@ export function ReaderPage() {
                   isSavingPrivateNote ||
                   isSavingExcerpt ||
                   isSavingInsight ||
-                  isPromoting ||
+                  isPreparingProjectDocDraft ||
                   isCapturingNotebook
                 }
                 onClick={() => void handleCapturePersonalExcerptToNotebook()}
@@ -1071,7 +1071,7 @@ export function ReaderPage() {
                 </Link>
               ) : null}
               <p className="quiet-copy">
-                Personal reader does not invent a project. Open a real project workspace before Writer promotion.
+                Personal reader does not invent a project. Open a real project before Project Doc drafting.
               </p>
 
               <div className="stack-xs">
@@ -1137,7 +1137,7 @@ export function ReaderPage() {
 
       {workbenchWritingPath ? (
         <Link className="panel-link" to={workbenchWritingPath}>
-          Open writing
+          Open Project Doc
         </Link>
       ) : null}
     </main>

@@ -62,7 +62,7 @@ export function ProjectsPage() {
       <section className="panel" aria-label="项目工作台 overview">
         <p className="page-kicker">Shared work</p>
         <h2 className="panel-title">项目工作台</h2>
-        <p className="quiet-copy">查看共享项目的概览、最近活动和待继续的 Writer 流程。</p>
+        <p className="quiet-copy">查看共享项目的概览、最近活动和待继续的 Project Docs 流程。</p>
       </section>
 
       <section className="context-bar" aria-label="projects actions">
@@ -177,7 +177,7 @@ export function ProjectsPage() {
       <div className="panel-grid top-level-surface-grid">
         <section className="panel">
           <h2 className="panel-title">最近活跃项目</h2>
-          <p className="quiet-copy">优先返回最近读过 paper 或刚更新 Writer 的项目。</p>
+          <p className="quiet-copy">优先返回最近读过 paper 或刚更新 Project Docs 的项目。</p>
         </section>
 
         <section className="panel">

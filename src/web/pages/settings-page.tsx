@@ -7,6 +7,9 @@ import { useSettingsPresenter } from "../presenters/settings-presenter";
 export function SettingsPage() {
   const {
     apiKeyConfigured,
+    createCredential,
+    credentialError,
+    credentialSaveState,
     credentials,
     defaultImportTarget,
     error,
@@ -16,7 +19,8 @@ export function SettingsPage() {
     saveState,
     settingsError,
   } = useSettingsPresenter();
-  const [apiKey, setApiKey] = useState("");
+  const [credentialProvider, setCredentialProvider] = useState("workbench-api-key");
+  const [credentialSecret, setCredentialSecret] = useState("");
   const [selectedDefaultImportTarget, setSelectedDefaultImportTarget] =
     useState<DefaultImportTarget>("personal-library");
 
@@ -33,19 +37,29 @@ export function SettingsPage() {
       return "Unable to load settings";
     }
 
-    return apiKeyConfigured ? "API key configured" : "API key not configured";
+    return apiKeyConfigured
+      ? "Provider credential configured"
+      : "Provider credential not configured";
   }, [apiKeyConfigured, loadingState]);
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const didSave = await saveSettings({
-      apiKey: apiKey.trim().length > 0 ? apiKey.trim() : undefined,
+    await saveSettings({
       defaultImportTarget: selectedDefaultImportTarget,
+    });
+  }
+
+  async function handleCreateCredential(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const didSave = await createCredential({
+      provider: credentialProvider.trim() || "workbench-api-key",
+      rawSecret: credentialSecret,
     });
 
     if (didSave) {
-      setApiKey("");
+      setCredentialSecret("");
     }
   }
 
@@ -62,16 +76,6 @@ export function SettingsPage() {
           {statusMessage}
         </p>
         <label className="field-stack">
-          <span className="field-label">API Key</span>
-          <input
-            aria-label="API Key"
-            name="apiKey"
-            onChange={(event) => setApiKey(event.target.value)}
-            placeholder="sk-..."
-            value={apiKey}
-          />
-        </label>
-        <label className="field-stack">
           <span className="field-label">默认导入目标</span>
           <select
             aria-label="默认导入目标"
@@ -82,9 +86,11 @@ export function SettingsPage() {
             value={selectedDefaultImportTarget}
           >
             <option value="personal-library">Personal Library</option>
-            <option value="project-workspace">Project Workspace</option>
           </select>
         </label>
+        <p className="quiet-copy">
+          External discovery imports start in Personal Library. Project Library visibility is created later through explicit source adoption from a readable Library entry.
+        </p>
         <button type="submit">保存设置</button>
         {saveState === "saved" ? <p className="quiet-copy">Settings saved</p> : null}
         {saveState === "error" ? (
@@ -117,10 +123,42 @@ export function SettingsPage() {
       <section className="panel-grid" aria-label="settings layout">
         <article className="panel">
           <h2 className="panel-title">Provider credentials</h2>
+          <form className="stack-sm" onSubmit={handleCreateCredential}>
+            <p className="quiet-copy">
+              Credential plaintext is accepted only by the dedicated credential mutation route and is never included in workbench preference payloads.
+            </p>
+            <label className="field-stack">
+              <span className="field-label">Provider</span>
+              <input
+                aria-label="Provider"
+                name="credentialProvider"
+                onChange={(event) => setCredentialProvider(event.target.value)}
+                value={credentialProvider}
+              />
+            </label>
+            <label className="field-stack">
+              <span className="field-label">Provider credential secret</span>
+              <input
+                aria-label="Provider credential secret"
+                name="credentialSecret"
+                onChange={(event) => setCredentialSecret(event.target.value)}
+                placeholder="Paste provider secret once"
+                type="password"
+                value={credentialSecret}
+              />
+            </label>
+            <button type="submit" disabled={!credentialSecret.trim() || credentialSaveState === "saving"}>
+              {credentialSaveState === "saving" ? "Saving credential…" : "Save credential"}
+            </button>
+            {credentialSaveState === "saved" ? <p className="quiet-copy">Credential reference saved</p> : null}
+            {credentialSaveState === "error" ? (
+              <p className="quiet-copy">{credentialError ?? "Unable to save credential"}</p>
+            ) : null}
+          </form>
           {credentials.length === 0 ? (
             <p className="quiet-copy">
               No provider credentials are configured for the current session actor.
-              Save an API key above to create a server-owned credential reference.
+              Save a credential above to create a server-owned credential reference.
             </p>
           ) : (
             <div className="shell-grid">
@@ -128,7 +166,6 @@ export function SettingsPage() {
                 <div key={credential.credentialRef} className="hero-card">
                   <h3 className="panel-title">{credential.provider}</h3>
                   <p className="quiet-copy">Reference · {credential.credentialRef}</p>
-                  <p className="quiet-copy">Owner · {credential.userId}</p>
                   <p className="quiet-copy">Created · {credential.createdAt}</p>
                 </div>
               ))}
@@ -140,8 +177,8 @@ export function SettingsPage() {
           <h2 className="panel-title">Operator controls</h2>
           <p className="quiet-copy">
             Runtime controls are loaded from the server-backed settings and credential
-            authority. Credential plaintext is accepted only through the save form and
-            is never rendered back to the browser.
+            authority. Credential plaintext is accepted only through the dedicated
+            credential form and is never rendered back to the browser.
           </p>
         </article>
       </section>

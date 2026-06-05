@@ -199,7 +199,7 @@ function buildCollaborationSection(input: {
       projects.length > 0 ? 'open-projects' : 'create-project',
       projects.length > 0 ? 'Open Projects' : 'Create project',
       projects.length > 0
-        ? 'Review visible project workspaces.'
+        ? 'Review visible projects.'
         : 'Start a collaboration lane from a governed space.',
       '/projects',
       'primary',
@@ -253,8 +253,8 @@ function buildWritingSection(input: {
 
   return {
     description: hasWritingContext
-      ? 'Private notebooks and project Writer drafts are available through server document contracts.'
-      : 'Capture evidence into a Notebook or promote project reading into Writer when ready.',
+      ? 'Private notebooks and Project Doc drafts are available through server document contracts.'
+      : 'Capture evidence into a Notebook or save selected project reading evidence to Project Docs when ready.',
     id: 'writing',
     metrics: [
       {
@@ -262,8 +262,8 @@ function buildWritingSection(input: {
         value: notebooksCount,
       },
       {
-        detail: 'Latest visible project Writer drafts found through project memberships.',
-        label: 'Project drafts',
+        detail: 'Latest visible Project Doc drafts found through project memberships.',
+        label: 'Project Doc drafts',
         value: visibleWriterDrafts,
       },
     ],
@@ -277,7 +277,7 @@ function buildWritingSection(input: {
       'primary',
     ),
     status: hasWritingContext ? 'active' : 'empty',
-    title: 'Writing and versioning',
+    title: 'Notebook and Project Docs',
   };
 }
 
@@ -373,7 +373,7 @@ function buildActivity(input: {
 
   for (const draft of input.writerDrafts) {
     items.push({
-      context: `Project Writer · ${draft.projectId}`,
+      context: `Project Docs · ${draft.projectId}`,
       href: `/projects/${draft.projectId}/writing/${draft.documentId}`,
       id: `writing:${draft.documentId}`,
       kind: 'writing',

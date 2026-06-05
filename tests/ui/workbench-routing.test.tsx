@@ -168,7 +168,7 @@ describe('workbench routing', () => {
                 title: 'Literature and reading',
               },
               {
-                description: 'Capture evidence into a Notebook or promote project reading into Writer when ready.',
+                description: 'Capture evidence into a Notebook or save selected project reading evidence to Project Docs when ready.',
                 id: 'writing',
                 metrics: [{ label: 'Private notebooks', value: 0 }],
                 primaryAction: {
@@ -179,7 +179,7 @@ describe('workbench routing', () => {
                   to: '/notebook',
                 },
                 status: 'empty',
-                title: 'Writing and versioning',
+              title: 'Notebook and Project Docs',
               },
               {
                 description: 'Configure provider credentials before running governed AI jobs.',
@@ -252,7 +252,7 @@ describe('workbench routing', () => {
                 totalCount: 0,
               },
               {
-                description: 'Project workspace review and attention items from projects visible to this actor.',
+              description: 'Project review and attention items from projects visible to this actor.',
                 emptyState: {
                   body: 'Review items from projects visible through persisted project membership will appear here.',
                   href: '/projects',

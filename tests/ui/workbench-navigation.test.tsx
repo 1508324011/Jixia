@@ -238,6 +238,7 @@ describe('workbench navigation', () => {
       ],
       schemaVersion: 1,
     };
+    const credentialBodies: Array<Record<string, unknown>> = [];
 
     vi.stubGlobal(
       'fetch',
@@ -319,7 +320,7 @@ describe('workbench navigation', () => {
                   totalCount: 0,
                 },
                 {
-                  description: 'Project workspace review and attention items from projects visible to this actor.',
+                  description: 'Project review and attention items from projects visible to this actor.',
                   emptyState: {
                     body: 'Review items from projects visible through persisted project membership will appear here.',
                     href: '/projects',
@@ -393,7 +394,7 @@ describe('workbench navigation', () => {
                   id: 'collaboration',
                   metrics: [{ label: 'Visible projects', value: 1 }],
                   primaryAction: {
-                    description: 'Review visible project workspaces.',
+                    description: 'Review visible projects.',
                     id: 'open-projects',
                     label: 'Open Projects',
                     priority: 'primary',
@@ -417,7 +418,7 @@ describe('workbench navigation', () => {
                   title: 'Literature and reading',
                 },
                 {
-                  description: 'Private notebooks and project Writer drafts are available through server document contracts.',
+                  description: 'Private notebooks and Project Doc drafts are available through server document contracts.',
                   id: 'writing',
                   metrics: [{ label: 'Private notebooks', value: notebooks.length }],
                   primaryAction: {
@@ -428,7 +429,7 @@ describe('workbench navigation', () => {
                     to: '/notebook',
                   },
                   status: notebooks.length > 0 ? 'active' : 'empty',
-                  title: 'Writing and versioning',
+                  title: 'Notebook and Project Docs',
                 },
                 {
                   description: 'Configure provider credentials before running governed AI jobs.',
@@ -607,11 +608,50 @@ describe('workbench navigation', () => {
           });
         }
 
+        if (url.endsWith('/api/credentials') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          credentialBodies.push(body);
+
+          return new Response(
+            JSON.stringify({
+              createdAt: '2026-03-23T00:50:00.000Z',
+              credentialRef: 'cred-workbench-api-key',
+              provider: 'workbench-api-key',
+              userId: 'user-alice',
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
+        if (url.endsWith('/api/credentials')) {
+          return new Response(
+            JSON.stringify(
+              credentialBodies.length > 0
+                ? [
+                    {
+                      createdAt: '2026-03-23T00:50:00.000Z',
+                      credentialRef: 'cred-workbench-api-key',
+                      provider: 'workbench-api-key',
+                      userId: 'user-alice',
+                    },
+                  ]
+                : [],
+            ),
+            {
+              headers: { 'Content-Type': 'application/json' },
+              status: 200,
+            },
+          );
+        }
+
         if (url.endsWith('/api/settings/me') && init?.method === 'POST') {
           return new Response(
             JSON.stringify({
               apiKeyConfigured: true,
-              defaultImportTarget: 'project-workspace',
+              defaultImportTarget: 'personal-library',
             }),
             {
               headers: { 'Content-Type': 'application/json' },
@@ -623,7 +663,7 @@ describe('workbench navigation', () => {
         if (url.endsWith('/api/settings/me')) {
           return new Response(
             JSON.stringify({
-              apiKeyConfigured: false,
+              apiKeyConfigured: credentialBodies.length > 0,
               defaultImportTarget: 'personal-library',
             }),
             {
@@ -670,26 +710,39 @@ describe('workbench navigation', () => {
     expect(screen.getByRole('heading', { name: '项目工作台' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: '设置' }));
-    expect(screen.getByLabelText('API Key')).toBeInTheDocument();
-    expect(await screen.findByText('API key not configured')).toBeInTheDocument();
+    expect(screen.getByLabelText('Provider credential secret')).toBeInTheDocument();
+    expect(await screen.findByText('Provider credential not configured')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Personal Library')).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Project Workspace' })).not.toBeInTheDocument();
 
-    await user.type(screen.getByLabelText('API Key'), 'sk-browser-secret');
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: '默认导入目标' }),
-      'project-workspace',
-    );
+    await user.type(screen.getByLabelText('Provider credential secret'), 'fixture-browser-credential');
+    await user.click(screen.getByRole('button', { name: 'Save credential' }));
+    expect(await screen.findByText('Credential reference saved')).toBeInTheDocument();
+
     await user.click(screen.getByRole('button', { name: '保存设置' }));
 
     expect(await screen.findByText('Settings saved')).toBeInTheDocument();
 
     const fetchMock = vi.mocked(fetch);
     expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/credentials$/),
+      expect.objectContaining({
+        body: JSON.stringify({
+          provider: 'workbench-api-key',
+          rawSecret: 'fixture-browser-credential',
+        }),
+        credentials: 'same-origin',
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json',
+        }),
+        method: 'POST',
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/api\/settings\/me$/),
       expect.objectContaining({
         body: JSON.stringify({
-          apiKey: 'sk-browser-secret',
-          defaultImportTarget: 'project-workspace',
+          defaultImportTarget: 'personal-library',
         }),
         credentials: 'same-origin',
         headers: expect.objectContaining({

@@ -94,7 +94,7 @@ function createHomeCockpitFixture(
           { label: 'Shared spaces', value: 1 },
         ],
         primaryAction: {
-          description: 'Review visible project workspaces.',
+              description: 'Review visible projects.',
           id: 'open-projects',
           label: 'Open Projects',
           priority: 'primary',
@@ -118,9 +118,9 @@ function createHomeCockpitFixture(
         title: 'Literature and reading',
       },
       {
-        description: 'Private notebooks and project Writer drafts are available through server document contracts.',
+        description: 'Private notebooks and Project Doc drafts are available through server document contracts.',
         id: 'writing',
-        metrics: [{ label: 'Project drafts', value: 1 }],
+        metrics: [{ label: 'Project Doc drafts', value: 1 }],
         primaryAction: {
           description: 'Return to private synthesis.',
           id: 'open-notebook',
@@ -129,7 +129,7 @@ function createHomeCockpitFixture(
           to: '/notebook',
         },
         status: 'active',
-        title: 'Writing and versioning',
+              title: 'Notebook and Project Docs',
       },
       {
         description: 'Governed job status is listed from actor-authorized job scopes.',
@@ -235,7 +235,7 @@ function createTodayContinuationFixture(
         totalCount: 0,
       },
       {
-        description: 'Project workspace review and attention items from projects visible to this actor.',
+              description: 'Project review and attention items from projects visible to this actor.',
         emptyState: {
           body: 'Review items from projects visible through persisted project membership will appear here.',
           href: '/projects',
@@ -397,7 +397,7 @@ describe('home page', () => {
     expect(screen.getByText('jixia-home-cockpit-contract')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Collaboration cockpit' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Literature and reading' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Writing and versioning' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Notebook and Project Docs' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Governed jobs' })).toBeInTheDocument();
     expect(screen.getByText('Visible projects')).toBeInTheDocument();
     expect(screen.getByText('Project Alpha')).toBeInTheDocument();

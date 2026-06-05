@@ -1532,7 +1532,7 @@ describe('notebook and project document persistence', () => {
     }
   });
 
-  it('promotes persisted workbench artifacts into a project doc draft that reopens after restart', async () => {
+  it('saves persisted selected evidence into a project doc draft that reopens after restart', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-writing-reopen-'));
     const env = createWritingEnv(storageRoot);
 
@@ -1573,13 +1573,13 @@ describe('notebook and project document persistence', () => {
               paperAssetId: imported.asset.id,
             },
           ],
-          content: 'Promoted governed insight paragraph.',
+          content: 'Selected governed evidence paragraph.',
           documentId: document.id,
         },
         'user-alice',
       );
 
-      expect(savedDocument.content).toBe('Promoted governed insight paragraph.');
+      expect(savedDocument.content).toBe('Selected governed evidence paragraph.');
       expect(savedDocument.citations).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -1597,7 +1597,7 @@ describe('notebook and project document persistence', () => {
       );
 
       expect(reopenedDocument).toMatchObject({
-        content: 'Promoted governed insight paragraph.',
+        content: 'Selected governed evidence paragraph.',
         document: {
           id: document.id,
           projectId: project.project.id,
@@ -1614,14 +1614,14 @@ describe('notebook and project document persistence', () => {
               paperAssetId: imported.asset.id,
             },
           ],
-          content: 'Reopened writer draft with persisted edits.',
+          content: 'Reopened Project Doc draft with persisted edits.',
           documentId: document.id,
         },
         'user-alice',
       );
 
       expect(reopenedSnapshot.versionNumber).toBe(2);
-      expect(reopenedSnapshot.content).toBe('Reopened writer draft with persisted edits.');
+      expect(reopenedSnapshot.content).toBe('Reopened Project Doc draft with persisted edits.');
       await reopenedApp.close();
     } finally {
       rmSync(storageRoot, { force: true, recursive: true });

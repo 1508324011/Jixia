@@ -143,7 +143,7 @@ function AuthenticatedAppShell({ children }: { children: ReactNode }) {
                   Jixia
                 </div>
                 <div className="truncate text-xs text-notion-text-tertiary">
-                  Server-first project workspace
+                  Server-first research workbench
                 </div>
               </div>
             </div>

@@ -32,7 +32,7 @@ describe('workbench beta runbook contract', () => {
     expect(runbook).toContain('登录');
     expect(runbook).toContain('个人工作台');
     expect(runbook).toContain('设置');
-    expect(runbook).toContain('API key not configured');
+    expect(runbook).toContain('Credential secret');
     expect(runbook).toContain('检索 PubMed');
     expect(runbook).toContain('导入到个人 Library');
     expect(runbook).toContain('Open reader');
@@ -42,7 +42,7 @@ describe('workbench beta runbook contract', () => {
     expect(runbook).toContain('Save private note');
     expect(runbook).toContain('Save project comment');
     expect(runbook).toContain('Save insight');
-    expect(runbook).toContain('Promote latest insight to Writer');
+    expect(runbook).toContain('Use latest insight in Project Doc draft');
     expect(runbook).toContain('Project Docs 共享知识中心');
     expect(runbook).toContain('Open Project Doc');
     expect(runbook).toContain('Reload draft');

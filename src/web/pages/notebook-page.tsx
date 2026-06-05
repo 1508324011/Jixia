@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import type { DocumentBlockDocument } from "@shared/contracts/document-content";
 import type {
@@ -31,12 +31,8 @@ function decodeRouteDocumentId(documentId: string | undefined): string {
 }
 
 export function NotebookPage() {
-  const location = useLocation();
   const navigate = useNavigate();
   const { documentId: routeDocumentId } = useParams<{ documentId?: string }>();
-  const routeParams = new URLSearchParams(location.search);
-  const adoptionProjectId = routeParams.get("adoptProjectId")?.trim() || "";
-  const adoptionProjectDocId = routeParams.get("adoptProjectDocId")?.trim() || "";
   const [documents, setDocuments] = useState<NotebookDocumentRecord[]>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [snapshot, setSnapshot] = useState<NotebookDocumentSnapshot | null>(null);
@@ -175,49 +171,6 @@ export function NotebookPage() {
   const isLoading = status === "loading";
   const isSaving = status === "saving";
   const draftProjection = createLegacyTextProjection(draftDocumentContent);
-  const adoptionSearch = adoptionProjectId || adoptionProjectDocId
-    ? `?adoptProjectId=${encodeURIComponent(adoptionProjectId)}&adoptProjectDocId=${encodeURIComponent(adoptionProjectDocId)}`
-    : "";
-  const canAdoptIntoProjectDoc = Boolean(
-    selectedDocument && adoptionProjectId && adoptionProjectDocId,
-  );
-
-  async function handleAdoptIntoProjectDoc(): Promise<void> {
-    if (!selectedDocument || !canAdoptIntoProjectDoc) {
-      setError(
-        "Open Notebook with a server-visible Project Doc adoption link before adopting private content.",
-      );
-      return;
-    }
-
-    setStatus("saving");
-    setError(null);
-    setMessage(null);
-
-    try {
-      const response = await apiClient.adoptNotebookIntoProjectDoc(
-        adoptionProjectDocId,
-        {
-          notebookDocumentId: selectedDocument.id,
-        },
-      );
-
-      setMessage(
-        `Adopted Notebook version ${response.provenance.sourceNotebookVersionNumber} into Project Doc version ${response.provenance.projectDocVersionNumber}.`,
-      );
-      navigate(
-        `/projects/${encodeURIComponent(response.provenance.projectId)}/writing/${encodeURIComponent(response.provenance.projectDocId)}`,
-      );
-    } catch (adoptionError) {
-      setError(
-        adoptionError instanceof Error
-          ? adoptionError.message
-          : "Failed to adopt the private Notebook into the Project Doc.",
-      );
-    } finally {
-      setStatus("idle");
-    }
-  }
 
   return (
     <main className="page-shell">
@@ -251,7 +204,7 @@ export function NotebookPage() {
                   className="panel-link"
                   key={document.id}
                   type="button"
-                  onClick={() => navigate(`/notebook/${encodeURIComponent(document.id)}${adoptionSearch}`)}
+                  onClick={() => navigate(`/notebook/${encodeURIComponent(document.id)}`)}
                 >
                   {document.title}
                 </button>
@@ -309,22 +262,10 @@ export function NotebookPage() {
                 >
                   Reload Notebook
                 </button>
-                {canAdoptIntoProjectDoc ? (
-                  <button
-                    className="action-button action-button-secondary"
-                    type="button"
-                    disabled={isLoading || isSaving}
-                    onClick={() => void handleAdoptIntoProjectDoc()}
-                  >
-                    {isSaving ? "Adopting…" : "Adopt into Project Doc"}
-                  </button>
-                ) : null}
               </div>
-              {adoptionProjectId || adoptionProjectDocId ? (
-                <p className="quiet-copy">
-                  Project Doc adoption target · {adoptionProjectDocId || "missing document"}. The server will verify ProjectMember access and Notebook ownership before copying anything into project scope.
-                </p>
-              ) : null}
+              <p className="quiet-copy">
+                Notebook is a private personal synthesis surface. Move selected evidence through Reader captures, citations, references, and explicit Project Library source adoption before saving shared Project Docs.
+              </p>
               {snapshot ? (
                 <p className="quiet-copy">
                   Saved snapshot · {snapshot.versionId} · {snapshot.citations.length} citation(s)

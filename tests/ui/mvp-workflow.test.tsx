@@ -319,13 +319,13 @@ describe('mvp workflow shell', () => {
         screen.getByText('The imported paper supports the shared review workflow.'),
       ).toBeInTheDocument(),
     );
-    await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
+    await user.click(screen.getByRole('button', { name: 'Use latest insight in Project Doc draft' }));
     await waitFor(() =>
       expect(
-        screen.getByText('Promoted latest insight into Writer as doc-project-recovery.'),
+        screen.getByText('Saved latest insight to Project Docs as doc-project-recovery.'),
       ).toBeInTheDocument(),
     );
-    await user.click(screen.getByRole('link', { name: 'Open writing' }));
+    await user.click(screen.getByRole('link', { name: 'Open Project Doc' }));
 
     expect(screen.getByRole('heading', { name: 'Project Doc editor' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Versions and references' })).toBeInTheDocument();
@@ -390,13 +390,13 @@ describe('mvp workflow shell', () => {
         screen.getByText('The imported paper supports the shared review workflow.'),
       ).toBeInTheDocument(),
     );
-    await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
+    await user.click(screen.getByRole('button', { name: 'Use latest insight in Project Doc draft' }));
     await waitFor(() =>
       expect(
-        screen.getByText('Promoted latest insight into Writer as doc-project-recovery.'),
+        screen.getByText('Saved latest insight to Project Docs as doc-project-recovery.'),
       ).toBeInTheDocument(),
     );
-    await user.click(screen.getByRole('link', { name: 'Open writing' }));
+    await user.click(screen.getByRole('link', { name: 'Open Project Doc' }));
 
     expect(screen.getByText('Publish state path')).toBeInTheDocument();
     expect(screen.getByText('draft · review · published')).toBeInTheDocument();

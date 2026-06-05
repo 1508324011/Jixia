@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe('paper workspace', () => {
-  it('paper page persists private notes, project comments, governed insights, and project-first writer promotion actions', async () => {
+  it('paper page persists private notes, project comments, governed insights, and Project Docs draft actions', async () => {
     const user = userEvent.setup();
     const projectFixture = {
       membership: {
@@ -116,7 +116,7 @@ describe('paper workspace', () => {
         projectId: string;
       }>,
     };
-    let promotedDraft = '';
+    let projectDocDraft = '';
 
     vi.stubGlobal(
       'fetch',
@@ -407,7 +407,7 @@ describe('paper workspace', () => {
             blocks: [
               {
                 level: 2,
-                text: 'Promoted Reader insight',
+                text: 'Reader insight for Project Docs',
                 type: 'heading',
               },
               {
@@ -423,15 +423,15 @@ describe('paper workspace', () => {
             ],
             schemaVersion: 1,
           });
-          const promotedParagraphBlock = body.documentContent?.blocks[1];
-          promotedDraft = promotedParagraphBlock && 'text' in promotedParagraphBlock
-            ? promotedParagraphBlock.text ?? ''
+          const projectDocParagraphBlock = body.documentContent?.blocks[1];
+          projectDocDraft = projectDocParagraphBlock && 'text' in projectDocParagraphBlock
+            ? projectDocParagraphBlock.text ?? ''
             : '';
 
           return jsonResponse({
             capturedAt: '2026-03-23T00:30:00.000Z',
             citations: [],
-            content: promotedDraft,
+            content: projectDocDraft,
             documentContent: body.documentContent,
             document: projectDocRecord,
             versionId: 'project-doc-version-1',
@@ -546,11 +546,11 @@ describe('paper workspace', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open Notebook' })).toHaveAttribute('href', '/notebook');
 
-    await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
+    await user.click(screen.getByRole('button', { name: 'Use latest insight in Project Doc draft' }));
 
-    expect(await screen.findByText('Promoted latest insight into Writer as doc-alpha.')).toBeInTheDocument();
-    expect(promotedDraft).toContain('shared review workflow');
-    expect(screen.getByRole('link', { name: 'Open writing' })).toHaveAttribute(
+    expect(await screen.findByText('Saved latest insight to Project Docs as doc-alpha.')).toBeInTheDocument();
+    expect(projectDocDraft).toContain('shared review workflow');
+    expect(screen.getByRole('link', { name: 'Open Project Doc' })).toHaveAttribute(
       'href',
       '/projects/project-alpha/writing/doc-alpha',
     );

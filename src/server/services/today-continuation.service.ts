@@ -96,7 +96,7 @@ const sectionTitles: Record<TodayContinuationSectionKind, { description: string;
     title: 'Private Notebook drafts',
   },
   project_review: {
-    description: 'Project workspace review and attention items from projects visible to this actor.',
+    description: 'Project review and attention items from projects visible to this actor.',
     title: 'Visible project review',
   },
 };

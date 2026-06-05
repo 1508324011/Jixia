@@ -151,7 +151,7 @@ export function LibraryPage({ mode = "project" }: LibraryPageProps) {
     ? "Personal library · imported references · ready to sort"
     : "Project library · server-owned collaboration context";
   const description = isPersonalMode
-    ? "Review imported literature entries and decide what stays personal versus what should be explicitly adopted into a project workspace."
+    ? "Review imported literature entries and decide what stays personal versus what should be explicitly adopted into a visible project."
     : "Review project-scoped LibraryEntry records created by explicit adoption or server-owned project sources. This slice reads the scoped library API through ProjectMember authority while Space stays governance-only.";
 
   return (

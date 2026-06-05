@@ -79,7 +79,7 @@ type WorkbenchSettingsUpdatePayload = Omit<
 >;
 
 function isDefaultImportTarget(value: unknown): value is DefaultImportTarget {
-  return value === 'personal-library' || value === 'project-workspace';
+  return value === 'personal-library';
 }
 
 function isImportSourceType(
@@ -99,22 +99,23 @@ function parseWorkbenchSettingsUpdate(
     throw new Error('Settings payload must be a JSON object.');
   }
 
-  const { apiKey, defaultImportTarget } = requestBody as Record<
-    string,
-    unknown
-  >;
+  const body = requestBody as Record<string, unknown>;
+  const allowedFields = new Set(['defaultImportTarget']);
 
-  if (typeof apiKey !== 'undefined' && typeof apiKey !== 'string') {
-    throw new Error('apiKey must be a string when provided.');
+  for (const fieldName of Object.keys(body)) {
+    if (!allowedFields.has(fieldName)) {
+      throw new Error(
+        `${fieldName} is not accepted for workbench settings. Use dedicated credential routes for credential material.`,
+      );
+    }
   }
 
-  if (!isDefaultImportTarget(defaultImportTarget)) {
-    throw new Error('defaultImportTarget must be provided.');
+  if (!isDefaultImportTarget(body.defaultImportTarget)) {
+    throw new Error('defaultImportTarget must be personal-library.');
   }
 
   return {
-    apiKey,
-    defaultImportTarget,
+    defaultImportTarget: body.defaultImportTarget,
   };
 }
 
@@ -689,10 +690,12 @@ export async function resolveHttpApi(
     const payload = parseWorkbenchSettingsUpdate(requestBody);
 
     return {
-      payload: await app.credentials.saveWorkbenchSettings({
-        apiKey: payload.apiKey,
-        defaultImportTarget: payload.defaultImportTarget,
-      }, requiredActor.userId),
+      payload: await app.credentials.saveWorkbenchSettings(
+        {
+          defaultImportTarget: payload.defaultImportTarget,
+        },
+        requiredActor.userId,
+      ),
       statusCode: 200,
     };
   }
@@ -829,7 +832,7 @@ export async function resolveHttpApi(
 
     if (!document) {
       return {
-        payload: { error: `No Writer document exists for project ${projectId}.` },
+        payload: { error: `No Project Doc exists for project ${projectId}.` },
         statusCode: 404,
       };
     }

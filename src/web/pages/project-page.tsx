@@ -214,7 +214,7 @@ export function ProjectPage() {
       <section className="panel" aria-label="Project Docs shared knowledge center">
         <h2 className="panel-title">Project Docs 共享知识中心</h2>
         <p className="quiet-copy">
-          维护项目背景、证据、rationale、结论和正式文稿；引用来自项目可见的 LibraryEntry、Reader evidence 或显式采用的 Notebook 内容。所有内容由服务器 ProjectDoc 权限和版本模型管理。
+          维护项目背景、证据、rationale、结论和正式文稿；引用来自项目可见的 LibraryEntry、Reader evidence、citation/reference 和显式 Project Library source adoption。私有 Notebook 草稿保持 owner-only，所有共享内容由服务器 ProjectDoc 权限和版本模型管理。
         </p>
         {workspace.docs.canCreate ? (
           <form className="stack-sm" aria-label="create Project Doc" onSubmit={(event) => void handleCreateProjectDoc(event)}>

@@ -177,7 +177,11 @@ describe('project page', () => {
     expect(screen.getByText('Project Doc is in review · version 2')).toBeInTheDocument();
     expect(screen.getByText('Documents in review')).toBeInTheDocument();
     expect(screen.getByText('Source · project-doc-alpha')).toBeInTheDocument();
-    expect(screen.getByText(/引用来自项目可见的 LibraryEntry/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/引用来自项目可见的 LibraryEntry、Reader evidence、citation\/reference 和显式 Project Library source adoption/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/私有 Notebook 草稿保持 owner-only/)).toBeInTheDocument();
+    expect(screen.queryByText(/显式采用的 Notebook 内容/)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open review item' })).toHaveAttribute(
       'href',
       '/projects/project-alpha/writing/project-doc-alpha',

@@ -87,7 +87,7 @@ function createTodayContinuationFixture(
         totalCount: 0,
       },
       {
-        description: 'Project workspace review and attention items from projects visible to this actor.',
+            description: 'Project review and attention items from projects visible to this actor.',
         emptyState: {
           body: 'Review items from projects visible through persisted project membership will appear here.',
           href: '/projects',
