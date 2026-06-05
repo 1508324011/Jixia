@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Keep Jixia reproducibly runnable as a lab-server package with a minimal native Node current-host startup path, optional Docker/Compose packaging scaffolding, an explicit `/health` readiness contract, and bilingual operator documentation that matches the real integrated workbench runtime.
+**Goal:** Keep Jixia reproducibly runnable as a lab-server package with a minimal native Node current-host startup path, optional Docker/Compose packaging scaffolding, an explicit `/health` readiness contract plus the API-scoped `/api/health` mirror, and bilingual operator documentation that matches the real integrated workbench runtime.
 
 **Architecture:** Task 11 should stay narrow. Do not refactor the domain model or invent a second deployment story. Instead, keep the thinnest truthful runtime that can start Jixia natively on Node 22, expose `/health`, serve the built integrated workbench shell, and document persistent storage/database/key locations for operators. Docker and compose should encode optional packaging for that same runtime on Docker-capable hosts, while smoke tests lock the operator contract so later work can focus on migration checkpoints rather than startup confusion.
 
@@ -14,7 +14,7 @@
 
 - Branch: `main`
 - Current verification baseline: `npm test`, `npm run typecheck`, and `npm run build` pass.
-- `src/server/http-server.ts` is the real Node HTTP listener behind `npm run start:server`.
+- `src/server/http-server.ts` is the real Node HTTP listener behind `npm run start:server` and serves both `/health` and `/api/health` with `{ "service": "jixia-server", "status": "ok" }`.
 - `src/server/runtime-config.ts` is the runtime source of truth for `JIXIA_STORAGE_ROOT`, `JIXIA_DATABASE_URL`, `JIXIA_HOST`, and `JIXIA_PORT`.
 - `.env.example` remains placeholder-only, with `YOUR_...` values plus operator guidance comments.
 - `README.md`, `README_CN.md`, and `docs/runbooks/native-demo-showcase.md` now function as the active operator/current-host runbooks.
@@ -55,7 +55,7 @@ flowchart LR
 2. The server runtime must stay aligned with the server-first boundary. Keep only the minimal Node HTTP layer needed to expose health and serve the built shell.
 3. Because server code currently imports `@shared/*` aliases, prefer a dedicated server Vite build config over a plain `tsc` emit path that would leave unresolved aliases in runtime output.
 4. `.env.example` must stay secret-safe and continue satisfying `tests/smoke/guardrails.test.ts`, which currently expects `YOUR_` placeholders to remain present.
-5. Docker health/readiness must follow the same `/health` contract described in the READMEs and current-host runbook.
+5. Docker health/readiness must follow the same `/health` contract described in the READMEs and current-host runbook; `/api/health` remains the API-scoped mirror for browser/API handoff checks.
 
 ### Task 1: Lock the Task 11 deployment contract in smoke tests
 
@@ -181,7 +181,7 @@ Implement the smallest truthful runtime layer:
 - `src/server/http-server.ts`
   - create a minimal `node:http` server
   - call `createJixiaApp()` once at startup
-  - expose `GET /health` via `app.health.getHealth()`
+  - expose `GET /health` via `app.health.getHealth()` and keep `GET /api/health` as the same API-scoped health mirror
   - serve built assets from `dist/` when they exist
   - fall back to `dist/index.html` for non-API shell routes (`/spaces`, `/spaces/:id/library`, etc.)
 - `vite.server.config.ts`
@@ -479,12 +479,13 @@ In another shell, check:
 
 ```bash
 curl http://127.0.0.1:3000/health
+curl http://127.0.0.1:3000/api/health
 ```
 
 Expected:
 
 - the built Node server starts from `dist-server/http-server.js`
-- `/health` returns `{"service":"jixia-server","status":"ok"}`
+- `/health` and `/api/health` return `{"service":"jixia-server","status":"ok"}`
 
 ### Optional Docker packaging verification
 
@@ -511,7 +512,7 @@ Task 11 is complete only when all of the following are true:
 1. The repository exposes a real server startup path, not just `createJixiaApp()` exports.
 2. `Dockerfile`, `.dockerignore`, and `docker-compose.yml` exist and reflect the current server-first storage model.
 3. `.env.example` is still secret-safe but now explains persistent paths and startup expectations.
-4. `README.md`, `README_CN.md`, and `docs/runbooks/native-demo-showcase.md` all describe the same `/health`-based readiness contract.
+4. `README.md`, `README_CN.md`, and `docs/runbooks/native-demo-showcase.md` all describe the same `/health`-based readiness contract and the `/api/health` API mirror.
 5. CI runs `npm run build` so the new runtime path cannot silently regress.
 6. Full repository verification and native Node start/health verification pass; Docker packaging verification is recorded as passed only on Docker-capable hosts, otherwise it is recorded as not run due to host capability.
 

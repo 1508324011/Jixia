@@ -98,7 +98,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 
 ## Task 11 运维启动手册
 
-Task 11 的目标是把已经验证过的 Web 交互层收敛成一个可重复启动的实验室服务器包。当前运行时会启动一个 Node 22 HTTP 服务，托管构建后的浏览器应用，暴露 `/health`，并把上传论文文件与本地密钥材料持久化到配置存储根目录下，同时由 Prisma/SQLite 支撑项目协作、provider credential secrets 与 workbench settings。这是 Prisma-backed Project 协作数据 的实验室服务器路径。
+Task 11 的目标是把已经验证过的 Web 交互层收敛成一个可重复启动的实验室服务器包。当前运行时会启动一个 Node 22 HTTP 服务，托管构建后的浏览器应用，暴露 `/health` 与 API 范围内的 `/api/health` mirror，并把上传论文文件与本地密钥材料持久化到配置存储根目录下，同时由 Prisma/SQLite 支撑项目协作、provider credential secrets 与 workbench settings。这是 Prisma-backed Project 协作数据 的实验室服务器路径。
 
 ### 前置条件
 
@@ -129,9 +129,9 @@ npm run build
 npm run start:server
 ```
 
-启动后，服务会从 `dist/` 提供构建后的 workbench shell，响应 `/health`，并在 `/api/` 下暴露当前 beta 需要的浏览器接口。
+启动后，服务会从 `dist/` 提供构建后的 workbench shell，响应 `/health` 与 `/api/health`，并在 `/api/` 下暴露当前 beta 需要的浏览器接口。
 
-推荐把 `http://127.0.0.1:3000/health` 作为第一步运行时自检；健康的 Task 11 进程会返回 `{"service":"jixia-server","status":"ok"}`。
+推荐把 `http://127.0.0.1:3000/health` 作为第一步运行时自检；检查浏览器/API handoff 时再验证 API 范围内的 mirror：`http://127.0.0.1:3000/api/health`。健康的 Task 11 进程会在两个端点都返回 `{"service":"jixia-server","status":"ok"}`。
 
 ### 可选 Docker Compose 打包路径
 

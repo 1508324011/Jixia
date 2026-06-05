@@ -32,6 +32,57 @@ describe('deployment and operator scaffolding', () => {
       port: 3000,
       storageRoot: '/var/lib/jixia/storage',
     });
+
+    expect(
+      readRuntimeConfig({
+        JIXIA_PORT: 'not-a-port',
+        JIXIA_HOST: '   ',
+      }),
+    ).toMatchObject({
+      databaseUrl: 'file:./prisma/dev.db',
+      host: '127.0.0.1',
+      port: 3000,
+    });
+
+    for (const invalidPort of [
+      '',
+      '-1',
+      '0',
+      '3000.5',
+      '3000abc',
+      '+3000',
+      '0x10',
+      '3e3',
+      '65536',
+      '9007199254740992',
+    ]) {
+      expect(readRuntimeConfig({ JIXIA_PORT: invalidPort })).toMatchObject({
+        port: 3000,
+      });
+    }
+
+    expect(readRuntimeConfig({ JIXIA_PORT: '65535' })).toMatchObject({
+      port: 65535,
+    });
+
+    expect(
+      readRuntimeConfig({
+        JIXIA_STORAGE_ROOT: '/tmp/jixia-operator-storage',
+      }),
+    ).toMatchObject({
+      databaseUrl: 'file:/tmp/jixia-operator-storage/jixia.db',
+      storageRoot: '/tmp/jixia-operator-storage',
+    });
+  });
+
+  it('exposes native and API-scoped health endpoints from the HTTP runtime', () => {
+    const httpServer = read('src/server/http-server.ts');
+    const healthRoutes = read('src/server/routes/health.routes.ts');
+
+    expect(httpServer).toContain('pathname === "/api/health"');
+    expect(httpServer).toContain('requestUrl.pathname === "/health"');
+    expect(healthRoutes).toContain("service: 'jixia-server'");
+    expect(healthRoutes).toContain("status: 'ok'");
   });
 
   it('includes Docker deployment artifacts', () => {
@@ -77,8 +128,12 @@ describe('deployment and operator scaffolding', () => {
     expect(envExample).toContain('JIXIA_DATABASE_URL=YOUR_DATABASE_URL');
     expect(envExample).toContain('JIXIA_HOST=YOUR_SERVER_HOST');
     expect(envExample).toContain('JIXIA_PORT=YOUR_SERVER_PORT');
+    expect(envExample).toContain('/health');
+    expect(envExample).toContain('/api/health');
     expect(envExample).toContain('/var/lib/jixia/storage');
     expect(envExample).toContain('file:/var/lib/jixia/data/jixia.db');
+    expect(envExample).toContain('Prisma/SQLite');
+    expect(envExample).toContain('server-state.json is legacy compatibility/bootstrap state only');
   });
 
   it('documents the english startup path', () => {
@@ -91,6 +146,7 @@ describe('deployment and operator scaffolding', () => {
     expect(readme).toContain('required current-host gate');
     expect(readme).toContain('Optional Docker Compose packaging path');
     expect(readme).toContain('/health');
+    expect(readme).toContain('/api/health');
     expect(readme).toContain('JIXIA_STORAGE_ROOT');
     expect(readme).toContain('JIXIA_DATABASE_URL');
     expect(readme).toContain('/var/lib/jixia/storage');
@@ -112,6 +168,7 @@ describe('deployment and operator scaffolding', () => {
     expect(readmeCn).toContain('当前主机必需的 gate');
     expect(readmeCn).toContain('可选 Docker Compose 打包路径');
     expect(readmeCn).toContain('/health');
+    expect(readmeCn).toContain('/api/health');
     expect(readmeCn).toContain('JIXIA_STORAGE_ROOT');
     expect(readmeCn).toContain('JIXIA_DATABASE_URL');
     expect(readmeCn).toContain('POST /api/import/pdf');
@@ -129,6 +186,7 @@ describe('deployment and operator scaffolding', () => {
     expect(plan).toContain('src/server/http-server.ts');
     expect(plan).toContain('src/server/runtime-config.ts');
     expect(plan).toContain('/health');
+    expect(plan).toContain('/api/health');
     expect(plan).toContain('Dockerfile');
     expect(plan).toContain('docker-compose.yml');
     expect(plan).toContain('.dockerignore');

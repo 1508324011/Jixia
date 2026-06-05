@@ -49,8 +49,9 @@ The root route redirects to `/home`, and unauthenticated browsers are sent to
 session-backed login.
 
 Before walking the full browser flow, confirm `http://127.0.0.1:3000/health`
-returns `{"service":"jixia-server","status":"ok"}` so you know the
-Node runtime is up before validating workbench behavior.
+and the API-scoped mirror `http://127.0.0.1:3000/api/health` both return
+`{"service":"jixia-server","status":"ok"}` so you know the Node runtime and
+API boundary are up before validating workbench behavior.
 
 ## Truthful beta acceptance flow
 
@@ -65,8 +66,9 @@ provider error, that is an acceptable degraded pass for the discovery slice as
 long as the UI truthfully shows the empty/error state and does not fabricate a
 paper. In that degraded path, record the failure/empty-result behavior, skip the
 import/Reader/Project Doc subsequence that requires a real discovered source, and
-continue validating startup, login, Settings persistence, `/health`, and restart
-behavior. When PubMed later returns a real result, rerun the import persistence
+continue validating startup, login, Settings persistence, `/health`,
+`/api/health`, and restart behavior. When PubMed later returns a real result,
+rerun the import persistence
 steps below to validate the full vertical slice.
 
 1. Open `http://127.0.0.1:3000` and confirm the browser is redirected to **登录**.
@@ -114,7 +116,8 @@ steps below to validate the full vertical slice.
 
 ## What this beta currently proves
 
-- the workbench can start natively on the current host without Docker
+- the workbench can start natively on the current host without Docker and answer
+  both `/health` and `/api/health`
 - settings persist through Prisma-backed workbench settings, while encrypted
   credential secret rows are created only through dedicated credential mutation
   payloads without exposing raw credential material in settings
