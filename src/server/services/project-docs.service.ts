@@ -64,6 +64,10 @@ export interface ProjectDocsService {
     input: CreateProjectDocRequest,
     actorUserId: string,
   ): Promise<ProjectDocRecord>;
+  /**
+   * @deprecated Legacy/internal compatibility ingestion only. Product UI must
+   * use selected Reader evidence plus project-visible citations/references.
+   */
   adoptNotebook(
     input: ProjectDocLookup & AdoptNotebookIntoProjectDocRequest,
     actorUserId: string,
@@ -1764,6 +1768,10 @@ export function createProjectDocsService(
         }),
       );
     },
+    /**
+     * @deprecated Legacy/internal compatibility ingestion only. Foreground UI
+     * must not call this whole private Notebook-to-Project Docs bridge.
+     */
     async adoptNotebook(
       input: ProjectDocLookup & AdoptNotebookIntoProjectDocRequest,
       actorUserId: string,

@@ -278,7 +278,7 @@ export function resolveWorkbenchSectionTitle(section: WorkbenchSection): string 
     case 'reader':
       return 'Reader';
     case 'writing':
-      return 'Writing';
+      return 'Project Docs';
     case 'spaces':
       return 'Spaces';
     default:

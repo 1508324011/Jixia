@@ -163,7 +163,6 @@ type SaveReadingInsightForEntryPayload = {
   title: string;
 };
 type SaveWorkbenchSettingsPayload = {
-  apiKey?: string;
   defaultImportTarget: DefaultImportTarget;
 };
 type SaveProjectDocVersionPayload = {
@@ -603,6 +602,11 @@ export const apiClient = {
       method: "POST",
     });
   },
+  /**
+   * @deprecated Legacy/internal compatibility only. Foreground product pages
+   * must keep private Notebook drafts owner-only and save Project Docs from
+   * selected Reader evidence, citations/references, and Project Library sources.
+   */
   adoptNotebookIntoProjectDoc(
     documentId: string,
     input: AdoptNotebookIntoProjectDocRequest,

@@ -16,6 +16,12 @@ export interface ProjectDocLookup {
   documentId: string;
 }
 
+/**
+ * @deprecated Legacy/internal compatibility only. Foreground product flows must
+ * use selected Reader evidence, project-visible citations/references, and
+ * explicit Project Library source adoption instead of whole private Notebook
+ * ingestion into Project Docs.
+ */
 export interface AdoptNotebookIntoProjectDocRequest {
   notebookDocumentId: string;
 }
@@ -136,6 +142,10 @@ export interface ProjectDocNotebookAdoptionProvenance {
   sourceNotebookVersionNumber: number;
 }
 
+/**
+ * @deprecated Legacy/internal compatibility only. Do not expose this response as
+ * a foreground Project Docs bridge for private Notebook drafts.
+ */
 export interface AdoptNotebookIntoProjectDocResponse {
   citationTrace: ProjectDocCitationTraceResponse;
   provenance: ProjectDocNotebookAdoptionProvenance;

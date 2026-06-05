@@ -24,7 +24,7 @@ export function RecentOpenedPanel() {
         ) : (
           <li className="recent-opened-panel__item">
             <span className="quiet-copy">
-              No recent items yet. Open a project, paper, or Writer draft to populate this list.
+              No recent items yet. Open a project, paper, or Project Doc draft to populate this list.
             </span>
           </li>
         )}

@@ -19,7 +19,7 @@ The fastest truthful entry for the integrated product flow on `main` is:
 
 - `docs/runbooks/native-demo-showcase.md`
 
-That runbook documents the **current-host beta path** for `main`: start the app natively, enter the workbench, set up Settings, search PubMed, import into Personal Library, explicitly adopt a source into a target Project Library, open the project Reader, persist excerpts/notes/comments/insights, explicitly capture Reader evidence into a private Notebook, create or reopen a Project Doc, explicitly adopt the private Notebook into Project Docs, inspect the browser-safe citation trace, restart the process, and confirm the persisted state still exists. The packaged reset/showcase workflow is a **demo-only convenience** that still belongs to the downstream `demo-native-showcase` branch.
+That runbook documents the **current-host beta path** for `main`: start the app natively, enter the workbench, set up Settings, search PubMed, import into Personal Library, explicitly adopt a source into a target Project Library, open the project Reader, persist excerpts/notes/comments/insights, explicitly capture Reader evidence into a private Notebook, create or reopen a Project Doc, use selected Reader evidence and project-visible citations/references for shared Project Doc saves, inspect the browser-safe citation trace, restart the process, and confirm the persisted state still exists. The packaged reset/showcase workflow is a **demo-only convenience** that still belongs to the downstream `demo-native-showcase` branch.
 
 ## Planning Documents
 
@@ -47,7 +47,7 @@ The shipped product surface includes:
 - paper workspace panels for `AI 对话`, `私人笔记`, `共享评论`, and `关键信息`
 - explicit Reader evidence capture actions that send generated insights or reader excerpts into the current actor's private Notebook through server-derived session authority
 - project-level Project Docs shared knowledge center cues plus a reopenable Project Doc editor route
-- explicit private-Notebook-to-Project-Doc adoption and a browser-safe Project Doc citation trace panel for saved citations and source availability
+- a browser-safe Project Doc citation trace panel for saved selected evidence, citations, references, and source availability while private Notebook drafts remain owner-only
 - server-backed project routes using Prisma/SQLite `Project` and `ProjectMember` authority instead of legacy JSON project arrays
 - browser-facing `/api/*` routes for spaces, credentials, jobs, library/import, server-owned paper file access, reading, notebooks, project docs, and the workbench compatibility endpoints
 - preserved `/spaces/...` routes so deep-link regression tests still guard compatibility
@@ -60,16 +60,16 @@ Personal-facing routes are workbench shorthand over server-side ownership and sc
 - `POST /api/session/login`, `GET /api/session/me`, and `POST /api/session/logout` manage the server-owned `jixia_session` cookie used by browser auth.
 - `POST /api/session/login` accepts only a supported bounded `{ loginProfileKey }` selector for the seeded lab/demo personas; raw identity fields such as `userId`, `email`, `actorUserId`, and similar caller-supplied actor selectors are rejected from the login body/query instead of minting authority.
 - `GET /api/home-cockpit` serves the authenticated Home cockpit read model from server-visible spaces, projects, personal library entries, notebooks, settings, Project Docs, governed jobs, and an actor-visible project review/attention aggregate. Browser Home rendering consumes this transport-safe DTO instead of authoritative local dashboard fixtures.
-- `GET /api/projects/:projectId/workspace` serves a ProjectMember-gated Project Workspace read model with server-derived Project Docs, resources, activity, and review/attention sections from project-scoped Project Docs, Library entries, Reader comments/excerpts, and governed jobs without returning private notes, raw job payloads, credential secrets, storage keys, checksums, or filesystem paths.
+- `GET /api/projects/:projectId/workspace` serves a ProjectMember-gated project workspace read model with server-derived Project Docs, resources, activity, and review/attention sections from project-scoped Project Docs, Library entries, Reader comments/excerpts, and governed jobs without returning private notes, raw job payloads, credential secrets, storage keys, checksums, or filesystem paths.
 - `GET /api/discovery/today` and `GET /api/discovery/search?query=...` serve the discovery slice.
-- `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings through Prisma-backed per-user workbench settings and encrypted provider credential secret rows without exposing raw API keys in responses or stored settings records.
+- `GET /api/settings/me` and `POST /api/settings/me` persist browser-facing settings through Prisma-backed per-user workbench settings; raw credential material is accepted only by dedicated credential mutation routes and is not exposed in settings responses or stored settings records.
 - `GET /api/library/personal` and `POST /api/library/personal/import` keep personal import ownership on the server.
 - `POST /api/import/pdf` accepts authenticated paper-file uploads, stores bytes under `JIXIA_STORAGE_ROOT`, computes the server checksum, reuses duplicate file-backed `PaperAsset` rows by checksum, and returns only browser-safe asset availability such as `asset.hasFile` instead of storage keys or checksums.
 - `GET|HEAD /api/library/:entryId/file` is the only browser-facing paper file route. The path uses a scoped `LibraryEntry.id`, derives the actor from the `jixia_session` cookie, authorizes personal/project access on the server, and never exposes raw `storageKey`, `papers/...` keys, absolute paths, or `JIXIA_STORAGE_ROOT` in browser DTOs.
 - `GET /api/reading/:entryId`, `POST /api/reading/notes`, `POST /api/reading/:entryId/project-comments`, and `POST /api/reading/:entryId/insights` back the paper workspace; private notes and project comments are separate server-authorized paths.
 - `POST /api/reading/:entryId/excerpts` persists durable Reader excerpts, and `POST /api/notebooks/capture` captures either a generated insight or a Reader excerpt into the actor's owner-only Notebook without accepting browser-supplied actor, owner, or project authority fields.
 - `POST /api/projects/:projectId/library/adoptions` is the explicit project-source adoption path; the browser sends only `{ sourceLibraryEntryId }`, while the server checks source readability plus project owner/editor membership before creating or reusing a project-scoped `LibraryEntry`.
-- `POST /api/project-docs/:documentId/notebook-adoptions` is the explicit Notebook-to-Project-Docs adoption path; the server verifies the actor can write the target Project Doc and owns the source Notebook before creating a new Project Doc version and safe citation provenance.
+- `POST /api/project-docs/:documentId/notebook-adoptions` remains a legacy/internal compatibility endpoint only; foreground Project Docs use selected Reader evidence, project-visible citations/references, and explicit Project Library source adoption instead of whole private Notebook transfer affordances.
 - `GET /api/project-docs/:documentId/citation-trace` returns a ProjectMember-gated, browser-safe citation trace for the latest Project Doc version, including source availability/adoption-needed state without storage keys, checksums, private Notebook bodies, Reader private notes, credential refs, or actor authority fields.
 - `GET /api/projects/:projectId/writing-document` lets compatibility callers reopen the latest visible shared Project Doc, or truthfully report that the project has no shared Project Doc yet.
 - `GET /api/project-docs/:documentId` returns the latest Project Doc snapshot; when a document exists but has not been saved yet, the server returns an empty snapshot with `versionNumber: 0` instead of browser-authored fallback content.
@@ -84,7 +84,7 @@ Current branch verification is maintained with:
 - `npm run typecheck`
 - `npm run build`
 
-Targeted verification also covers workbench routing/navigation, personal vs project context switching, discovery/search to Personal Library import, explicit project-source adoption, paper workspace persistence, Reader excerpt and insight capture into private Notebook, Project Docs creation/reopen, explicit Notebook adoption into Project Docs, citation trace visibility/safety, current-host beta runbook truthfulness, and server-first Prisma-backed project membership.
+Targeted verification also covers workbench routing/navigation, personal vs project context switching, discovery/search to Personal Library import, explicit project-source adoption, paper workspace persistence, Reader excerpt and insight capture into private Notebook, Project Docs creation/reopen, selected-evidence Project Doc saves, absence of foreground whole-Notebook Project Docs adoption, citation trace visibility/safety, current-host beta runbook truthfulness, and server-first Prisma-backed project membership.
 
 ## Near-Term Direction
 

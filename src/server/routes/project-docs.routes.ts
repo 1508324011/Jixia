@@ -23,6 +23,10 @@ export interface ProjectDocsRoutes {
     input: CreateProjectDocRequest,
     actorUserId: string,
   ): Promise<ProjectDocRecord>;
+  /**
+   * @deprecated Legacy/internal compatibility only. Primary browser Project Docs
+   * flows must not call whole private Notebook adoption.
+   */
   adoptNotebook(
     input: ProjectDocLookup & AdoptNotebookIntoProjectDocRequest,
     actorUserId: string,
@@ -79,6 +83,7 @@ export function createProjectDocsRoutes(
     createDocument(input, actorUserId) {
       return service.createDocument(input, actorUserId);
     },
+    /** @deprecated Legacy/internal compatibility only. */
     adoptNotebook(input, actorUserId) {
       return service.adoptNotebook(input, actorUserId);
     },

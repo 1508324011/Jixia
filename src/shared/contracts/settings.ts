@@ -1,17 +1,19 @@
-export type DefaultImportTarget = 'personal-library' | 'project-workspace';
+export type DefaultImportTarget = 'personal-library';
+
+/** @deprecated Project workspace is not a normal external-import default. */
+export type DeprecatedDefaultImportTarget = 'project-workspace';
 
 export interface WorkbenchSettingsResponse {
+  /**
+   * Browser-safe availability only. Raw credential material is accepted by
+   * dedicated credential mutation routes, not by workbench settings payloads.
+   */
   apiKeyConfigured: boolean;
   defaultImportTarget: DefaultImportTarget;
 }
 
 export interface UpdateWorkbenchSettingsRequest {
-  apiKey?: string;
-  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
-  actorUserId?: string;
   defaultImportTarget: DefaultImportTarget;
-  /** @deprecated Protected HTTP routes derive the actor from session transport headers. */
-  userId?: string;
 }
 
 export const settingsContract = 'jixia-settings-contract';

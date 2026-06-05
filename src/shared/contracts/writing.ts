@@ -4,7 +4,7 @@ export type PublishState = "draft" | "review" | "published";
 
 export interface WritingDocRecord {
   id: string;
-  /** Authoritative project context for project Writer documents. */
+  /** Authoritative project context for project document compatibility records. */
   projectId?: string;
   /**
    * @deprecated Non-authoritative compatibility mirror of the project's
@@ -37,7 +37,7 @@ export interface WritingDocSnapshot {
 
 export interface WritingDocumentView {
   documentId: string;
-  /** Authoritative project context for this Writer view. */
+  /** Authoritative project context for this Project Docs compatibility view. */
   projectId: string;
   /**
    * @deprecated Non-authoritative compatibility mirror resolved from the

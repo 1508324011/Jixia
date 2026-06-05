@@ -524,7 +524,7 @@ describe('reading evidence', () => {
         ],
         libraryEntryId: imported.entry.id,
         startedByUserId: 'user-alice',
-        summary: 'Governed insight ready for Writer promotion.',
+        summary: 'Governed insight ready for Project Doc drafting.',
         title: 'Tumor board governed insight',
       });
 
@@ -559,7 +559,7 @@ describe('reading evidence', () => {
       expect(reopenedDetail?.insights).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            summary: 'Governed insight ready for Writer promotion.',
+            summary: 'Governed insight ready for Project Doc drafting.',
           }),
         ]),
       );

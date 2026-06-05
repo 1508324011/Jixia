@@ -355,15 +355,15 @@ export function WritingPage() {
           <p className="page-kicker">Project Docs · shared knowledge center · citation traceability</p>
           <h1 className="page-title">Project Doc editor</h1>
           <p className="page-description">
-            Select a visible project document before opening the shared writing surface.
+            Select a visible project document before opening the shared Project Docs surface.
           </p>
         </header>
 
-        <section className="panel-grid" aria-label="writing route errors">
+        <section className="panel-grid" aria-label="Project Docs route errors">
           <article className="panel">
             <h2 className="panel-title">Project document route missing</h2>
             <p className="quiet-copy">
-              The canonical writing route is `/projects/:projectId/writing/:docId` and cannot be fabricated in the browser.
+              The canonical Project Docs editor route is `/projects/:projectId/writing/:docId` and cannot be fabricated in the browser.
             </p>
             <Link className="panel-link" to="/projects">
               Back to projects
@@ -478,7 +478,6 @@ export function WritingPage() {
   const resolvedSpaceId = presenter.project?.project.spaceId ?? "No governance space";
   const adoptionNeeded = presenter.adoptionNeeded;
   const pageError = presenter.projectError ?? (adoptionNeeded ? null : presenter.error);
-  const notebookAdoptionHref = `/notebook?adoptProjectId=${encodeURIComponent(projectId)}&adoptProjectDocId=${encodeURIComponent(docId)}`;
 
   return (
     <main className="page-shell">
@@ -492,7 +491,7 @@ export function WritingPage() {
           Reader evidence can inform this document only through explicit, project-scoped, citation-backed saves.
         </p>
         <p className="quiet-copy">
-          Private Notebook drafts can contribute only through an explicit server adoption action from the Notebook page.
+          Private Notebook drafts remain personal. Shared Project Docs use selected Reader evidence, project-visible citations, references, and explicit Project Library source adoption.
         </p>
       </header>
 
@@ -505,16 +504,16 @@ export function WritingPage() {
       </section>
 
       {pageError ? (
-        <section className="panel-grid" aria-label="writing errors">
+        <section className="panel-grid" aria-label="Project Docs errors">
           <article className="panel">
-            <h2 className="panel-title">Writing runtime error</h2>
+            <h2 className="panel-title">Project Docs runtime error</h2>
             <p className="quiet-copy">{pageError}</p>
           </article>
         </section>
       ) : null}
 
-      <section className="panel-grid" aria-label="writing layout">
-              <article className="panel">
+      <section className="panel-grid" aria-label="Project Docs layout">
+        <article className="panel">
                 {presenter.isProjectLoading || presenter.isLoading || isDraftHydrating ? (
                   <>
                     <h2 className="panel-title">Loading Project Doc…</h2>
@@ -618,12 +617,12 @@ export function WritingPage() {
                     <p className="quiet-copy">
                       Project context · {projectLabel} · {docId || "No document"}
                     </p>
-                    <p className="quiet-copy">Promote an insight from Reader to start this document.</p>
+                    <p className="quiet-copy">Open Reader evidence or Project Library citations to start this document.</p>
                     {mutationError ? <p className="quiet-copy">{mutationError}</p> : null}
                   </>
                 )}
-              </article>
-              <AiSuggestionPanel
+        </article>
+        <AiSuggestionPanel
                 canEditProjectDoc={canEditProjectDoc}
                 documentContent={draftDocumentContent}
                 onApply={(nextDocumentContent) => {
@@ -635,8 +634,8 @@ export function WritingPage() {
                   await presenter.createAiSuggestion(input);
                 }}
                 presenter={presenter}
-              />
-              <aside className="panel">
+        />
+        <aside className="panel">
                 <h2 className="panel-title">Versions and references</h2>
                 <p className="quiet-copy">review path · published target · citation links</p>
                 <p className="quiet-copy">将成熟内容整理进入 Project Docs</p>
@@ -648,15 +647,9 @@ export function WritingPage() {
                 <section className="stack-sm" aria-label="citation trace panel">
                   <h3 className="panel-title">Citation trace</h3>
                   <p className="quiet-copy">Read-only server-authorized citation provenance.</p>
-                  {canEditProjectDoc ? (
-                    <Link className="panel-link" to={notebookAdoptionHref}>
-                      Adopt a private Notebook into this Project Doc
-                    </Link>
-                  ) : (
-                    <p className="quiet-copy">
-                      Only project owners and editors can adopt private Notebook drafts into this shared Project Doc.
-                    </p>
-                  )}
+                  <p className="quiet-copy">
+                    Project Docs accept selected Reader evidence, project Library citations, and reviewed references; whole private Notebook drafts stay owner-only.
+                  </p>
                   {presenter.isCitationTraceLoading ? (
                     <p className="quiet-copy">Loading citation trace…</p>
                   ) : presenter.citationTraceError ? (
@@ -671,8 +664,8 @@ export function WritingPage() {
                     <CitationTraceEmptyState trace={presenter.citationTrace} />
                   )}
                 </section>
-              </aside>
-            </section>
+        </aside>
+      </section>
     </main>
   );
 }

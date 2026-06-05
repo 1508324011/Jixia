@@ -65,7 +65,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('project writer flow', () => {
+describe('project docs flow', () => {
   it('project page renders the server-owned Project Docs empty state from the workspace endpoint', async () => {
     const workspaceFixture = {
       activity: {
@@ -1034,7 +1034,7 @@ describe('project writer flow', () => {
     expect(screen.queryByRole('button', { name: 'Reload draft' })).not.toBeInTheDocument();
     expect(screen.getByText('Your project role can read this Project Doc, but only project owners and editors can save shared document versions.')).toBeInTheDocument();
     expect(screen.getByText('Read-only viewers can inspect the shared Project Doc and citation trace, but only project owners and editors can modify the saved version.')).toBeInTheDocument();
-    expect(screen.getByText('Only project owners and editors can adopt private Notebook drafts into this shared Project Doc.')).toBeInTheDocument();
+    expect(screen.getByText('Project Docs accept selected Reader evidence, project Library citations, and reviewed references; whole private Notebook drafts stay owner-only.')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Adopt a private Notebook into this Project Doc' })).not.toBeInTheDocument();
     expect(screen.getByText('No citations in the latest saved Project Doc snapshot.')).toBeInTheDocument();
   });
@@ -1256,10 +1256,8 @@ describe('project writer flow', () => {
     }));
 
     expect(await screen.findByText('Paper · Trace UI paper')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Adopt a private Notebook into this Project Doc' })).toHaveAttribute(
-      'href',
-      '/notebook?adoptProjectId=project-1&adoptProjectDocId=doc-project-1',
-    );
+    expect(screen.getByText('Project Docs accept selected Reader evidence, project Library citations, and reviewed references; whole private Notebook drafts stay owner-only.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Adopt a private Notebook into this Project Doc' })).not.toBeInTheDocument();
     expect(screen.getByText('Reader excerpt · excerpt-trace-ui-1')).toBeInTheDocument();
     expect(screen.getByText('Locator · p. 7')).toBeInTheDocument();
     expect(screen.queryByText(/ownerId/i)).not.toBeInTheDocument();
@@ -1273,7 +1271,7 @@ describe('project writer flow', () => {
     expect(screen.getByDisplayValue('Server trace quote.')).toBeInTheDocument();
   });
 
-  it('writing page reopens the promoted writer draft and saves updates', async () => {
+  it('writing page reopens the Project Doc draft and saves updates', async () => {
     const user = userEvent.setup();
     const projectFixture = {
       membership: {
@@ -1303,11 +1301,11 @@ describe('project writer flow', () => {
           projectDocVersionId: 'project-doc-version-1',
         },
       ],
-      content: 'Promoted governed insight paragraph.',
+      content: 'Selected governed evidence paragraph.',
       documentContent: {
         blocks: [
           {
-            text: 'Promoted governed insight paragraph.',
+            text: 'Selected governed evidence paragraph.',
             type: 'paragraph',
           },
         ],
@@ -1379,7 +1377,7 @@ describe('project writer flow', () => {
           expect(body.documentContent).toEqual({
             blocks: [
               {
-                text: 'Reopened writer draft with persisted edits.',
+                text: 'Reopened Project Doc draft with persisted edits.',
                 type: 'paragraph',
               },
             ],
@@ -1406,25 +1404,25 @@ describe('project writer flow', () => {
 
     expect(
       await screen.findByRole('textbox', { name: 'Paragraph block 1' }),
-    ).toHaveValue('Promoted governed insight paragraph.');
+    ).toHaveValue('Selected governed evidence paragraph.');
 
     const draftContent = await screen.findByRole('textbox', { name: 'Paragraph block 1' });
     await user.clear(draftContent);
-    await user.type(draftContent, 'Reopened writer draft with persisted edits.');
+    await user.type(draftContent, 'Reopened Project Doc draft with persisted edits.');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
     expect(
       await screen.findByText('Latest snapshot · 2026-03-23T00:45:00.000Z'),
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole('textbox', { name: 'Paragraph block 1' })).toHaveValue(
-        'Reopened writer draft with persisted edits.',
+        'Reopened Project Doc draft with persisted edits.',
       );
     });
 
     const reloadButton = await screen.findByRole('button', { name: 'Reload draft' });
     expect(reloadButton).toBeEnabled();
     await user.click(reloadButton);
-    expect(await screen.findByDisplayValue('Reopened writer draft with persisted edits.')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('Reopened Project Doc draft with persisted edits.')).toBeInTheDocument();
   });
 
   it('writing page preserves structured reference blocks in the canonical save payload and reloads them', async () => {
@@ -1812,7 +1810,244 @@ describe('project writer flow', () => {
     ).toBeInTheDocument();
   });
 
-  it('writer page keeps reload locked while a save is still pending', async () => {
+  it('writing page keeps AI suggestions as a local draft preview until Save draft persists a version', async () => {
+    const user = userEvent.setup();
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'space-project-1',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+    };
+    const documentState = {
+      capturedAt: '2026-03-23T00:40:00.000Z',
+      citations: [
+        {
+          createdAt: '2026-03-23T00:40:00.000Z',
+          evidenceSpan: 'Initial citation evidence.',
+          id: 'citation-ai-1',
+          paperAssetId: 'asset-ai-1',
+          projectDocVersionId: 'project-doc-version-1',
+          readerExcerptId: 'excerpt-ai-1',
+        },
+      ],
+      content: 'Initial Project Doc paragraph.',
+      documentContent: {
+        blocks: [
+          {
+            text: 'Initial Project Doc paragraph.',
+            type: 'paragraph',
+          },
+        ],
+        schemaVersion: 1,
+      },
+      document: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'doc-project-1',
+        projectId: 'project-1',
+        publishState: 'draft',
+        title: 'Tumor board literature synthesis',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+      versionId: 'project-doc-version-1',
+      versionNumber: 1,
+    };
+    const suggestionBodies: unknown[] = [];
+    const versionBodies: unknown[] = [];
+
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const requestUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/projects')) {
+        return jsonResponse([projectFixture]);
+      }
+
+      if (requestUrl.endsWith('/api/project-docs/doc-project-1/citation-trace')) {
+        return jsonResponse({
+          capturedAt: documentState.capturedAt,
+          citations: [
+            {
+              citationId: 'citation-ai-1',
+              createdAt: '2026-03-23T00:40:00.000Z',
+              evidenceSpan: 'Initial citation evidence.',
+              paper: {
+                canonicalId: 'doi:10.1000/ai-suggestion',
+                createdAt: '2026-03-23T00:35:00.000Z',
+                hasFile: false,
+                id: 'asset-ai-1',
+                title: 'AI suggestion paper',
+              },
+              paperAssetId: 'asset-ai-1',
+              projectDocVersionId: documentState.versionId,
+              readerExcerpt: {
+                evidenceSpan: 'Initial citation evidence.',
+                id: 'excerpt-ai-1',
+                locator: 'p. 9',
+                quote: 'Initial citation evidence.',
+                source: 'reader_source',
+                sourceLibraryEntryId: 'entry-ai-1',
+              },
+              readerExcerptId: 'excerpt-ai-1',
+              source: { state: 'available' },
+            },
+          ],
+          document: documentState.document,
+          generatedAt: '2026-03-23T00:47:30.000Z',
+          versionId: documentState.versionId,
+          versionNumber: documentState.versionNumber,
+        });
+      }
+
+      if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
+        return jsonResponse(documentState);
+      }
+
+      if (requestUrl.endsWith('/api/project-docs/doc-project-1/ai-suggestions') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        suggestionBodies.push(body);
+        expect(body).toEqual({
+          citationIds: ['citation-ai-1'],
+          credentialRef: 'credential-project-doc-ai',
+          instruction: 'Draft a grounded synthesis suggestion.',
+        });
+
+        return jsonResponse({
+          documentId: 'doc-project-1',
+          job: {
+            createdAt: '2026-03-23T00:48:00.000Z',
+            credentialRef: 'credential-project-doc-ai',
+            id: 'job-ai-suggestion-1',
+            kind: 'project-doc.evidence-suggestion',
+            scope: { id: 'project-1', type: 'project' },
+            scopeId: 'project-1',
+            scopeType: 'project',
+            spaceId: 'space-project-1',
+            status: 'succeeded',
+          },
+          projectId: 'project-1',
+          suggestion: {
+            block: {
+              evidenceSpan: 'Initial citation evidence.',
+              paperAssetId: 'asset-ai-1',
+              rationale: 'Grounded rationale from the saved citation trace.',
+              readerExcerptId: 'excerpt-ai-1',
+              status: 'proposed',
+              text: 'AI suggested evidence synthesis.',
+              type: 'aiSuggestion',
+            },
+            rationale: 'Grounded rationale from the saved citation trace.',
+            text: 'AI suggested evidence synthesis.',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as {
+          content?: string;
+          documentContent: typeof documentState.documentContent;
+        };
+        versionBodies.push(body);
+        expect(body).not.toHaveProperty('content');
+        expectDocumentBlocksToOmitAuthorityFields(body.documentContent);
+        expect(body.documentContent).toEqual({
+          blocks: [
+            {
+              text: 'Initial Project Doc paragraph.',
+              type: 'paragraph',
+            },
+            {
+              evidenceSpan: 'Initial citation evidence.',
+              paperAssetId: 'asset-ai-1',
+              rationale: 'Grounded rationale from the saved citation trace.',
+              readerExcerptId: 'excerpt-ai-1',
+              status: 'proposed',
+              text: 'AI suggested evidence synthesis.',
+              type: 'aiSuggestion',
+            },
+          ],
+          schemaVersion: 1,
+        });
+        documentState.documentContent = body.documentContent;
+        documentState.content = 'Initial Project Doc paragraph.\n\nAI suggestion: AI suggested evidence synthesis.';
+        documentState.capturedAt = '2026-03-23T00:49:00.000Z';
+        documentState.versionId = 'project-doc-version-2';
+        documentState.versionNumber = 2;
+
+        return jsonResponse(documentState);
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench('/projects/project-1/writing/doc-project-1');
+
+    expect(
+      await screen.findByRole('textbox', { name: 'Paragraph block 1' }),
+    ).toHaveValue('Initial Project Doc paragraph.');
+    expect(await screen.findByText('citation-ai-1 · AI suggestion paper')).toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText('Instruction'),
+      'Draft a grounded synthesis suggestion.',
+    );
+    await user.type(
+      screen.getByLabelText('Credential reference'),
+      'credential-project-doc-ai',
+    );
+    await user.click(screen.getByRole('button', { name: 'Create AI suggestion' }));
+
+    expect(await screen.findByText('Suggestion preview')).toBeInTheDocument();
+    expect(screen.getAllByText('AI suggested evidence synthesis.').length).toBeGreaterThan(0);
+    expect(screen.getByText('Job · job-ai-suggestion-1')).toBeInTheDocument();
+    expect(suggestionBodies).toHaveLength(1);
+    expect(versionBodies).toHaveLength(0);
+    expect(
+      fetchMock.mock.calls.some(([requestInput]) => requestInput.toString().includes('/versions')),
+    ).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'Apply to local draft' }));
+
+    expect(
+      screen.getByText('Suggestion applied to the local draft. Use Save draft to persist a new version.'),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('aiSuggestion').length).toBeGreaterThan(0);
+    expect(versionBodies).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(await screen.findByText('Latest snapshot · 2026-03-23T00:49:00.000Z')).toBeInTheDocument();
+    expect(versionBodies).toHaveLength(1);
+  });
+
+  it('Project Doc editor keeps reload locked while a save is still pending', async () => {
     const user = userEvent.setup();
     const projectFixture = {
       membership: {
@@ -1834,11 +2069,11 @@ describe('project writer flow', () => {
     const documentState = {
       capturedAt: '2026-03-23T00:40:00.000Z',
       citations: [],
-      content: 'Original promoted draft.',
+      content: 'Original selected-evidence draft.',
       documentContent: {
         blocks: [
           {
-            text: 'Original promoted draft.',
+            text: 'Original selected-evidence draft.',
             type: 'paragraph',
           },
         ],

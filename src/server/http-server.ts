@@ -1706,7 +1706,7 @@ async function handleApiRequest(
         sendJsonError(
           response,
           404,
-          `No Writer document exists for project ${projectId}.`,
+          `No Project Doc exists for project ${projectId}.`,
           method,
         );
         return true;
@@ -1966,6 +1966,8 @@ async function handleApiRequest(
       /^\/api\/project-docs\/([^/]+)\/notebook-adoptions$/,
     );
     if (projectDocNotebookAdoptionsMatch && method === "POST") {
+      // Legacy/internal compatibility ingestion only. Foreground browser UI must
+      // use selected Reader evidence and project-visible citations/references.
       const actor = await getActor(request, actorOptions);
       const [, documentId] = projectDocNotebookAdoptionsMatch;
       rejectProjectDocAuthorityQueryFields(actor, requestUrl);

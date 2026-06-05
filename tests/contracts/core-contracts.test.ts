@@ -504,7 +504,7 @@ describe('core contracts', () => {
           id: 'collaboration',
           metrics: [{ label: 'Visible projects', value: 1 }],
           primaryAction: {
-            description: 'Review visible project workspaces.',
+              description: 'Review visible projects.',
             id: 'open-projects',
             label: 'Open Projects',
             priority: 'primary',

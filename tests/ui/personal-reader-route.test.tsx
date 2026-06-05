@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 describe('personal reader route', () => {
-  it('does not invent project Writer route and shows truthful guidance', async () => {
+  it('does not invent project Project Docs route and shows truthful guidance', async () => {
     const user = userEvent.setup();
     const readingDetail = {
       asset: {
@@ -310,7 +310,7 @@ describe('personal reader route', () => {
       screen.getByText('Metadata-only asset · no server-owned file is available yet.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open server-owned paper file' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Open writing' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open Project Doc' })).not.toBeInTheDocument();
     expect(screen.getByText('Existing reader excerpt')).toBeInTheDocument();
     expect(screen.getByText('p. 1')).toBeInTheDocument();
 
@@ -369,7 +369,7 @@ describe('personal reader route', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save project comment' }));
     expect(
-      await screen.findByText('Open a real project workspace before saving project comments.'),
+      await screen.findByText('Open a real project before saving project comments.'),
     ).toBeInTheDocument();
 
     await user.type(screen.getByRole('textbox', { name: 'Insight summary' }), 'Personal insight summary');
@@ -381,16 +381,16 @@ describe('personal reader route', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open Notebook' })).toHaveAttribute('href', '/notebook');
 
-    await user.click(screen.getByRole('button', { name: 'Promote latest insight to Writer' }));
+    await user.click(screen.getByRole('button', { name: 'Use latest insight in Project Doc draft' }));
 
     expect(
       await screen.findByText(
-        'Open a real project workspace before promoting personal reading insights into Writer.',
+      'Open a real project before drafting in Project Docs.',
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Personal reader does not invent a project. Open a real project workspace before Writer promotion.',
+      'Personal reader does not invent a project. Open a real project before Project Doc drafting.',
       ),
     ).toBeInTheDocument();
 
@@ -398,7 +398,7 @@ describe('personal reader route', () => {
     await user.click(screen.getByRole('button', { name: 'Save project comment' }));
 
     expect(
-      await screen.findByText('Open a real project workspace before saving project comments.'),
+      await screen.findByText('Open a real project before saving project comments.'),
     ).toBeInTheDocument();
   });
 });
