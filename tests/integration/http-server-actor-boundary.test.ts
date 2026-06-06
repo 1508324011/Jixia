@@ -341,6 +341,18 @@ describe('http server actor boundary cleanup', () => {
           fetch(`${server.url}/api/jobs`),
           fetch(`${server.url}/api/jobs/job-1/cancel`, { method: 'POST' }),
           fetch(`${server.url}/api/jobs/job-1/stream`),
+          fetch(`${server.url}/api/ai-results`),
+          fetch(`${server.url}/api/ai-results/result-1`),
+          fetch(`${server.url}/api/ai-results/result-1/apply/notebook`, {
+            body: JSON.stringify({ notebookDocumentId: 'notebook-1' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
+          fetch(`${server.url}/api/ai-results/result-1/apply/project-doc`, {
+            body: JSON.stringify({ projectDocId: 'project-doc-1' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          }),
         ]);
 
         for (const response of responses) {

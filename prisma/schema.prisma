@@ -80,6 +80,7 @@ model User {
   aiSessions          AiSession[]          @relation("AiSessionCreatedBy")
   aiContextPacks      AiContextPack[]      @relation("AiContextPackCreatedBy")
   aiContextItems      AiContextItem[]      @relation("AiContextItemCreatedBy")
+  aiResultArtifacts   AiResultArtifact[]   @relation("AiResultArtifactCreatedBy")
 }
 
 model AiSession {
@@ -490,10 +491,39 @@ model Job {
   providerCredential ProviderCredential @relation(fields: [credentialRef], references: [id], onDelete: Restrict)
   events             JobEvent[]
   auditLogs          AuditLog[]
+  aiResultArtifacts  AiResultArtifact[]
 
   @@index([spaceId, requestedByUserId])
   @@index([requestedByUserId])
   @@index([scopeType, scopeId])
+}
+
+model AiResultArtifact {
+  id                 String   @id @default(cuid())
+  jobId              String
+  kind               String
+  scopeType          String
+  scopeId            String
+  projectId          String?
+  createdByUserId    String
+  status             String
+  title              String?
+  summary            String?
+  documentContent    String?
+  plainTextPreview   String?
+  provenanceJson     String
+  appliedTargetJson  String?
+  appliedAt          DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  job                Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdBy          User     @relation("AiResultArtifactCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([createdByUserId, createdAt])
+  @@index([scopeType, scopeId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([status, createdAt])
 }
 
 model JobEvent {

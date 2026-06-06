@@ -7,6 +7,20 @@ export {
 } from './client';
 
 export {
+  createAiResultArtifactRepository,
+  initializeAiResultArtifactPersistence,
+  type AiResultArtifactRepository,
+  type CreateAiResultArtifactParams,
+  type MarkAiResultArtifactAppliedParams,
+  type PersistedAiResultAppliedTarget,
+  type PersistedAiResultArtifactRecord,
+  type PersistedAiResultArtifactStatus,
+  type PersistedAiResultProvenance,
+  type PersistedAiResultScopeRef,
+  type PersistedAiResultScopeType,
+} from './repositories/ai-results.repository';
+
+export {
   createAiWorkspaceRepository,
   initializeAiWorkspacePersistence,
   type AiWorkspaceRepository,

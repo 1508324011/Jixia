@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createPrismaClient,
+  initializeAiResultArtifactPersistence,
   initializeAuditPersistence,
   initializeJobPersistence,
   initializeNotebookPersistence,
@@ -20,6 +21,10 @@ interface SqliteForeignKeyRow {
   on_update: string;
   table: string;
   to: string;
+}
+
+interface SqliteTableColumnRow {
+  name: string;
 }
 
 async function foreignKeyList(
@@ -90,6 +95,7 @@ describe('prisma schema', () => {
     expect(schema).toContain('model AiSession');
     expect(schema).toContain('model AiContextPack');
     expect(schema).toContain('model AiContextItem');
+    expect(schema).toContain('model AiResultArtifact');
 
     expect(schema).toMatch(/model Space[\s\S]*\n\s+kind\s+SpaceKind/);
     expect(schema).toMatch(/model Project[\s\S]*\n\s+spaceId\s+String/);
@@ -301,6 +307,74 @@ describe('prisma schema', () => {
     expect(aiWorkspaceMigration).toContain('"sourceType" TEXT NOT NULL');
     expect(aiWorkspaceMigration).toContain('"sourceId" TEXT NOT NULL');
     expect(aiWorkspaceMigration).toContain('AiContextItem_sourceType_sourceId_idx');
+    expect(schema).toMatch(/model AiResultArtifact[\s\S]*\n\s+jobId\s+String/);
+    expect(schema).toMatch(/model AiResultArtifact[\s\S]*\n\s+scopeType\s+String/);
+    expect(schema).toMatch(/model AiResultArtifact[\s\S]*\n\s+scopeId\s+String/);
+    expect(schema).toMatch(/model AiResultArtifact[\s\S]*\n\s+documentContent\s+String\?/);
+    expect(schema).toMatch(/model AiResultArtifact[\s\S]*\n\s+provenanceJson\s+String/);
+    expect(schema).toMatch(/model AiResultArtifact[\s\S]*\n\s+appliedTargetJson\s+String\?/);
+    expect(schema).toMatch(/model AiResultArtifact[\s\S]*@@index\(\[scopeType, scopeId, createdAt\]\)/);
+    const aiResultsMigration = readFileSync(
+      'prisma/migrations/20260606010000_ai_result_artifacts/migration.sql',
+      'utf8',
+    );
+    expect(aiResultsMigration).toContain('CREATE TABLE IF NOT EXISTS "AiResultArtifact"');
+    expect(aiResultsMigration).toContain('"provenanceJson" TEXT NOT NULL');
+    expect(aiResultsMigration).toContain('"appliedTargetJson" TEXT');
+    expect(aiResultsMigration).toContain('AiResultArtifact_scopeType_scopeId_createdAt_idx');
+  });
+
+  it('initializes AI result artifact persistence with job and user foreign keys', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'jixia-ai-results-schema-'));
+    const prisma = createPrismaClient({
+      url: `file:${join(tempRoot, 'ai-results-schema.db')}`,
+    });
+
+    try {
+      await initializeAiResultArtifactPersistence(prisma);
+      const columns = await prisma.$queryRawUnsafe<SqliteTableColumnRow[]>(
+        'PRAGMA table_info("AiResultArtifact")',
+      );
+      const columnNames = columns.map((column) => column.name);
+      const foreignKeys = await foreignKeyList(prisma, 'AiResultArtifact');
+
+      expect(columnNames).toEqual(
+        expect.arrayContaining([
+          'id',
+          'jobId',
+          'kind',
+          'scopeType',
+          'scopeId',
+          'createdByUserId',
+          'status',
+          'documentContent',
+          'provenanceJson',
+          'appliedTargetJson',
+          'appliedAt',
+        ]),
+      );
+      expect(foreignKeys).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            from: 'jobId',
+            on_delete: 'CASCADE',
+            on_update: 'CASCADE',
+            table: 'Job',
+            to: 'id',
+          }),
+          expect.objectContaining({
+            from: 'createdByUserId',
+            on_delete: 'CASCADE',
+            on_update: 'CASCADE',
+            table: 'User',
+            to: 'id',
+          }),
+        ]),
+      );
+    } finally {
+      await prisma.$disconnect();
+      rmSync(tempRoot, { force: true, recursive: true });
+    }
   });
 
   it('repairs upgraded citation tables with reader excerpt foreign keys', async () => {
