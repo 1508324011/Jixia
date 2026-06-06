@@ -70,6 +70,25 @@ type TransactionClient = Prisma.TransactionClient;
 
 type AuditClient = JixiaPrismaClient | TransactionClient;
 
+interface SqliteForeignKeyRow {
+  from: string;
+  on_delete: string;
+  on_update: string;
+  table: string;
+  to: string;
+}
+
+interface SqliteForeignKeyViolationRow {
+  fkid: number;
+  parent: string;
+  rowid: number;
+  table: string;
+}
+
+interface SqliteRowCount {
+  count: bigint | number;
+}
+
 const SAFE_METADATA_KEYS = new Set([
   'citationCount',
   'itemCount',
@@ -194,6 +213,158 @@ async function tableExists(
   );
 
   return rows.length > 0;
+}
+
+async function hasAuditLogJobForeignKey(
+  prisma: JixiaPrismaClient,
+): Promise<boolean> {
+  const foreignKeys = await prisma.$queryRawUnsafe<SqliteForeignKeyRow[]>(
+    'PRAGMA foreign_key_list("AuditLog")',
+  );
+
+  return foreignKeys.some(
+    (foreignKey) =>
+      foreignKey.from === 'jobId' &&
+      foreignKey.table === 'Job' &&
+      foreignKey.to === 'id' &&
+      foreignKey.on_delete === 'SET NULL' &&
+      foreignKey.on_update === 'CASCADE',
+  );
+}
+
+async function readTableRowCount(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+): Promise<number> {
+  const rows = await prisma.$queryRawUnsafe<SqliteRowCount[]>(
+    `SELECT COUNT(*) AS "count" FROM "${tableName}"`,
+  );
+
+  return Number(rows[0]?.count ?? 0);
+}
+
+async function assertNoForeignKeyViolations(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+): Promise<void> {
+  const violations = await prisma.$queryRawUnsafe<SqliteForeignKeyViolationRow[]>(
+    `PRAGMA foreign_key_check("${tableName}")`,
+  );
+
+  if (violations.length > 0) {
+    throw new Error(
+      `AuditLog rebuild would create ${violations.length} foreign key violation(s). Existing SQLite governance audit rows must be repaired before serving audit records.`,
+    );
+  }
+}
+
+async function rebuildAuditLogJobForeignKey(
+  prisma: JixiaPrismaClient,
+): Promise<void> {
+  if (
+    !(await tableExists(prisma, 'AuditLog')) ||
+    !(await tableExists(prisma, 'Job')) ||
+    (await hasAuditLogJobForeignKey(prisma))
+  ) {
+    return;
+  }
+
+  await prisma.$executeRawUnsafe('PRAGMA foreign_keys = OFF');
+  let transactionStarted = false;
+
+  try {
+    await prisma.$executeRawUnsafe('BEGIN IMMEDIATE');
+    transactionStarted = true;
+
+    const sourceRowCount = await readTableRowCount(prisma, 'AuditLog');
+
+    await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS "AuditLog__rebuild"');
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE "AuditLog__rebuild" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "spaceId" TEXT NOT NULL,
+        "scopeType" TEXT NOT NULL DEFAULT 'user',
+        "scopeId" TEXT NOT NULL,
+        "objectType" TEXT NOT NULL,
+        "objectId" TEXT NOT NULL,
+        "projectId" TEXT,
+        "actorUserId" TEXT NOT NULL,
+        "jobId" TEXT,
+        "action" TEXT NOT NULL,
+        "detail" TEXT NOT NULL,
+        "metadataJson" TEXT,
+        "recordedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "AuditLog_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "Space" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "AuditLog_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "AuditLog_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "Job" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "AuditLog__rebuild" (
+        "id",
+        "spaceId",
+        "scopeType",
+        "scopeId",
+        "objectType",
+        "objectId",
+        "projectId",
+        "actorUserId",
+        "jobId",
+        "action",
+        "detail",
+        "metadataJson",
+        "recordedAt"
+      )
+      SELECT
+        "AuditLog"."id",
+        "AuditLog"."spaceId",
+        "AuditLog"."scopeType",
+        "AuditLog"."scopeId",
+        "AuditLog"."objectType",
+        "AuditLog"."objectId",
+        "AuditLog"."projectId",
+        "AuditLog"."actorUserId",
+        CASE
+          WHEN "AuditLog"."jobId" IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM "Job"
+              WHERE "Job"."id" = "AuditLog"."jobId"
+            )
+          THEN "AuditLog"."jobId"
+          ELSE NULL
+        END AS "jobId",
+        "AuditLog"."action",
+        "AuditLog"."detail",
+        "AuditLog"."metadataJson",
+        "AuditLog"."recordedAt"
+      FROM "AuditLog"
+    `);
+
+    const rebuiltRowCount = await readTableRowCount(prisma, 'AuditLog__rebuild');
+
+    if (rebuiltRowCount !== sourceRowCount) {
+      throw new Error(
+        `AuditLog rebuild copied ${rebuiltRowCount} row(s), expected ${sourceRowCount}.`,
+      );
+    }
+
+    await assertNoForeignKeyViolations(prisma, 'AuditLog__rebuild');
+    await prisma.$executeRawUnsafe('DROP TABLE "AuditLog"');
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE "AuditLog__rebuild" RENAME TO "AuditLog"',
+    );
+    await prisma.$executeRawUnsafe('COMMIT');
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) {
+      await prisma.$executeRawUnsafe('ROLLBACK').catch(() => undefined);
+    }
+
+    throw error;
+  } finally {
+    await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON');
+  }
 }
 
 async function ensureColumnIfMissing(
@@ -462,6 +633,7 @@ export async function initializeAuditPersistence(
   await ensureColumnIfMissing(prisma, 'AuditLog', 'metadataJson', 'TEXT');
 
   await backfillGenericAuditColumns(prisma);
+  await rebuildAuditLogJobForeignKey(prisma);
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "AuditLog_jobId_idx" ON "AuditLog"("jobId")
   `);

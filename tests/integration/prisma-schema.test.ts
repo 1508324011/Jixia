@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createPrismaClient,
+  initializeAuditPersistence,
+  initializeJobPersistence,
   initializeNotebookPersistence,
   initializeProjectDocPersistence,
   initializeReadingPersistence,
@@ -37,6 +39,20 @@ function expectReaderExcerptForeignKey(foreignKeys: SqliteForeignKeyRow[]): void
         on_delete: 'SET NULL',
         on_update: 'CASCADE',
         table: 'ReaderExcerpt',
+        to: 'id',
+      }),
+    ]),
+  );
+}
+
+function expectAuditLogJobForeignKey(foreignKeys: SqliteForeignKeyRow[]): void {
+  expect(foreignKeys).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        from: 'jobId',
+        on_delete: 'SET NULL',
+        on_update: 'CASCADE',
+        table: 'Job',
         to: 'id',
       }),
     ]),
@@ -382,6 +398,219 @@ describe('prisma schema', () => {
       expectReaderExcerptForeignKey(
         await foreignKeyList(prisma, 'ProjectDocCitation'),
       );
+    } finally {
+      await prisma.$disconnect();
+      rmSync(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('repairs audit log job foreign key when audit initializes before jobs', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'jixia-audit-fk-'));
+    const prisma = createPrismaClient({
+      url: `file:${join(tempRoot, 'audit-fk.db')}`,
+    });
+
+    try {
+      await initializeAuditPersistence(prisma);
+      await initializeJobPersistence(prisma);
+
+      expectAuditLogJobForeignKey(await foreignKeyList(prisma, 'AuditLog'));
+
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "User" ("id", "email", "displayName")
+        VALUES ('user-audit-fk', 'audit-fk@example.test', 'Audit FK')
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "Space" ("id", "name", "kind")
+        VALUES ('space-audit-fk', 'Audit FK Space', 'shared')
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "ProviderCredential" ("id", "userId", "provider", "secretRef")
+        VALUES ('cred-audit-fk', 'user-audit-fk', 'openai', 'secret-audit-fk')
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "Job" ("id", "spaceId", "scopeType", "scopeId", "requestedByUserId", "credentialRef", "kind", "status", "payload")
+        VALUES ('job-audit-fk', 'space-audit-fk', 'user', 'user-audit-fk', 'user-audit-fk', 'cred-audit-fk', 'ai.summary', 'queued', '{}')
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "AuditLog" ("id", "spaceId", "scopeType", "scopeId", "objectType", "objectId", "actorUserId", "jobId", "action", "detail")
+        VALUES ('audit-fk', 'space-audit-fk', 'user', 'user-audit-fk', 'job', 'job-audit-fk', 'user-audit-fk', 'job-audit-fk', 'job.created', 'Created job audit row.')
+      `);
+      await prisma.$executeRawUnsafe(`
+        DELETE FROM "Job" WHERE "id" = 'job-audit-fk'
+      `);
+
+      const rows = await prisma.$queryRawUnsafe<Array<{ jobId: string | null }>>(
+        `SELECT "jobId" FROM "AuditLog" WHERE "id" = 'audit-fk'`,
+      );
+
+      expect(rows).toEqual([{ jobId: null }]);
+    } finally {
+      await prisma.$disconnect();
+      rmSync(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('preserves populated audit rows while repairing the job foreign key', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'jixia-audit-fk-populated-'));
+    const prisma = createPrismaClient({
+      url: `file:${join(tempRoot, 'audit-fk-populated.db')}`,
+    });
+
+    try {
+      await initializeAuditPersistence(prisma);
+
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "User" ("id", "email", "displayName")
+        VALUES ('user-audit-fk-populated', 'audit-fk-populated@example.test', 'Audit FK Populated')
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "Space" ("id", "name", "kind")
+        VALUES ('space-audit-fk-populated', 'Audit FK Populated Space', 'shared')
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "AuditLog" (
+          "id",
+          "spaceId",
+          "scopeType",
+          "scopeId",
+          "objectType",
+          "objectId",
+          "projectId",
+          "actorUserId",
+          "jobId",
+          "action",
+          "detail",
+          "metadataJson"
+        )
+        VALUES
+          (
+            'audit-fk-valid',
+            'space-audit-fk-populated',
+            'project',
+            'project-audit-fk-populated',
+            'job',
+            'job-audit-fk-valid',
+            'project-audit-fk-populated',
+            'user-audit-fk-populated',
+            'job-audit-fk-valid',
+            'job.created',
+            'Created valid job audit row.',
+            '{"citationCount":2,"publishState":"draft"}'
+          ),
+          (
+            'audit-fk-orphan',
+            'space-audit-fk-populated',
+            'project',
+            'project-audit-fk-populated',
+            'job',
+            'job-audit-fk-orphan',
+            'project-audit-fk-populated',
+            'user-audit-fk-populated',
+            'job-audit-fk-orphan',
+            'job.failed',
+            'Created orphan job audit row.',
+            '{"itemCount":1}'
+          )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE "ProviderCredential" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "userId" TEXT NOT NULL,
+          "provider" TEXT NOT NULL,
+          "secretRef" TEXT NOT NULL,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE "Job" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "spaceId" TEXT NOT NULL,
+          "scopeType" TEXT NOT NULL DEFAULT 'user',
+          "scopeId" TEXT NOT NULL,
+          "requestedByUserId" TEXT NOT NULL,
+          "credentialRef" TEXT NOT NULL,
+          "kind" TEXT NOT NULL,
+          "status" TEXT NOT NULL,
+          "payload" TEXT NOT NULL,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "ProviderCredential" ("id", "userId", "provider", "secretRef")
+        VALUES ('cred-audit-fk-populated', 'user-audit-fk-populated', 'openai', 'secret-audit-fk-populated')
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "Job" ("id", "spaceId", "scopeType", "scopeId", "requestedByUserId", "credentialRef", "kind", "status", "payload")
+        VALUES ('job-audit-fk-valid', 'space-audit-fk-populated', 'project', 'project-audit-fk-populated', 'user-audit-fk-populated', 'cred-audit-fk-populated', 'ai.summary', 'queued', '{}')
+      `);
+
+      await initializeAuditPersistence(prisma);
+
+      expectAuditLogJobForeignKey(await foreignKeyList(prisma, 'AuditLog'));
+
+      const rows = await prisma.$queryRawUnsafe<
+        Array<{
+          id: string;
+          jobId: string | null;
+          metadataJson: string | null;
+          objectId: string;
+          projectId: string | null;
+          scopeId: string;
+          scopeType: string;
+        }>
+      >(`
+        SELECT
+          "id",
+          "jobId",
+          "metadataJson",
+          "objectId",
+          "projectId",
+          "scopeId",
+          "scopeType"
+        FROM "AuditLog"
+        ORDER BY "id"
+      `);
+
+      expect(rows).toEqual([
+        {
+          id: 'audit-fk-orphan',
+          jobId: null,
+          metadataJson: '{"itemCount":1}',
+          objectId: 'job-audit-fk-orphan',
+          projectId: 'project-audit-fk-populated',
+          scopeId: 'project-audit-fk-populated',
+          scopeType: 'project',
+        },
+        {
+          id: 'audit-fk-valid',
+          jobId: 'job-audit-fk-valid',
+          metadataJson: '{"citationCount":2,"publishState":"draft"}',
+          objectId: 'job-audit-fk-valid',
+          projectId: 'project-audit-fk-populated',
+          scopeId: 'project-audit-fk-populated',
+          scopeType: 'project',
+        },
+      ]);
+
+      await prisma.$executeRawUnsafe(`
+        DELETE FROM "Job" WHERE "id" = 'job-audit-fk-valid'
+      `);
+
+      const afterDeleteRows = await prisma.$queryRawUnsafe<
+        Array<{ id: string; jobId: string | null; objectId: string }>
+      >(`
+        SELECT "id", "jobId", "objectId"
+        FROM "AuditLog"
+        ORDER BY "id"
+      `);
+
+      expect(afterDeleteRows).toEqual([
+        { id: 'audit-fk-orphan', jobId: null, objectId: 'job-audit-fk-orphan' },
+        { id: 'audit-fk-valid', jobId: null, objectId: 'job-audit-fk-valid' },
+      ]);
     } finally {
       await prisma.$disconnect();
       rmSync(tempRoot, { force: true, recursive: true });
