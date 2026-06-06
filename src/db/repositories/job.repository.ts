@@ -1,5 +1,4 @@
 import {
-  type AuditLog,
   type Job,
   type JobEvent,
   type JobStatus,
@@ -8,6 +7,15 @@ import {
 } from '@prisma/client';
 
 import type { JixiaPrismaClient } from '../client';
+import {
+  initializeAuditPersistence,
+  insertGovernanceAuditRecord,
+  mapGovernanceAuditRecord,
+  type PersistedAuditMetadata,
+  type PersistedAuditObjectRef,
+  type PersistedAuditScopeRef,
+  type PersistedGovernanceAuditRecord,
+} from './audit.repository';
 import {
   assertJobStatusTransition,
   type GuardedJobStatus,
@@ -68,7 +76,11 @@ export interface CreateAuditRecordParams {
   detail: string;
   id?: string;
   jobId?: string;
+  metadata?: PersistedAuditMetadata;
+  object?: PersistedAuditObjectRef;
+  projectId?: string;
   recordedAt?: string;
+  scope?: PersistedAuditScopeRef;
   spaceId: string;
 }
 
@@ -114,15 +126,7 @@ export interface PersistedJobEventRecord {
   status: PersistedJobStatus;
 }
 
-export interface PersistedAuditLogRecord {
-  action: string;
-  actorUserId: string;
-  detail: string;
-  id: string;
-  jobId?: string;
-  recordedAt: string;
-  spaceId: string;
-}
+export type PersistedAuditLogRecord = PersistedGovernanceAuditRecord;
 
 export interface PersistedQueuedJobWithAudit {
   audit: PersistedAuditLogRecord;
@@ -293,18 +297,6 @@ function mapJobEvent(event: JobEvent): PersistedJobEventRecord {
   };
 }
 
-function mapAuditLog(record: AuditLog): PersistedAuditLogRecord {
-  return {
-    action: record.action,
-    actorUserId: record.actorUserId,
-    detail: record.detail,
-    id: record.id,
-    jobId: record.jobId ?? undefined,
-    recordedAt: toIsoString(record.recordedAt),
-    spaceId: record.spaceId,
-  };
-}
-
 function mapProviderCredential(
   credential: ProviderCredential,
 ): PersistedProviderCredentialReferenceRecord {
@@ -379,21 +371,45 @@ async function insertAuditRecord(
   prisma: JobClient,
   input: CreateAuditRecordParams,
 ): Promise<PersistedAuditLogRecord> {
-  await ensureUser(prisma, input.actorUserId);
+  let scope = input.scope;
+  let object = input.object;
+  let projectId = input.projectId;
 
-  const record = await prisma.auditLog.create({
-    data: {
-      action: input.action,
-      actorUserId: input.actorUserId,
-      detail: input.detail,
-      id: input.id,
-      jobId: input.jobId,
-      recordedAt: optionalDate(input.recordedAt),
-      spaceId: input.spaceId,
+  if ((!scope || !object || typeof projectId === 'undefined') && input.jobId) {
+    const job = await prisma.job.findUnique({ where: { id: input.jobId } });
+
+    if (job) {
+      scope ??= {
+        id: job.scopeId,
+        type: normalizeScopeType(job.scopeType),
+      };
+      object ??= {
+        id: job.id,
+        type: 'job',
+      };
+      projectId ??= job.scopeType === 'project' ? job.scopeId : undefined;
+    }
+  }
+
+  return insertGovernanceAuditRecord(prisma, {
+    action: input.action,
+    actorUserId: input.actorUserId,
+    detail: input.detail,
+    id: input.id,
+    jobId: input.jobId,
+    metadata: input.metadata,
+    object: object ?? {
+      id: input.jobId ?? input.id ?? input.action,
+      type: input.jobId ? 'job' : 'audit_log',
     },
+    projectId,
+    recordedAt: input.recordedAt,
+    scope: scope ?? {
+      id: input.actorUserId,
+      type: 'user',
+    },
+    spaceId: input.spaceId,
   });
-
-  return mapAuditLog(record);
 }
 
 export async function initializeJobPersistence(
@@ -456,26 +472,7 @@ export async function initializeJobPersistence(
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "JobEvent_jobId_idx" ON "JobEvent"("jobId")
   `);
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "AuditLog" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "spaceId" TEXT NOT NULL,
-      "actorUserId" TEXT NOT NULL,
-      "jobId" TEXT,
-      "action" TEXT NOT NULL,
-      "detail" TEXT NOT NULL,
-      "recordedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      CONSTRAINT "AuditLog_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "Space" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-      CONSTRAINT "AuditLog_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-      CONSTRAINT "AuditLog_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "Job" ("id") ON DELETE SET NULL ON UPDATE CASCADE
-    )
-  `);
-  await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "AuditLog_jobId_idx" ON "AuditLog"("jobId")
-  `);
-  await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "AuditLog_spaceId_actorUserId_idx" ON "AuditLog"("spaceId", "actorUserId")
-  `);
+  await initializeAuditPersistence(prisma);
 
   await assertRequiredColumns(prisma, 'ProviderCredential', [
     'id',
@@ -504,6 +501,10 @@ export async function initializeJobPersistence(
   await assertRequiredColumns(prisma, 'AuditLog', [
     'id',
     'spaceId',
+    'scopeType',
+    'scopeId',
+    'objectType',
+    'objectId',
     'actorUserId',
     'action',
     'detail',
@@ -603,6 +604,9 @@ export function createJobRepository(
         const audit = await insertAuditRecord(transaction, {
           ...input.audit,
           jobId: job.id,
+          object: { id: job.id, type: 'job' },
+          projectId: job.scopeType === 'project' ? job.scopeId : undefined,
+          scope: { id: job.scopeId, type: normalizeScopeType(job.scopeType) },
           spaceId: job.spaceId,
         });
 
@@ -641,7 +645,7 @@ export function createJobRepository(
         where: { jobId },
       });
 
-      return records.map(mapAuditLog);
+      return records.map(mapGovernanceAuditRecord);
     },
     async listJobEvents(jobId: string): Promise<PersistedJobEventRecord[]> {
       await ensureInitialized();
@@ -719,6 +723,9 @@ export function createJobRepository(
         const audit = await insertAuditRecord(transaction, {
           ...input.audit,
           jobId: job.id,
+          object: { id: job.id, type: 'job' },
+          projectId: job.scopeType === 'project' ? job.scopeId : undefined,
+          scope: { id: job.scopeId, type: normalizeScopeType(job.scopeType) },
           spaceId: job.spaceId,
         });
 

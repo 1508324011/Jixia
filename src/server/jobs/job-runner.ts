@@ -134,7 +134,7 @@ export function createJobRunner(store: JobRunnerStore): JobRunner {
       const cancelledJob = await recordLifecycleTransition(store, {
         action: 'job.cancelled',
         actorUserId: input.actorUserId,
-        detail: `Cancelled ${job.kind} with credential ${job.credentialRef}.`,
+        detail: `Cancelled ${job.kind} with server-owned provider configuration.`,
         jobId: job.id,
         message: `${job.kind} cancelled before completion.`,
         status: 'cancelled',
@@ -158,7 +158,7 @@ export function createJobRunner(store: JobRunnerStore): JobRunner {
       const runningJob = await recordLifecycleTransition(store, {
         action: 'job.started',
         actorUserId: input.actorUserId,
-        detail: `Started ${job.kind} with credential ${job.credentialRef}.`,
+        detail: `Started ${job.kind} with server-owned provider configuration.`,
         jobId: job.id,
         message: `Running ${job.kind} with ${credential.provider}.`,
         status: 'running',
@@ -170,7 +170,7 @@ export function createJobRunner(store: JobRunnerStore): JobRunner {
         const failedJob = await recordLifecycleTransition(store, {
           action: 'job.failed',
           actorUserId: input.actorUserId,
-          detail: `Failed ${job.kind} with credential ${job.credentialRef}.`,
+          detail: `Failed ${job.kind} with server-owned provider configuration.`,
           jobId: job.id,
           message: `${job.kind} failed during execution.`,
           status: 'failed',
@@ -188,7 +188,7 @@ export function createJobRunner(store: JobRunnerStore): JobRunner {
       const completedJob = await recordLifecycleTransition(store, {
         action: 'job.completed',
         actorUserId: input.actorUserId,
-        detail: `Completed ${job.kind} with credential ${job.credentialRef}.`,
+        detail: `Completed ${job.kind} with server-owned provider configuration.`,
         jobId: job.id,
         message: `${job.kind} completed successfully.`,
         status: 'succeeded',

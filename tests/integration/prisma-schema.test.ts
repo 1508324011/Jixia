@@ -226,6 +226,34 @@ describe('prisma schema', () => {
     );
     expect(schema).toMatch(/model JobEvent[\s\S]*@@index\(\[jobId\]\)/);
     expect(schema).toMatch(/model AuditLog[\s\S]*@@index\(\[jobId\]\)/);
+    expect(schema).toMatch(/model AuditLog[\s\S]*\n\s+scopeType\s+String/);
+    expect(schema).toMatch(/model AuditLog[\s\S]*\n\s+scopeId\s+String/);
+    expect(schema).toMatch(/model AuditLog[\s\S]*\n\s+objectType\s+String/);
+    expect(schema).toMatch(/model AuditLog[\s\S]*\n\s+objectId\s+String/);
+    expect(schema).toMatch(/model AuditLog[\s\S]*\n\s+projectId\s+String\?/);
+    expect(schema).toMatch(/model AuditLog[\s\S]*\n\s+metadataJson\s+String\?/);
+    expect(schema).toMatch(
+      /model AuditLog[\s\S]*@@index\(\[scopeType, scopeId, recordedAt\]\)/,
+    );
+    expect(schema).toMatch(
+      /model AuditLog[\s\S]*@@index\(\[objectType, objectId, recordedAt\]\)/,
+    );
+    expect(schema).toMatch(
+      /model AuditLog[\s\S]*@@index\(\[projectId, recordedAt\]\)/,
+    );
+    expect(schema).toMatch(
+      /model AuditLog[\s\S]*@@index\(\[projectId, objectType, objectId, recordedAt\]\)/,
+    );
+    expect(
+      existsSync('prisma/migrations/20260606000000_governance_audit_records/migration.sql'),
+    ).toBe(true);
+    const auditMigration = readFileSync(
+      'prisma/migrations/20260606000000_governance_audit_records/migration.sql',
+      'utf8',
+    );
+    expect(auditMigration).toContain('ALTER TABLE "AuditLog" ADD COLUMN "scopeType"');
+    expect(auditMigration).toContain('ALTER TABLE "AuditLog" ADD COLUMN "objectType"');
+    expect(auditMigration).toContain('AuditLog_projectId_objectType_objectId_recordedAt_idx');
     expect(schema).toMatch(/model AiSession[\s\S]*\n\s+scopeType\s+String/);
     expect(schema).toMatch(/model AiSession[\s\S]*\n\s+scopeId\s+String/);
     expect(schema).toMatch(/model AiSession[\s\S]*\n\s+createdByUserId\s+String/);
@@ -375,6 +403,7 @@ describe('prisma schema', () => {
     expect(existsSync('src/db/repositories/notebook.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/project-doc.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/job.repository.ts')).toBe(true);
+    expect(existsSync('src/db/repositories/audit.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/credentials.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/reading.repository.ts')).toBe(true);
     expect(
@@ -417,6 +446,7 @@ describe('prisma schema', () => {
     expect(dbIndex).toContain('createNotebookRepository');
     expect(dbIndex).toContain('createProjectDocRepository');
     expect(dbIndex).toContain('createJobRepository');
+    expect(dbIndex).toContain('createAuditRepository');
     expect(dbIndex).toContain('createCredentialsRepository');
     expect(packageJson.scripts?.['prisma:generate']).toBe('prisma generate');
     expect(packageJson.scripts?.prebuild).toBe('npm run prisma:generate');
@@ -449,6 +479,10 @@ describe('prisma schema', () => {
       'src/db/repositories/job.repository.ts',
       'utf8',
     );
+    const auditRepository = readFileSync(
+      'src/db/repositories/audit.repository.ts',
+      'utf8',
+    );
     const credentialsRepository = readFileSync(
       'src/db/repositories/credentials.repository.ts',
       'utf8',
@@ -460,6 +494,7 @@ describe('prisma schema', () => {
     expect(notebookRepository).not.toContain('@shared/contracts/');
     expect(projectDocRepository).not.toContain('@shared/contracts/');
     expect(jobRepository).not.toContain('@shared/contracts/');
+    expect(auditRepository).not.toContain('@shared/contracts/');
     expect(credentialsRepository).not.toContain('@shared/contracts/');
   });
 
@@ -645,6 +680,10 @@ describe('prisma schema', () => {
     const jobBus = readFileSync('src/server/jobs/job-bus.ts', 'utf8');
     const jobStreamRoutes = readFileSync('src/server/routes/job-stream.routes.ts', 'utf8');
     const auditService = readFileSync('src/server/services/audit.service.ts', 'utf8');
+    const auditRepository = readFileSync(
+      'src/db/repositories/audit.repository.ts',
+      'utf8',
+    );
 
     expect(jobRepository).toContain('createQueuedJobWithAudit');
     expect(jobRepository).toContain('scopeType');
@@ -655,9 +694,12 @@ describe('prisma schema', () => {
     expect(jobRepository).toContain('providerCredential.update');
     expect(jobRepository).toContain('already belongs to another user');
     expect(jobRepository).toContain('jobEvent.create');
-    expect(jobRepository).toContain('auditLog.create');
+    expect(jobRepository).toContain('insertGovernanceAuditRecord');
     expect(jobRepository).not.toContain('JobRepository.getJob is not implemented');
     expect(jobRepository).not.toContain('@shared/contracts/');
+    expect(auditRepository).toContain('auditLog.create');
+    expect(auditRepository).toContain('listAuditRecordsByProject');
+    expect(auditRepository).not.toContain('@shared/contracts/');
 
     expect(appWiring).toContain('createJobRepository');
     expect(appWiring).toContain('jobRepository');
@@ -685,8 +727,11 @@ describe('prisma schema', () => {
     expect(jobBus).not.toContain('persist()');
     expect(jobStreamRoutes).toContain('jobRepository.listJobEvents');
 
-    expect(auditService).toContain('jobRepository.createAuditRecord');
-    expect(auditService).toContain('jobRepository.listAuditRecordsByJob');
+    expect(auditService).toContain('auditRepository.createAuditRecord');
+    expect(auditService).toContain('auditRepository.listAuditRecordsByJob');
+    expect(auditService).toContain('sanitizeAuditMetadata');
+    expect(auditService).not.toContain('jobRepository.createAuditRecord');
+    expect(auditService).not.toContain('jobRepository.listAuditRecordsByJob');
     expect(auditService).not.toContain('store.auditLogs');
   });
 

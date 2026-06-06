@@ -508,12 +508,18 @@ model JobEvent {
 }
 
 model AuditLog {
-  id          String    @id @default(cuid())
+  id           String    @id @default(cuid())
   spaceId      String
+  scopeType    String
+  scopeId      String
+  objectType   String
+  objectId     String
+  projectId    String?
   actorUserId  String
   jobId        String?
   action       String
   detail       String
+  metadataJson String?
   recordedAt   DateTime  @default(now())
   space        Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   actor        User      @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
@@ -521,4 +527,8 @@ model AuditLog {
 
   @@index([jobId])
   @@index([spaceId, actorUserId])
+  @@index([scopeType, scopeId, recordedAt])
+  @@index([objectType, objectId, recordedAt])
+  @@index([projectId, recordedAt])
+  @@index([projectId, objectType, objectId, recordedAt])
 }

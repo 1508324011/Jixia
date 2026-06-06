@@ -570,6 +570,57 @@ function rejectProjectLibraryAdoptionAuthorityQueryFields(
   );
 }
 
+function rejectProjectAuditAuthorityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "createdByUserId"),
+    "createdByUserId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "spaceId"),
+    "spaceId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "projectId"),
+    "projectId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scope"),
+    "scope",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeId"),
+    "scopeId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeType"),
+    "scopeType",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "visibility"),
+    "visibility",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "metadata"),
+    "metadata",
+  );
+
+  for (const fieldName of requestUrl.searchParams.keys()) {
+    if (fieldName !== "objectType" && fieldName !== "objectId") {
+      throw new Error(`${fieldName} is not accepted for project audit queries.`);
+    }
+  }
+}
+
 function rejectReaderExcerptAuthorityQueryFields(
   actor: { userId: string },
   requestUrl: URL,
@@ -2072,6 +2123,30 @@ async function handleApiRequest(
         response,
         200,
         await app.projectWorkspace.getWorkspace(projectId, actor.userId),
+        method,
+      );
+      return true;
+    }
+
+    const projectAuditMatch = pathname.match(
+      /^\/api\/projects\/([^/]+)\/audit$/,
+    );
+    if (projectAuditMatch && method === "GET") {
+      const actor = await getActor(request, {
+        allowLegacyTestOverride: false,
+        sessionRoutes: app.session,
+      });
+      const [, projectId] = projectAuditMatch;
+      rejectProjectAuditAuthorityQueryFields(actor, requestUrl);
+      await app.projects.getProject({ projectId }, actor.userId);
+      sendJson(
+        response,
+        200,
+        await app.audit.listByProject({
+          objectId: optionalQueryParam(requestUrl, "objectId"),
+          objectType: optionalQueryParam(requestUrl, "objectType"),
+          projectId,
+        }),
         method,
       );
       return true;

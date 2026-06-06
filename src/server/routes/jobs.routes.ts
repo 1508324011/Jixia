@@ -107,8 +107,12 @@ export function createJobsRoutes(store: JobsRouteStore): JobsRoutes {
         audit: {
           action: 'job.created',
           actorUserId,
-          detail: `Created ${input.kind} with credential ${credential.credentialRef}.`,
+          detail: `Created ${input.kind} with server-owned provider configuration.`,
           id: createdAuditId,
+          metadata: {
+            jobKind: input.kind,
+            provider: credential.provider,
+          },
           recordedAt: new Date().toISOString(),
         },
         event: {

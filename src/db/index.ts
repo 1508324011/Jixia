@@ -24,6 +24,22 @@ export {
 } from './repositories/ai-workspace.repository';
 
 export {
+  createAuditRepository,
+  initializeAuditPersistence,
+  sanitizePersistedAuditDetail,
+  sanitizePersistedAuditMetadata,
+  type AuditRepository,
+  type CreatePersistedAuditRecordParams,
+  type ListProjectAuditRecordsQuery,
+  type PersistedAuditMetadata,
+  type PersistedAuditMetadataValue,
+  type PersistedAuditObjectRef,
+  type PersistedAuditScopeRef,
+  type PersistedAuditScopeType,
+  type PersistedGovernanceAuditRecord,
+} from './repositories/audit.repository';
+
+export {
   createCredentialsRepository,
   initializeCredentialPersistence,
   type BootstrapLegacyCredentialAuthorityInput,
