@@ -97,9 +97,14 @@ const SAFE_METADATA_KEYS = new Set([
   'objectLabel',
   'provider',
   'publishState',
+  'resultArtifactId',
   'resultCount',
+  'resultKind',
   'sourceCount',
   'sourceType',
+  'targetId',
+  'targetType',
+  'versionId',
   'versionNumber',
 ]);
 

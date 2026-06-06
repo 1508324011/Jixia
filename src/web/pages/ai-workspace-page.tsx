@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+import type {
+  AiResultArtifactRecord,
+} from "@shared/contracts/ai-results";
 import type {
   AiContextPackDetail,
   AiContextPackRecord,
@@ -154,6 +157,11 @@ export function AiWorkspacePage() {
   const [contextSourceProjectDocId, setContextSourceProjectDocId] = useState("");
   const [contextSourceVersionId, setContextSourceVersionId] = useState("");
   const [contextSourceLibraryEntryId, setContextSourceLibraryEntryId] = useState("");
+  const [aiResults, setAiResults] = useState<AiResultArtifactRecord[]>([]);
+  const [selectedAiResultId, setSelectedAiResultId] = useState("");
+  const [applyNotebookDocumentId, setApplyNotebookDocumentId] = useState("");
+  const [applyProjectDocId, setApplyProjectDocId] = useState("");
+  const [aiResultApplyMessage, setAiResultApplyMessage] = useState<string | null>(null);
   const [contextPackInstruction, setContextPackInstruction] = useState(
     "Synthesize these authorized source references for the current workspace.",
   );
@@ -186,6 +194,7 @@ export function AiWorkspacePage() {
         value: `${scope.type}:${scope.id}`,
       }));
   const jobRuntimeHref = createJobRuntimeHref(activeJob, selectedScope);
+  const selectedAiResult = aiResults.find((result) => result.id === selectedAiResultId) ?? null;
 
   const loadAiWorkspaceSessions = useCallback(async () => {
     if (!selectedScope) {
@@ -231,6 +240,24 @@ export function AiWorkspacePage() {
 
     setContextPackDetail(await apiClient.getAiWorkspaceContextPack(contextPackId));
   }, []);
+
+  const loadAiResults = useCallback(async () => {
+    if (!selectedScope) {
+      setAiResults([]);
+      setSelectedAiResultId("");
+      return;
+    }
+
+    const response = await apiClient.listAiResults(scopeToRef(selectedScope));
+    setAiResults(response.results);
+    setSelectedAiResultId((currentResultId) => {
+      if (currentResultId && response.results.some((result) => result.id === currentResultId)) {
+        return currentResultId;
+      }
+
+      return response.results[0]?.id ?? "";
+    });
+  }, [selectedScope]);
 
   useEffect(() => {
     setAiWorkspaceError(null);
@@ -279,6 +306,18 @@ export function AiWorkspacePage() {
       );
     });
   }, [loadContextPackDetail, selectedAiContextPackId]);
+
+  useEffect(() => {
+    void loadAiResults().catch((workspaceError) => {
+      setAiResults([]);
+      setSelectedAiResultId("");
+      setAiWorkspaceError(
+        workspaceError instanceof Error
+          ? workspaceError.message
+          : "Failed to load server-owned AI result artifacts.",
+      );
+    });
+  }, [loadAiResults, jobs.length, activeJob?.status]);
 
   const createAiWorkspaceSession = useCallback(async () => {
     if (!selectedScope) {
@@ -394,6 +433,7 @@ export function AiWorkspacePage() {
 
       await apiClient.runJob(created.job.id);
       await refresh(selectedScopeKey, created.job.id);
+      await loadAiResults();
     } catch (workspaceError) {
       setAiWorkspaceError(
         workspaceError instanceof Error
@@ -403,7 +443,63 @@ export function AiWorkspacePage() {
     } finally {
       setIsAiWorkspaceBusy(false);
     }
-  }, [contextPackInstruction, refresh, selectedAiContextPackId, selectedCredentialRef, selectedScopeKey]);
+  }, [contextPackInstruction, loadAiResults, refresh, selectedAiContextPackId, selectedCredentialRef, selectedScopeKey]);
+
+  const applySelectedAiResultToNotebook = useCallback(async () => {
+    if (!selectedAiResultId || !applyNotebookDocumentId.trim()) {
+      setAiWorkspaceError("Choose an AI result and Notebook document id before applying.");
+      return;
+    }
+
+    try {
+      setIsAiWorkspaceBusy(true);
+      setAiWorkspaceError(null);
+      setAiResultApplyMessage(null);
+      const response = await apiClient.applyAiResultToNotebook(selectedAiResultId, {
+        notebookDocumentId: applyNotebookDocumentId.trim(),
+      });
+      setAiResultApplyMessage(
+        `Applied to Notebook version ${response.snapshot.versionNumber}.`,
+      );
+      await loadAiResults();
+    } catch (workspaceError) {
+      setAiWorkspaceError(
+        workspaceError instanceof Error
+          ? workspaceError.message
+          : "Failed to apply AI result to Notebook.",
+      );
+    } finally {
+      setIsAiWorkspaceBusy(false);
+    }
+  }, [applyNotebookDocumentId, loadAiResults, selectedAiResultId]);
+
+  const applySelectedAiResultToProjectDoc = useCallback(async () => {
+    if (!selectedAiResultId || !applyProjectDocId.trim()) {
+      setAiWorkspaceError("Choose an AI result and Project Doc id before applying.");
+      return;
+    }
+
+    try {
+      setIsAiWorkspaceBusy(true);
+      setAiWorkspaceError(null);
+      setAiResultApplyMessage(null);
+      const response = await apiClient.applyAiResultToProjectDoc(selectedAiResultId, {
+        projectDocId: applyProjectDocId.trim(),
+      });
+      setAiResultApplyMessage(
+        `Applied to Project Doc version ${response.snapshot.versionNumber}.`,
+      );
+      await loadAiResults();
+    } catch (workspaceError) {
+      setAiWorkspaceError(
+        workspaceError instanceof Error
+          ? workspaceError.message
+          : "Failed to apply AI result to Project Doc.",
+      );
+    } finally {
+      setIsAiWorkspaceBusy(false);
+    }
+  }, [applyProjectDocId, loadAiResults, selectedAiResultId]);
 
   return (
     <main className="page-shell">
@@ -488,15 +584,16 @@ export function AiWorkspacePage() {
           className="panel-link"
           type="button"
           onClick={() => void launchContextPackJob()}
-          disabled={
-            isAiWorkspaceBusy ||
-            isRunningJob ||
-            isLoading ||
-            !canCreateJob ||
-            !canLaunchContextPackJob ||
-            setupRequired === "credential" ||
-            setupRequired === "project"
-          }
+            disabled={
+              isAiWorkspaceBusy ||
+              isRunningJob ||
+              isLoading ||
+              !canCreateJob ||
+              !canLaunchContextPackJob ||
+              setupRequired === "credential" ||
+              setupRequired === "space" ||
+              setupRequired === "project"
+            }
         >
           {isAiWorkspaceBusy || isRunningJob
             ? "Launching context-pack AI run…"
@@ -737,6 +834,100 @@ export function AiWorkspacePage() {
           ) : (
             <p className="quiet-copy">No authorized context refs have been attached yet.</p>
           )}
+        </article>
+      </section>
+
+      <section className="panel-grid" aria-label="Server-owned AI results">
+        <article className="panel">
+          <h2 className="panel-title">Server-owned AI result artifacts</h2>
+          <p className="quiet-copy">
+            Completed governed AI output is represented as durable result
+            artifacts with safe provenance. Applying a result is an explicit,
+            versioned action; the browser sends only a target document id.
+          </p>
+          <button
+            className="panel-link"
+            type="button"
+            onClick={() => void loadAiResults()}
+            disabled={isAiWorkspaceBusy}
+          >
+            Refresh AI results
+          </button>
+          <label>
+            AI result artifact
+            <select
+              aria-label="AI result artifact"
+              value={selectedAiResultId}
+              onChange={(event) => setSelectedAiResultId(event.target.value)}
+              disabled={aiResults.length === 0}
+            >
+              {aiResults.length === 0 ? (
+                <option value="">No AI result artifacts yet</option>
+              ) : (
+                aiResults.map((result) => (
+                  <option key={result.id} value={result.id}>
+                    {result.title ?? result.kind} · {result.status} · {result.id}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          {selectedAiResult ? (
+            <div>
+              <p className="quiet-copy">
+                Result {selectedAiResult.id} · job {selectedAiResult.jobId} · scope {selectedAiResult.scope.type}:{selectedAiResult.scope.id}
+              </p>
+              <p className="quiet-copy">
+                Preview: {selectedAiResult.plainTextPreview ?? selectedAiResult.summary ?? "No preview returned."}
+              </p>
+            </div>
+          ) : null}
+        </article>
+
+        <article className="panel">
+          <h2 className="panel-title">Explicit apply boundary</h2>
+          <p className="quiet-copy">
+            Apply controls use existing Notebook and Project Doc save routes on
+            the server. They do not send actor, owner, project scope, status,
+            credential, or raw provider payload fields.
+          </p>
+          <label>
+            Notebook document id
+            <input
+              aria-label="AI result target notebook document id"
+              value={applyNotebookDocumentId}
+              onChange={(event) => setApplyNotebookDocumentId(event.target.value)}
+              placeholder="notebook-document-id"
+            />
+          </label>
+          <button
+            className="panel-link"
+            type="button"
+            onClick={() => void applySelectedAiResultToNotebook()}
+            disabled={!selectedAiResult || selectedAiResult.status !== "draft" || isAiWorkspaceBusy}
+          >
+            Apply selected result to Notebook
+          </button>
+          <label>
+            Project Doc id
+            <input
+              aria-label="AI result target Project Doc id"
+              value={applyProjectDocId}
+              onChange={(event) => setApplyProjectDocId(event.target.value)}
+              placeholder="project-doc-id"
+            />
+          </label>
+          <button
+            className="panel-link"
+            type="button"
+            onClick={() => void applySelectedAiResultToProjectDoc()}
+            disabled={!selectedAiResult || selectedAiResult.status !== "draft" || isAiWorkspaceBusy}
+          >
+            Apply selected result to Project Doc
+          </button>
+          {aiResultApplyMessage ? (
+            <p className="quiet-copy">{aiResultApplyMessage}</p>
+          ) : null}
         </article>
       </section>
 

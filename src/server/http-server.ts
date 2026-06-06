@@ -10,6 +10,11 @@ import { fileURLToPath } from "node:url";
 
 import type { DocumentBlockDocument } from "@shared/contracts/document-content";
 import type {
+  AiResultApplyInsertion,
+  ApplyAiResultToNotebookRequest,
+  ApplyAiResultToProjectDocRequest,
+} from "@shared/contracts/ai-results";
+import type {
   AiContextSourceRef,
   CreateAiContextItemRequest,
   CreateAiContextPackRequest,
@@ -270,6 +275,10 @@ function statusCodeForError(error: unknown): number {
 
   if (/access denied/i.test(error.message)) {
     return 403;
+  }
+
+  if (/already applied/i.test(error.message)) {
+    return 409;
   }
 
   return 400;
@@ -1386,6 +1395,165 @@ function rejectAiWorkspaceAuthorityBodyFields(
   }
 }
 
+function rejectAiResultAuthorityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "createdByUserId"),
+    "createdByUserId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "spaceId"),
+    "spaceId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scope"),
+    "scope",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeId"),
+    "scopeId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeType"),
+    "scopeType",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "projectId"),
+    "projectId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "visibility"),
+    "visibility",
+  );
+}
+
+function rejectAiResultAuthorityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+  assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
+  assertNoClientActorContextField(body.spaceId, "spaceId");
+  assertNoClientActorContextField(body.scope, "scope");
+  assertNoClientActorContextField(body.scopeId, "scopeId");
+  assertNoClientActorContextField(body.scopeType, "scopeType");
+  assertNoClientActorContextField(body.projectId, "projectId");
+  assertNoClientActorContextField(body.visibility, "visibility");
+  assertNoClientActorContextField(body.status, "status");
+  assertNoClientActorContextField(body.credentialRef, "credentialRef");
+  assertNoClientActorContextField(body.rawProviderPayload, "rawProviderPayload");
+  assertNoClientActorContextField(body.rawJobPayload, "rawJobPayload");
+
+  const insertion = body.insertion;
+  if (insertion && typeof insertion === "object" && !Array.isArray(insertion)) {
+    const insertionRecord = insertion as Record<string, unknown>;
+
+    assertNoClientActorIdentityField(actor, insertionRecord.actorUserId, "insertion.actorUserId");
+    assertNoClientActorIdentityField(actor, insertionRecord.ownerId, "insertion.ownerId");
+    assertNoClientActorIdentityField(actor, insertionRecord.createdByUserId, "insertion.createdByUserId");
+    assertNoClientActorContextField(insertionRecord.spaceId, "insertion.spaceId");
+    assertNoClientActorContextField(insertionRecord.scope, "insertion.scope");
+    assertNoClientActorContextField(insertionRecord.scopeId, "insertion.scopeId");
+    assertNoClientActorContextField(insertionRecord.scopeType, "insertion.scopeType");
+    assertNoClientActorContextField(insertionRecord.projectId, "insertion.projectId");
+    assertNoClientActorContextField(insertionRecord.visibility, "insertion.visibility");
+  }
+}
+
+function parseAiResultInsertion(value: unknown): AiResultApplyInsertion | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("AI result insertion must be a JSON object when provided.");
+  }
+
+  const insertion = value as Record<string, unknown>;
+  const mode = insertion.mode;
+  assertAllowedJsonFields(
+    insertion,
+    new Set(["mode", "targetBlockId"]),
+    "AI result insertion",
+  );
+
+  if (
+    typeof mode !== "undefined" &&
+    mode !== "append" &&
+    mode !== "replace"
+  ) {
+    throw new Error("insertion.mode must be append or replace when provided.");
+  }
+
+  return {
+    mode: mode === "append" || mode === "replace" ? mode : undefined,
+    targetBlockId: assertOptionalStringField(
+      insertion.targetBlockId,
+      "insertion.targetBlockId",
+    ),
+  };
+}
+
+function parseApplyAiResultToNotebookBody(
+  requestBody: unknown,
+): ApplyAiResultToNotebookRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("AI result Notebook apply payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  assertAllowedJsonFields(
+    body,
+    new Set(["notebookDocumentId", "insertion"]),
+    "AI result Notebook apply payload",
+  );
+
+  return {
+    insertion: parseAiResultInsertion(body.insertion),
+    notebookDocumentId: assertStringField(
+      body.notebookDocumentId,
+      "notebookDocumentId",
+    ),
+  };
+}
+
+function parseApplyAiResultToProjectDocBody(
+  requestBody: unknown,
+): ApplyAiResultToProjectDocRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("AI result Project Doc apply payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  assertAllowedJsonFields(
+    body,
+    new Set(["projectDocId", "insertion"]),
+    "AI result Project Doc apply payload",
+  );
+
+  return {
+    insertion: parseAiResultInsertion(body.insertion),
+    projectDocId: assertStringField(body.projectDocId, "projectDocId"),
+  };
+}
+
 function assertAllowedJsonFields(
   body: Record<string, unknown>,
   allowedFields: Set<string>,
@@ -1972,6 +2140,106 @@ async function handleApiRequest(
         response,
         200,
         await app.aiWorkspace.createJob(body, actor.userId),
+        method,
+      );
+      return true;
+    }
+
+    if (pathname === "/api/ai-results" && method === "GET") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      rejectAiResultAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.aiResults.listArtifacts({ actorUserId: actor.userId }),
+        method,
+      );
+      return true;
+    }
+
+    const projectAiResultsMatch = pathname.match(
+      /^\/api\/projects\/([^/]+)\/ai-results$/,
+    );
+    if (projectAiResultsMatch && method === "GET") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      const [, encodedProjectId] = projectAiResultsMatch;
+      const projectId = decodePathSegment(encodedProjectId);
+      rejectAiResultAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.aiResults.listArtifacts({
+          actorUserId: actor.userId,
+          scope: { id: projectId, type: "project" },
+        }),
+        method,
+      );
+      return true;
+    }
+
+    const aiResultMatch = pathname.match(/^\/api\/ai-results\/([^/]+)$/);
+    if (aiResultMatch && method === "GET") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      const [, encodedResultId] = aiResultMatch;
+      rejectAiResultAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.aiResults.getArtifact(
+          decodePathSegment(encodedResultId),
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    const aiResultNotebookApplyMatch = pathname.match(
+      /^\/api\/ai-results\/([^/]+)\/apply\/notebook$/,
+    );
+    if (aiResultNotebookApplyMatch && method === "POST") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      const [, encodedResultId] = aiResultNotebookApplyMatch;
+      rejectAiResultAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectAiResultAuthorityBodyFields(actor, requestBody);
+      const body = parseApplyAiResultToNotebookBody(requestBody);
+
+      sendJson(
+        response,
+        200,
+        await app.aiResults.applyToNotebook(
+          decodePathSegment(encodedResultId),
+          body,
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    const aiResultProjectDocApplyMatch = pathname.match(
+      /^\/api\/ai-results\/([^/]+)\/apply\/project-doc$/,
+    );
+    if (aiResultProjectDocApplyMatch && method === "POST") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      const [, encodedResultId] = aiResultProjectDocApplyMatch;
+      rejectAiResultAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectAiResultAuthorityBodyFields(actor, requestBody);
+      const body = parseApplyAiResultToProjectDocBody(requestBody);
+
+      sendJson(
+        response,
+        200,
+        await app.aiResults.applyToProjectDoc(
+          decodePathSegment(encodedResultId),
+          body,
+          actor.userId,
+        ),
         method,
       );
       return true;

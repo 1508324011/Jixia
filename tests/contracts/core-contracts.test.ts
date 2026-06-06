@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import * as aiWorkspace from '../../src/shared/contracts/ai-workspace';
+import * as aiResults from '../../src/shared/contracts/ai-results';
 import * as audit from '../../src/shared/contracts/audit';
 import * as commandSearch from '../../src/shared/contracts/command-search';
 import * as jobs from '../../src/shared/contracts/jobs';
@@ -19,6 +20,12 @@ import * as writing from '../../src/shared/contracts/writing';
 import type {
   GovernanceAuditRecord,
 } from '../../src/shared/contracts/audit';
+import type {
+  AiResultAppliedTarget,
+  AiResultArtifactRecord,
+  ApplyAiResultToNotebookRequest,
+  ListAiResultArtifactsResponse,
+} from '../../src/shared/contracts/ai-results';
 import type {
   AiContextPackDetail,
   AiContextSourceRef,
@@ -125,6 +132,69 @@ import type {
 } from '../../src/shared/contracts/today-continuation';
 
 describe('core contracts', () => {
+  it('exports server-owned AI result artifact contracts without browser authority fields', () => {
+    expect(aiResults.aiResultsContract).toBe('jixia-ai-results-contract-v1');
+
+    const appliedTarget: AiResultAppliedTarget = {
+      notebookDocumentId: 'notebook-document_001',
+      notebookVersionId: 'notebook-version_001',
+      notebookVersionNumber: 2,
+      type: 'notebookDocument',
+    };
+    const result: AiResultArtifactRecord = {
+      appliedAt: '2026-06-06T00:10:00.000Z',
+      appliedTarget,
+      createdAt: '2026-06-06T00:00:00.000Z',
+      createdByUserId: 'user-alice',
+      documentContent: {
+        blocks: [{ text: 'Server-owned AI result draft.', type: 'paragraph' }],
+        schemaVersion: 1,
+      },
+      id: 'ai-result_001',
+      jobId: 'job_001',
+      kind: 'ai-workspace.context-pack',
+      plainTextPreview: 'Server-owned AI result draft.',
+      provenance: {
+        contextPackId: 'context-pack_001',
+        generatedInsightIds: ['generated-insight_001'],
+        projectDocCitationIds: ['project-doc-citation_001'],
+        projectDocVersionIds: ['project-doc-version_001'],
+        projectLibraryEntryIds: ['library-entry_001'],
+        readerExcerptIds: ['reader-excerpt_001'],
+      },
+      scope: { id: 'project_001', type: 'project' },
+      status: 'applied',
+      summary: 'Safe bounded result summary.',
+      title: 'Evidence-linked draft',
+      updatedAt: '2026-06-06T00:10:00.000Z',
+    };
+    const listResponse: ListAiResultArtifactsResponse = {
+      contract: aiResults.aiResultsContract,
+      results: [result],
+      scope: { id: 'project_001', type: 'project' },
+    };
+    const applyRequest: ApplyAiResultToNotebookRequest = {
+      insertion: { mode: 'append', targetBlockId: 'block_001' },
+      notebookDocumentId: 'notebook-document_001',
+    };
+
+    expect(listResponse.results[0]?.provenance.contextPackId).toBe('context-pack_001');
+    expect(applyRequest).toEqual({
+      insertion: { mode: 'append', targetBlockId: 'block_001' },
+      notebookDocumentId: 'notebook-document_001',
+    });
+    expect(JSON.stringify({ applyRequest, listResponse })).not.toMatch(
+      /credentialRef|rawSecret|apiKey|password|token|storageKey|checksum|rawProviderPayload|rawJobPayload|payload|ownerId|scopeId|scopeType|spaceId|visibility/i,
+    );
+    expectTypeOf<ApplyAiResultToNotebookRequest>().toEqualTypeOf<{
+      insertion?: {
+        mode?: 'append' | 'replace';
+        targetBlockId?: string;
+      };
+      notebookDocumentId: string;
+    }>();
+  });
+
   it('exports AI Workspace context pack contracts as source refs instead of raw context', () => {
     expect(aiWorkspace.aiWorkspaceContract).toBe('jixia-ai-workspace-context-packs-v1');
     expect(aiWorkspace.AI_WORKSPACE_JOB_KIND).toBe('ai-workspace.context-pack');

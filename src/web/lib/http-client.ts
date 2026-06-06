@@ -1,5 +1,13 @@
 import type { CredentialRecord } from "@shared/contracts/credentials";
 import type {
+  ApplyAiResultToNotebookRequest,
+  ApplyAiResultToNotebookResponse,
+  ApplyAiResultToProjectDocRequest,
+  ApplyAiResultToProjectDocResponse,
+  GetAiResultResponse,
+  ListAiResultArtifactsResponse,
+} from "@shared/contracts/ai-results";
+import type {
   AiContextItemRecord,
   AiContextPackDetail,
   AiContextPackRecord,
@@ -462,6 +470,34 @@ export const apiClient = {
       : "/api/ai-workspace/sessions";
 
     return requestJson(path, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  listAiResults(scope?: ScopeRef): Promise<ListAiResultArtifactsResponse> {
+    if (scope?.type === "project") {
+      return requestJson(`/api/projects/${scope.id}/ai-results`);
+    }
+
+    return requestJson("/api/ai-results");
+  },
+  getAiResult(resultId: string): Promise<GetAiResultResponse> {
+    return requestJson(`/api/ai-results/${resultId}`);
+  },
+  applyAiResultToNotebook(
+    resultId: string,
+    input: ApplyAiResultToNotebookRequest,
+  ): Promise<ApplyAiResultToNotebookResponse> {
+    return requestJson(`/api/ai-results/${resultId}/apply/notebook`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  applyAiResultToProjectDoc(
+    resultId: string,
+    input: ApplyAiResultToProjectDocRequest,
+  ): Promise<ApplyAiResultToProjectDocResponse> {
+    return requestJson(`/api/ai-results/${resultId}/apply/project-doc`, {
       body: JSON.stringify(input),
       method: "POST",
     });

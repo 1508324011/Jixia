@@ -74,6 +74,14 @@ describe('AI Workspace page', () => {
         return jsonResponse([]);
       }
 
+      if (requestUrl.endsWith('/api/ai-results')) {
+        return jsonResponse({
+          contract: 'jixia-ai-results-contract-v1',
+          results: [],
+          scope: { id: 'user-alice', type: 'user' },
+        });
+      }
+
       if (requestUrl.endsWith('/api/ai-workspace/sessions')) {
         return jsonResponse({
           contract: 'jixia-ai-workspace-context-packs-v1',
@@ -102,6 +110,174 @@ describe('AI Workspace page', () => {
     expect(screen.queryByRole('button', { name: /Send message/i })).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/Ask anything/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/API Key/i)).not.toBeInTheDocument();
+  });
+
+  it('applies server-owned AI result artifacts with actor-free target payloads', async () => {
+    const user = userEvent.setup();
+    let notebookApplyBody: Record<string, unknown> | null = null;
+    let projectDocApplyBody: Record<string, unknown> | null = null;
+    const createdAt = '2026-06-06T00:00:00.000Z';
+    const aiResults = [
+      {
+        createdAt,
+        createdByUserId: 'user-alice',
+        id: 'result-notebook',
+        jobId: 'job-result-notebook',
+        kind: 'ai.summary',
+        plainTextPreview: 'Notebook-ready server-owned draft.',
+        provenance: { contextPackId: 'context-pack-notebook' },
+        scope: { id: 'user-alice', type: 'user' as const },
+        status: 'draft' as const,
+        title: 'Notebook draft',
+        updatedAt: createdAt,
+      },
+      {
+        createdAt,
+        createdByUserId: 'user-alice',
+        id: 'result-project-doc',
+        jobId: 'job-result-project-doc',
+        kind: 'ai.project-summary',
+        plainTextPreview: 'Project Doc-ready server-owned draft.',
+        provenance: { contextPackId: 'context-pack-project-doc' },
+        scope: { id: 'user-alice', type: 'user' as const },
+        status: 'draft' as const,
+        title: 'Project Doc draft',
+        updatedAt: createdAt,
+      },
+    ];
+
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const requestUrl = requestUrlFrom(input);
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/spaces')) {
+        return jsonResponse([
+          {
+            createdAt,
+            id: 'space-personal-alice',
+            kind: 'personal',
+            name: 'Alice Personal Space',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/projects')) {
+        return jsonResponse([]);
+      }
+
+      if (requestUrl.endsWith('/api/credentials')) {
+        return jsonResponse([]);
+      }
+
+      if (requestUrl.includes('/api/jobs?')) {
+        return jsonResponse([]);
+      }
+
+      if (requestUrl.endsWith('/api/ai-workspace/sessions')) {
+        return jsonResponse({
+          contract: 'jixia-ai-workspace-context-packs-v1',
+          sessions: [],
+        });
+      }
+
+      if (requestUrl.endsWith('/api/ai-results') && init?.method !== 'POST') {
+        return jsonResponse({
+          contract: 'jixia-ai-results-contract-v1',
+          results: aiResults,
+          scope: { id: 'user-alice', type: 'user' },
+        });
+      }
+
+      if (
+        requestUrl.endsWith('/api/ai-results/result-notebook/apply/notebook') &&
+        init?.method === 'POST'
+      ) {
+        notebookApplyBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+        expect(init.credentials).toBe('same-origin');
+        expect(JSON.stringify(notebookApplyBody)).not.toMatch(
+          /actorUserId|requestedByUserId|authorUserId|startedByUserId|actorSpaceId|ownerId|createdByUserId|scope|scopeId|scopeType|spaceId|projectId|visibility|status|credentialRef|rawProviderPayload|rawJobPayload|documentContent|content|body|storageKey|checksum/i,
+        );
+
+        return jsonResponse({
+          appliedTarget: {
+            notebookDocumentId: 'notebook-target',
+            notebookVersionId: 'notebook-version-2',
+            notebookVersionNumber: 2,
+            type: 'notebookDocument',
+          },
+          contract: 'jixia-ai-results-contract-v1',
+          result: { ...aiResults[0], status: 'applied' },
+          snapshot: {
+            citations: [],
+            content: 'Notebook-ready server-owned draft.',
+            document: { id: 'notebook-target', ownerId: 'user-alice', title: 'Notebook target' },
+            documentContent: { blocks: [], schemaVersion: 1 },
+            versionId: 'notebook-version-2',
+            versionNumber: 2,
+          },
+        });
+      }
+
+      if (
+        requestUrl.endsWith('/api/ai-results/result-project-doc/apply/project-doc') &&
+        init?.method === 'POST'
+      ) {
+        projectDocApplyBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+        expect(init.credentials).toBe('same-origin');
+        expect(JSON.stringify(projectDocApplyBody)).not.toMatch(
+          /actorUserId|requestedByUserId|authorUserId|startedByUserId|actorSpaceId|ownerId|createdByUserId|scope|scopeId|scopeType|spaceId|projectId|visibility|status|credentialRef|rawProviderPayload|rawJobPayload|documentContent|content|body|storageKey|checksum/i,
+        );
+
+        return jsonResponse({
+          appliedTarget: {
+            projectDocId: 'project-doc-target',
+            projectDocVersionId: 'project-doc-version-5',
+            projectDocVersionNumber: 5,
+            projectId: 'project-alpha',
+            type: 'projectDoc',
+          },
+          contract: 'jixia-ai-results-contract-v1',
+          result: { ...aiResults[1], status: 'applied' },
+          snapshot: {
+            citations: [],
+            content: 'Project Doc-ready server-owned draft.',
+            document: { id: 'project-doc-target', projectId: 'project-alpha', title: 'Project target' },
+            documentContent: { blocks: [], schemaVersion: 1 },
+            versionId: 'project-doc-version-5',
+            versionNumber: 5,
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench();
+
+    expect(await screen.findByRole('heading', { name: 'Server-owned AI result artifacts' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: /Notebook draft · draft · result-notebook/ })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('AI result target notebook document id'), 'notebook-target');
+    await user.click(screen.getByRole('button', { name: 'Apply selected result to Notebook' }));
+    await waitFor(() => expect(notebookApplyBody).toEqual({ notebookDocumentId: 'notebook-target' }));
+    expect(await screen.findByText('Applied to Notebook version 2.')).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('AI result artifact'), 'result-project-doc');
+    await user.type(screen.getByLabelText('AI result target Project Doc id'), 'project-doc-target');
+    await user.click(screen.getByRole('button', { name: 'Apply selected result to Project Doc' }));
+    await waitFor(() => expect(projectDocApplyBody).toEqual({ projectDocId: 'project-doc-target' }));
+    expect(await screen.findByText('Applied to Project Doc version 5.')).toBeInTheDocument();
   });
 
   it('launches a governed project AI run through context-pack refs only', async () => {
@@ -237,6 +413,22 @@ describe('AI Workspace page', () => {
         }
 
         return jsonResponse([]);
+      }
+
+      if (requestUrl.endsWith('/api/ai-results')) {
+        return jsonResponse({
+          contract: 'jixia-ai-results-contract-v1',
+          results: [],
+          scope: { id: 'user-alice', type: 'user' },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/projects/project-alpha/ai-results')) {
+        return jsonResponse({
+          contract: 'jixia-ai-results-contract-v1',
+          results: [],
+          scope: { id: 'project-alpha', type: 'project' },
+        });
       }
 
       if (requestUrl.endsWith('/api/ai-workspace/jobs') && init?.method === 'POST') {
@@ -413,6 +605,14 @@ describe('AI Workspace page', () => {
             status: cancelRequested ? 'cancelled' : 'queued',
           },
         ]);
+      }
+
+      if (requestUrl.endsWith('/api/ai-results')) {
+        return jsonResponse({
+          contract: 'jixia-ai-results-contract-v1',
+          results: [],
+          scope: { id: 'user-alice', type: 'user' },
+        });
       }
 
       if (requestUrl.endsWith('/api/ai-workspace/sessions')) {
