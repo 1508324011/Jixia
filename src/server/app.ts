@@ -10,6 +10,7 @@ import type {
 
 import {
   createPrismaClient,
+  createAuditRepository,
   createAiWorkspaceRepository,
   createCredentialsRepository,
   createJobRepository,
@@ -24,6 +25,7 @@ import {
   type BootstrapLegacyCredentialAuthorityInput,
   type BootstrapLegacyLibraryInput,
   type CredentialsRepository,
+  type AuditRepository,
   type JobRepository,
   type LegacyCredentialBootstrapInput,
   type LegacyWorkbenchSettingsBootstrapInput,
@@ -111,6 +113,7 @@ import { createSessionService } from './services/session.service';
 import { createAiWorkspaceService } from './services/ai-workspace.service';
 import { createSecretBox, hasSecretBoxKey } from './security/secret-box';
 import { createAuditService } from './services/audit.service';
+import type { AuditService } from './services/audit.service';
 import { createImportService } from './services/import.service';
 import { createHomeCockpitService } from './services/home-cockpit.service';
 import { createTodayContinuationService } from './services/today-continuation.service';
@@ -230,6 +233,7 @@ interface LegacyStoredLibraryEntry {
 
 export interface JixiaApp {
   aiWorkspace: AiWorkspaceRoutes;
+  audit: AuditService;
   close(): Promise<void>;
   commandSearch: CommandSearchService;
   credentials: CredentialsRoutes;
@@ -747,6 +751,29 @@ function createCredentialAuthorityBootstrappedJobRepository(
   };
 }
 
+function createCredentialAuthorityBootstrappedAuditRepository(
+  repository: AuditRepository,
+  ensureBootstrapped: () => Promise<void>,
+): AuditRepository {
+  return {
+    async createAuditRecord(input) {
+      await ensureBootstrapped();
+
+      return repository.createAuditRecord(input);
+    },
+    async listAuditRecordsByJob(jobId) {
+      await ensureBootstrapped();
+
+      return repository.listAuditRecordsByJob(jobId);
+    },
+    async listAuditRecordsByProject(query) {
+      await ensureBootstrapped();
+
+      return repository.listAuditRecordsByProject(query);
+    },
+  };
+}
+
 async function ensureCredentialAuthorityUsable(
   repository: CredentialsRepository,
   env: JixiaAppEnv | undefined,
@@ -892,6 +919,10 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     credentialsRepository,
     ensureCredentialAuthorityBootstrap,
     options.env,
+  );
+  const auditRepository = createCredentialAuthorityBootstrappedAuditRepository(
+    createAuditRepository(prismaClient),
+    ensureCredentialAuthorityBootstrap,
   );
   const libraryBootstrapMarkerPath = resolveLibraryBootstrapMarkerPath(options.env);
   const libraryBootstrapMarkerExists = existsSync(libraryBootstrapMarkerPath);
@@ -1062,7 +1093,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const sessionRoutes = createSessionRoutes(sessionService);
   const auditService = createAuditService({
-    jobRepository,
+    auditRepository,
     nextId: createRuntimeId,
   });
   const jobBus = createJobBus();
@@ -1124,6 +1155,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       return closePromise;
     },
     aiWorkspace: aiWorkspaceRoutes,
+    audit: auditService,
     commandSearch: commandSearchService,
     credentials: credentialsRoutes,
     health: createHealthRoutes(),

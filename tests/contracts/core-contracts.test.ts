@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import * as aiWorkspace from '../../src/shared/contracts/ai-workspace';
+import * as audit from '../../src/shared/contracts/audit';
 import * as commandSearch from '../../src/shared/contracts/command-search';
 import * as jobs from '../../src/shared/contracts/jobs';
 import * as library from '../../src/shared/contracts/library';
@@ -15,6 +16,9 @@ import * as spaces from '../../src/shared/contracts/spaces';
 import * as todayContinuation from '../../src/shared/contracts/today-continuation';
 import * as writing from '../../src/shared/contracts/writing';
 
+import type {
+  GovernanceAuditRecord,
+} from '../../src/shared/contracts/audit';
 import type {
   AiContextPackDetail,
   AiContextSourceRef,
@@ -1476,6 +1480,37 @@ describe('core contracts', () => {
 
     expectTypeOf<JobStatus>().toEqualTypeOf<
       'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+    >();
+  });
+
+  it('exports generic governance audit payloads without authority or secret fields', () => {
+    expect(audit.auditContract).toBe('jixia-governance-audit-v1');
+
+    const record: GovernanceAuditRecord = {
+      action: 'job.created',
+      actorUserId: 'user_001',
+      detail: 'Created reading_summary with server-owned provider configuration.',
+      id: 'audit_001',
+      jobId: 'job_001',
+      metadata: {
+        jobKind: 'reading_summary',
+        provider: 'openai',
+      },
+      object: { id: 'job_001', type: 'job' },
+      projectId: 'project_001',
+      recordedAt: '2026-06-06T00:00:00.000Z',
+      scope: { id: 'project_001', type: 'project' },
+      spaceId: 'space_001',
+    };
+
+    expect(record.scope).toEqual({ id: 'project_001', type: 'project' });
+    expect(record.object).toEqual({ id: 'job_001', type: 'job' });
+    expect(record.metadata?.provider).toBe('openai');
+    expect(JSON.stringify(record)).not.toMatch(
+      /rawSecret|apiKey|token|encryptedSecret|storageKey|checksum|payload|snapshot|content|body|cred-/i,
+    );
+    expectTypeOf<GovernanceAuditRecord['metadata']>().toMatchTypeOf<
+      Record<string, string | number | boolean | null> | undefined
     >();
   });
 
