@@ -2120,10 +2120,13 @@ describe('http server actor boundary cleanup', () => {
         expect(createdSpace.status).toBe(200);
 
         const conflictResponse = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'Conflicting Legacy Override' }),
           headers: {
             Authorization: 'Bearer user-bob',
+            'Content-Type': 'application/json',
             'x-jixia-actor': ' user-alice ',
           },
+          method: 'POST',
         });
 
         expect(conflictResponse.status).toBe(400);

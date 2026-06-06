@@ -9,6 +9,13 @@ import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { DocumentBlockDocument } from "@shared/contracts/document-content";
+import type {
+  AiContextSourceRef,
+  CreateAiContextItemRequest,
+  CreateAiContextPackRequest,
+  CreateAiWorkspaceJobRequest,
+  CreateAiWorkspaceSessionRequest,
+} from "@shared/contracts/ai-workspace";
 import type { NotebookEvidenceCaptureSource } from "@shared/contracts/notebook";
 import type { LoginSessionRequest } from "@shared/contracts/session";
 import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
@@ -1246,6 +1253,244 @@ function parseAdoptProjectLibraryEntryBody(
   };
 }
 
+function rejectAiWorkspaceAuthorityQueryFields(
+  actor: { userId: string },
+  requestUrl: URL,
+): void {
+  rejectLegacyIdentityQueryFields(actor, requestUrl);
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
+  );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "createdByUserId"),
+    "createdByUserId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "spaceId"),
+    "spaceId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scope"),
+    "scope",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeId"),
+    "scopeId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "scopeType"),
+    "scopeType",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "projectId"),
+    "projectId",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "visibility"),
+    "visibility",
+  );
+}
+
+function rejectAiWorkspaceAuthorityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+  assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
+  assertNoClientActorContextField(body.spaceId, "spaceId");
+  assertNoClientActorContextField(body.scope, "scope");
+  assertNoClientActorContextField(body.scopeId, "scopeId");
+  assertNoClientActorContextField(body.scopeType, "scopeType");
+  assertNoClientActorContextField(body.projectId, "projectId");
+  assertNoClientActorContextField(body.visibility, "visibility");
+
+  if (body.source && typeof body.source === "object" && !Array.isArray(body.source)) {
+    const source = body.source as Record<string, unknown>;
+
+    assertNoClientActorIdentityField(actor, source.actorUserId, "source.actorUserId");
+    assertNoClientActorIdentityField(actor, source.requestedByUserId, "source.requestedByUserId");
+    assertNoClientActorIdentityField(actor, source.userId, "source.userId");
+    assertNoClientActorIdentityField(actor, source.authorUserId, "source.authorUserId");
+    assertNoClientActorIdentityField(actor, source.startedByUserId, "source.startedByUserId");
+    assertNoClientActorIdentityField(actor, source.ownerId, "source.ownerId");
+    assertNoClientActorIdentityField(actor, source.createdByUserId, "source.createdByUserId");
+    assertNoClientActorContextField(source.actorSpaceId, "source.actorSpaceId");
+    assertNoClientActorContextField(source.spaceId, "source.spaceId");
+    assertNoClientActorContextField(source.scope, "source.scope");
+    assertNoClientActorContextField(source.scopeId, "source.scopeId");
+    assertNoClientActorContextField(source.scopeType, "source.scopeType");
+    assertNoClientActorContextField(source.projectId, "source.projectId");
+    assertNoClientActorContextField(source.visibility, "source.visibility");
+  }
+}
+
+function assertAllowedJsonFields(
+  body: Record<string, unknown>,
+  allowedFields: Set<string>,
+  label: string,
+): void {
+  for (const fieldName of Object.keys(body)) {
+    if (!allowedFields.has(fieldName)) {
+      throw new Error(`${label}.${fieldName} is not accepted.`);
+    }
+  }
+}
+
+function parseAiWorkspaceSessionBody(
+  requestBody: unknown,
+): CreateAiWorkspaceSessionRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("AI Workspace session payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  assertAllowedJsonFields(body, new Set(["title"]), "AI Workspace session payload");
+
+  return {
+    title: assertOptionalStringField(body.title, "title"),
+  };
+}
+
+function parseAiWorkspaceContextPackBody(
+  requestBody: unknown,
+): CreateAiContextPackRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("AI Workspace context pack payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  assertAllowedJsonFields(body, new Set(["title"]), "AI Workspace context pack payload");
+
+  return {
+    title: assertOptionalStringField(body.title, "title"),
+  };
+}
+
+function parseAiWorkspaceContextSource(
+  value: unknown,
+): AiContextSourceRef {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("AI Workspace context item source must be a JSON object.");
+  }
+
+  const source = value as Record<string, unknown>;
+
+  switch (source.sourceType) {
+    case "generatedInsight":
+      assertAllowedJsonFields(
+        source,
+        new Set(["generatedInsightId", "libraryEntryId", "sourceType"]),
+        "AI Workspace context item source",
+      );
+      return {
+        generatedInsightId: assertStringField(
+          source.generatedInsightId,
+          "source.generatedInsightId",
+        ),
+        libraryEntryId: assertStringField(source.libraryEntryId, "source.libraryEntryId"),
+        sourceType: "generatedInsight",
+      };
+    case "projectDocCitation":
+      assertAllowedJsonFields(
+        source,
+        new Set(["citationId", "projectDocId", "projectDocVersionId", "sourceType"]),
+        "AI Workspace context item source",
+      );
+      return {
+        citationId: assertStringField(source.citationId, "source.citationId"),
+        projectDocId: assertStringField(source.projectDocId, "source.projectDocId"),
+        projectDocVersionId: assertOptionalStringField(
+          source.projectDocVersionId,
+          "source.projectDocVersionId",
+        ),
+        sourceType: "projectDocCitation",
+      };
+    case "projectDocVersion":
+      assertAllowedJsonFields(
+        source,
+        new Set(["projectDocId", "projectDocVersionId", "sourceType"]),
+        "AI Workspace context item source",
+      );
+      return {
+        projectDocId: assertStringField(source.projectDocId, "source.projectDocId"),
+        projectDocVersionId: assertStringField(
+          source.projectDocVersionId,
+          "source.projectDocVersionId",
+        ),
+        sourceType: "projectDocVersion",
+      };
+    case "projectLibraryEntry":
+      assertAllowedJsonFields(
+        source,
+        new Set(["libraryEntryId", "sourceType"]),
+        "AI Workspace context item source",
+      );
+      return {
+        libraryEntryId: assertStringField(source.libraryEntryId, "source.libraryEntryId"),
+        sourceType: "projectLibraryEntry",
+      };
+    case "readerExcerpt":
+      assertAllowedJsonFields(
+        source,
+        new Set(["readerExcerptId", "sourceType"]),
+        "AI Workspace context item source",
+      );
+      return {
+        readerExcerptId: assertStringField(source.readerExcerptId, "source.readerExcerptId"),
+        sourceType: "readerExcerpt",
+      };
+    default:
+      throw new Error("AI Workspace context source type is not supported.");
+  }
+}
+
+function parseAiWorkspaceContextItemBody(
+  requestBody: unknown,
+): CreateAiContextItemRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("AI Workspace context item payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  assertAllowedJsonFields(body, new Set(["source"]), "AI Workspace context item payload");
+
+  return {
+    source: parseAiWorkspaceContextSource(body.source),
+  };
+}
+
+function parseAiWorkspaceJobBody(
+  requestBody: unknown,
+): CreateAiWorkspaceJobRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("AI Workspace job payload must be a JSON object.");
+  }
+
+  const body = requestBody as Record<string, unknown>;
+  assertAllowedJsonFields(
+    body,
+    new Set(["contextPackId", "credentialRef", "instruction"]),
+    "AI Workspace job payload",
+  );
+
+  return {
+    contextPackId: assertStringField(body.contextPackId, "contextPackId"),
+    credentialRef: assertStringField(body.credentialRef, "credentialRef"),
+    instruction: assertOptionalTextField(body.instruction, "instruction"),
+  };
+}
+
 function rejectLegacyActorSpaceContextField(requestUrl: URL): void {
   assertNoClientActorContextField(
     optionalQueryParam(requestUrl, "actorSpaceId"),
@@ -1314,6 +1559,10 @@ async function handleApiRequest(
   const pathname = requestUrl.pathname;
   const actorOptions = {
     allowLegacyTestOverride: allowLegacyActorOverride,
+    sessionRoutes: app.session,
+  };
+  const strictSessionActorOptions = {
+    allowLegacyTestOverride: false,
     sessionRoutes: app.session,
   };
 
@@ -1398,7 +1647,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/spaces" && method === "GET") {
-      const actor = await getActor(request, actorOptions);
+      const actor = await getActor(request, strictSessionActorOptions);
       rejectLegacyIdentityQueryFields(actor, requestUrl);
       sendJson(
         response,
@@ -1410,7 +1659,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/home-cockpit" && method === "GET") {
-      const actor = await getActor(request, actorOptions);
+      const actor = await getActor(request, strictSessionActorOptions);
       rejectLegacyIdentityQueryFields(actor, requestUrl);
 
       const sessionToken = readSessionTokenFromCookieHeader(
@@ -1438,7 +1687,7 @@ async function handleApiRequest(
     }
 
     if (pathname === "/api/today/continuation" && method === "GET") {
-      const actor = await getActor(request, actorOptions);
+      const actor = await getActor(request, strictSessionActorOptions);
       rejectTodayContinuationAuthorityQueryFields(actor, requestUrl);
 
       const sessionToken = readSessionTokenFromCookieHeader(
@@ -1484,6 +1733,194 @@ async function handleApiRequest(
           projectId: optionalQueryParam(requestUrl, "projectId"),
           query: optionalQueryParam(requestUrl, "query") ?? "",
         }),
+        method,
+      );
+      return true;
+    }
+
+    if (pathname === "/api/ai-workspace/sessions" && method === "GET") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      rejectAiWorkspaceAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.aiWorkspace.listSessions(
+          { id: actor.userId, type: "user" },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    if (pathname === "/api/ai-workspace/sessions" && method === "POST") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      rejectAiWorkspaceAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectAiWorkspaceAuthorityBodyFields(actor, requestBody);
+      const body = parseAiWorkspaceSessionBody(requestBody);
+
+      sendJson(
+        response,
+        201,
+        await app.aiWorkspace.createSession(
+          {
+            scope: { id: actor.userId, type: "user" },
+            title: body.title,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    const aiWorkspaceProjectSessionsMatch = pathname.match(
+      /^\/api\/ai-workspace\/projects\/([^/]+)\/sessions$/,
+    );
+    if (aiWorkspaceProjectSessionsMatch && method === "GET") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      const [, encodedProjectId] = aiWorkspaceProjectSessionsMatch;
+      const projectId = decodePathSegment(encodedProjectId);
+      rejectAiWorkspaceAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.aiWorkspace.listSessions(
+          { id: projectId, type: "project" },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    if (aiWorkspaceProjectSessionsMatch && method === "POST") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      const [, encodedProjectId] = aiWorkspaceProjectSessionsMatch;
+      const projectId = decodePathSegment(encodedProjectId);
+      rejectAiWorkspaceAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectAiWorkspaceAuthorityBodyFields(actor, requestBody);
+      const body = parseAiWorkspaceSessionBody(requestBody);
+
+      sendJson(
+        response,
+        201,
+        await app.aiWorkspace.createSession(
+          {
+            scope: { id: projectId, type: "project" },
+            title: body.title,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    const aiWorkspaceSessionPacksMatch = pathname.match(
+      /^\/api\/ai-workspace\/sessions\/([^/]+)\/context-packs$/,
+    );
+    if (aiWorkspaceSessionPacksMatch && method === "GET") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      const [, encodedSessionId] = aiWorkspaceSessionPacksMatch;
+      rejectAiWorkspaceAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.aiWorkspace.listContextPacks(
+          decodePathSegment(encodedSessionId),
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    if (aiWorkspaceSessionPacksMatch && method === "POST") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      const [, encodedSessionId] = aiWorkspaceSessionPacksMatch;
+      rejectAiWorkspaceAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectAiWorkspaceAuthorityBodyFields(actor, requestBody);
+      const body = parseAiWorkspaceContextPackBody(requestBody);
+
+      sendJson(
+        response,
+        201,
+        await app.aiWorkspace.createContextPack(
+          {
+            sessionId: decodePathSegment(encodedSessionId),
+            title: body.title,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    const aiWorkspaceContextPackMatch = pathname.match(
+      /^\/api\/ai-workspace\/context-packs\/([^/]+)$/,
+    );
+    if (aiWorkspaceContextPackMatch && method === "GET") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      const [, encodedContextPackId] = aiWorkspaceContextPackMatch;
+      rejectAiWorkspaceAuthorityQueryFields(actor, requestUrl);
+
+      sendJson(
+        response,
+        200,
+        await app.aiWorkspace.getContextPack(
+          decodePathSegment(encodedContextPackId),
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    const aiWorkspaceContextPackItemsMatch = pathname.match(
+      /^\/api\/ai-workspace\/context-packs\/([^/]+)\/items$/,
+    );
+    if (aiWorkspaceContextPackItemsMatch && method === "POST") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      const [, encodedContextPackId] = aiWorkspaceContextPackItemsMatch;
+      rejectAiWorkspaceAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectAiWorkspaceAuthorityBodyFields(actor, requestBody);
+      const body = parseAiWorkspaceContextItemBody(requestBody);
+
+      sendJson(
+        response,
+        201,
+        await app.aiWorkspace.addContextItem(
+          {
+            contextPackId: decodePathSegment(encodedContextPackId),
+            source: body.source,
+          },
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    if (pathname === "/api/ai-workspace/jobs" && method === "POST") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      rejectAiWorkspaceAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectAiWorkspaceAuthorityBodyFields(actor, requestBody);
+      const body = parseAiWorkspaceJobBody(requestBody);
+
+      sendJson(
+        response,
+        200,
+        await app.aiWorkspace.createJob(body, actor.userId),
         method,
       );
       return true;

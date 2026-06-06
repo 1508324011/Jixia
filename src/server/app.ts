@@ -10,6 +10,7 @@ import type {
 
 import {
   createPrismaClient,
+  createAiWorkspaceRepository,
   createCredentialsRepository,
   createJobRepository,
   createNotebookRepository,
@@ -37,6 +38,10 @@ import {
   createPubmedConnector,
   type PubmedConnector,
 } from './connectors/pubmed.connector';
+import {
+  createAiWorkspaceRoutes,
+  type AiWorkspaceRoutes,
+} from './routes/ai-workspace.routes';
 import {
   createCredentialsRoutes,
   type CredentialsRoutes,
@@ -103,6 +108,7 @@ import {
   createCredentialsService,
 } from './services/credentials.service';
 import { createSessionService } from './services/session.service';
+import { createAiWorkspaceService } from './services/ai-workspace.service';
 import { createSecretBox, hasSecretBoxKey } from './security/secret-box';
 import { createAuditService } from './services/audit.service';
 import { createImportService } from './services/import.service';
@@ -223,6 +229,7 @@ interface LegacyStoredLibraryEntry {
 }
 
 export interface JixiaApp {
+  aiWorkspace: AiWorkspaceRoutes;
   close(): Promise<void>;
   commandSearch: CommandSearchService;
   credentials: CredentialsRoutes;
@@ -839,6 +846,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     repository: spaceRepository,
   });
   const projectRepository = createProjectRepository(prismaClient);
+  const aiWorkspaceRepository = createAiWorkspaceRepository(prismaClient);
   const sessionRepository = createSessionRepository(prismaClient);
   const fileStore = createFileStore(options.env);
   const rawCredentialsRepository = createCredentialsRepository(prismaClient);
@@ -1085,6 +1093,17 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   });
   const notebooksRoutes = createNotebooksRoutes(notebookService);
   const projectDocsRoutes = createProjectDocsRoutes(projectDocsService);
+  const aiWorkspaceRoutes = createAiWorkspaceRoutes(
+    createAiWorkspaceService({
+      aiWorkspaceRepository,
+      jobs: jobsRoutes,
+      libraryService,
+      projectDocRepository,
+      projectRepository,
+      readingService,
+      spaceRepository,
+    }),
+  );
   const projectsRoutes = createProjectsRoutes(projectsService);
   const spacesRoutes = createSpacesRoutes(spacesService);
   const credentialsRoutes = createCredentialsRoutes(credentialsService);
@@ -1104,6 +1123,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
       closePromise ??= prismaClient.$disconnect().catch(() => undefined);
       return closePromise;
     },
+    aiWorkspace: aiWorkspaceRoutes,
     commandSearch: commandSearchService,
     credentials: credentialsRoutes,
     health: createHealthRoutes(),

@@ -49,6 +49,19 @@ const SENSITIVE_JOB_PAYLOAD_SUFFIXES = [
   'password',
   'privatekey',
 ];
+const SENSITIVE_JOB_PAYLOAD_FRAGMENTS = [
+  'storagekey',
+  'checksum',
+  'filepath',
+  'filesystem',
+  'storageroot',
+  'jixiastorageroot',
+  'rawcontext',
+  'contextblob',
+  'notebookbody',
+  'notebooksnapshot',
+  'privatebody',
+];
 
 function normalizeKey(key: string): string {
   return key.replace(/[^a-z0-9]/gi, '').toLowerCase();
@@ -63,6 +76,8 @@ function isSensitivePayloadKey(key: string): boolean {
 
   return SENSITIVE_JOB_PAYLOAD_SUFFIXES.some((suffix) =>
     normalized.endsWith(suffix),
+  ) || SENSITIVE_JOB_PAYLOAD_FRAGMENTS.some((fragment) =>
+    normalized.includes(fragment),
   );
 }
 

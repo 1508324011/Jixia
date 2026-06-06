@@ -77,6 +77,12 @@ export interface ProjectDocRepository {
   getLatestSnapshot(
     documentId: string,
   ): Promise<PersistedProjectDocSnapshot | null>;
+  getSnapshotByVersionId(
+    projectDocVersionId: string,
+  ): Promise<PersistedProjectDocSnapshot | null>;
+  getCitation(
+    citationId: string,
+  ): Promise<PersistedProjectDocCitationRecord | null>;
   getDocumentForProject(
     documentId: string,
     projectId: string,
@@ -448,6 +454,29 @@ export function createProjectDocRepository(
       const snapshot = await getLatestVersion(prisma, documentId);
 
       return snapshot ? mapSnapshot(snapshot) : null;
+    },
+    async getSnapshotByVersionId(
+      projectDocVersionId: string,
+    ): Promise<PersistedProjectDocSnapshot | null> {
+      await ensureInitialized();
+
+      const version = await prisma.projectDocVersion.findUnique({
+        include: PROJECT_DOC_VERSION_INCLUDE,
+        where: { id: projectDocVersionId },
+      });
+
+      return version ? mapSnapshot(version) : null;
+    },
+    async getCitation(
+      citationId: string,
+    ): Promise<PersistedProjectDocCitationRecord | null> {
+      await ensureInitialized();
+
+      const citation = await prisma.projectDocCitation.findUnique({
+        where: { id: citationId },
+      });
+
+      return citation ? mapCitation(citation) : null;
     },
     async getDocumentForProject(
       documentId: string,

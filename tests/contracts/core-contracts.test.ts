@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
+import * as aiWorkspace from '../../src/shared/contracts/ai-workspace';
 import * as commandSearch from '../../src/shared/contracts/command-search';
 import * as jobs from '../../src/shared/contracts/jobs';
 import * as library from '../../src/shared/contracts/library';
@@ -14,6 +15,12 @@ import * as spaces from '../../src/shared/contracts/spaces';
 import * as todayContinuation from '../../src/shared/contracts/today-continuation';
 import * as writing from '../../src/shared/contracts/writing';
 
+import type {
+  AiContextPackDetail,
+  AiContextSourceRef,
+  AiWorkspaceSessionRecord,
+  CreateAiWorkspaceJobRequest,
+} from '../../src/shared/contracts/ai-workspace';
 import type {
   CommandSearchObjectKind,
   CommandSearchResponse,
@@ -114,6 +121,87 @@ import type {
 } from '../../src/shared/contracts/today-continuation';
 
 describe('core contracts', () => {
+  it('exports AI Workspace context pack contracts as source refs instead of raw context', () => {
+    expect(aiWorkspace.aiWorkspaceContract).toBe('jixia-ai-workspace-context-packs-v1');
+    expect(aiWorkspace.AI_WORKSPACE_JOB_KIND).toBe('ai-workspace.context-pack');
+    expect(aiWorkspace.AI_WORKSPACE_CONTEXT_SOURCE_TYPES).toEqual([
+      'projectDocVersion',
+      'projectLibraryEntry',
+      'readerExcerpt',
+      'projectDocCitation',
+      'generatedInsight',
+    ]);
+
+    const session: AiWorkspaceSessionRecord = {
+      createdAt: '2026-06-05T00:00:00.000Z',
+      id: 'ai-session_001',
+      scope: { id: 'project_001', type: 'project' },
+      title: 'Shared synthesis session',
+      updatedAt: '2026-06-05T00:00:00.000Z',
+    };
+    const source: AiContextSourceRef = {
+      libraryEntryId: 'library-entry_001',
+      sourceType: 'projectLibraryEntry',
+    };
+    const detail: AiContextPackDetail = {
+      contract: aiWorkspace.aiWorkspaceContract,
+      items: [
+        {
+          contextPackId: 'ai-context-pack_001',
+          createdAt: '2026-06-05T00:01:00.000Z',
+          id: 'ai-context-item_001',
+          source,
+        },
+      ],
+      pack: {
+        createdAt: '2026-06-05T00:01:00.000Z',
+        id: 'ai-context-pack_001',
+        itemCount: 1,
+        sessionId: session.id,
+        title: 'Authorized source refs',
+        updatedAt: '2026-06-05T00:01:00.000Z',
+      },
+      session,
+    };
+    const jobRequest: CreateAiWorkspaceJobRequest = {
+      contextPackId: detail.pack.id,
+      credentialRef: 'cred_001',
+      instruction: 'Synthesize these authorized refs.',
+    };
+
+    expect(detail.items[0]?.source.sourceType).toBe('projectLibraryEntry');
+    expect(jobRequest.contextPackId).toBe(detail.pack.id);
+    expect(JSON.stringify({ detail, jobRequest })).not.toMatch(
+      /rawContext|storageKey|checksum|apiKey|password|token|secret|notebookDocumentVersion/i,
+    );
+    expectTypeOf<AiContextSourceRef>().toEqualTypeOf<
+      | {
+          projectDocId: string;
+          projectDocVersionId: string;
+          sourceType: 'projectDocVersion';
+        }
+      | {
+          libraryEntryId: string;
+          sourceType: 'projectLibraryEntry';
+        }
+      | {
+          readerExcerptId: string;
+          sourceType: 'readerExcerpt';
+        }
+      | {
+          citationId: string;
+          projectDocId: string;
+          projectDocVersionId?: string;
+          sourceType: 'projectDocCitation';
+        }
+      | {
+          generatedInsightId: string;
+          libraryEntryId: string;
+          sourceType: 'generatedInsight';
+        }
+    >();
+  });
+
   it('exports space payloads for creation and membership queries', () => {
     expect(spaces).toBeTruthy();
 

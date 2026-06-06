@@ -1,12 +1,92 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
+import type {
+  AiContextPackDetail,
+  AiContextPackRecord,
+  AiContextSourceRef,
+  AiWorkspaceSessionRecord,
+} from "@shared/contracts/ai-workspace";
 import type { JobRecord } from "@shared/contracts/jobs";
+import type { ScopeRef } from "@shared/contracts/projects";
 
 import {
   GovernedJobListPanel,
   JobLifecyclePanel,
 } from "../components/job-runtime-panels";
+import { apiClient } from "../lib/http-client";
 import { type JobsWorkbenchScope, useJobsPresenter } from "../presenters/jobs-presenter";
+
+type ContextSourceFormType = AiContextSourceRef["sourceType"];
+
+function scopeToRef(scope: JobsWorkbenchScope): ScopeRef {
+  return scope.type === "project"
+    ? { id: scope.id, type: "project" }
+    : { id: scope.id, type: "user" };
+}
+
+function canMutateScope(scope: JobsWorkbenchScope | null): boolean {
+  if (!scope) {
+    return false;
+  }
+
+  return scope.type === "user" || scope.role === "owner" || scope.role === "editor";
+}
+
+function buildContextSourceRef(input: {
+  libraryEntryId: string;
+  primaryId: string;
+  projectDocId: string;
+  sourceType: ContextSourceFormType;
+  versionId: string;
+}): AiContextSourceRef {
+  switch (input.sourceType) {
+    case "generatedInsight":
+      return {
+        generatedInsightId: input.primaryId.trim(),
+        libraryEntryId: input.libraryEntryId.trim(),
+        sourceType: "generatedInsight",
+      };
+    case "projectDocCitation":
+      return {
+        citationId: input.primaryId.trim(),
+        projectDocId: input.projectDocId.trim(),
+        projectDocVersionId: input.versionId.trim() || undefined,
+        sourceType: "projectDocCitation",
+      };
+    case "projectDocVersion":
+      return {
+        projectDocId: input.projectDocId.trim(),
+        projectDocVersionId: input.versionId.trim(),
+        sourceType: "projectDocVersion",
+      };
+    case "projectLibraryEntry":
+      return {
+        libraryEntryId: input.primaryId.trim(),
+        sourceType: "projectLibraryEntry",
+      };
+    case "readerExcerpt":
+      return {
+        readerExcerptId: input.primaryId.trim(),
+        sourceType: "readerExcerpt",
+      };
+  }
+}
+
+function contextSourceLabel(source: AiContextSourceRef): string {
+  switch (source.sourceType) {
+    case "generatedInsight":
+      return `Generated insight · ${source.generatedInsightId} · library ${source.libraryEntryId}`;
+    case "projectDocCitation":
+      return `Project Doc citation · ${source.citationId} · document ${source.projectDocId}`;
+    case "projectDocVersion":
+      return `Project Doc version · ${source.projectDocVersionId} · document ${source.projectDocId}`;
+    case "projectLibraryEntry":
+      return `Project Library entry · ${source.libraryEntryId}`;
+    case "readerExcerpt":
+      return `Reader excerpt · ${source.readerExcerptId}`;
+  }
+}
 
 function createJobRuntimeHref(
   job: JobRecord | null,
@@ -44,7 +124,6 @@ export function AiWorkspacePage() {
     jobs,
     projects,
     refresh,
-    runSelectedJob,
     selectedCredentialRef,
     selectedJobId,
     selectedScope,
@@ -61,7 +140,39 @@ export function AiWorkspacePage() {
   const selectedCredential = credentials.find((credential) =>
     credential.credentialRef === selectedCredentialRef
   ) ?? null;
+  const [aiSessions, setAiSessions] = useState<AiWorkspaceSessionRecord[]>([]);
+  const [aiContextPacks, setAiContextPacks] = useState<AiContextPackRecord[]>([]);
+  const [selectedAiSessionId, setSelectedAiSessionId] = useState("");
+  const [selectedAiContextPackId, setSelectedAiContextPackId] = useState("");
+  const [contextPackDetail, setContextPackDetail] = useState<AiContextPackDetail | null>(null);
+  const [aiWorkspaceError, setAiWorkspaceError] = useState<string | null>(null);
+  const [isAiWorkspaceBusy, setIsAiWorkspaceBusy] = useState(false);
+  const [newSessionTitle, setNewSessionTitle] = useState("Focused review session");
+  const [newContextPackTitle, setNewContextPackTitle] = useState("Selected evidence pack");
+  const [contextSourceType, setContextSourceType] = useState<ContextSourceFormType>("projectLibraryEntry");
+  const [contextSourcePrimaryId, setContextSourcePrimaryId] = useState("");
+  const [contextSourceProjectDocId, setContextSourceProjectDocId] = useState("");
+  const [contextSourceVersionId, setContextSourceVersionId] = useState("");
+  const [contextSourceLibraryEntryId, setContextSourceLibraryEntryId] = useState("");
+  const [contextPackInstruction, setContextPackInstruction] = useState(
+    "Synthesize these authorized source references for the current workspace.",
+  );
   const projectScopeCount = availableScopes.filter((scope) => scope.type === "project").length;
+  const selectedAiSession = aiSessions.find((session) =>
+    session.id === selectedAiSessionId
+  ) ?? null;
+  const selectedAiContextPack = aiContextPacks.find((pack) =>
+    pack.id === selectedAiContextPackId
+  ) ?? null;
+  const canMutateAiWorkspace = canMutateScope(selectedScope);
+  const selectedContextItemCount = contextPackDetail?.items.length ?? selectedAiContextPack?.itemCount ?? 0;
+  const canLaunchContextPackJob = Boolean(
+    selectedCredentialRef &&
+      selectedScope &&
+      selectedAiContextPackId &&
+      selectedContextItemCount > 0 &&
+      canMutateAiWorkspace,
+  );
   const scopeOptions = selectedScopeKey.startsWith("project:") && !selectedScope
     ? [
         { label: "Unavailable project scope", value: selectedScopeKey },
@@ -75,6 +186,224 @@ export function AiWorkspacePage() {
         value: `${scope.type}:${scope.id}`,
       }));
   const jobRuntimeHref = createJobRuntimeHref(activeJob, selectedScope);
+
+  const loadAiWorkspaceSessions = useCallback(async () => {
+    if (!selectedScope) {
+      setAiSessions([]);
+      setSelectedAiSessionId("");
+      return;
+    }
+
+    const response = await apiClient.listAiWorkspaceSessions(scopeToRef(selectedScope));
+    setAiSessions(response.sessions);
+    setSelectedAiSessionId((currentSessionId) => {
+      if (currentSessionId && response.sessions.some((session) => session.id === currentSessionId)) {
+        return currentSessionId;
+      }
+
+      return response.sessions[0]?.id ?? "";
+    });
+  }, [selectedScope]);
+
+  const loadAiContextPacks = useCallback(async (sessionId: string) => {
+    if (!sessionId) {
+      setAiContextPacks([]);
+      setSelectedAiContextPackId("");
+      return;
+    }
+
+    const response = await apiClient.listAiWorkspaceContextPacks(sessionId);
+    setAiContextPacks(response.packs);
+    setSelectedAiContextPackId((currentPackId) => {
+      if (currentPackId && response.packs.some((pack) => pack.id === currentPackId)) {
+        return currentPackId;
+      }
+
+      return response.packs[0]?.id ?? "";
+    });
+  }, []);
+
+  const loadContextPackDetail = useCallback(async (contextPackId: string) => {
+    if (!contextPackId) {
+      setContextPackDetail(null);
+      return;
+    }
+
+    setContextPackDetail(await apiClient.getAiWorkspaceContextPack(contextPackId));
+  }, []);
+
+  useEffect(() => {
+    setAiWorkspaceError(null);
+    setAiContextPacks([]);
+    setSelectedAiContextPackId("");
+    setContextPackDetail(null);
+
+    if (!selectedScope) {
+      setAiSessions([]);
+      setSelectedAiSessionId("");
+      return;
+    }
+
+    void loadAiWorkspaceSessions().catch((workspaceError) => {
+      setAiSessions([]);
+      setSelectedAiSessionId("");
+      setAiWorkspaceError(
+        workspaceError instanceof Error
+          ? workspaceError.message
+          : "Failed to load AI Workspace sessions.",
+      );
+    });
+  }, [loadAiWorkspaceSessions, selectedScope]);
+
+  useEffect(() => {
+    setContextPackDetail(null);
+
+    void loadAiContextPacks(selectedAiSessionId).catch((workspaceError) => {
+      setAiContextPacks([]);
+      setSelectedAiContextPackId("");
+      setAiWorkspaceError(
+        workspaceError instanceof Error
+          ? workspaceError.message
+          : "Failed to load AI Workspace context packs.",
+      );
+    });
+  }, [loadAiContextPacks, selectedAiSessionId]);
+
+  useEffect(() => {
+    void loadContextPackDetail(selectedAiContextPackId).catch((workspaceError) => {
+      setContextPackDetail(null);
+      setAiWorkspaceError(
+        workspaceError instanceof Error
+          ? workspaceError.message
+          : "Failed to load AI Workspace context pack detail.",
+      );
+    });
+  }, [loadContextPackDetail, selectedAiContextPackId]);
+
+  const createAiWorkspaceSession = useCallback(async () => {
+    if (!selectedScope) {
+      setAiWorkspaceError("Choose a server-visible AI Workspace scope first.");
+      return;
+    }
+
+    try {
+      setIsAiWorkspaceBusy(true);
+      setAiWorkspaceError(null);
+      const session = await apiClient.createAiWorkspaceSession(
+        scopeToRef(selectedScope),
+        { title: newSessionTitle },
+      );
+      await loadAiWorkspaceSessions();
+      setSelectedAiSessionId(session.id);
+    } catch (workspaceError) {
+      setAiWorkspaceError(
+        workspaceError instanceof Error
+          ? workspaceError.message
+          : "Failed to create AI Workspace session.",
+      );
+    } finally {
+      setIsAiWorkspaceBusy(false);
+    }
+  }, [loadAiWorkspaceSessions, newSessionTitle, selectedScope]);
+
+  const createAiContextPack = useCallback(async () => {
+    if (!selectedAiSessionId) {
+      setAiWorkspaceError("Create or choose a server-owned AI Workspace session first.");
+      return;
+    }
+
+    try {
+      setIsAiWorkspaceBusy(true);
+      setAiWorkspaceError(null);
+      const pack = await apiClient.createAiWorkspaceContextPack(
+        selectedAiSessionId,
+        { title: newContextPackTitle },
+      );
+      await loadAiContextPacks(selectedAiSessionId);
+      setSelectedAiContextPackId(pack.id);
+    } catch (workspaceError) {
+      setAiWorkspaceError(
+        workspaceError instanceof Error
+          ? workspaceError.message
+          : "Failed to create AI Workspace context pack.",
+      );
+    } finally {
+      setIsAiWorkspaceBusy(false);
+    }
+  }, [loadAiContextPacks, newContextPackTitle, selectedAiSessionId]);
+
+  const addContextItem = useCallback(async () => {
+    if (!selectedAiContextPackId) {
+      setAiWorkspaceError("Create or choose a context pack first.");
+      return;
+    }
+
+    try {
+      setIsAiWorkspaceBusy(true);
+      setAiWorkspaceError(null);
+      const source = buildContextSourceRef({
+        libraryEntryId: contextSourceLibraryEntryId,
+        primaryId: contextSourcePrimaryId,
+        projectDocId: contextSourceProjectDocId,
+        sourceType: contextSourceType,
+        versionId: contextSourceVersionId,
+      });
+      await apiClient.addAiWorkspaceContextItem(
+        selectedAiContextPackId,
+        { source },
+      );
+      await loadContextPackDetail(selectedAiContextPackId);
+      if (selectedAiSessionId) {
+        await loadAiContextPacks(selectedAiSessionId);
+      }
+    } catch (workspaceError) {
+      setAiWorkspaceError(
+        workspaceError instanceof Error
+          ? workspaceError.message
+          : "Failed to attach AI Workspace context reference.",
+      );
+    } finally {
+      setIsAiWorkspaceBusy(false);
+    }
+  }, [
+    contextSourceLibraryEntryId,
+    contextSourcePrimaryId,
+    contextSourceProjectDocId,
+    contextSourceType,
+    contextSourceVersionId,
+    loadContextPackDetail,
+    loadAiContextPacks,
+    selectedAiSessionId,
+    selectedAiContextPackId,
+  ]);
+
+  const launchContextPackJob = useCallback(async () => {
+    if (!selectedAiContextPackId || !selectedCredentialRef) {
+      setAiWorkspaceError("Choose a context pack and credential before launching.");
+      return;
+    }
+
+    try {
+      setIsAiWorkspaceBusy(true);
+      setAiWorkspaceError(null);
+      const created = await apiClient.createAiWorkspaceJob({
+        contextPackId: selectedAiContextPackId,
+        credentialRef: selectedCredentialRef,
+        instruction: contextPackInstruction,
+      });
+
+      await apiClient.runJob(created.job.id);
+      await refresh(selectedScopeKey, created.job.id);
+    } catch (workspaceError) {
+      setAiWorkspaceError(
+        workspaceError instanceof Error
+          ? workspaceError.message
+          : "Failed to launch AI Workspace context-pack job.",
+      );
+    } finally {
+      setIsAiWorkspaceBusy(false);
+    }
+  }, [contextPackInstruction, refresh, selectedAiContextPackId, selectedCredentialRef, selectedScopeKey]);
 
   return (
     <main className="page-shell">
@@ -158,10 +487,20 @@ export function AiWorkspacePage() {
         <button
           className="panel-link"
           type="button"
-          onClick={() => void runSelectedJob()}
-          disabled={isRunningJob || isLoading || !canCreateJob || setupRequired !== null}
+          onClick={() => void launchContextPackJob()}
+          disabled={
+            isAiWorkspaceBusy ||
+            isRunningJob ||
+            isLoading ||
+            !canCreateJob ||
+            !canLaunchContextPackJob ||
+            setupRequired === "credential" ||
+            setupRequired === "project"
+          }
         >
-          {isRunningJob ? "Launching governed AI run…" : "Launch governed AI run"}
+          {isAiWorkspaceBusy || isRunningJob
+            ? "Launching context-pack AI run…"
+            : "Launch context-pack AI run"}
         </button>
         <button
           className="panel-link"
@@ -185,6 +524,220 @@ export function AiWorkspacePage() {
         <Link className="panel-link" to={jobRuntimeHref}>
           Open Jobs runtime
         </Link>
+      </section>
+
+      <section className="panel-grid" aria-label="AI Workspace context packs">
+        <article className="panel">
+          <h2 className="panel-title">Server-owned AI sessions</h2>
+          <p className="quiet-copy">
+            Sessions are scoped on the server. Personal sessions are owner-only;
+            project sessions are visible through persisted ProjectMember access.
+          </p>
+          <label>
+            New session title
+            <input
+              aria-label="AI Workspace session title"
+              value={newSessionTitle}
+              onChange={(event) => setNewSessionTitle(event.target.value)}
+              placeholder="Focused review session"
+            />
+          </label>
+          <button
+            className="panel-link"
+            type="button"
+            onClick={() => void createAiWorkspaceSession()}
+            disabled={!selectedScope || !canMutateAiWorkspace || isAiWorkspaceBusy}
+          >
+            Create server-owned session
+          </button>
+          <label>
+            AI session
+            <select
+              aria-label="AI Workspace session"
+              value={selectedAiSessionId}
+              onChange={(event) => setSelectedAiSessionId(event.target.value)}
+              disabled={aiSessions.length === 0}
+            >
+              {aiSessions.length === 0 ? (
+                <option value="">No AI sessions yet</option>
+              ) : (
+                aiSessions.map((session) => (
+                  <option key={session.id} value={session.id}>
+                    {session.title} · {session.scope.type}:{session.scope.id}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          {selectedAiSession ? (
+            <p className="quiet-copy">
+              Selected session ref: {selectedAiSession.id} · scope {selectedAiSession.scope.type}:{selectedAiSession.scope.id}
+            </p>
+          ) : null}
+        </article>
+
+        <article className="panel">
+          <h2 className="panel-title">Context packs inherit session scope</h2>
+          <p className="quiet-copy">
+            Packs hold authorized source references only. The browser cannot send
+            copied context text, private Notebook bodies, storage keys, or checksums.
+          </p>
+          <label>
+            New context pack title
+            <input
+              aria-label="AI Workspace context pack title"
+              value={newContextPackTitle}
+              onChange={(event) => setNewContextPackTitle(event.target.value)}
+              placeholder="Selected evidence pack"
+            />
+          </label>
+          <button
+            className="panel-link"
+            type="button"
+            onClick={() => void createAiContextPack()}
+            disabled={!selectedAiSessionId || !canMutateAiWorkspace || isAiWorkspaceBusy}
+          >
+            Create context pack
+          </button>
+          <label>
+            Context pack
+            <select
+              aria-label="AI Workspace context pack"
+              value={selectedAiContextPackId}
+              onChange={(event) => setSelectedAiContextPackId(event.target.value)}
+              disabled={aiContextPacks.length === 0}
+            >
+              {aiContextPacks.length === 0 ? (
+                <option value="">No context packs yet</option>
+              ) : (
+                aiContextPacks.map((pack) => (
+                  <option key={pack.id} value={pack.id}>
+                    {pack.title} · {pack.itemCount} refs
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          <p className="quiet-copy">
+            Context refs in selected pack: {selectedContextItemCount}
+          </p>
+        </article>
+      </section>
+
+      <section className="panel-grid" aria-label="AI Workspace context references">
+        <article className="panel">
+          <h2 className="panel-title">Attach authorized source reference</h2>
+          <p className="quiet-copy">
+            Choose one server-authorized object. The form collects IDs only; the
+            server re-checks source visibility before storing or using the ref.
+          </p>
+          <label>
+            Source type
+            <select
+              aria-label="AI Workspace context source type"
+              value={contextSourceType}
+              onChange={(event) => setContextSourceType(event.target.value as ContextSourceFormType)}
+            >
+              <option value="projectLibraryEntry">Project Library entry</option>
+              <option value="readerExcerpt">Reader excerpt</option>
+              <option value="generatedInsight">Generated insight</option>
+              <option value="projectDocVersion">Project Doc version</option>
+              <option value="projectDocCitation">Project Doc citation</option>
+            </select>
+          </label>
+          {contextSourceType === "projectDocVersion" || contextSourceType === "projectDocCitation" ? (
+            <label>
+              Project Doc id
+              <input
+                aria-label="AI Workspace source project doc id"
+                value={contextSourceProjectDocId}
+                onChange={(event) => setContextSourceProjectDocId(event.target.value)}
+                placeholder="project-doc-..."
+              />
+            </label>
+          ) : null}
+          {contextSourceType === "projectDocVersion" || contextSourceType === "projectDocCitation" ? (
+            <label>
+              Project Doc version id
+              <input
+                aria-label="AI Workspace source project doc version id"
+                value={contextSourceVersionId}
+                onChange={(event) => setContextSourceVersionId(event.target.value)}
+                placeholder="project-doc-version-..."
+              />
+            </label>
+          ) : null}
+          {contextSourceType === "generatedInsight" ? (
+            <label>
+              Source library entry id
+              <input
+                aria-label="AI Workspace source library entry id"
+                value={contextSourceLibraryEntryId}
+                onChange={(event) => setContextSourceLibraryEntryId(event.target.value)}
+                placeholder="library-entry-..."
+              />
+            </label>
+          ) : null}
+          {contextSourceType !== "projectDocVersion" ? (
+            <label>
+              {contextSourceType === "generatedInsight"
+                ? "Generated insight id"
+                : contextSourceType === "projectDocCitation"
+                  ? "Project Doc citation id"
+                  : contextSourceType === "readerExcerpt"
+                    ? "Reader excerpt id"
+                    : "Library entry id"}
+              <input
+                aria-label="AI Workspace source primary id"
+                value={contextSourcePrimaryId}
+                onChange={(event) => setContextSourcePrimaryId(event.target.value)}
+                placeholder="source-id"
+              />
+            </label>
+          ) : null}
+          <button
+            className="panel-link"
+            type="button"
+            onClick={() => void addContextItem()}
+            disabled={!selectedAiContextPackId || !canMutateAiWorkspace || isAiWorkspaceBusy}
+          >
+            Attach source ref
+          </button>
+        </article>
+
+        <article className="panel">
+          <h2 className="panel-title">Launch from context-pack refs</h2>
+          <p className="quiet-copy">
+            Job payloads receive context refs, not raw browser-assembled context.
+            Outputs remain preview material until another explicit product flow saves them.
+          </p>
+          <label>
+            Run instruction
+            <textarea
+              aria-label="AI Workspace context-pack instruction"
+              value={contextPackInstruction}
+              onChange={(event) => setContextPackInstruction(event.target.value)}
+              placeholder="Synthesize these authorized source references."
+            />
+          </label>
+          <button
+            className="panel-link"
+            type="button"
+            onClick={() => void launchContextPackJob()}
+            disabled={!canLaunchContextPackJob || isAiWorkspaceBusy || isRunningJob}
+          >
+            Launch context-pack AI job
+          </button>
+          {contextPackDetail?.items.length ? (
+            <ul>
+              {contextPackDetail.items.map((item) => (
+                <li key={item.id}>{contextSourceLabel(item.source)}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="quiet-copy">No authorized context refs have been attached yet.</p>
+          )}
+        </article>
       </section>
 
       {setupRequired === "credential" ? (
@@ -250,6 +803,15 @@ export function AiWorkspacePage() {
           <article className="panel">
             <h2 className="panel-title">AI Workspace runtime error</h2>
             <p className="quiet-copy">{error}</p>
+          </article>
+        </section>
+      ) : null}
+
+      {aiWorkspaceError ? (
+        <section className="panel-grid" aria-label="AI Workspace context errors">
+          <article className="panel">
+            <h2 className="panel-title">AI Workspace context error</h2>
+            <p className="quiet-copy">{aiWorkspaceError}</p>
           </article>
         </section>
       ) : null}
