@@ -19,13 +19,63 @@ export interface CreateProjectDocParams {
 }
 
 export interface CreateProjectDocVersionParams {
-  citations: Array<{
-    evidenceSpan?: string;
-    paperAssetId: string;
-    readerExcerptId?: string;
-  }>;
+  citations: PersistedProjectDocCitationInput[];
   content: string;
   documentId: string;
+}
+
+export type PersistedProjectDocCitationLifecycleStatus =
+  | 'active'
+  | 'archived'
+  | 'removed';
+
+export interface PersistedProjectDocCitationLocator {
+  endOffset: number;
+  locator?: string;
+  page?: {
+    endOffset?: number;
+    label?: string;
+    pageNumber: number;
+    startOffset?: number;
+  };
+  quote?: string;
+  sourceTextArtifactId: string;
+  startOffset: number;
+}
+
+export type PersistedProjectDocCitationLocatorSourceType =
+  | 'project_doc_occurrence'
+  | 'project_visible_reader_annotation'
+  | 'source_text_artifact_range';
+
+export interface PersistedProjectDocCitationLocatorSource {
+  id?: string;
+  type: PersistedProjectDocCitationLocatorSourceType;
+}
+
+export interface PersistedProjectDocCitationOccurrence {
+  key: string;
+  label?: string;
+}
+
+export interface PersistedProjectDocCitationTarget {
+  libraryEntryId: string;
+  paperAssetId: string;
+  projectId: string;
+}
+
+export interface PersistedProjectDocCitationInput {
+  evidenceSpan?: string;
+  lifecycleStatus?: PersistedProjectDocCitationLifecycleStatus;
+  locator?: PersistedProjectDocCitationLocator;
+  locatorSource?: PersistedProjectDocCitationLocatorSource;
+  occurrence?: PersistedProjectDocCitationOccurrence;
+  paperAssetId: string;
+  readerAnnotationId?: string;
+  readerExcerptId?: string;
+  sourceTextArtifactId?: string;
+  target?: PersistedProjectDocCitationTarget;
+  targetLibraryEntryId?: string;
 }
 
 export type PersistedProjectDocPublishState = 'draft' | 'review' | 'published';
@@ -44,9 +94,17 @@ export interface PersistedProjectDocCitationRecord {
   createdAt: string;
   evidenceSpan?: string;
   id: string;
+  lifecycleStatus?: PersistedProjectDocCitationLifecycleStatus;
+  locator?: PersistedProjectDocCitationLocator;
+  locatorSource?: PersistedProjectDocCitationLocatorSource;
+  occurrence?: PersistedProjectDocCitationOccurrence;
   paperAssetId: string;
   projectDocVersionId: string;
+  readerAnnotationId?: string;
   readerExcerptId?: string;
+  sourceTextArtifactId?: string;
+  target?: PersistedProjectDocCitationTarget;
+  targetLibraryEntryId?: string;
 }
 
 export interface PersistedProjectDocSnapshot {
@@ -139,25 +197,103 @@ function mapDocument(document: ProjectDoc): PersistedProjectDocRecord {
   };
 }
 
-function mapCitation(citation: ProjectDocCitation): PersistedProjectDocCitationRecord {
+function mapCitation(
+  citation: ProjectDocCitation,
+  projectId?: string,
+): PersistedProjectDocCitationRecord {
+  const locator = parseJsonObject<PersistedProjectDocCitationLocator>(
+    citation.locatorJson,
+    `ProjectDocCitation ${citation.id} locator`,
+  );
+  const targetLibraryEntryId = citation.targetLibraryEntryId ?? undefined;
+
   return {
     createdAt: toIsoString(citation.createdAt),
     evidenceSpan: citation.evidenceSpan ?? undefined,
     id: citation.id,
+    lifecycleStatus: normalizeLifecycleStatus(citation.lifecycleStatus),
+    locator,
+    locatorSource: citation.locatorSourceType
+      ? {
+          id: citation.locatorSourceId ?? undefined,
+          type: normalizeLocatorSourceType(citation.locatorSourceType),
+        }
+      : undefined,
+    occurrence: citation.occurrenceKey
+      ? {
+          key: citation.occurrenceKey,
+          label: citation.occurrenceLabel ?? undefined,
+        }
+      : undefined,
     paperAssetId: citation.paperAssetId,
     projectDocVersionId: citation.projectDocVersionId,
+    readerAnnotationId: citation.readerAnnotationId ?? undefined,
     readerExcerptId: citation.readerExcerptId ?? undefined,
+    sourceTextArtifactId: citation.sourceTextArtifactId ?? undefined,
+    target: targetLibraryEntryId && projectId
+      ? {
+          libraryEntryId: targetLibraryEntryId,
+          paperAssetId: citation.paperAssetId,
+          projectId,
+        }
+      : undefined,
+    targetLibraryEntryId,
   };
+}
+
+function parseJsonObject<T>(
+  value: string | null,
+  path: string,
+): T | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = JSON.parse(value) as unknown;
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${path} must be a JSON object.`);
+  }
+
+  return parsed as T;
+}
+
+function normalizeLifecycleStatus(
+  value: string,
+): PersistedProjectDocCitationLifecycleStatus {
+  if (value === 'active' || value === 'archived' || value === 'removed') {
+    return value;
+  }
+
+  throw new Error(`Project Doc citation lifecycle status ${value} is not supported.`);
+}
+
+function normalizeLocatorSourceType(
+  value: string,
+): PersistedProjectDocCitationLocatorSourceType {
+  if (
+    value === 'project_doc_occurrence' ||
+    value === 'project_visible_reader_annotation' ||
+    value === 'source_text_artifact_range'
+  ) {
+    return value;
+  }
+
+  throw new Error(`Project Doc citation locator source ${value} is not supported.`);
 }
 
 function mapSnapshot(
   version: ProjectDocVersionWithRelations,
 ): PersistedProjectDocSnapshot {
+  const document = mapDocument(version.projectDoc);
+
   return {
     capturedAt: toIsoString(version.createdAt),
-    citations: version.citations.map(mapCitation),
+    citations: version.citations.map((citation) =>
+      mapCitation(citation, document.projectId)
+    ),
     content: version.snapshot,
-    document: mapDocument(version.projectDoc),
+    document,
     versionId: version.id,
     versionNumber: version.versionNumber,
   };
@@ -205,6 +341,143 @@ async function getNextVersionNumber(
   });
 
   return (latestVersion?.versionNumber ?? 0) + 1;
+}
+
+async function validateProjectVisibleReaderAnnotationReference(
+  prisma: ProjectDocClient,
+  document: ProjectDoc,
+  citation: PersistedProjectDocCitationInput,
+  readerAnnotationId: string,
+): Promise<void> {
+  const annotation = await prisma.readerAnnotation.findUnique({
+    where: { id: readerAnnotationId },
+  });
+
+  if (!annotation) {
+    throw new Error(`Reader annotation ${readerAnnotationId} does not exist.`);
+  }
+
+  if (
+    annotation.visibility !== 'project' ||
+    annotation.projectId !== document.projectId ||
+    annotation.paperAssetId !== citation.paperAssetId
+  ) {
+    throw new Error(
+      'Project Doc citations require project-visible ReaderAnnotation evidence from the same project.',
+    );
+  }
+
+  const annotationLibraryEntry = await prisma.libraryEntry.findUnique({
+    where: { id: annotation.libraryEntryId },
+  });
+
+  if (
+    !annotationLibraryEntry ||
+    annotationLibraryEntry.scopeType !== 'project' ||
+    annotationLibraryEntry.scopeId !== document.projectId ||
+    annotationLibraryEntry.paperAssetId !== citation.paperAssetId
+  ) {
+    throw new Error(
+      'Project Doc citations require project-visible ReaderAnnotation evidence from the project LibraryEntry.',
+    );
+  }
+}
+
+async function validateCitationReferences(
+  prisma: ProjectDocClient,
+  document: ProjectDoc,
+  citations: PersistedProjectDocCitationInput[],
+): Promise<void> {
+  for (const citation of citations) {
+    const targetLibraryEntryId = citation.targetLibraryEntryId ??
+      citation.target?.libraryEntryId;
+
+    if (citation.target && citation.target.projectId !== document.projectId) {
+      throw new Error('Project Doc citation target project does not match the document.');
+    }
+
+    if (citation.target && citation.target.paperAssetId !== citation.paperAssetId) {
+      throw new Error('Project Doc citation target paper asset does not match the citation.');
+    }
+
+    if (targetLibraryEntryId) {
+      const targetEntry = await prisma.libraryEntry.findUnique({
+        where: { id: targetLibraryEntryId },
+      });
+
+      if (!targetEntry) {
+        throw new Error(`Library entry ${targetLibraryEntryId} does not exist.`);
+      }
+
+      if (
+        targetEntry.scopeType !== 'project' ||
+        targetEntry.scopeId !== document.projectId ||
+        targetEntry.paperAssetId !== citation.paperAssetId
+      ) {
+        throw new Error('Project Doc citations require a target project LibraryEntry.');
+      }
+    }
+
+    if (citation.readerAnnotationId) {
+      await validateProjectVisibleReaderAnnotationReference(
+        prisma,
+        document,
+        citation,
+        citation.readerAnnotationId,
+      );
+    }
+
+    if (citation.locatorSource?.type === 'project_visible_reader_annotation') {
+      if (!citation.locatorSource.id) {
+        throw new Error(
+          'Project Doc citation project-visible reader annotation locator source requires an annotation id.',
+        );
+      }
+
+      if (
+        citation.readerAnnotationId &&
+        citation.locatorSource.id !== citation.readerAnnotationId
+      ) {
+        throw new Error(
+          'Project Doc citation locator source reader annotation does not match the citation reader annotation.',
+        );
+      }
+
+      await validateProjectVisibleReaderAnnotationReference(
+        prisma,
+        document,
+        citation,
+        citation.locatorSource.id,
+      );
+    }
+
+    if (
+      citation.sourceTextArtifactId &&
+      citation.locator?.sourceTextArtifactId &&
+      citation.sourceTextArtifactId !== citation.locator.sourceTextArtifactId
+    ) {
+      throw new Error('Project Doc citation source text artifact does not match its locator.');
+    }
+
+    const sourceTextArtifactId = citation.sourceTextArtifactId ??
+      citation.locator?.sourceTextArtifactId;
+
+    if (sourceTextArtifactId) {
+      const sourceTextArtifact = await prisma.sourceTextArtifact.findUnique({
+        where: { id: sourceTextArtifactId },
+      });
+
+      if (!sourceTextArtifact) {
+        throw new Error(`Source text artifact ${sourceTextArtifactId} does not exist.`);
+      }
+
+      if (sourceTextArtifact.paperAssetId !== citation.paperAssetId) {
+        throw new Error(
+          'Project Doc citation source text artifact does not match the citation paper asset.',
+        );
+      }
+    }
+  }
 }
 
 async function getLatestVersion(
@@ -716,6 +989,8 @@ export function createProjectDocRepository(
           throw new Error(`Project document ${input.documentId} does not exist.`);
         }
 
+        await validateCitationReferences(transaction, document, input.citations);
+
         const versionNumber = await getNextVersionNumber(
           transaction,
           input.documentId,
@@ -729,8 +1004,20 @@ export function createProjectDocRepository(
             citations: {
               create: input.citations.map((citation) => ({
                 evidenceSpan: citation.evidenceSpan,
+                lifecycleStatus: citation.lifecycleStatus ?? 'active',
+                locatorJson: citation.locator
+                  ? JSON.stringify(citation.locator)
+                  : undefined,
+                locatorSourceId: citation.locatorSource?.id,
+                locatorSourceType: citation.locatorSource?.type,
+                occurrenceKey: citation.occurrence?.key,
+                occurrenceLabel: citation.occurrence?.label,
                 paperAssetId: citation.paperAssetId,
+                readerAnnotationId: citation.readerAnnotationId,
                 readerExcerptId: citation.readerExcerptId,
+                sourceTextArtifactId: citation.sourceTextArtifactId,
+                targetLibraryEntryId: citation.targetLibraryEntryId ??
+                  citation.target?.libraryEntryId,
               })),
             },
             projectDocId: input.documentId,
