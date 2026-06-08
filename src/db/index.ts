@@ -7,6 +7,10 @@ export {
 } from './client';
 
 export {
+  initializeAiChatPersistence,
+} from './repositories/ai-chat.repository';
+
+export {
   createAiResultArtifactRepository,
   initializeAiResultArtifactPersistence,
   type AiResultArtifactRepository,
