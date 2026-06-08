@@ -53,6 +53,48 @@ enum JobStatus {
   cancelled
 }
 
+enum ReferenceLifecycleStatus {
+  active
+  archived
+  removed
+}
+
+enum SourceTextArtifactKind {
+  extracted_text
+  page_map
+  ocr_text
+}
+
+enum SourceTextAvailabilityState {
+  available
+  pdf_unavailable
+  text_unavailable
+  ocr_required
+  processing
+  failed
+  archived
+}
+
+enum ReaderAnnotationVisibility {
+  private
+  project
+}
+
+enum AiChatMessageRole {
+  user
+  assistant
+  system
+}
+
+enum AiChatRequestStatus {
+  queued
+  built
+  sent
+  succeeded
+  failed
+  cancelled
+}
+
 model User {
   id                  String               @id @default(cuid())
   email               String               @unique
@@ -68,6 +110,8 @@ model User {
   conversations       Conversation[]
   generatedInsights   GeneratedInsight[]
   readerExcerpts      ReaderExcerpt[]      @relation("ReaderExcerptCreatedBy")
+  readerAnnotations   ReaderAnnotation[]   @relation("ReaderAnnotationCreatedBy")
+  readerNotebookBindings ReaderNotebookBinding[]
   notebookDocuments   NotebookDocument[]
   providerCredentials ProviderCredential[]
   workbenchSettings   WorkbenchSettings?
@@ -81,6 +125,7 @@ model User {
   aiContextPacks      AiContextPack[]      @relation("AiContextPackCreatedBy")
   aiContextItems      AiContextItem[]      @relation("AiContextItemCreatedBy")
   aiResultArtifacts   AiResultArtifact[]   @relation("AiResultArtifactCreatedBy")
+  aiChatSessions      AiChatSession[]      @relation("AiChatSessionOwnedBy")
 }
 
 model AiSession {
@@ -174,6 +219,7 @@ model Project {
   members         ProjectMember[]
   projectDocs     ProjectDoc[]
   readingComments ProjectReadingComment[]
+  readerAnnotations ReaderAnnotation[]
 }
 
 model ProjectMember {
@@ -214,11 +260,15 @@ model PaperAsset {
   updatedAt       DateTime       @updatedAt
   importedByUserId String
   importedBy      User           @relation("PaperAssetImportedBy", fields: [importedByUserId], references: [id], onDelete: Restrict)
+  sourceTextArtifacts SourceTextArtifact[]
   libraryEntries  LibraryEntry[]
   generatedInsightEvidenceSpans GeneratedInsightEvidenceSpan[]
   readerExcerpts ReaderExcerpt[]
+  readerAnnotations ReaderAnnotation[]
+  notebookSourceLinks NotebookSourceLink[]
   notebookCitations NotebookDocumentCitation[]
   projectDocCitations ProjectDocCitation[]
+  aiChatRequestContextRefs AiChatRequestContextRef[]
 }
 
 model LibraryEntry {
@@ -232,6 +282,8 @@ model LibraryEntry {
   // read or update them as ownership, space, or visibility authority.
   legacySpaceId  String?
   legacyVisibility String?
+  lifecycleStatus ReferenceLifecycleStatus @default(active)
+  archivedAt      DateTime?
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
   paperAsset     PaperAsset             @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
@@ -241,9 +293,37 @@ model LibraryEntry {
   conversations  Conversation[]
   generatedInsights GeneratedInsight[]
   readerExcerpts ReaderExcerpt[]
+  readerAnnotations ReaderAnnotation[]
   readingStates  ReadingState[]
+  notebookSourceLinks NotebookSourceLink[]
+  projectDocCitationTargets ProjectDocCitation[] @relation("ProjectDocCitationTargetLibraryEntry")
+  aiChatRequestContextRefs AiChatRequestContextRef[]
 
   @@unique([scopeType, scopeId, paperAssetId], name: "LibraryEntry_scope_asset_unique")
+  @@index([scopeType, scopeId, lifecycleStatus])
+}
+
+model SourceTextArtifact {
+  id                String                      @id @default(cuid())
+  paperAssetId      String
+  kind              SourceTextArtifactKind
+  availabilityState SourceTextAvailabilityState
+  artifactRef       String?
+  textFormat        String?
+  pageCount         Int?
+  characterCount    Int?
+  language          String?
+  statusDetail      String?
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  paperAsset        PaperAsset                  @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+  readerAnnotations ReaderAnnotation[]
+  notebookSourceLinks NotebookSourceLink[]
+  projectDocCitations ProjectDocCitation[]
+  aiChatRequestContextRefs AiChatRequestContextRef[]
+
+  @@index([paperAssetId, kind])
+  @@index([availabilityState, updatedAt])
 }
 
 model Note {
@@ -359,6 +439,44 @@ model ReaderExcerpt {
   @@index([createdByUserId])
 }
 
+model ReaderAnnotation {
+  id                   String                     @id @default(cuid())
+  libraryEntryId       String
+  paperAssetId         String
+  sourceContextType    String
+  sourceContextId      String
+  sourceContextVersionId String?
+  createdByUserId      String
+  visibility           ReaderAnnotationVisibility @default(private)
+  projectId            String?
+  originalAnnotationId String?
+  sourceTextArtifactId String?
+  quote                String
+  selectorJson         String
+  locatorJson          String?
+  note                 String?
+  lifecycleStatus      ReferenceLifecycleStatus   @default(active)
+  archivedAt           DateTime?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  libraryEntry         LibraryEntry               @relation(fields: [libraryEntryId], references: [id], onDelete: Cascade)
+  paperAsset           PaperAsset                 @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
+  createdBy            User                       @relation("ReaderAnnotationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  project              Project?                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  originalAnnotation   ReaderAnnotation?          @relation("ReaderAnnotationPublishedCopies", fields: [originalAnnotationId], references: [id], onDelete: SetNull)
+  publishedCopies      ReaderAnnotation[]         @relation("ReaderAnnotationPublishedCopies")
+  sourceTextArtifact   SourceTextArtifact?        @relation(fields: [sourceTextArtifactId], references: [id], onDelete: SetNull)
+  notebookSourceLinks  NotebookSourceLink[]
+  projectDocCitations  ProjectDocCitation[]
+  aiChatRequestContextRefs AiChatRequestContextRef[]
+
+  @@index([libraryEntryId, createdByUserId, createdAt])
+  @@index([sourceContextType, sourceContextId, createdByUserId])
+  @@index([projectId, visibility, createdAt])
+  @@index([originalAnnotationId])
+  @@index([lifecycleStatus, updatedAt])
+}
+
 model NotebookDocument {
   id        String                    @id @default(cuid())
   ownerId   String
@@ -367,6 +485,23 @@ model NotebookDocument {
   updatedAt DateTime                  @updatedAt
   owner     User                      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   versions  NotebookDocumentVersion[]
+  readerBindings ReaderNotebookBinding[]
+}
+
+model ReaderNotebookBinding {
+  id                 String           @id @default(cuid())
+  userId             String
+  sourceContextType  String
+  sourceContextId    String
+  sourceContextVersionId String?
+  notebookDocumentId String
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notebookDocument   NotebookDocument @relation(fields: [notebookDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceContextType, sourceContextId], name: "ReaderNotebookBinding_user_source_unique")
+  @@index([notebookDocumentId])
 }
 
 model NotebookDocumentVersion {
@@ -377,8 +512,35 @@ model NotebookDocumentVersion {
   createdAt          DateTime                   @default(now())
   notebookDocument   NotebookDocument           @relation(fields: [notebookDocumentId], references: [id], onDelete: Cascade)
   citations          NotebookDocumentCitation[]
+  sourceLinks        NotebookSourceLink[]
 
   @@unique([notebookDocumentId, versionNumber])
+}
+
+model NotebookSourceLink {
+  id                        String                  @id @default(cuid())
+  notebookDocumentVersionId String
+  sourceType                String
+  sourceId                  String
+  sourceVersionId           String?
+  sourceLibraryEntryId      String?
+  readerAnnotationId        String?
+  sourceTextArtifactId      String?
+  paperAssetId              String?
+  evidenceSpan              String?
+  locatorJson               String?
+  createdAt                 DateTime                @default(now())
+  notebookDocumentVersion   NotebookDocumentVersion @relation(fields: [notebookDocumentVersionId], references: [id], onDelete: Cascade)
+  sourceLibraryEntry        LibraryEntry?           @relation(fields: [sourceLibraryEntryId], references: [id], onDelete: SetNull)
+  readerAnnotation          ReaderAnnotation?        @relation(fields: [readerAnnotationId], references: [id], onDelete: SetNull)
+  sourceTextArtifact        SourceTextArtifact?      @relation(fields: [sourceTextArtifactId], references: [id], onDelete: SetNull)
+  paperAsset                PaperAsset?              @relation(fields: [paperAssetId], references: [id], onDelete: SetNull)
+
+  @@index([notebookDocumentVersionId, sourceType])
+  @@index([sourceType, sourceId])
+  @@index([sourceLibraryEntryId])
+  @@index([readerAnnotationId])
+  @@index([sourceTextArtifactId])
 }
 
 model NotebookDocumentCitation {
@@ -426,14 +588,115 @@ model ProjectDocCitation {
   projectDocVersionId String
   paperAssetId        String
   readerExcerptId     String?
+  targetLibraryEntryId String?
+  occurrenceKey       String?
+  occurrenceLabel     String?
+  locatorJson         String?
+  locatorSourceType   String?
+  locatorSourceId     String?
+  readerAnnotationId  String?
+  sourceTextArtifactId String?
+  lifecycleStatus     ReferenceLifecycleStatus @default(active)
   evidenceSpan        String?
   createdAt           DateTime          @default(now())
   projectDocVersion   ProjectDocVersion @relation(fields: [projectDocVersionId], references: [id], onDelete: Cascade)
   paperAsset          PaperAsset        @relation(fields: [paperAssetId], references: [id], onDelete: Cascade)
   readerExcerpt       ReaderExcerpt?    @relation(fields: [readerExcerptId], references: [id], onDelete: SetNull)
+  targetLibraryEntry  LibraryEntry?     @relation("ProjectDocCitationTargetLibraryEntry", fields: [targetLibraryEntryId], references: [id], onDelete: Restrict)
+  readerAnnotation    ReaderAnnotation? @relation(fields: [readerAnnotationId], references: [id], onDelete: Restrict)
+  sourceTextArtifact  SourceTextArtifact? @relation(fields: [sourceTextArtifactId], references: [id], onDelete: Restrict)
 
   @@index([projectDocVersionId, paperAssetId])
   @@index([readerExcerptId])
+  @@index([targetLibraryEntryId, lifecycleStatus])
+  @@index([projectDocVersionId, occurrenceKey])
+  @@index([readerAnnotationId])
+  @@index([sourceTextArtifactId])
+}
+
+model AiChatSession {
+  id                   String                   @id @default(cuid())
+  ownerUserId          String
+  sourceContextType    String?
+  sourceContextId      String?
+  sourceContextVersionId String?
+  title                String
+  lifecycleStatus      ReferenceLifecycleStatus @default(active)
+  archivedAt           DateTime?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  owner                User                     @relation("AiChatSessionOwnedBy", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  messages             AiChatMessage[]
+  requests             AiChatRequest[]
+
+  @@index([ownerUserId, updatedAt])
+  @@index([sourceContextType, sourceContextId, updatedAt])
+  @@index([lifecycleStatus, updatedAt])
+}
+
+model AiChatMessage {
+  id               String            @id @default(cuid())
+  sessionId        String
+  role             AiChatMessageRole
+  body             String
+  safeMetadataJson String?
+  createdAt        DateTime          @default(now())
+  session          AiChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+model AiChatRequest {
+  id                    String              @id @default(cuid())
+  sessionId             String
+  requestedMessageId    String?
+  responseMessageId     String?
+  status                AiChatRequestStatus @default(queued)
+  promptBuildVersion    String
+  contextTokenEstimate  Int?
+  responseTokenEstimate Int?
+  costEstimate          Float?
+  budgetLimit           Int?
+  overBudgetDecision    String?
+  safeMetadataJson      String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  session               AiChatSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  contextRefs           AiChatRequestContextRef[]
+
+  @@index([sessionId, createdAt])
+  @@index([status, createdAt])
+}
+
+model AiChatRequestContextRef {
+  id                   String             @id @default(cuid())
+  requestId            String
+  sourceType           String
+  sourceId             String
+  sourceVersionId      String?
+  sourceDocumentId     String?
+  sourceLibraryEntryId String?
+  readerAnnotationId   String?
+  sourceTextArtifactId String?
+  paperAssetId         String?
+  rangeStartOffset     Int?
+  rangeEndOffset       Int?
+  locatorJson          String?
+  chipLabel            String
+  tokenEstimate        Int?
+  omittedReason        String?
+  createdAt            DateTime           @default(now())
+  request              AiChatRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sourceLibraryEntry   LibraryEntry?      @relation(fields: [sourceLibraryEntryId], references: [id], onDelete: SetNull)
+  readerAnnotation     ReaderAnnotation?  @relation(fields: [readerAnnotationId], references: [id], onDelete: SetNull)
+  sourceTextArtifact   SourceTextArtifact? @relation(fields: [sourceTextArtifactId], references: [id], onDelete: SetNull)
+  paperAsset           PaperAsset?        @relation(fields: [paperAssetId], references: [id], onDelete: SetNull)
+
+  @@index([requestId, sourceType])
+  @@index([sourceType, sourceId])
+  @@index([sourceLibraryEntryId])
+  @@index([readerAnnotationId])
+  @@index([sourceTextArtifactId])
 }
 
 model ProviderCredential {

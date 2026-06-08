@@ -96,6 +96,17 @@ describe('prisma schema', () => {
     expect(schema).toContain('model AiContextPack');
     expect(schema).toContain('model AiContextItem');
     expect(schema).toContain('model AiResultArtifact');
+    expect(schema).toContain('model SourceTextArtifact');
+    expect(schema).toContain('model ReaderAnnotation');
+    expect(schema).toContain('model ReaderNotebookBinding');
+    expect(schema).toContain('model NotebookSourceLink');
+    expect(schema).toContain('model AiChatSession');
+    expect(schema).toContain('model AiChatMessage');
+    expect(schema).toContain('model AiChatRequest');
+    expect(schema).toContain('model AiChatRequestContextRef');
+    expect(schema).toContain('enum ReferenceLifecycleStatus');
+    expect(schema).toContain('enum SourceTextAvailabilityState');
+    expect(schema).toContain('enum ReaderAnnotationVisibility');
 
     expect(schema).toMatch(/model Space[\s\S]*\n\s+kind\s+SpaceKind/);
     expect(schema).toMatch(/model Project[\s\S]*\n\s+spaceId\s+String/);
@@ -104,8 +115,17 @@ describe('prisma schema', () => {
     expect(schema).toMatch(
       /model LibraryEntry[\s\S]*@@unique\(\[scopeType, scopeId, paperAssetId\]/,
     );
+    expect(schema).toMatch(
+      /model LibraryEntry[\s\S]*\n\s+lifecycleStatus\s+ReferenceLifecycleStatus\s+@default\(active\)/,
+    );
+    expect(schema).toMatch(
+      /model LibraryEntry[\s\S]*@@index\(\[scopeType, scopeId, lifecycleStatus\]\)/,
+    );
     expect(schema).toMatch(/model PaperAsset[\s\S]*\n\s+canonicalId\s+String\s+@unique/);
     expect(schema).toMatch(/model PaperAsset[\s\S]*\n\s+checksum\s+String\?\s+@unique/);
+    expect(schema).toMatch(
+      /model PaperAsset[\s\S]*\n\s+sourceTextArtifacts\s+SourceTextArtifact\[\]/,
+    );
     expect(
       existsSync('prisma/migrations/20260519000000_paper_asset_checksum_index/migration.sql'),
     ).toBe(true);
@@ -171,9 +191,64 @@ describe('prisma schema', () => {
     expect(readerExcerptModel).not.toContain('projectId');
     expect(readerExcerptModel).not.toContain('scopeType');
     expect(readerExcerptModel).not.toContain('scopeId');
+    expect(schema).toMatch(/model SourceTextArtifact[\s\S]*\n\s+paperAssetId\s+String/);
+    expect(schema).toMatch(
+      /model SourceTextArtifact[\s\S]*\n\s+availabilityState\s+SourceTextAvailabilityState/,
+    );
+    expect(schema).toMatch(
+      /model SourceTextArtifact[\s\S]*\n\s+artifactRef\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model SourceTextArtifact[\s\S]*@@index\(\[paperAssetId, kind\]\)/,
+    );
+    expect(schema).toMatch(
+      /model SourceTextArtifact[\s\S]*@@index\(\[availabilityState, updatedAt\]\)/,
+    );
+    expect(schema).toMatch(/model ReaderAnnotation[\s\S]*\n\s+libraryEntryId\s+String/);
+    expect(schema).toMatch(/model ReaderAnnotation[\s\S]*\n\s+paperAssetId\s+String/);
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*\n\s+sourceContextType\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*\n\s+visibility\s+ReaderAnnotationVisibility\s+@default\(private\)/,
+    );
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*\n\s+originalAnnotationId\s+String\?/,
+    );
+    expect(schema).toMatch(/model ReaderAnnotation[\s\S]*\n\s+selectorJson\s+String/);
+    expect(schema).toMatch(/model ReaderAnnotation[\s\S]*\n\s+locatorJson\s+String\?/);
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*\n\s+lifecycleStatus\s+ReferenceLifecycleStatus\s+@default\(active\)/,
+    );
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*@@index\(\[sourceContextType, sourceContextId, createdByUserId\]\)/,
+    );
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*@@index\(\[projectId, visibility, createdAt\]\)/,
+    );
     expect(schema).toMatch(/model NotebookDocument[\s\S]*\n\s+ownerId\s+String/);
     expect(schema).toMatch(
+      /model ReaderNotebookBinding[\s\S]*\n\s+sourceContextType\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ReaderNotebookBinding[\s\S]*\n\s+notebookDocumentId\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ReaderNotebookBinding[\s\S]*@@unique\(\[userId, sourceContextType, sourceContextId\], name: "ReaderNotebookBinding_user_source_unique"\)/,
+    );
+    expect(schema).toMatch(
       /model NotebookDocumentVersion[\s\S]*@@unique\(\[notebookDocumentId, versionNumber\]\)/,
+    );
+    expect(schema).toMatch(/model NotebookSourceLink[\s\S]*\n\s+sourceType\s+String/);
+    expect(schema).toMatch(/model NotebookSourceLink[\s\S]*\n\s+sourceId\s+String/);
+    expect(schema).toMatch(
+      /model NotebookSourceLink[\s\S]*\n\s+readerAnnotationId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model NotebookSourceLink[\s\S]*\n\s+sourceTextArtifactId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model NotebookSourceLink[\s\S]*@@index\(\[notebookDocumentVersionId, sourceType\]\)/,
     );
     expect(schema).toMatch(
       /model NotebookDocumentCitation[\s\S]*\n\s+notebookDocumentVersionId\s+String/,
@@ -198,7 +273,29 @@ describe('prisma schema', () => {
       /model ProjectDocCitation[\s\S]*\n\s+readerExcerptId\s+String\?/,
     );
     expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+targetLibraryEntryId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+occurrenceKey\s+String\?/,
+    );
+    expect(schema).toMatch(/model ProjectDocCitation[\s\S]*\n\s+locatorJson\s+String\?/);
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+readerAnnotationId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+sourceTextArtifactId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+lifecycleStatus\s+ReferenceLifecycleStatus\s+@default\(active\)/,
+    );
+    expect(schema).toMatch(
       /model ProjectDocCitation[\s\S]*@@index\(\[readerExcerptId\]\)/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*@@index\(\[targetLibraryEntryId, lifecycleStatus\]\)/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*@@index\(\[projectDocVersionId, occurrenceKey\]\)/,
     );
     expect(
       existsSync(
@@ -322,6 +419,38 @@ describe('prisma schema', () => {
     expect(aiResultsMigration).toContain('"provenanceJson" TEXT NOT NULL');
     expect(aiResultsMigration).toContain('"appliedTargetJson" TEXT');
     expect(aiResultsMigration).toContain('AiResultArtifact_scopeType_scopeId_createdAt_idx');
+    expect(schema).toMatch(/model AiChatSession[\s\S]*\n\s+ownerUserId\s+String/);
+    expect(schema).toMatch(
+      /model AiChatSession[\s\S]*\n\s+sourceContextType\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model AiChatSession[\s\S]*\n\s+lifecycleStatus\s+ReferenceLifecycleStatus\s+@default\(active\)/,
+    );
+    expect(schema).toMatch(
+      /model AiChatSession[\s\S]*@@index\(\[ownerUserId, updatedAt\]\)/,
+    );
+    expect(schema).toMatch(/model AiChatMessage[\s\S]*\n\s+role\s+AiChatMessageRole/);
+    expect(schema).toMatch(/model AiChatMessage[\s\S]*\n\s+safeMetadataJson\s+String\?/);
+    expect(schema).toMatch(/model AiChatRequest[\s\S]*\n\s+promptBuildVersion\s+String/);
+    expect(schema).toMatch(
+      /model AiChatRequest[\s\S]*\n\s+contextTokenEstimate\s+Int\?/,
+    );
+    expect(schema).toMatch(/model AiChatRequest[\s\S]*\n\s+overBudgetDecision\s+String\?/);
+    expect(schema).toMatch(
+      /model AiChatRequestContextRef[\s\S]*\n\s+sourceType\s+String/,
+    );
+    expect(schema).toMatch(
+      /model AiChatRequestContextRef[\s\S]*\n\s+rangeStartOffset\s+Int\?/,
+    );
+    expect(schema).toMatch(
+      /model AiChatRequestContextRef[\s\S]*\n\s+locatorJson\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model AiChatRequestContextRef[\s\S]*\n\s+chipLabel\s+String/,
+    );
+    expect(schema).toMatch(
+      /model AiChatRequestContextRef[\s\S]*@@index\(\[requestId, sourceType\]\)/,
+    );
   });
 
   it('initializes AI result artifact persistence with job and user foreign keys', async () => {
@@ -1248,5 +1377,82 @@ describe('prisma schema', () => {
     expect(workbenchHttpApi).toContain('rejectLegacyIdentityBodyFields(requiredActor, requestBody)');
     expect(workbenchHttpApi).not.toContain('payload.actorUserId');
     expect(workbenchHttpApi).not.toContain('payload.userId');
+  });
+
+  it('keeps core domain slice contracts transport safe', () => {
+    const sourceTextContract = readFileSync(
+      'src/shared/contracts/source-text.ts',
+      'utf8',
+    );
+    const readerAnnotationsContract = readFileSync(
+      'src/shared/contracts/reader-annotations.ts',
+      'utf8',
+    );
+    const notebookContract = readFileSync(
+      'src/shared/contracts/notebook.ts',
+      'utf8',
+    );
+    const projectDocsContract = readFileSync(
+      'src/shared/contracts/project-docs.ts',
+      'utf8',
+    );
+    const aiChatContract = readFileSync(
+      'src/shared/contracts/ai-chat.ts',
+      'utf8',
+    );
+    const combinedContracts = [
+      sourceTextContract,
+      readerAnnotationsContract,
+      notebookContract,
+      projectDocsContract,
+      aiChatContract,
+    ].join('\n');
+
+    expect(sourceTextContract).toContain('SourceTextAvailabilityState');
+    expect(sourceTextContract).toContain("'pdf_unavailable'");
+    expect(sourceTextContract).toContain("'text_unavailable'");
+    expect(sourceTextContract).toContain("'ocr_required'");
+    expect(sourceTextContract).toContain('SourceTextRangeLocator');
+    expect(sourceTextContract).not.toContain('storageKey');
+    expect(sourceTextContract).not.toContain('checksum');
+
+    expect(readerAnnotationsContract).toContain('ReaderAnnotationRecord');
+    expect(readerAnnotationsContract).toContain('SourceContextRef');
+    expect(readerAnnotationsContract).toContain('PublishReaderAnnotationToProjectRequest');
+    expect(readerAnnotationsContract).toContain('targetLibraryEntryId');
+    expect(readerAnnotationsContract).toContain('private_original');
+    expect(readerAnnotationsContract).toContain('project_copy');
+    expect(readerAnnotationsContract).not.toContain('createdByUserId');
+    expect(readerAnnotationsContract).not.toContain('actorUserId');
+
+    expect(notebookContract).toContain('ReaderNotebookBindingRecord');
+    expect(notebookContract).toContain('GetReaderDefaultNotebookRequest');
+    expect(notebookContract).toContain('NotebookSourceLinkRecord');
+    expect(notebookContract).toContain('sourceLinks');
+    expect(notebookContract).not.toContain('storageKey');
+    expect(notebookContract).not.toContain('checksum');
+
+    expect(projectDocsContract).toContain('ProjectDocCitationTarget');
+    expect(projectDocsContract).toContain('libraryEntryId: string');
+    expect(projectDocsContract).toContain('ProjectDocCitationOccurrence');
+    expect(projectDocsContract).toContain('ProjectDocCitationLocatorSource');
+    expect(projectDocsContract).toContain('PROJECT_SOURCE_ARCHIVE_BLOCKED');
+    expect(projectDocsContract).not.toContain('storageKey');
+    expect(projectDocsContract).not.toContain('checksum');
+
+    expect(aiChatContract).toContain('AiChatRequestTraceRecord');
+    expect(aiChatContract).toContain('AiChatRequestContextRefRecord');
+    expect(aiChatContract).toContain('promptBuildVersion');
+    expect(aiChatContract).toContain('overBudgetDecision');
+    expect(aiChatContract).toContain('chipLabel');
+    expect(aiChatContract).toContain('sourceTextArtifactRange');
+    expect(aiChatContract).not.toContain('rawContext');
+    expect(aiChatContract).not.toContain('rawSecret');
+    expect(aiChatContract).not.toContain('providerPayload');
+
+    expect(combinedContracts).not.toContain('@prisma/client');
+    expect(combinedContracts).not.toContain('encryptedSecret');
+    expect(combinedContracts).not.toContain('storageKey');
+    expect(combinedContracts).not.toContain('checksum');
   });
 });
