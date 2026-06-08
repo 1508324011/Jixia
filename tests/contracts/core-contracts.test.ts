@@ -1203,17 +1203,25 @@ describe('core contracts', () => {
       targetLibraryEntryId: 'library-entry-project_001',
     };
     const projectCopy: ReaderAnnotationRecord = {
-      ...privateAnnotation,
       copyState: {
         copiedAt: '2026-06-08T00:00:02.000Z',
         state: 'project_copy',
       },
+      createdAt: privateAnnotation.createdAt,
       id: 'reader-annotation-project-copy_001',
       libraryEntryId: publishRequest.targetLibraryEntryId,
+      lifecycleStatus: privateAnnotation.lifecycleStatus,
+      locator: privateAnnotation.locator,
+      paperAssetId: privateAnnotation.paperAssetId,
       projectId: 'project_001',
+      quote: privateAnnotation.quote,
+      selector: privateAnnotation.selector,
+      sourceContext: privateAnnotation.sourceContext,
+      sourceTextArtifactId: privateAnnotation.sourceTextArtifactId,
       updatedAt: '2026-06-08T00:00:02.000Z',
       visibility: 'project',
     };
+    const serializedProjectCopy = JSON.stringify(projectCopy);
 
     expect(unavailableAttachment.availabilityState).toBe('ocr_required');
     expect(artifact.availabilityState).toBe('available');
@@ -1229,6 +1237,11 @@ describe('core contracts', () => {
     expect(projectCopy.copyState.state).toBe('project_copy');
     expect(projectCopy.id).not.toBe(privateAnnotation.id);
     expect(projectCopy.libraryEntryId).toBe('library-entry-project_001');
+    expect(projectCopy).not.toHaveProperty('note');
+    expect(serializedProjectCopy).not.toContain('Private interpretation remains owner-only.');
+    expect(serializedProjectCopy).not.toMatch(
+      /"note"|Private interpretation remains owner-only|rawSourceText|fullText|storageKey|checksum|actorUserId|ownerId|privateDocumentBody|providerSecret/i,
+    );
     expect(publishRequest).not.toHaveProperty('projectId');
     expect(publishRequest).not.toHaveProperty('actorUserId');
     expect(JSON.stringify({ artifact, createAnnotationRequest, projectCopy })).not.toMatch(
@@ -1246,6 +1259,10 @@ describe('core contracts', () => {
     expectTypeOf<ReaderAnnotationRecord['visibility']>().toEqualTypeOf<
       'private' | 'project'
     >();
+    expectTypeOf<Extract<ReaderAnnotationRecord, { visibility: 'private' }>>()
+      .toMatchTypeOf<{ note?: string; visibility: 'private' }>();
+    expectTypeOf<Extract<ReaderAnnotationRecord, { visibility: 'project' }>>()
+      .toMatchTypeOf<{ note?: never; visibility: 'project' }>();
   });
 
   it('exports versioned document content payloads and legacy projection helpers', () => {

@@ -44,27 +44,48 @@ export interface ReaderAnnotationCopyState {
   state: 'private_original' | 'project_copy';
 }
 
-export interface ReaderAnnotationRecord {
+interface ReaderAnnotationRecordBase {
   copyState: ReaderAnnotationCopyState;
   createdAt: string;
   id: string;
   libraryEntryId: string;
   lifecycleStatus: ReferenceLifecycleStatus;
   locator?: ReaderAnnotationLocator;
-  note?: string;
   paperAssetId: string;
-  projectId?: string;
   quote: string;
   selector: ReaderAnnotationSelector;
   sourceContext: SourceContextRef;
   sourceTextArtifactId?: string;
   updatedAt: string;
-  visibility: ReaderAnnotationVisibility;
 }
+
+export interface PrivateReaderAnnotationRecord extends ReaderAnnotationRecordBase {
+  copyState: ReaderAnnotationCopyState & { state: 'private_original' };
+  note?: string;
+  projectId?: never;
+  visibility: 'private';
+}
+
+export interface ProjectReaderAnnotationRecord extends ReaderAnnotationRecordBase {
+  copyState: ReaderAnnotationCopyState & { state: 'project_copy' };
+  /**
+   * Project-visible annotation copies do not inherit the owner's private note.
+   * Add an explicit project-public field in a future contract if shared
+   * interpretation text becomes part of the foreground collaboration model.
+   */
+  note?: never;
+  projectId: string;
+  visibility: 'project';
+}
+
+export type ReaderAnnotationRecord =
+  | PrivateReaderAnnotationRecord
+  | ProjectReaderAnnotationRecord;
 
 export interface CreateReaderAnnotationRequest {
   libraryEntryId: string;
   locator?: ReaderAnnotationLocator;
+  /** Private owner-only annotation note. Not copied into project-visible records. */
   note?: string;
   quote: string;
   selector: ReaderAnnotationSelector;
