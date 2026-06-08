@@ -448,6 +448,8 @@ model ReaderAnnotation {
   sourceContextVersionId String?
   createdByUserId      String
   visibility           ReaderAnnotationVisibility @default(private)
+  // Runtime SQLite CHECK constraints enforce that project-visible copies
+  // have project context and never carry private owner notes.
   projectId            String?
   originalAnnotationId String?
   sourceTextArtifactId String?

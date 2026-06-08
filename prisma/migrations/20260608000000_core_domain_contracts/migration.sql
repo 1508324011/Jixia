@@ -54,8 +54,128 @@ CREATE TABLE IF NOT EXISTS "ReaderAnnotation" (
   CONSTRAINT "ReaderAnnotation_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "ReaderAnnotation_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "ReaderAnnotation_originalAnnotationId_fkey" FOREIGN KEY ("originalAnnotationId") REFERENCES "ReaderAnnotation" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT "ReaderAnnotation_sourceTextArtifactId_fkey" FOREIGN KEY ("sourceTextArtifactId") REFERENCES "SourceTextArtifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT "ReaderAnnotation_sourceTextArtifactId_fkey" FOREIGN KEY ("sourceTextArtifactId") REFERENCES "SourceTextArtifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT "ReaderAnnotation_project_visibility_check" CHECK (("visibility" = 'private' AND "projectId" IS NULL) OR ("visibility" = 'project' AND "projectId" IS NOT NULL)),
+  CONSTRAINT "ReaderAnnotation_project_note_check" CHECK ("visibility" != 'project' OR "note" IS NULL)
 );
+
+CREATE INDEX IF NOT EXISTS "ReaderAnnotation_libraryEntryId_createdByUserId_createdAt_idx" ON "ReaderAnnotation"("libraryEntryId", "createdByUserId", "createdAt");
+CREATE INDEX IF NOT EXISTS "ReaderAnnotation_sourceContextType_sourceContextId_createdByUserId_idx" ON "ReaderAnnotation"("sourceContextType", "sourceContextId", "createdByUserId");
+CREATE INDEX IF NOT EXISTS "ReaderAnnotation_projectId_visibility_createdAt_idx" ON "ReaderAnnotation"("projectId", "visibility", "createdAt");
+CREATE INDEX IF NOT EXISTS "ReaderAnnotation_originalAnnotationId_idx" ON "ReaderAnnotation"("originalAnnotationId");
+CREATE INDEX IF NOT EXISTS "ReaderAnnotation_lifecycleStatus_updatedAt_idx" ON "ReaderAnnotation"("lifecycleStatus", "updatedAt");
+
+-- Repair review/unreleased SQLite files that already had ReaderAnnotation
+-- without the privacy CHECK constraints. Project-visible copies retain their
+-- project context but drop owner-private notes; project rows without project
+-- context are demoted to private annotations so constraints can be enforced.
+PRAGMA defer_foreign_keys=ON;
+PRAGMA foreign_keys=OFF;
+
+DROP INDEX IF EXISTS "ReaderAnnotation_libraryEntryId_createdByUserId_createdAt_idx";
+DROP INDEX IF EXISTS "ReaderAnnotation_sourceContextType_sourceContextId_createdByUserId_idx";
+DROP INDEX IF EXISTS "ReaderAnnotation_projectId_visibility_createdAt_idx";
+DROP INDEX IF EXISTS "ReaderAnnotation_originalAnnotationId_idx";
+DROP INDEX IF EXISTS "ReaderAnnotation_lifecycleStatus_updatedAt_idx";
+
+CREATE TABLE "ReaderAnnotation__core_domain_privacy_rebuild" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "libraryEntryId" TEXT NOT NULL,
+  "paperAssetId" TEXT NOT NULL,
+  "sourceContextType" TEXT NOT NULL,
+  "sourceContextId" TEXT NOT NULL,
+  "sourceContextVersionId" TEXT,
+  "createdByUserId" TEXT NOT NULL,
+  "visibility" TEXT NOT NULL DEFAULT 'private',
+  "projectId" TEXT,
+  "originalAnnotationId" TEXT,
+  "sourceTextArtifactId" TEXT,
+  "quote" TEXT NOT NULL,
+  "selectorJson" TEXT NOT NULL,
+  "locatorJson" TEXT,
+  "note" TEXT,
+  "lifecycleStatus" TEXT NOT NULL DEFAULT 'active',
+  "archivedAt" DATETIME,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "ReaderAnnotation_libraryEntryId_fkey" FOREIGN KEY ("libraryEntryId") REFERENCES "LibraryEntry" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "ReaderAnnotation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "ReaderAnnotation_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "ReaderAnnotation_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "ReaderAnnotation_originalAnnotationId_fkey" FOREIGN KEY ("originalAnnotationId") REFERENCES "ReaderAnnotation" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT "ReaderAnnotation_sourceTextArtifactId_fkey" FOREIGN KEY ("sourceTextArtifactId") REFERENCES "SourceTextArtifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT "ReaderAnnotation_project_visibility_check" CHECK (("visibility" = 'private' AND "projectId" IS NULL) OR ("visibility" = 'project' AND "projectId" IS NOT NULL)),
+  CONSTRAINT "ReaderAnnotation_project_note_check" CHECK ("visibility" != 'project' OR "note" IS NULL)
+);
+
+INSERT INTO "ReaderAnnotation__core_domain_privacy_rebuild" (
+  "id",
+  "libraryEntryId",
+  "paperAssetId",
+  "sourceContextType",
+  "sourceContextId",
+  "sourceContextVersionId",
+  "createdByUserId",
+  "visibility",
+  "projectId",
+  "originalAnnotationId",
+  "sourceTextArtifactId",
+  "quote",
+  "selectorJson",
+  "locatorJson",
+  "note",
+  "lifecycleStatus",
+  "archivedAt",
+  "createdAt",
+  "updatedAt"
+)
+SELECT
+  "ReaderAnnotation"."id",
+  "ReaderAnnotation"."libraryEntryId",
+  "ReaderAnnotation"."paperAssetId",
+  "ReaderAnnotation"."sourceContextType",
+  "ReaderAnnotation"."sourceContextId",
+  "ReaderAnnotation"."sourceContextVersionId",
+  "ReaderAnnotation"."createdByUserId",
+  CASE
+    WHEN "ReaderAnnotation"."visibility" = 'project'
+      AND "ReaderAnnotation"."projectId" IS NOT NULL
+    THEN 'project'
+    ELSE 'private'
+  END AS "visibility",
+  CASE
+    WHEN "ReaderAnnotation"."visibility" = 'project'
+      AND "ReaderAnnotation"."projectId" IS NOT NULL
+    THEN "ReaderAnnotation"."projectId"
+    ELSE NULL
+  END AS "projectId",
+  CASE
+    WHEN "ReaderAnnotation"."visibility" = 'project'
+      AND "ReaderAnnotation"."projectId" IS NOT NULL
+    THEN "ReaderAnnotation"."originalAnnotationId"
+    ELSE NULL
+  END AS "originalAnnotationId",
+  "ReaderAnnotation"."sourceTextArtifactId",
+  "ReaderAnnotation"."quote",
+  "ReaderAnnotation"."selectorJson",
+  "ReaderAnnotation"."locatorJson",
+  CASE
+    WHEN "ReaderAnnotation"."visibility" = 'project'
+      AND "ReaderAnnotation"."projectId" IS NOT NULL
+    THEN NULL
+    ELSE "ReaderAnnotation"."note"
+  END AS "note",
+  COALESCE(NULLIF("ReaderAnnotation"."lifecycleStatus", ''), 'active') AS "lifecycleStatus",
+  "ReaderAnnotation"."archivedAt",
+  "ReaderAnnotation"."createdAt",
+  "ReaderAnnotation"."updatedAt"
+FROM "ReaderAnnotation";
+
+DROP TABLE "ReaderAnnotation";
+ALTER TABLE "ReaderAnnotation__core_domain_privacy_rebuild" RENAME TO "ReaderAnnotation";
+
+PRAGMA foreign_keys=ON;
+PRAGMA defer_foreign_keys=OFF;
 
 CREATE INDEX IF NOT EXISTS "ReaderAnnotation_libraryEntryId_createdByUserId_createdAt_idx" ON "ReaderAnnotation"("libraryEntryId", "createdByUserId", "createdAt");
 CREATE INDEX IF NOT EXISTS "ReaderAnnotation_sourceContextType_sourceContextId_createdByUserId_idx" ON "ReaderAnnotation"("sourceContextType", "sourceContextId", "createdByUserId");

@@ -216,6 +216,10 @@ interface SqliteTableColumnRow {
   name: string;
 }
 
+interface SqliteTableSqlRow {
+  sql: string | null;
+}
+
 async function readTableColumns(
   prisma: JixiaPrismaClient,
   tableName: string,
@@ -239,6 +243,154 @@ async function ensureColumnIfMissing(
     await prisma.$executeRawUnsafe(
       `ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${columnDefinition}`,
     );
+  }
+}
+
+async function readReaderAnnotationCreateTableSql(
+  prisma: JixiaPrismaClient,
+): Promise<string> {
+  const rows = await prisma.$queryRawUnsafe<SqliteTableSqlRow[]>(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ReaderAnnotation'`,
+  );
+
+  return rows[0]?.sql ?? '';
+}
+
+async function hasReaderAnnotationPrivacyConstraints(
+  prisma: JixiaPrismaClient,
+): Promise<boolean> {
+  const createTableSql = await readReaderAnnotationCreateTableSql(prisma);
+
+  return (
+    createTableSql.includes('ReaderAnnotation_project_visibility_check') &&
+    createTableSql.includes('ReaderAnnotation_project_note_check')
+  );
+}
+
+async function rebuildReaderAnnotationPrivacyConstraints(
+  prisma: JixiaPrismaClient,
+): Promise<void> {
+  if (await hasReaderAnnotationPrivacyConstraints(prisma)) {
+    return;
+  }
+
+  await prisma.$executeRawUnsafe('PRAGMA foreign_keys = OFF');
+  let transactionStarted = false;
+
+  try {
+    await prisma.$executeRawUnsafe('BEGIN IMMEDIATE');
+    transactionStarted = true;
+
+    await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS "ReaderAnnotation__rebuild"');
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE "ReaderAnnotation__rebuild" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "libraryEntryId" TEXT NOT NULL,
+        "paperAssetId" TEXT NOT NULL,
+        "sourceContextType" TEXT NOT NULL,
+        "sourceContextId" TEXT NOT NULL,
+        "sourceContextVersionId" TEXT,
+        "createdByUserId" TEXT NOT NULL,
+        "visibility" TEXT NOT NULL DEFAULT 'private',
+        "projectId" TEXT,
+        "originalAnnotationId" TEXT,
+        "sourceTextArtifactId" TEXT,
+        "quote" TEXT NOT NULL,
+        "selectorJson" TEXT NOT NULL,
+        "locatorJson" TEXT,
+        "note" TEXT,
+        "lifecycleStatus" TEXT NOT NULL DEFAULT 'active',
+        "archivedAt" DATETIME,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "ReaderAnnotation_libraryEntryId_fkey" FOREIGN KEY ("libraryEntryId") REFERENCES "LibraryEntry" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "ReaderAnnotation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "ReaderAnnotation_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "ReaderAnnotation_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "ReaderAnnotation_originalAnnotationId_fkey" FOREIGN KEY ("originalAnnotationId") REFERENCES "ReaderAnnotation" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+        CONSTRAINT "ReaderAnnotation_sourceTextArtifactId_fkey" FOREIGN KEY ("sourceTextArtifactId") REFERENCES "SourceTextArtifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+        CONSTRAINT "ReaderAnnotation_project_visibility_check" CHECK (("visibility" = 'private' AND "projectId" IS NULL) OR ("visibility" = 'project' AND "projectId" IS NOT NULL)),
+        CONSTRAINT "ReaderAnnotation_project_note_check" CHECK ("visibility" != 'project' OR "note" IS NULL)
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "ReaderAnnotation__rebuild" (
+        "id",
+        "libraryEntryId",
+        "paperAssetId",
+        "sourceContextType",
+        "sourceContextId",
+        "sourceContextVersionId",
+        "createdByUserId",
+        "visibility",
+        "projectId",
+        "originalAnnotationId",
+        "sourceTextArtifactId",
+        "quote",
+        "selectorJson",
+        "locatorJson",
+        "note",
+        "lifecycleStatus",
+        "archivedAt",
+        "createdAt",
+        "updatedAt"
+      )
+      SELECT
+        "ReaderAnnotation"."id",
+        "ReaderAnnotation"."libraryEntryId",
+        "ReaderAnnotation"."paperAssetId",
+        "ReaderAnnotation"."sourceContextType",
+        "ReaderAnnotation"."sourceContextId",
+        "ReaderAnnotation"."sourceContextVersionId",
+        "ReaderAnnotation"."createdByUserId",
+        CASE
+          WHEN "ReaderAnnotation"."visibility" = 'project'
+            AND "ReaderAnnotation"."projectId" IS NOT NULL
+          THEN 'project'
+          ELSE 'private'
+        END AS "visibility",
+        CASE
+          WHEN "ReaderAnnotation"."visibility" = 'project'
+            AND "ReaderAnnotation"."projectId" IS NOT NULL
+          THEN "ReaderAnnotation"."projectId"
+          ELSE NULL
+        END AS "projectId",
+        CASE
+          WHEN "ReaderAnnotation"."visibility" = 'project'
+            AND "ReaderAnnotation"."projectId" IS NOT NULL
+          THEN "ReaderAnnotation"."originalAnnotationId"
+          ELSE NULL
+        END AS "originalAnnotationId",
+        "ReaderAnnotation"."sourceTextArtifactId",
+        "ReaderAnnotation"."quote",
+        "ReaderAnnotation"."selectorJson",
+        "ReaderAnnotation"."locatorJson",
+        CASE
+          WHEN "ReaderAnnotation"."visibility" = 'project'
+            AND "ReaderAnnotation"."projectId" IS NOT NULL
+          THEN NULL
+          ELSE "ReaderAnnotation"."note"
+        END AS "note",
+        COALESCE(NULLIF("ReaderAnnotation"."lifecycleStatus", ''), 'active') AS "lifecycleStatus",
+        "ReaderAnnotation"."archivedAt",
+        "ReaderAnnotation"."createdAt",
+        "ReaderAnnotation"."updatedAt"
+      FROM "ReaderAnnotation"
+    `);
+    await prisma.$executeRawUnsafe('DROP TABLE "ReaderAnnotation"');
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE "ReaderAnnotation__rebuild" RENAME TO "ReaderAnnotation"',
+    );
+    await prisma.$executeRawUnsafe('COMMIT');
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) {
+      await prisma.$executeRawUnsafe('ROLLBACK').catch(() => undefined);
+    }
+
+    throw error;
+  } finally {
+    await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON');
   }
 }
 
@@ -605,7 +757,9 @@ async function initializeReadingPersistenceTables(
       CONSTRAINT "ReaderAnnotation_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
       CONSTRAINT "ReaderAnnotation_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
       CONSTRAINT "ReaderAnnotation_originalAnnotationId_fkey" FOREIGN KEY ("originalAnnotationId") REFERENCES "ReaderAnnotation" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
-      CONSTRAINT "ReaderAnnotation_sourceTextArtifactId_fkey" FOREIGN KEY ("sourceTextArtifactId") REFERENCES "SourceTextArtifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+      CONSTRAINT "ReaderAnnotation_sourceTextArtifactId_fkey" FOREIGN KEY ("sourceTextArtifactId") REFERENCES "SourceTextArtifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "ReaderAnnotation_project_visibility_check" CHECK (("visibility" = 'private' AND "projectId" IS NULL) OR ("visibility" = 'project' AND "projectId" IS NOT NULL)),
+      CONSTRAINT "ReaderAnnotation_project_note_check" CHECK ("visibility" != 'project' OR "note" IS NULL)
     )
   `);
   await ensureColumnIfMissing(
@@ -620,6 +774,7 @@ async function initializeReadingPersistenceTables(
     'archivedAt',
     'DATETIME',
   );
+  await rebuildReaderAnnotationPrivacyConstraints(prisma);
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "ReaderAnnotation_libraryEntryId_createdByUserId_createdAt_idx" ON "ReaderAnnotation"("libraryEntryId", "createdByUserId", "createdAt")
   `);
