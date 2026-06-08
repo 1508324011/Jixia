@@ -28,9 +28,13 @@ import type { CreateReaderExcerptRequest } from "@shared/contracts/reading";
 import {
   type AdoptNotebookIntoProjectDocRequest,
   type CreateProjectDocAiSuggestionRequest,
+  type ProjectDocCitationLocatorSource,
+  type ProjectDocCitationOccurrence,
   PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
   type ProjectDocCitationSourceUnavailableDetails,
 } from "@shared/contracts/project-docs";
+import type { ReferenceLifecycleStatus } from "@shared/contracts/reader-annotations";
+import type { SourceTextRangeLocator } from "@shared/contracts/source-text";
 
 import { createJixiaApp, type CreateJixiaAppOptions } from "./app";
 import { resolveHttpApi } from "./http-api";
@@ -1105,6 +1109,139 @@ function assertOptionalDocumentContentField(
   return value as DocumentBlockDocument;
 }
 
+function assertOptionalNumberField(
+  value: unknown,
+  fieldName: string,
+): number | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${fieldName} must be a finite number when provided.`);
+  }
+
+  return value;
+}
+
+function assertRequiredNumberField(
+  value: unknown,
+  fieldName: string,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${fieldName} is required.`);
+  }
+
+  return value;
+}
+
+function assertOptionalReferenceLifecycleStatusField(
+  value: unknown,
+  fieldName: string,
+): ReferenceLifecycleStatus | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (value === "active" || value === "archived" || value === "removed") {
+    return value;
+  }
+
+  throw new Error(`${fieldName} must be a supported lifecycle status when provided.`);
+}
+
+function assertOptionalCitationOccurrenceField(
+  value: unknown,
+  fieldName: string,
+): ProjectDocCitationOccurrence | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${fieldName} must be a JSON object when provided.`);
+  }
+
+  const occurrence = value as Record<string, unknown>;
+
+  return {
+    key: assertStringField(occurrence.key, `${fieldName}.key`),
+    label: assertOptionalStringField(occurrence.label, `${fieldName}.label`),
+  };
+}
+
+function assertOptionalCitationLocatorSourceField(
+  value: unknown,
+  fieldName: string,
+): ProjectDocCitationLocatorSource | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${fieldName} must be a JSON object when provided.`);
+  }
+
+  const locatorSource = value as Record<string, unknown>;
+  const type = locatorSource.type;
+
+  if (
+    type !== "project_doc_occurrence" &&
+    type !== "project_visible_reader_annotation" &&
+    type !== "source_text_artifact_range"
+  ) {
+    throw new Error(`${fieldName}.type must be a supported locator source type.`);
+  }
+
+  return {
+    id: assertOptionalStringField(locatorSource.id, `${fieldName}.id`),
+    type,
+  };
+}
+
+function assertOptionalSourceTextRangeLocatorField(
+  value: unknown,
+  fieldName: string,
+): SourceTextRangeLocator | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${fieldName} must be a JSON object when provided.`);
+  }
+
+  const locator = value as Record<string, unknown>;
+  const page = typeof locator.page === "undefined"
+    ? undefined
+    : (() => {
+        if (!locator.page || typeof locator.page !== "object" || Array.isArray(locator.page)) {
+          throw new Error(`${fieldName}.page must be a JSON object when provided.`);
+        }
+
+        const pageRecord = locator.page as Record<string, unknown>;
+
+        return {
+          endOffset: assertOptionalNumberField(pageRecord.endOffset, `${fieldName}.page.endOffset`),
+          label: assertOptionalStringField(pageRecord.label, `${fieldName}.page.label`),
+          pageNumber: assertRequiredNumberField(pageRecord.pageNumber, `${fieldName}.page.pageNumber`),
+          startOffset: assertOptionalNumberField(pageRecord.startOffset, `${fieldName}.page.startOffset`),
+        };
+      })();
+
+  return {
+    endOffset: assertRequiredNumberField(locator.endOffset, `${fieldName}.endOffset`),
+    locator: assertOptionalStringField(locator.locator, `${fieldName}.locator`),
+    page,
+    quote: assertOptionalTextField(locator.quote, `${fieldName}.quote`),
+    sourceTextArtifactId: assertStringField(
+      locator.sourceTextArtifactId,
+      `${fieldName}.sourceTextArtifactId`,
+    ),
+    startOffset: assertRequiredNumberField(locator.startOffset, `${fieldName}.startOffset`),
+  };
+}
+
 function parseCreateReaderExcerptBody(
   requestBody: unknown,
 ): CreateReaderExcerptRequest {
@@ -1136,8 +1273,18 @@ function parseDocumentCitationInputs(
 ): Array<{
   evidenceSpan?: string;
   libraryEntryId?: string;
+  lifecycleStatus?: ReferenceLifecycleStatus;
+  locator?: SourceTextRangeLocator;
+  locatorSource?: ProjectDocCitationLocatorSource;
+  occurrence?: ProjectDocCitationOccurrence;
   paperAssetId: string;
+  readerAnnotationId?: string;
   readerExcerptId?: string;
+  sourceTextArtifactId?: string;
+  target?: {
+    libraryEntryId: string;
+    paperAssetId: string;
+  };
 }> {
   if (!Array.isArray(value)) {
     throw new Error("citations must be an array.");
@@ -1149,6 +1296,30 @@ function parseDocumentCitationInputs(
     }
 
     const citationRecord = citation as Record<string, unknown>;
+    const target = typeof citationRecord.target === "undefined"
+      ? undefined
+      : (() => {
+          if (
+            !citationRecord.target ||
+            typeof citationRecord.target !== "object" ||
+            Array.isArray(citationRecord.target)
+          ) {
+            throw new Error(`citations[${index}].target must be a JSON object when provided.`);
+          }
+
+          const targetRecord = citationRecord.target as Record<string, unknown>;
+
+          return {
+            libraryEntryId: assertStringField(
+              targetRecord.libraryEntryId,
+              `citations[${index}].target.libraryEntryId`,
+            ),
+            paperAssetId: assertStringField(
+              targetRecord.paperAssetId,
+              `citations[${index}].target.paperAssetId`,
+            ),
+          };
+        })();
 
     return {
       evidenceSpan: assertOptionalTextField(
@@ -1159,14 +1330,39 @@ function parseDocumentCitationInputs(
         citationRecord.libraryEntryId,
         `citations[${index}].libraryEntryId`,
       ),
+      lifecycleStatus: assertOptionalReferenceLifecycleStatusField(
+        citationRecord.lifecycleStatus,
+        `citations[${index}].lifecycleStatus`,
+      ),
+      locator: assertOptionalSourceTextRangeLocatorField(
+        citationRecord.locator,
+        `citations[${index}].locator`,
+      ),
+      locatorSource: assertOptionalCitationLocatorSourceField(
+        citationRecord.locatorSource,
+        `citations[${index}].locatorSource`,
+      ),
+      occurrence: assertOptionalCitationOccurrenceField(
+        citationRecord.occurrence,
+        `citations[${index}].occurrence`,
+      ),
       paperAssetId: assertStringField(
         citationRecord.paperAssetId,
         `citations[${index}].paperAssetId`,
+      ),
+      readerAnnotationId: assertOptionalStringField(
+        citationRecord.readerAnnotationId,
+        `citations[${index}].readerAnnotationId`,
       ),
       readerExcerptId: assertOptionalStringField(
         citationRecord.readerExcerptId,
         `citations[${index}].readerExcerptId`,
       ),
+      sourceTextArtifactId: assertOptionalStringField(
+        citationRecord.sourceTextArtifactId,
+        `citations[${index}].sourceTextArtifactId`,
+      ),
+      target,
     };
   });
 }
@@ -1175,8 +1371,18 @@ function parseDocumentVersionBody(requestBody: unknown): {
   citations: Array<{
     evidenceSpan?: string;
     libraryEntryId?: string;
+    lifecycleStatus?: ReferenceLifecycleStatus;
+    locator?: SourceTextRangeLocator;
+    locatorSource?: ProjectDocCitationLocatorSource;
+    occurrence?: ProjectDocCitationOccurrence;
     paperAssetId: string;
+    readerAnnotationId?: string;
     readerExcerptId?: string;
+    sourceTextArtifactId?: string;
+    target?: {
+      libraryEntryId: string;
+      paperAssetId: string;
+    };
   }>;
   content?: string;
   documentContent?: DocumentBlockDocument;
@@ -1204,8 +1410,18 @@ function parseWorkbenchWritingBody(requestBody: unknown): {
   citations: Array<{
     evidenceSpan?: string;
     libraryEntryId?: string;
+    lifecycleStatus?: ReferenceLifecycleStatus;
+    locator?: SourceTextRangeLocator;
+    locatorSource?: ProjectDocCitationLocatorSource;
+    occurrence?: ProjectDocCitationOccurrence;
     paperAssetId: string;
+    readerAnnotationId?: string;
     readerExcerptId?: string;
+    sourceTextArtifactId?: string;
+    target?: {
+      libraryEntryId: string;
+      paperAssetId: string;
+    };
   }>;
   content?: string;
   documentContent?: DocumentBlockDocument;

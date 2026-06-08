@@ -14,6 +14,7 @@ import type { DocumentBlockDocument } from '@shared/contracts/document-content';
 
 import type {
   ProjectDocsService,
+  ProjectDocCitationInput,
   SaveProjectDocRequest,
   TransitionProjectDocPublishStateRequest,
 } from '../services/project-docs.service';
@@ -57,12 +58,7 @@ export interface ProjectDocsRoutes {
   ): Promise<WritingDocumentView | null>;
   saveWorkbenchDocument(
     input: {
-      citations: Array<{
-        evidenceSpan?: string;
-        libraryEntryId?: string;
-        paperAssetId: string;
-        readerExcerptId?: string;
-      }>;
+      citations: ProjectDocCitationInput[];
       content?: string;
       documentContent?: DocumentBlockDocument;
       projectId: string;
