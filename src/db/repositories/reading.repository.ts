@@ -212,6 +212,36 @@ const readingPersistenceInitializers = new WeakMap<
   Promise<void>
 >();
 
+interface SqliteTableColumnRow {
+  name: string;
+}
+
+async function readTableColumns(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+): Promise<Set<string>> {
+  const columns = await prisma.$queryRawUnsafe<SqliteTableColumnRow[]>(
+    `PRAGMA table_info("${tableName}")`,
+  );
+
+  return new Set(columns.map((column) => column.name));
+}
+
+async function ensureColumnIfMissing(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+  columnName: string,
+  columnDefinition: string,
+): Promise<void> {
+  const availableColumns = await readTableColumns(prisma, tableName);
+
+  if (!availableColumns.has(columnName)) {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${columnDefinition}`,
+    );
+  }
+}
+
 function toIsoString(value: Date): string {
   return value.toISOString();
 }
@@ -366,6 +396,29 @@ async function initializeReadingPersistenceTables(
 ): Promise<void> {
   await initializeLibraryPersistence(prisma);
   await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON');
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "SourceTextArtifact" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "paperAssetId" TEXT NOT NULL,
+      "kind" TEXT NOT NULL,
+      "availabilityState" TEXT NOT NULL,
+      "artifactRef" TEXT,
+      "textFormat" TEXT,
+      "pageCount" INTEGER,
+      "characterCount" INTEGER,
+      "language" TEXT,
+      "statusDetail" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "SourceTextArtifact_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "SourceTextArtifact_paperAssetId_kind_idx" ON "SourceTextArtifact"("paperAssetId", "kind")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "SourceTextArtifact_availabilityState_updatedAt_idx" ON "SourceTextArtifact"("availabilityState", "updatedAt")
+  `);
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "Note" (
       "id" TEXT NOT NULL PRIMARY KEY,
@@ -525,6 +578,62 @@ async function initializeReadingPersistenceTables(
   `);
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "ReaderExcerpt_createdByUserId_idx" ON "ReaderExcerpt"("createdByUserId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ReaderAnnotation" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "libraryEntryId" TEXT NOT NULL,
+      "paperAssetId" TEXT NOT NULL,
+      "sourceContextType" TEXT NOT NULL,
+      "sourceContextId" TEXT NOT NULL,
+      "sourceContextVersionId" TEXT,
+      "createdByUserId" TEXT NOT NULL,
+      "visibility" TEXT NOT NULL DEFAULT 'private',
+      "projectId" TEXT,
+      "originalAnnotationId" TEXT,
+      "sourceTextArtifactId" TEXT,
+      "quote" TEXT NOT NULL,
+      "selectorJson" TEXT NOT NULL,
+      "locatorJson" TEXT,
+      "note" TEXT,
+      "lifecycleStatus" TEXT NOT NULL DEFAULT 'active',
+      "archivedAt" DATETIME,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ReaderAnnotation_libraryEntryId_fkey" FOREIGN KEY ("libraryEntryId") REFERENCES "LibraryEntry" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "ReaderAnnotation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "ReaderAnnotation_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "ReaderAnnotation_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "ReaderAnnotation_originalAnnotationId_fkey" FOREIGN KEY ("originalAnnotationId") REFERENCES "ReaderAnnotation" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "ReaderAnnotation_sourceTextArtifactId_fkey" FOREIGN KEY ("sourceTextArtifactId") REFERENCES "SourceTextArtifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    )
+  `);
+  await ensureColumnIfMissing(
+    prisma,
+    'ReaderAnnotation',
+    'lifecycleStatus',
+    "TEXT NOT NULL DEFAULT 'active'",
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'ReaderAnnotation',
+    'archivedAt',
+    'DATETIME',
+  );
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ReaderAnnotation_libraryEntryId_createdByUserId_createdAt_idx" ON "ReaderAnnotation"("libraryEntryId", "createdByUserId", "createdAt")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ReaderAnnotation_sourceContextType_sourceContextId_createdByUserId_idx" ON "ReaderAnnotation"("sourceContextType", "sourceContextId", "createdByUserId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ReaderAnnotation_projectId_visibility_createdAt_idx" ON "ReaderAnnotation"("projectId", "visibility", "createdAt")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ReaderAnnotation_originalAnnotationId_idx" ON "ReaderAnnotation"("originalAnnotationId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ReaderAnnotation_lifecycleStatus_updatedAt_idx" ON "ReaderAnnotation"("lifecycleStatus", "updatedAt")
   `);
 }
 

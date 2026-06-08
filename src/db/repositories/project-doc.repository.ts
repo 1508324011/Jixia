@@ -226,14 +226,109 @@ interface SqliteForeignKeyRow {
   to: string;
 }
 
-async function hasProjectDocCitationReaderExcerptForeignKey(
+interface SqliteTableColumnRow {
+  name: string;
+}
+
+async function readTableColumns(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+): Promise<Set<string>> {
+  const columns = await prisma.$queryRawUnsafe<SqliteTableColumnRow[]>(
+    `PRAGMA table_info("${tableName}")`,
+  );
+
+  return new Set(columns.map((column) => column.name));
+}
+
+async function ensureColumnIfMissing(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+  columnName: string,
+  columnDefinition: string,
+): Promise<void> {
+  const availableColumns = await readTableColumns(prisma, tableName);
+
+  if (!availableColumns.has(columnName)) {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${columnDefinition}`,
+    );
+  }
+}
+
+async function ensureProjectDocCitationCoreColumns(
+  prisma: JixiaPrismaClient,
+): Promise<void> {
+  await ensureColumnIfMissing(
+    prisma,
+    'ProjectDocCitation',
+    'readerExcerptId',
+    'TEXT',
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'ProjectDocCitation',
+    'targetLibraryEntryId',
+    'TEXT',
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'ProjectDocCitation',
+    'occurrenceKey',
+    'TEXT',
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'ProjectDocCitation',
+    'occurrenceLabel',
+    'TEXT',
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'ProjectDocCitation',
+    'locatorJson',
+    'TEXT',
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'ProjectDocCitation',
+    'locatorSourceType',
+    'TEXT',
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'ProjectDocCitation',
+    'locatorSourceId',
+    'TEXT',
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'ProjectDocCitation',
+    'readerAnnotationId',
+    'TEXT',
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'ProjectDocCitation',
+    'sourceTextArtifactId',
+    'TEXT',
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'ProjectDocCitation',
+    'lifecycleStatus',
+    "TEXT NOT NULL DEFAULT 'active'",
+  );
+}
+
+async function hasProjectDocCitationCoreForeignKeys(
   prisma: JixiaPrismaClient,
 ): Promise<boolean> {
   const foreignKeys = await prisma.$queryRawUnsafe<SqliteForeignKeyRow[]>(
     'PRAGMA foreign_key_list("ProjectDocCitation")',
   );
 
-  return foreignKeys.some(
+  const hasReaderExcerptForeignKey = foreignKeys.some(
     (foreignKey) =>
       foreignKey.from === 'readerExcerptId' &&
       foreignKey.table === 'ReaderExcerpt' &&
@@ -241,18 +336,54 @@ async function hasProjectDocCitationReaderExcerptForeignKey(
       foreignKey.on_delete === 'SET NULL' &&
       foreignKey.on_update === 'CASCADE',
   );
+  const hasTargetLibraryEntryForeignKey = foreignKeys.some(
+    (foreignKey) =>
+      foreignKey.from === 'targetLibraryEntryId' &&
+      foreignKey.table === 'LibraryEntry' &&
+      foreignKey.to === 'id' &&
+      foreignKey.on_delete === 'RESTRICT' &&
+      foreignKey.on_update === 'CASCADE',
+  );
+  const hasReaderAnnotationForeignKey = foreignKeys.some(
+    (foreignKey) =>
+      foreignKey.from === 'readerAnnotationId' &&
+      foreignKey.table === 'ReaderAnnotation' &&
+      foreignKey.to === 'id' &&
+      foreignKey.on_delete === 'RESTRICT' &&
+      foreignKey.on_update === 'CASCADE',
+  );
+  const hasSourceTextArtifactForeignKey = foreignKeys.some(
+    (foreignKey) =>
+      foreignKey.from === 'sourceTextArtifactId' &&
+      foreignKey.table === 'SourceTextArtifact' &&
+      foreignKey.to === 'id' &&
+      foreignKey.on_delete === 'RESTRICT' &&
+      foreignKey.on_update === 'CASCADE',
+  );
+
+  return (
+    hasReaderExcerptForeignKey &&
+    hasTargetLibraryEntryForeignKey &&
+    hasReaderAnnotationForeignKey &&
+    hasSourceTextArtifactForeignKey
+  );
 }
 
-async function rebuildProjectDocCitationReaderExcerptForeignKey(
+async function rebuildProjectDocCitationCoreForeignKeys(
   prisma: JixiaPrismaClient,
 ): Promise<void> {
-  if (await hasProjectDocCitationReaderExcerptForeignKey(prisma)) {
+  if (await hasProjectDocCitationCoreForeignKeys(prisma)) {
     return;
   }
 
+  await ensureProjectDocCitationCoreColumns(prisma);
   await prisma.$executeRawUnsafe('PRAGMA foreign_keys = OFF');
+  let transactionStarted = false;
 
   try {
+    await prisma.$executeRawUnsafe('BEGIN IMMEDIATE');
+    transactionStarted = true;
+
     await prisma.$executeRawUnsafe(
       'DROP TABLE IF EXISTS "ProjectDocCitation__rebuild"',
     );
@@ -262,11 +393,23 @@ async function rebuildProjectDocCitationReaderExcerptForeignKey(
         "projectDocVersionId" TEXT NOT NULL,
         "paperAssetId" TEXT NOT NULL,
         "readerExcerptId" TEXT,
+        "targetLibraryEntryId" TEXT,
+        "occurrenceKey" TEXT,
+        "occurrenceLabel" TEXT,
+        "locatorJson" TEXT,
+        "locatorSourceType" TEXT,
+        "locatorSourceId" TEXT,
+        "readerAnnotationId" TEXT,
+        "sourceTextArtifactId" TEXT,
+        "lifecycleStatus" TEXT NOT NULL DEFAULT 'active',
         "evidenceSpan" TEXT,
         "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "ProjectDocCitation_projectDocVersionId_fkey" FOREIGN KEY ("projectDocVersionId") REFERENCES "ProjectDocVersion" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
         CONSTRAINT "ProjectDocCitation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-        CONSTRAINT "ProjectDocCitation_readerExcerptId_fkey" FOREIGN KEY ("readerExcerptId") REFERENCES "ReaderExcerpt" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+        CONSTRAINT "ProjectDocCitation_readerExcerptId_fkey" FOREIGN KEY ("readerExcerptId") REFERENCES "ReaderExcerpt" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+        CONSTRAINT "ProjectDocCitation_targetLibraryEntryId_fkey" FOREIGN KEY ("targetLibraryEntryId") REFERENCES "LibraryEntry" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT "ProjectDocCitation_readerAnnotationId_fkey" FOREIGN KEY ("readerAnnotationId") REFERENCES "ReaderAnnotation" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT "ProjectDocCitation_sourceTextArtifactId_fkey" FOREIGN KEY ("sourceTextArtifactId") REFERENCES "SourceTextArtifact" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
       )
     `);
     await prisma.$executeRawUnsafe(`
@@ -275,6 +418,15 @@ async function rebuildProjectDocCitationReaderExcerptForeignKey(
         "projectDocVersionId",
         "paperAssetId",
         "readerExcerptId",
+        "targetLibraryEntryId",
+        "occurrenceKey",
+        "occurrenceLabel",
+        "locatorJson",
+        "locatorSourceType",
+        "locatorSourceId",
+        "readerAnnotationId",
+        "sourceTextArtifactId",
+        "lifecycleStatus",
         "evidenceSpan",
         "createdAt"
       )
@@ -292,6 +444,42 @@ async function rebuildProjectDocCitationReaderExcerptForeignKey(
           THEN "ProjectDocCitation"."readerExcerptId"
           ELSE NULL
         END AS "readerExcerptId",
+        CASE
+          WHEN "ProjectDocCitation"."targetLibraryEntryId" IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM "LibraryEntry"
+              WHERE "LibraryEntry"."id" = "ProjectDocCitation"."targetLibraryEntryId"
+            )
+          THEN "ProjectDocCitation"."targetLibraryEntryId"
+          ELSE NULL
+        END AS "targetLibraryEntryId",
+        "ProjectDocCitation"."occurrenceKey",
+        "ProjectDocCitation"."occurrenceLabel",
+        "ProjectDocCitation"."locatorJson",
+        "ProjectDocCitation"."locatorSourceType",
+        "ProjectDocCitation"."locatorSourceId",
+        CASE
+          WHEN "ProjectDocCitation"."readerAnnotationId" IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM "ReaderAnnotation"
+              WHERE "ReaderAnnotation"."id" = "ProjectDocCitation"."readerAnnotationId"
+            )
+          THEN "ProjectDocCitation"."readerAnnotationId"
+          ELSE NULL
+        END AS "readerAnnotationId",
+        CASE
+          WHEN "ProjectDocCitation"."sourceTextArtifactId" IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM "SourceTextArtifact"
+              WHERE "SourceTextArtifact"."id" = "ProjectDocCitation"."sourceTextArtifactId"
+            )
+          THEN "ProjectDocCitation"."sourceTextArtifactId"
+          ELSE NULL
+        END AS "sourceTextArtifactId",
+        COALESCE(NULLIF("ProjectDocCitation"."lifecycleStatus", ''), 'active') AS "lifecycleStatus",
         "ProjectDocCitation"."evidenceSpan",
         "ProjectDocCitation"."createdAt"
       FROM "ProjectDocCitation"
@@ -300,6 +488,14 @@ async function rebuildProjectDocCitationReaderExcerptForeignKey(
     await prisma.$executeRawUnsafe(
       'ALTER TABLE "ProjectDocCitation__rebuild" RENAME TO "ProjectDocCitation"',
     );
+    await prisma.$executeRawUnsafe('COMMIT');
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) {
+      await prisma.$executeRawUnsafe('ROLLBACK').catch(() => undefined);
+    }
+
+    throw error;
   } finally {
     await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON');
   }
@@ -340,37 +536,50 @@ export async function initializeProjectDocPersistence(
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "ProjectDocCitation" (
       "id" TEXT NOT NULL PRIMARY KEY,
-      "projectDocVersionId" TEXT NOT NULL,
-      "paperAssetId" TEXT NOT NULL,
-      "readerExcerptId" TEXT,
-      "evidenceSpan" TEXT,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      CONSTRAINT "ProjectDocCitation_projectDocVersionId_fkey" FOREIGN KEY ("projectDocVersionId") REFERENCES "ProjectDocVersion" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-      CONSTRAINT "ProjectDocCitation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-      CONSTRAINT "ProjectDocCitation_readerExcerptId_fkey" FOREIGN KEY ("readerExcerptId") REFERENCES "ReaderExcerpt" ("id") ON DELETE SET NULL ON UPDATE CASCADE
-    )
+        "projectDocVersionId" TEXT NOT NULL,
+        "paperAssetId" TEXT NOT NULL,
+        "readerExcerptId" TEXT,
+        "targetLibraryEntryId" TEXT,
+        "occurrenceKey" TEXT,
+        "occurrenceLabel" TEXT,
+        "locatorJson" TEXT,
+        "locatorSourceType" TEXT,
+        "locatorSourceId" TEXT,
+        "readerAnnotationId" TEXT,
+        "sourceTextArtifactId" TEXT,
+        "lifecycleStatus" TEXT NOT NULL DEFAULT 'active',
+        "evidenceSpan" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "ProjectDocCitation_projectDocVersionId_fkey" FOREIGN KEY ("projectDocVersionId") REFERENCES "ProjectDocVersion" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "ProjectDocCitation_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "ProjectDocCitation_readerExcerptId_fkey" FOREIGN KEY ("readerExcerptId") REFERENCES "ReaderExcerpt" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+        CONSTRAINT "ProjectDocCitation_targetLibraryEntryId_fkey" FOREIGN KEY ("targetLibraryEntryId") REFERENCES "LibraryEntry" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT "ProjectDocCitation_readerAnnotationId_fkey" FOREIGN KEY ("readerAnnotationId") REFERENCES "ReaderAnnotation" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT "ProjectDocCitation_sourceTextArtifactId_fkey" FOREIGN KEY ("sourceTextArtifactId") REFERENCES "SourceTextArtifact" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+      )
   `);
-  await prisma.$executeRawUnsafe(`
-    ALTER TABLE "ProjectDocCitation" ADD COLUMN "readerExcerptId" TEXT
-  `).catch((error) => {
-    if (
-      error instanceof Error &&
-      /duplicate column name|already exists/i.test(error.message)
-    ) {
-      return;
-    }
-
-    throw error;
-  });
+  await ensureProjectDocCitationCoreColumns(prisma);
   await prisma.$executeRawUnsafe(`
     DROP INDEX IF EXISTS "ProjectDocCitation_projectDocVersionId_paperAssetId_key"
   `);
-  await rebuildProjectDocCitationReaderExcerptForeignKey(prisma);
+  await rebuildProjectDocCitationCoreForeignKeys(prisma);
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "ProjectDocCitation_projectDocVersionId_paperAssetId_idx" ON "ProjectDocCitation"("projectDocVersionId", "paperAssetId")
   `);
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "ProjectDocCitation_readerExcerptId_idx" ON "ProjectDocCitation"("readerExcerptId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProjectDocCitation_targetLibraryEntryId_lifecycleStatus_idx" ON "ProjectDocCitation"("targetLibraryEntryId", "lifecycleStatus")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProjectDocCitation_projectDocVersionId_occurrenceKey_idx" ON "ProjectDocCitation"("projectDocVersionId", "occurrenceKey")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProjectDocCitation_readerAnnotationId_idx" ON "ProjectDocCitation"("readerAnnotationId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProjectDocCitation_sourceTextArtifactId_idx" ON "ProjectDocCitation"("sourceTextArtifactId")
   `);
 }
 
