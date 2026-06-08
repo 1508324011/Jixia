@@ -2,6 +2,8 @@ import type {
   DocumentCitationRecordBase,
   DocumentSnapshot,
 } from './document-snapshot';
+import type { SourceContextRef } from './reader-annotations';
+import type { SourceTextRangeLocator } from './source-text';
 
 export interface CreateNotebookDocumentRequest {
   ownerId?: string;
@@ -51,6 +53,49 @@ export interface NotebookSourceExcerptBlock {
   readerExcerptId?: string;
   title?: string;
   type: 'sourceExcerpt';
+}
+
+export interface ReaderNotebookBindingRecord {
+  createdAt: string;
+  notebookDocumentId: string;
+  sourceContext: SourceContextRef;
+  updatedAt: string;
+}
+
+export interface GetReaderDefaultNotebookRequest {
+  sourceContext: SourceContextRef;
+}
+
+export interface ReaderDefaultNotebookResponse {
+  binding: ReaderNotebookBindingRecord;
+  document: NotebookDocumentRecord;
+}
+
+export type NotebookSourceLinkSourceType =
+  | 'generatedInsight'
+  | 'projectDocCitation'
+  | 'readerAnnotation'
+  | 'readerExcerpt'
+  | 'sourceTextArtifactRange';
+
+export interface NotebookSourceLinkRecord {
+  createdAt: string;
+  evidenceSpan?: string;
+  id: string;
+  locator?: SourceTextRangeLocator;
+  notebookDocumentVersionId: string;
+  paperAssetId?: string;
+  readerAnnotationId?: string;
+  sourceId: string;
+  sourceLibraryEntryId?: string;
+  sourceTextArtifactId?: string;
+  sourceType: NotebookSourceLinkSourceType;
+  sourceVersionId?: string;
+}
+
+export interface NotebookDocumentSnapshotWithSourceLinks
+  extends NotebookDocumentSnapshot {
+  sourceLinks: NotebookSourceLinkRecord[];
 }
 
 export interface CaptureNotebookEvidenceResponse {
