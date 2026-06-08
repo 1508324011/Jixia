@@ -1,5 +1,6 @@
 import type { GeneratedInsightRecord, EvidenceSpanRecord } from "./evidence";
 import type { LibraryEntryRecord, PaperAssetRecord } from "./library";
+import type { ReaderAnnotationRecord } from './reader-annotations';
 
 /**
  * @deprecated Reader collaboration authority no longer comes from visibility.
@@ -62,6 +63,7 @@ export interface ReaderExcerptRecord {
 }
 
 export interface ReadingDetailView {
+  annotations?: ReaderAnnotationRecord[];
   asset: PaperAssetRecord;
   entry: LibraryEntryRecord;
   excerpts: ReaderExcerptRecord[];

@@ -1,5 +1,6 @@
 export const sharedEntrypoint = "jixia-shared-entry";
 
+export * from "./contracts/ai-chat";
 export * from "./contracts/command-search";
 export * from "./contracts/credentials";
 export * from "./contracts/document-content";
@@ -13,8 +14,10 @@ export * from "./contracts/notebook";
 export * from "./contracts/project-docs";
 export * from "./contracts/projects";
 export * from "./contracts/reading";
+export * from "./contracts/reader-annotations";
 export * from "./contracts/session";
 export * from "./contracts/settings";
+export * from "./contracts/source-text";
 export * from "./contracts/spaces";
 export * from "./contracts/today-continuation";
 export * from "./contracts/writing";

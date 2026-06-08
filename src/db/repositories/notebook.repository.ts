@@ -279,6 +279,62 @@ export async function initializeNotebookPersistence(
     CREATE UNIQUE INDEX IF NOT EXISTS "NotebookDocumentVersion_notebookDocumentId_versionNumber_key" ON "NotebookDocumentVersion"("notebookDocumentId", "versionNumber")
   `);
   await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ReaderNotebookBinding" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "userId" TEXT NOT NULL,
+      "sourceContextType" TEXT NOT NULL,
+      "sourceContextId" TEXT NOT NULL,
+      "sourceContextVersionId" TEXT,
+      "notebookDocumentId" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ReaderNotebookBinding_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "ReaderNotebookBinding_notebookDocumentId_fkey" FOREIGN KEY ("notebookDocumentId") REFERENCES "NotebookDocument" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "ReaderNotebookBinding_user_source_unique" ON "ReaderNotebookBinding"("userId", "sourceContextType", "sourceContextId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ReaderNotebookBinding_notebookDocumentId_idx" ON "ReaderNotebookBinding"("notebookDocumentId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "NotebookSourceLink" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "notebookDocumentVersionId" TEXT NOT NULL,
+      "sourceType" TEXT NOT NULL,
+      "sourceId" TEXT NOT NULL,
+      "sourceVersionId" TEXT,
+      "sourceLibraryEntryId" TEXT,
+      "readerAnnotationId" TEXT,
+      "sourceTextArtifactId" TEXT,
+      "paperAssetId" TEXT,
+      "evidenceSpan" TEXT,
+      "locatorJson" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "NotebookSourceLink_notebookDocumentVersionId_fkey" FOREIGN KEY ("notebookDocumentVersionId") REFERENCES "NotebookDocumentVersion" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "NotebookSourceLink_sourceLibraryEntryId_fkey" FOREIGN KEY ("sourceLibraryEntryId") REFERENCES "LibraryEntry" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "NotebookSourceLink_readerAnnotationId_fkey" FOREIGN KEY ("readerAnnotationId") REFERENCES "ReaderAnnotation" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "NotebookSourceLink_sourceTextArtifactId_fkey" FOREIGN KEY ("sourceTextArtifactId") REFERENCES "SourceTextArtifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "NotebookSourceLink_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "NotebookSourceLink_notebookDocumentVersionId_sourceType_idx" ON "NotebookSourceLink"("notebookDocumentVersionId", "sourceType")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "NotebookSourceLink_sourceType_sourceId_idx" ON "NotebookSourceLink"("sourceType", "sourceId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "NotebookSourceLink_sourceLibraryEntryId_idx" ON "NotebookSourceLink"("sourceLibraryEntryId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "NotebookSourceLink_readerAnnotationId_idx" ON "NotebookSourceLink"("readerAnnotationId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "NotebookSourceLink_sourceTextArtifactId_idx" ON "NotebookSourceLink"("sourceTextArtifactId")
+  `);
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "NotebookDocumentCitation" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "notebookDocumentVersionId" TEXT NOT NULL,

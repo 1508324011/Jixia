@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createPrismaClient,
   initializeAiResultArtifactPersistence,
+  initializeAiChatPersistence,
   initializeAuditPersistence,
   initializeJobPersistence,
   initializeNotebookPersistence,
@@ -25,6 +26,10 @@ interface SqliteForeignKeyRow {
 
 interface SqliteTableColumnRow {
   name: string;
+}
+
+interface SqliteTableSqlRow {
+  sql: string | null;
 }
 
 async function foreignKeyList(
@@ -64,6 +69,110 @@ function expectAuditLogJobForeignKey(foreignKeys: SqliteForeignKeyRow[]): void {
   );
 }
 
+async function readColumnNames(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+): Promise<string[]> {
+  const columns = await prisma.$queryRawUnsafe<SqliteTableColumnRow[]>(
+    `PRAGMA table_info("${tableName}")`,
+  );
+
+  return columns.map((column) => column.name);
+}
+
+async function readCreateTableSql(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+): Promise<string> {
+  const rows = await prisma.$queryRawUnsafe<SqliteTableSqlRow[]>(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = '${tableName}'`,
+  );
+
+  return rows[0]?.sql ?? '';
+}
+
+function expectReaderAnnotationPrivacyConstraints(createTableSql: string): void {
+  expect(createTableSql).toContain('ReaderAnnotation_project_visibility_check');
+  expect(createTableSql).toContain('ReaderAnnotation_project_note_check');
+}
+
+async function seedReaderAnnotationFixture(
+  prisma: JixiaPrismaClient,
+  suffix: string,
+): Promise<{
+  paperAssetId: string;
+  personalLibraryEntryId: string;
+  projectId: string;
+  projectLibraryEntryId: string;
+  userId: string;
+}> {
+  const userId = `user-reader-annotation-${suffix}`;
+  const spaceId = `space-reader-annotation-${suffix}`;
+  const projectId = `project-reader-annotation-${suffix}`;
+  const paperAssetId = `paper-reader-annotation-${suffix}`;
+  const personalLibraryEntryId = `library-personal-reader-annotation-${suffix}`;
+  const projectLibraryEntryId = `library-project-reader-annotation-${suffix}`;
+
+  await prisma.user.create({
+    data: {
+      displayName: `Reader Annotation ${suffix}`,
+      email: `reader-annotation-${suffix}@example.test`,
+      id: userId,
+    },
+  });
+  await prisma.space.create({
+    data: {
+      id: spaceId,
+      kind: 'shared',
+      name: `Reader Annotation ${suffix}`,
+    },
+  });
+  await prisma.project.create({
+    data: {
+      createdByUserId: userId,
+      id: projectId,
+      name: `Reader Annotation ${suffix}`,
+      spaceId,
+    },
+  });
+  await prisma.paperAsset.create({
+    data: {
+      canonicalId: `doi:10.1000/reader-annotation-${suffix}`,
+      id: paperAssetId,
+      importedByUserId: userId,
+      sourceLocator: `10.1000/reader-annotation-${suffix}`,
+      sourceType: 'doi',
+      title: `Reader Annotation ${suffix}`,
+    },
+  });
+  await prisma.libraryEntry.create({
+    data: {
+      addedByUserId: userId,
+      id: personalLibraryEntryId,
+      paperAssetId,
+      scopeId: userId,
+      scopeType: 'user',
+    },
+  });
+  await prisma.libraryEntry.create({
+    data: {
+      addedByUserId: userId,
+      id: projectLibraryEntryId,
+      paperAssetId,
+      scopeId: projectId,
+      scopeType: 'project',
+    },
+  });
+
+  return {
+    paperAssetId,
+    personalLibraryEntryId,
+    projectId,
+    projectLibraryEntryId,
+    userId,
+  };
+}
+
 describe('prisma schema', () => {
   it('declares core bounded-context models', () => {
     const schema = readFileSync('prisma/schema.prisma', 'utf8');
@@ -96,6 +205,17 @@ describe('prisma schema', () => {
     expect(schema).toContain('model AiContextPack');
     expect(schema).toContain('model AiContextItem');
     expect(schema).toContain('model AiResultArtifact');
+    expect(schema).toContain('model SourceTextArtifact');
+    expect(schema).toContain('model ReaderAnnotation');
+    expect(schema).toContain('model ReaderNotebookBinding');
+    expect(schema).toContain('model NotebookSourceLink');
+    expect(schema).toContain('model AiChatSession');
+    expect(schema).toContain('model AiChatMessage');
+    expect(schema).toContain('model AiChatRequest');
+    expect(schema).toContain('model AiChatRequestContextRef');
+    expect(schema).toContain('enum ReferenceLifecycleStatus');
+    expect(schema).toContain('enum SourceTextAvailabilityState');
+    expect(schema).toContain('enum ReaderAnnotationVisibility');
 
     expect(schema).toMatch(/model Space[\s\S]*\n\s+kind\s+SpaceKind/);
     expect(schema).toMatch(/model Project[\s\S]*\n\s+spaceId\s+String/);
@@ -104,8 +224,17 @@ describe('prisma schema', () => {
     expect(schema).toMatch(
       /model LibraryEntry[\s\S]*@@unique\(\[scopeType, scopeId, paperAssetId\]/,
     );
+    expect(schema).toMatch(
+      /model LibraryEntry[\s\S]*\n\s+lifecycleStatus\s+ReferenceLifecycleStatus\s+@default\(active\)/,
+    );
+    expect(schema).toMatch(
+      /model LibraryEntry[\s\S]*@@index\(\[scopeType, scopeId, lifecycleStatus\]\)/,
+    );
     expect(schema).toMatch(/model PaperAsset[\s\S]*\n\s+canonicalId\s+String\s+@unique/);
     expect(schema).toMatch(/model PaperAsset[\s\S]*\n\s+checksum\s+String\?\s+@unique/);
+    expect(schema).toMatch(
+      /model PaperAsset[\s\S]*\n\s+sourceTextArtifacts\s+SourceTextArtifact\[\]/,
+    );
     expect(
       existsSync('prisma/migrations/20260519000000_paper_asset_checksum_index/migration.sql'),
     ).toBe(true);
@@ -171,9 +300,72 @@ describe('prisma schema', () => {
     expect(readerExcerptModel).not.toContain('projectId');
     expect(readerExcerptModel).not.toContain('scopeType');
     expect(readerExcerptModel).not.toContain('scopeId');
+    expect(schema).toMatch(/model SourceTextArtifact[\s\S]*\n\s+paperAssetId\s+String/);
+    expect(schema).toMatch(
+      /model SourceTextArtifact[\s\S]*\n\s+availabilityState\s+SourceTextAvailabilityState/,
+    );
+    expect(schema).toMatch(
+      /model SourceTextArtifact[\s\S]*\n\s+artifactRef\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model SourceTextArtifact[\s\S]*@@index\(\[paperAssetId, kind\]\)/,
+    );
+    expect(schema).toMatch(
+      /model SourceTextArtifact[\s\S]*@@index\(\[availabilityState, updatedAt\]\)/,
+    );
+    expect(schema).toMatch(/model ReaderAnnotation[\s\S]*\n\s+libraryEntryId\s+String/);
+    expect(schema).toMatch(/model ReaderAnnotation[\s\S]*\n\s+paperAssetId\s+String/);
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*\n\s+sourceContextType\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*\n\s+visibility\s+ReaderAnnotationVisibility\s+@default\(private\)/,
+    );
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*\n\s+originalAnnotationId\s+String\?/,
+    );
+    expect(schema).toMatch(/model ReaderAnnotation[\s\S]*\n\s+selectorJson\s+String/);
+    expect(schema).toMatch(/model ReaderAnnotation[\s\S]*\n\s+locatorJson\s+String\?/);
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*\n\s+lifecycleStatus\s+ReferenceLifecycleStatus\s+@default\(active\)/,
+    );
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*@@index\(\[sourceContextType, sourceContextId, createdByUserId\]\)/,
+    );
+    expect(schema).toMatch(
+      /model ReaderAnnotation[\s\S]*@@index\(\[projectId, visibility, createdAt\]\)/,
+    );
+    expect(schema).toContain('Runtime SQLite CHECK constraints enforce');
+    const coreDomainMigration = readFileSync(
+      'prisma/migrations/20260608000000_core_domain_contracts/migration.sql',
+      'utf8',
+    );
+    expect(coreDomainMigration).toContain('ReaderAnnotation_project_visibility_check');
+    expect(coreDomainMigration).toContain('ReaderAnnotation_project_note_check');
+    expect(coreDomainMigration).toContain('ReaderAnnotation__core_domain_privacy_rebuild');
     expect(schema).toMatch(/model NotebookDocument[\s\S]*\n\s+ownerId\s+String/);
     expect(schema).toMatch(
+      /model ReaderNotebookBinding[\s\S]*\n\s+sourceContextType\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ReaderNotebookBinding[\s\S]*\n\s+notebookDocumentId\s+String/,
+    );
+    expect(schema).toMatch(
+      /model ReaderNotebookBinding[\s\S]*@@unique\(\[userId, sourceContextType, sourceContextId\], name: "ReaderNotebookBinding_user_source_unique"\)/,
+    );
+    expect(schema).toMatch(
       /model NotebookDocumentVersion[\s\S]*@@unique\(\[notebookDocumentId, versionNumber\]\)/,
+    );
+    expect(schema).toMatch(/model NotebookSourceLink[\s\S]*\n\s+sourceType\s+String/);
+    expect(schema).toMatch(/model NotebookSourceLink[\s\S]*\n\s+sourceId\s+String/);
+    expect(schema).toMatch(
+      /model NotebookSourceLink[\s\S]*\n\s+readerAnnotationId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model NotebookSourceLink[\s\S]*\n\s+sourceTextArtifactId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model NotebookSourceLink[\s\S]*@@index\(\[notebookDocumentVersionId, sourceType\]\)/,
     );
     expect(schema).toMatch(
       /model NotebookDocumentCitation[\s\S]*\n\s+notebookDocumentVersionId\s+String/,
@@ -198,7 +390,29 @@ describe('prisma schema', () => {
       /model ProjectDocCitation[\s\S]*\n\s+readerExcerptId\s+String\?/,
     );
     expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+targetLibraryEntryId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+occurrenceKey\s+String\?/,
+    );
+    expect(schema).toMatch(/model ProjectDocCitation[\s\S]*\n\s+locatorJson\s+String\?/);
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+readerAnnotationId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+sourceTextArtifactId\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*\n\s+lifecycleStatus\s+ReferenceLifecycleStatus\s+@default\(active\)/,
+    );
+    expect(schema).toMatch(
       /model ProjectDocCitation[\s\S]*@@index\(\[readerExcerptId\]\)/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*@@index\(\[targetLibraryEntryId, lifecycleStatus\]\)/,
+    );
+    expect(schema).toMatch(
+      /model ProjectDocCitation[\s\S]*@@index\(\[projectDocVersionId, occurrenceKey\]\)/,
     );
     expect(
       existsSync(
@@ -322,6 +536,38 @@ describe('prisma schema', () => {
     expect(aiResultsMigration).toContain('"provenanceJson" TEXT NOT NULL');
     expect(aiResultsMigration).toContain('"appliedTargetJson" TEXT');
     expect(aiResultsMigration).toContain('AiResultArtifact_scopeType_scopeId_createdAt_idx');
+    expect(schema).toMatch(/model AiChatSession[\s\S]*\n\s+ownerUserId\s+String/);
+    expect(schema).toMatch(
+      /model AiChatSession[\s\S]*\n\s+sourceContextType\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model AiChatSession[\s\S]*\n\s+lifecycleStatus\s+ReferenceLifecycleStatus\s+@default\(active\)/,
+    );
+    expect(schema).toMatch(
+      /model AiChatSession[\s\S]*@@index\(\[ownerUserId, updatedAt\]\)/,
+    );
+    expect(schema).toMatch(/model AiChatMessage[\s\S]*\n\s+role\s+AiChatMessageRole/);
+    expect(schema).toMatch(/model AiChatMessage[\s\S]*\n\s+safeMetadataJson\s+String\?/);
+    expect(schema).toMatch(/model AiChatRequest[\s\S]*\n\s+promptBuildVersion\s+String/);
+    expect(schema).toMatch(
+      /model AiChatRequest[\s\S]*\n\s+contextTokenEstimate\s+Int\?/,
+    );
+    expect(schema).toMatch(/model AiChatRequest[\s\S]*\n\s+overBudgetDecision\s+String\?/);
+    expect(schema).toMatch(
+      /model AiChatRequestContextRef[\s\S]*\n\s+sourceType\s+String/,
+    );
+    expect(schema).toMatch(
+      /model AiChatRequestContextRef[\s\S]*\n\s+rangeStartOffset\s+Int\?/,
+    );
+    expect(schema).toMatch(
+      /model AiChatRequestContextRef[\s\S]*\n\s+locatorJson\s+String\?/,
+    );
+    expect(schema).toMatch(
+      /model AiChatRequestContextRef[\s\S]*\n\s+chipLabel\s+String/,
+    );
+    expect(schema).toMatch(
+      /model AiChatRequestContextRef[\s\S]*@@index\(\[requestId, sourceType\]\)/,
+    );
   });
 
   it('initializes AI result artifact persistence with job and user foreign keys', async () => {
@@ -709,6 +955,7 @@ describe('prisma schema', () => {
     expect(existsSync('src/db/repositories/audit.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/credentials.repository.ts')).toBe(true);
     expect(existsSync('src/db/repositories/reading.repository.ts')).toBe(true);
+    expect(existsSync('src/db/repositories/ai-chat.repository.ts')).toBe(true);
     expect(
       existsSync(
         'prisma/migrations/20260504000000_scoped_library_entries/migration.sql',
@@ -748,6 +995,7 @@ describe('prisma schema', () => {
     expect(dbIndex).toContain('PersistedProjectReadingCommentRecord');
     expect(dbIndex).toContain('createNotebookRepository');
     expect(dbIndex).toContain('createProjectDocRepository');
+    expect(dbIndex).toContain('initializeAiChatPersistence');
     expect(dbIndex).toContain('createJobRepository');
     expect(dbIndex).toContain('createAuditRepository');
     expect(dbIndex).toContain('createCredentialsRepository');
@@ -790,6 +1038,10 @@ describe('prisma schema', () => {
       'src/db/repositories/credentials.repository.ts',
       'utf8',
     );
+    const aiChatRepository = readFileSync(
+      'src/db/repositories/ai-chat.repository.ts',
+      'utf8',
+    );
 
     expect(projectRepository).not.toContain('@shared/contracts/');
     expect(spaceRepository).not.toContain('@shared/contracts/');
@@ -799,6 +1051,426 @@ describe('prisma schema', () => {
     expect(jobRepository).not.toContain('@shared/contracts/');
     expect(auditRepository).not.toContain('@shared/contracts/');
     expect(credentialsRepository).not.toContain('@shared/contracts/');
+    expect(aiChatRepository).not.toContain('@shared/contracts/');
+  });
+
+  it('initializes private AIChat trace tables with safe reference foreign keys', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'jixia-ai-chat-schema-'));
+    const prisma = createPrismaClient({
+      url: `file:${join(tempRoot, 'ai-chat-schema.db')}`,
+    });
+
+    try {
+      await initializeAiChatPersistence(prisma);
+
+      await expect(readColumnNames(prisma, 'AiChatSession')).resolves.toEqual(
+        expect.arrayContaining([
+          'id',
+          'ownerUserId',
+          'sourceContextType',
+          'sourceContextId',
+          'sourceContextVersionId',
+          'title',
+          'lifecycleStatus',
+          'archivedAt',
+          'createdAt',
+          'updatedAt',
+        ]),
+      );
+      await expect(readColumnNames(prisma, 'AiChatMessage')).resolves.toEqual(
+        expect.arrayContaining([
+          'id',
+          'sessionId',
+          'role',
+          'body',
+          'safeMetadataJson',
+          'createdAt',
+        ]),
+      );
+      await expect(readColumnNames(prisma, 'AiChatRequest')).resolves.toEqual(
+        expect.arrayContaining([
+          'id',
+          'sessionId',
+          'requestedMessageId',
+          'responseMessageId',
+          'status',
+          'promptBuildVersion',
+          'contextTokenEstimate',
+          'responseTokenEstimate',
+          'costEstimate',
+          'budgetLimit',
+          'overBudgetDecision',
+          'safeMetadataJson',
+          'createdAt',
+          'updatedAt',
+        ]),
+      );
+      await expect(readColumnNames(prisma, 'AiChatRequestContextRef')).resolves.toEqual(
+        expect.arrayContaining([
+          'id',
+          'requestId',
+          'sourceType',
+          'sourceId',
+          'sourceVersionId',
+          'sourceDocumentId',
+          'sourceLibraryEntryId',
+          'readerAnnotationId',
+          'sourceTextArtifactId',
+          'paperAssetId',
+          'rangeStartOffset',
+          'rangeEndOffset',
+          'locatorJson',
+          'chipLabel',
+          'tokenEstimate',
+          'omittedReason',
+          'createdAt',
+        ]),
+      );
+
+      expect(await foreignKeyList(prisma, 'AiChatSession')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            from: 'ownerUserId',
+            on_delete: 'CASCADE',
+            on_update: 'CASCADE',
+            table: 'User',
+            to: 'id',
+          }),
+        ]),
+      );
+      expect(await foreignKeyList(prisma, 'AiChatMessage')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            from: 'sessionId',
+            on_delete: 'CASCADE',
+            on_update: 'CASCADE',
+            table: 'AiChatSession',
+            to: 'id',
+          }),
+        ]),
+      );
+      expect(await foreignKeyList(prisma, 'AiChatRequest')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            from: 'sessionId',
+            on_delete: 'CASCADE',
+            on_update: 'CASCADE',
+            table: 'AiChatSession',
+            to: 'id',
+          }),
+        ]),
+      );
+      expect(await foreignKeyList(prisma, 'AiChatRequestContextRef')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            from: 'requestId',
+            on_delete: 'CASCADE',
+            on_update: 'CASCADE',
+            table: 'AiChatRequest',
+            to: 'id',
+          }),
+          expect.objectContaining({
+            from: 'sourceLibraryEntryId',
+            on_delete: 'SET NULL',
+            on_update: 'CASCADE',
+            table: 'LibraryEntry',
+            to: 'id',
+          }),
+          expect.objectContaining({
+            from: 'readerAnnotationId',
+            on_delete: 'SET NULL',
+            on_update: 'CASCADE',
+            table: 'ReaderAnnotation',
+            to: 'id',
+          }),
+          expect.objectContaining({
+            from: 'sourceTextArtifactId',
+            on_delete: 'SET NULL',
+            on_update: 'CASCADE',
+            table: 'SourceTextArtifact',
+            to: 'id',
+          }),
+          expect.objectContaining({
+            from: 'paperAssetId',
+            on_delete: 'SET NULL',
+            on_update: 'CASCADE',
+            table: 'PaperAsset',
+            to: 'id',
+          }),
+        ]),
+      );
+    } finally {
+      await prisma.$disconnect();
+      rmSync(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('enforces ReaderAnnotation privacy constraints at runtime', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'jixia-reader-annotation-privacy-'));
+    const prisma = createPrismaClient({
+      url: `file:${join(tempRoot, 'reader-annotation-privacy.db')}`,
+    });
+
+    try {
+      await initializeReadingPersistence(prisma);
+      expectReaderAnnotationPrivacyConstraints(
+        await readCreateTableSql(prisma, 'ReaderAnnotation'),
+      );
+
+      const fixture = await seedReaderAnnotationFixture(prisma, 'privacy');
+      const privateAnnotation = await prisma.readerAnnotation.create({
+        data: {
+          createdByUserId: fixture.userId,
+          id: 'reader-annotation-private-note-allowed',
+          libraryEntryId: fixture.personalLibraryEntryId,
+          note: 'Private reader note remains private.',
+          paperAssetId: fixture.paperAssetId,
+          quote: 'private annotation quote',
+          selectorJson: JSON.stringify({ exact: 'private annotation quote', type: 'textQuote' }),
+          sourceContextId: fixture.personalLibraryEntryId,
+          sourceContextType: 'libraryEntry',
+          visibility: 'private',
+        },
+      });
+      const projectAnnotation = await prisma.readerAnnotation.create({
+        data: {
+          createdByUserId: fixture.userId,
+          id: 'reader-annotation-project-valid',
+          libraryEntryId: fixture.projectLibraryEntryId,
+          paperAssetId: fixture.paperAssetId,
+          projectId: fixture.projectId,
+          quote: 'project annotation quote',
+          selectorJson: JSON.stringify({ exact: 'project annotation quote', type: 'textQuote' }),
+          sourceContextId: fixture.projectLibraryEntryId,
+          sourceContextType: 'libraryEntry',
+          visibility: 'project',
+        },
+      });
+
+      await expect(
+        prisma.readerAnnotation.create({
+          data: {
+            createdByUserId: fixture.userId,
+            id: 'reader-annotation-project-note-rejected',
+            libraryEntryId: fixture.projectLibraryEntryId,
+            note: 'Project-visible copies must not carry private notes.',
+            paperAssetId: fixture.paperAssetId,
+            projectId: fixture.projectId,
+            quote: 'project note rejected quote',
+            selectorJson: JSON.stringify({ exact: 'project note rejected quote', type: 'textQuote' }),
+            sourceContextId: fixture.projectLibraryEntryId,
+            sourceContextType: 'libraryEntry',
+            visibility: 'project',
+          },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        prisma.readerAnnotation.create({
+          data: {
+            createdByUserId: fixture.userId,
+            id: 'reader-annotation-project-null-project-rejected',
+            libraryEntryId: fixture.projectLibraryEntryId,
+            paperAssetId: fixture.paperAssetId,
+            quote: 'project null project rejected quote',
+            selectorJson: JSON.stringify({ exact: 'project null project rejected quote', type: 'textQuote' }),
+            sourceContextId: fixture.projectLibraryEntryId,
+            sourceContextType: 'libraryEntry',
+            visibility: 'project',
+          },
+        }),
+      ).rejects.toThrow();
+
+      expect(privateAnnotation).toMatchObject({
+        note: 'Private reader note remains private.',
+        projectId: null,
+        visibility: 'private',
+      });
+      expect(projectAnnotation).toMatchObject({
+        note: null,
+        projectId: fixture.projectId,
+        visibility: 'project',
+      });
+    } finally {
+      await prisma.$disconnect();
+      rmSync(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('repairs unconstrained ReaderAnnotation tables to preserve privacy invariants', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'jixia-reader-annotation-repair-'));
+    const databaseUrl = `file:${join(tempRoot, 'reader-annotation-repair.db')}`;
+    const prisma = createPrismaClient({ url: databaseUrl });
+
+    try {
+      await initializeReadingPersistence(prisma);
+      const fixture = await seedReaderAnnotationFixture(prisma, 'repair');
+
+      await prisma.$executeRawUnsafe('PRAGMA foreign_keys = OFF');
+      await prisma.$executeRawUnsafe('DROP TABLE "ReaderAnnotation"');
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE "ReaderAnnotation" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "libraryEntryId" TEXT NOT NULL,
+          "paperAssetId" TEXT NOT NULL,
+          "sourceContextType" TEXT NOT NULL,
+          "sourceContextId" TEXT NOT NULL,
+          "sourceContextVersionId" TEXT,
+          "createdByUserId" TEXT NOT NULL,
+          "visibility" TEXT NOT NULL DEFAULT 'private',
+          "projectId" TEXT,
+          "originalAnnotationId" TEXT,
+          "sourceTextArtifactId" TEXT,
+          "quote" TEXT NOT NULL,
+          "selectorJson" TEXT NOT NULL,
+          "locatorJson" TEXT,
+          "note" TEXT,
+          "lifecycleStatus" TEXT NOT NULL DEFAULT 'active',
+          "archivedAt" DATETIME,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "ReaderAnnotation" (
+          "id",
+          "libraryEntryId",
+          "paperAssetId",
+          "sourceContextType",
+          "sourceContextId",
+          "createdByUserId",
+          "visibility",
+          "projectId",
+          "quote",
+          "selectorJson",
+          "note"
+        )
+        VALUES
+          (
+            'reader-annotation-repair-project-note',
+            '${fixture.projectLibraryEntryId}',
+            '${fixture.paperAssetId}',
+            'libraryEntry',
+            '${fixture.projectLibraryEntryId}',
+            '${fixture.userId}',
+            'project',
+            '${fixture.projectId}',
+            'project note is scrubbed',
+            '{"type":"textQuote","exact":"project note is scrubbed"}',
+            'private note to scrub'
+          ),
+          (
+            'reader-annotation-repair-project-null-project',
+            '${fixture.projectLibraryEntryId}',
+            '${fixture.paperAssetId}',
+            'libraryEntry',
+            '${fixture.projectLibraryEntryId}',
+            '${fixture.userId}',
+            'project',
+            NULL,
+            'project without project becomes private',
+            '{"type":"textQuote","exact":"project without project becomes private"}',
+            'private note retained after demotion'
+          ),
+          (
+            'reader-annotation-repair-private-note',
+            '${fixture.personalLibraryEntryId}',
+            '${fixture.paperAssetId}',
+            'libraryEntry',
+            '${fixture.personalLibraryEntryId}',
+            '${fixture.userId}',
+            'private',
+            NULL,
+            'private note stays private',
+            '{"type":"textQuote","exact":"private note stays private"}',
+            'private note retained'
+          ),
+          (
+            'reader-annotation-repair-project-valid',
+            '${fixture.projectLibraryEntryId}',
+            '${fixture.paperAssetId}',
+            'libraryEntry',
+            '${fixture.projectLibraryEntryId}',
+            '${fixture.userId}',
+            'project',
+            '${fixture.projectId}',
+            'valid project copy',
+            '{"type":"textQuote","exact":"valid project copy"}',
+            NULL
+          )
+      `);
+      await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON');
+      await prisma.$disconnect();
+
+      const repairedPrisma = createPrismaClient({ url: databaseUrl });
+
+      try {
+        await initializeReadingPersistence(repairedPrisma);
+
+        expectReaderAnnotationPrivacyConstraints(
+          await readCreateTableSql(repairedPrisma, 'ReaderAnnotation'),
+        );
+        const rows = await repairedPrisma.$queryRawUnsafe<
+          Array<{
+            id: string;
+            note: string | null;
+            projectId: string | null;
+            visibility: string;
+          }>
+        >(`
+          SELECT "id", "note", "projectId", "visibility"
+          FROM "ReaderAnnotation"
+          ORDER BY "id"
+        `);
+
+        expect(rows).toEqual([
+          {
+            id: 'reader-annotation-repair-private-note',
+            note: 'private note retained',
+            projectId: null,
+            visibility: 'private',
+          },
+          {
+            id: 'reader-annotation-repair-project-note',
+            note: null,
+            projectId: fixture.projectId,
+            visibility: 'project',
+          },
+          {
+            id: 'reader-annotation-repair-project-null-project',
+            note: 'private note retained after demotion',
+            projectId: null,
+            visibility: 'private',
+          },
+          {
+            id: 'reader-annotation-repair-project-valid',
+            note: null,
+            projectId: fixture.projectId,
+            visibility: 'project',
+          },
+        ]);
+        await expect(
+          repairedPrisma.readerAnnotation.create({
+            data: {
+              createdByUserId: fixture.userId,
+              id: 'reader-annotation-repair-project-note-rejected',
+              libraryEntryId: fixture.projectLibraryEntryId,
+              note: 'Project copy note rejected after repair.',
+              paperAssetId: fixture.paperAssetId,
+              projectId: fixture.projectId,
+              quote: 'post repair rejected quote',
+              selectorJson: JSON.stringify({ exact: 'post repair rejected quote', type: 'textQuote' }),
+              sourceContextId: fixture.projectLibraryEntryId,
+              sourceContextType: 'libraryEntry',
+              visibility: 'project',
+            },
+          }),
+        ).rejects.toThrow();
+      } finally {
+        await repairedPrisma.$disconnect();
+      }
+    } finally {
+      rmSync(tempRoot, { force: true, recursive: true });
+    }
   });
 
   it('keeps credential secrets and workbench settings on Prisma authority', () => {
@@ -1248,5 +1920,82 @@ describe('prisma schema', () => {
     expect(workbenchHttpApi).toContain('rejectLegacyIdentityBodyFields(requiredActor, requestBody)');
     expect(workbenchHttpApi).not.toContain('payload.actorUserId');
     expect(workbenchHttpApi).not.toContain('payload.userId');
+  });
+
+  it('keeps core domain slice contracts transport safe', () => {
+    const sourceTextContract = readFileSync(
+      'src/shared/contracts/source-text.ts',
+      'utf8',
+    );
+    const readerAnnotationsContract = readFileSync(
+      'src/shared/contracts/reader-annotations.ts',
+      'utf8',
+    );
+    const notebookContract = readFileSync(
+      'src/shared/contracts/notebook.ts',
+      'utf8',
+    );
+    const projectDocsContract = readFileSync(
+      'src/shared/contracts/project-docs.ts',
+      'utf8',
+    );
+    const aiChatContract = readFileSync(
+      'src/shared/contracts/ai-chat.ts',
+      'utf8',
+    );
+    const combinedContracts = [
+      sourceTextContract,
+      readerAnnotationsContract,
+      notebookContract,
+      projectDocsContract,
+      aiChatContract,
+    ].join('\n');
+
+    expect(sourceTextContract).toContain('SourceTextAvailabilityState');
+    expect(sourceTextContract).toContain("'pdf_unavailable'");
+    expect(sourceTextContract).toContain("'text_unavailable'");
+    expect(sourceTextContract).toContain("'ocr_required'");
+    expect(sourceTextContract).toContain('SourceTextRangeLocator');
+    expect(sourceTextContract).not.toContain('storageKey');
+    expect(sourceTextContract).not.toContain('checksum');
+
+    expect(readerAnnotationsContract).toContain('ReaderAnnotationRecord');
+    expect(readerAnnotationsContract).toContain('SourceContextRef');
+    expect(readerAnnotationsContract).toContain('PublishReaderAnnotationToProjectRequest');
+    expect(readerAnnotationsContract).toContain('targetLibraryEntryId');
+    expect(readerAnnotationsContract).toContain('private_original');
+    expect(readerAnnotationsContract).toContain('project_copy');
+    expect(readerAnnotationsContract).not.toContain('createdByUserId');
+    expect(readerAnnotationsContract).not.toContain('actorUserId');
+
+    expect(notebookContract).toContain('ReaderNotebookBindingRecord');
+    expect(notebookContract).toContain('GetReaderDefaultNotebookRequest');
+    expect(notebookContract).toContain('NotebookSourceLinkRecord');
+    expect(notebookContract).toContain('sourceLinks');
+    expect(notebookContract).not.toContain('storageKey');
+    expect(notebookContract).not.toContain('checksum');
+
+    expect(projectDocsContract).toContain('ProjectDocCitationTarget');
+    expect(projectDocsContract).toContain('libraryEntryId: string');
+    expect(projectDocsContract).toContain('ProjectDocCitationOccurrence');
+    expect(projectDocsContract).toContain('ProjectDocCitationLocatorSource');
+    expect(projectDocsContract).toContain('PROJECT_SOURCE_ARCHIVE_BLOCKED');
+    expect(projectDocsContract).not.toContain('storageKey');
+    expect(projectDocsContract).not.toContain('checksum');
+
+    expect(aiChatContract).toContain('AiChatRequestTraceRecord');
+    expect(aiChatContract).toContain('AiChatRequestContextRefRecord');
+    expect(aiChatContract).toContain('promptBuildVersion');
+    expect(aiChatContract).toContain('overBudgetDecision');
+    expect(aiChatContract).toContain('chipLabel');
+    expect(aiChatContract).toContain('sourceTextArtifactRange');
+    expect(aiChatContract).not.toContain('rawContext');
+    expect(aiChatContract).not.toContain('rawSecret');
+    expect(aiChatContract).not.toContain('providerPayload');
+
+    expect(combinedContracts).not.toContain('@prisma/client');
+    expect(combinedContracts).not.toContain('encryptedSecret');
+    expect(combinedContracts).not.toContain('storageKey');
+    expect(combinedContracts).not.toContain('checksum');
   });
 });

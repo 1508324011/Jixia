@@ -134,6 +134,10 @@ type TransactionClient = Prisma.TransactionClient;
 
 type LibraryClient = JixiaPrismaClient | TransactionClient;
 
+interface SqliteTableColumnRow {
+  name: string;
+}
+
 const LIBRARY_ENTRY_WITH_ASSET = {
   paperAsset: true,
 } satisfies Prisma.LibraryEntryInclude;
@@ -195,6 +199,32 @@ function isUniqueConstraintError(error: unknown): boolean {
     'code' in error &&
     (error as { code?: unknown }).code === 'P2002'
   );
+}
+
+async function readTableColumns(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+): Promise<Set<string>> {
+  const columns = await prisma.$queryRawUnsafe<SqliteTableColumnRow[]>(
+    `PRAGMA table_info("${tableName}")`,
+  );
+
+  return new Set(columns.map((column) => column.name));
+}
+
+async function ensureColumnIfMissing(
+  prisma: JixiaPrismaClient,
+  tableName: string,
+  columnName: string,
+  columnDefinition: string,
+): Promise<void> {
+  const availableColumns = await readTableColumns(prisma, tableName);
+
+  if (!availableColumns.has(columnName)) {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${columnDefinition}`,
+    );
+  }
 }
 
 async function ensureUser(
@@ -346,6 +376,8 @@ export async function initializeLibraryPersistence(
       -- scopeType/scopeId plus Project.spaceId resolved in services.
       "legacySpaceId" TEXT,
       "legacyVisibility" TEXT,
+      "lifecycleStatus" TEXT NOT NULL DEFAULT 'active',
+      "archivedAt" DATETIME,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "LibraryEntry_paperAssetId_fkey" FOREIGN KEY ("paperAssetId") REFERENCES "PaperAsset" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
@@ -354,6 +386,21 @@ export async function initializeLibraryPersistence(
   `);
   await prisma.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "LibraryEntry_scope_asset_unique" ON "LibraryEntry"("scopeType", "scopeId", "paperAssetId")
+  `);
+  await ensureColumnIfMissing(
+    prisma,
+    'LibraryEntry',
+    'lifecycleStatus',
+    "TEXT NOT NULL DEFAULT 'active'",
+  );
+  await ensureColumnIfMissing(
+    prisma,
+    'LibraryEntry',
+    'archivedAt',
+    'DATETIME',
+  );
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "LibraryEntry_scopeType_scopeId_lifecycleStatus_idx" ON "LibraryEntry"("scopeType", "scopeId", "lifecycleStatus")
   `);
 }
 

@@ -18,6 +18,8 @@ import type {
   CreateProjectDocAiSuggestionRequest,
   CreateProjectDocAiSuggestionResponse,
   CreateProjectDocRequest,
+  ProjectDocCitationLocatorSource,
+  ProjectDocCitationOccurrence,
   ProjectDocNotebookAdoptionProvenance,
   ProjectDocAiSuggestion,
   ProjectDocAiSuggestionCitation,
@@ -29,6 +31,8 @@ import type {
   ProjectDocRecord,
   ProjectDocSnapshot,
 } from '@shared/contracts/project-docs';
+import type { ReferenceLifecycleStatus } from '@shared/contracts/reader-annotations';
+import type { SourceTextRangeLocator } from '@shared/contracts/source-text';
 import {
   PROJECT_DOC_AI_SUGGESTION_JOB_KIND,
   PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE,
@@ -127,11 +131,21 @@ export interface ProjectDocSuggestionJobCreator {
   createJob(input: CreateJobRequest, actorUserId: string): Promise<JobRecord>;
 }
 
-interface ProjectDocCitationInput {
+export interface ProjectDocCitationInput {
   evidenceSpan?: string;
   libraryEntryId?: string;
+  lifecycleStatus?: ReferenceLifecycleStatus;
+  locator?: SourceTextRangeLocator;
+  locatorSource?: ProjectDocCitationLocatorSource;
+  occurrence?: ProjectDocCitationOccurrence;
   paperAssetId: string;
+  readerAnnotationId?: string;
   readerExcerptId?: string;
+  sourceTextArtifactId?: string;
+  target?: {
+    libraryEntryId: string;
+    paperAssetId: string;
+  };
 }
 
 export class ProjectDocCitationSourceUnavailableError extends Error {
@@ -151,17 +165,33 @@ function mapCitation(citation: {
   createdAt: string;
   evidenceSpan?: string;
   id: string;
+  lifecycleStatus?: ReferenceLifecycleStatus;
+  locator?: SourceTextRangeLocator;
+  locatorSource?: ProjectDocCitationLocatorSource;
+  occurrence?: ProjectDocCitationOccurrence;
   paperAssetId: string;
   projectDocVersionId: string;
+  readerAnnotationId?: string;
   readerExcerptId?: string;
+  sourceTextArtifactId?: string;
+  target?: ProjectDocCitationRecord['target'];
+  targetLibraryEntryId?: string;
 }): ProjectDocCitationRecord {
   return {
     createdAt: citation.createdAt,
     evidenceSpan: citation.evidenceSpan,
     id: citation.id,
+    lifecycleStatus: citation.lifecycleStatus,
+    locator: citation.locator,
+    locatorSource: citation.locatorSource,
+    occurrence: citation.occurrence,
     paperAssetId: citation.paperAssetId,
     projectDocVersionId: citation.projectDocVersionId,
+    readerAnnotationId: citation.readerAnnotationId,
     readerExcerptId: citation.readerExcerptId,
+    sourceTextArtifactId: citation.sourceTextArtifactId,
+    target: citation.target,
+    targetLibraryEntryId: citation.targetLibraryEntryId,
   };
 }
 
@@ -186,15 +216,23 @@ function mapDocument(document: {
 }
 
 function mapSnapshot(snapshot: {
-  capturedAt: string;
-  citations: Array<{
-    createdAt: string;
-    evidenceSpan?: string;
-    id: string;
-    paperAssetId: string;
-    projectDocVersionId: string;
-    readerExcerptId?: string;
-  }>;
+    capturedAt: string;
+    citations: Array<{
+      createdAt: string;
+      evidenceSpan?: string;
+      id: string;
+      lifecycleStatus?: ReferenceLifecycleStatus;
+      locator?: SourceTextRangeLocator;
+      locatorSource?: ProjectDocCitationLocatorSource;
+      occurrence?: ProjectDocCitationOccurrence;
+      paperAssetId: string;
+      projectDocVersionId: string;
+      readerAnnotationId?: string;
+      readerExcerptId?: string;
+      sourceTextArtifactId?: string;
+      target?: ProjectDocCitationRecord['target'];
+      targetLibraryEntryId?: string;
+    }>;
   content: string;
   document: {
     createdAt: string;
@@ -352,12 +390,14 @@ function mergeCitationInputs(
 }
 
 function dedupeNormalizedCitations(
-  citations: Array<{ evidenceSpan?: string; paperAssetId: string; readerExcerptId?: string }>,
-): Array<{ evidenceSpan?: string; paperAssetId: string; readerExcerptId?: string }> {
-  const byKey = new Map<string, { evidenceSpans: string[]; paperAssetId: string; readerExcerptId?: string }>();
+  citations: NormalizedProjectDocReference[],
+): NormalizedProjectDocReference[] {
+  const byKey = new Map<string, NormalizedProjectDocReference & { evidenceSpans: string[] }>();
 
   for (const citation of citations) {
-    const key = citation.readerExcerptId
+    const key = citation.occurrence?.key
+      ? `occurrence:${citation.occurrence.key}`
+      : citation.readerExcerptId
       ? `excerpt:${citation.readerExcerptId}`
       : `asset:${citation.paperAssetId}`;
     const record = byKey.get(key) ?? {
@@ -371,15 +411,24 @@ function dedupeNormalizedCitations(
       record.evidenceSpans.push(evidenceSpan);
     }
 
-    byKey.set(key, record);
+    byKey.set(key, {
+      ...record,
+      lifecycleStatus: record.lifecycleStatus ?? citation.lifecycleStatus,
+      locator: record.locator ?? citation.locator,
+      locatorSource: record.locatorSource ?? citation.locatorSource,
+      occurrence: record.occurrence ?? citation.occurrence,
+      readerAnnotationId: record.readerAnnotationId ?? citation.readerAnnotationId,
+      sourceTextArtifactId: record.sourceTextArtifactId ?? citation.sourceTextArtifactId,
+      target: record.target ?? citation.target,
+      targetLibraryEntryId: record.targetLibraryEntryId ?? citation.targetLibraryEntryId,
+    });
   }
 
-  return [...byKey.values()].map((record) => ({
-    evidenceSpan: record.evidenceSpans.length
-      ? record.evidenceSpans.join('\n\n')
+  return [...byKey.values()].map(({ evidenceSpans, ...record }) => ({
+    ...record,
+    evidenceSpan: evidenceSpans.length
+      ? evidenceSpans.join('\n\n')
       : undefined,
-    paperAssetId: record.paperAssetId,
-    readerExcerptId: record.readerExcerptId,
   }));
 }
 
@@ -968,8 +1017,102 @@ async function resolveAuthorizedProjectScopedEntryForAsset(
 interface NormalizedProjectDocReference {
   evidenceSpan?: string;
   libraryEntryId?: string;
+  lifecycleStatus?: ReferenceLifecycleStatus;
+  locator?: SourceTextRangeLocator;
+  locatorSource?: ProjectDocCitationLocatorSource;
+  occurrence?: ProjectDocCitationOccurrence;
   paperAssetId: string;
+  readerAnnotationId?: string;
   readerExcerptId?: string;
+  sourceTextArtifactId?: string;
+  target?: ProjectDocCitationRecord['target'];
+  targetLibraryEntryId?: string;
+}
+
+function assertCitationLocatorConsistency(citation: ProjectDocCitationInput): void {
+  if (
+    citation.sourceTextArtifactId &&
+    citation.locator?.sourceTextArtifactId &&
+    citation.sourceTextArtifactId !== citation.locator.sourceTextArtifactId
+  ) {
+    throw new Error('Project Doc citation source text artifact does not match its locator.');
+  }
+}
+
+function createNormalizedCitationMetadata(
+  citation: ProjectDocCitationInput,
+  input: {
+    paperAssetId: string;
+    projectId: string;
+    targetLibraryEntryId?: string;
+  },
+): Omit<NormalizedProjectDocReference, 'evidenceSpan' | 'libraryEntryId' | 'paperAssetId' | 'readerExcerptId'> {
+  const sourceTextArtifactId = citation.sourceTextArtifactId ??
+    citation.locator?.sourceTextArtifactId;
+
+  return {
+    lifecycleStatus: citation.lifecycleStatus,
+    locator: citation.locator,
+    locatorSource: citation.locatorSource,
+    occurrence: citation.occurrence,
+    readerAnnotationId: citation.readerAnnotationId,
+    sourceTextArtifactId,
+    target: input.targetLibraryEntryId
+      ? {
+          libraryEntryId: input.targetLibraryEntryId,
+          paperAssetId: input.paperAssetId,
+          projectId: input.projectId,
+        }
+      : undefined,
+    targetLibraryEntryId: input.targetLibraryEntryId,
+  };
+}
+
+async function assertExplicitProjectDocCitationTarget(
+  store: ProjectDocsStore,
+  input: {
+    actorSpaceId: string;
+    actorUserId: string;
+    citation: ProjectDocCitationInput;
+    projectId: string;
+  },
+): Promise<string | undefined> {
+  const target = input.citation.target;
+
+  if (!target) {
+    return undefined;
+  }
+
+  if (target.paperAssetId !== input.citation.paperAssetId) {
+    throw new Error('Project Doc citation target paper asset does not match the citation.');
+  }
+
+  const targetEntry = await store.libraryRepository.getLibraryEntry(target.libraryEntryId);
+
+  if (!targetEntry) {
+    throw new Error(`Library entry ${target.libraryEntryId} does not exist.`);
+  }
+
+  if (targetEntry.asset.id !== target.paperAssetId) {
+    throw new Error(
+      `Project Doc citation target ${target.libraryEntryId} does not match paper asset ${target.paperAssetId}.`,
+    );
+  }
+
+  if (
+    targetEntry.entry.scope.type !== 'project' ||
+    targetEntry.entry.scope.id !== input.projectId
+  ) {
+    throw new Error('Project Doc citations require a target project LibraryEntry.');
+  }
+
+  await store.libraryService.assertCanAccessEntry(
+    target.libraryEntryId,
+    input.actorUserId,
+    input.actorSpaceId,
+  );
+
+  return target.libraryEntryId;
 }
 
 interface NotebookAdoptionReference {
@@ -1027,6 +1170,18 @@ async function normalizeReferenceForProject(
   actorSpaceId: string,
   currentSnapshot: ProjectDocSnapshot | null,
 ): Promise<NormalizedProjectDocReference> {
+  assertCitationLocatorConsistency(citation);
+
+  const explicitTargetLibraryEntryId = await assertExplicitProjectDocCitationTarget(
+    store,
+    {
+      actorSpaceId,
+      actorUserId,
+      citation,
+      projectId,
+    },
+  );
+
   if (citation.readerExcerptId) {
     const excerpt = await store.readingRepository.getReaderExcerpt(
       citation.readerExcerptId,
@@ -1086,9 +1241,17 @@ async function normalizeReferenceForProject(
       sourceEntry.entry.scope.type === 'project' &&
       sourceEntry.entry.scope.id === projectId
     ) {
+      const targetLibraryEntryId = explicitTargetLibraryEntryId ??
+        (citation.libraryEntryId === sourceEntry.entry.id ? sourceEntry.entry.id : undefined);
+
       return {
         evidenceSpan: citation.evidenceSpan ?? excerpt.quote,
         libraryEntryId: citation.libraryEntryId,
+        ...createNormalizedCitationMetadata(citation, {
+          paperAssetId: excerpt.paperAssetId,
+          projectId,
+          targetLibraryEntryId,
+        }),
         paperAssetId: excerpt.paperAssetId,
         readerExcerptId: excerpt.id,
       };
@@ -1129,6 +1292,11 @@ async function normalizeReferenceForProject(
     return {
       evidenceSpan: citation.evidenceSpan ?? excerpt.quote,
       libraryEntryId: citation.libraryEntryId,
+      ...createNormalizedCitationMetadata(citation, {
+        paperAssetId: excerpt.paperAssetId,
+        projectId,
+        targetLibraryEntryId: explicitTargetLibraryEntryId,
+      }),
       paperAssetId: excerpt.paperAssetId,
       readerExcerptId: excerpt.id,
     };
@@ -1162,6 +1330,11 @@ async function normalizeReferenceForProject(
       return {
         evidenceSpan: citation.evidenceSpan,
         libraryEntryId: citation.libraryEntryId,
+        ...createNormalizedCitationMetadata(citation, {
+          paperAssetId: sourceEntry.asset.id,
+          projectId,
+          targetLibraryEntryId: explicitTargetLibraryEntryId ?? citation.libraryEntryId,
+        }),
         paperAssetId: sourceEntry.asset.id,
       };
     }
@@ -1201,6 +1374,11 @@ async function normalizeReferenceForProject(
     return {
       evidenceSpan: citation.evidenceSpan,
       libraryEntryId: citation.libraryEntryId,
+      ...createNormalizedCitationMetadata(citation, {
+        paperAssetId: sourceEntry.asset.id,
+        projectId,
+        targetLibraryEntryId: explicitTargetLibraryEntryId,
+      }),
       paperAssetId: sourceEntry.asset.id,
     };
   }
@@ -1220,37 +1398,56 @@ async function normalizeReferenceForProject(
       authorizedView.entry.scope.type !== 'project' ||
       authorizedView.entry.scope.id !== projectId
     ) {
+      const paperAssetId = await assertPaperAssetAvailableInProject(store, {
+        actorSpaceId,
+        actorUserId,
+        evidenceSpan: citation.evidenceSpan,
+        libraryEntryId: authorizedView.entry.id,
+        paperAssetId: authorizedView.asset.id,
+        projectId,
+        readerExcerptId: citation.readerExcerptId,
+        sourceLibraryEntryId: authorizedView.entry.id,
+      });
+
       return {
         evidenceSpan: citation.evidenceSpan,
-        paperAssetId: await assertPaperAssetAvailableInProject(store, {
-          actorSpaceId,
-          actorUserId,
-          evidenceSpan: citation.evidenceSpan,
-          libraryEntryId: authorizedView.entry.id,
-          paperAssetId: authorizedView.asset.id,
+        ...createNormalizedCitationMetadata(citation, {
+          paperAssetId,
           projectId,
-          readerExcerptId: citation.readerExcerptId,
-          sourceLibraryEntryId: authorizedView.entry.id,
+          targetLibraryEntryId: explicitTargetLibraryEntryId,
         }),
+        paperAssetId,
       };
     }
 
     return {
       evidenceSpan: citation.evidenceSpan,
+      ...createNormalizedCitationMetadata(citation, {
+        paperAssetId: authorizedView.asset.id,
+        projectId,
+        targetLibraryEntryId: explicitTargetLibraryEntryId ?? authorizedView.entry.id,
+      }),
       paperAssetId: authorizedView.asset.id,
     };
   }
 
+  const paperAssetId = await assertPaperAssetAvailableInProject(store, {
+    actorSpaceId,
+    actorUserId,
+    evidenceSpan: citation.evidenceSpan,
+    paperAssetId: citation.paperAssetId,
+    projectId,
+    readerExcerptId: citation.readerExcerptId,
+  });
+
   return {
     evidenceSpan: citation.evidenceSpan,
-    paperAssetId: await assertPaperAssetAvailableInProject(store, {
-      actorSpaceId,
-      actorUserId,
-      evidenceSpan: citation.evidenceSpan,
-      paperAssetId: citation.paperAssetId,
+    ...createNormalizedCitationMetadata(citation, {
+      paperAssetId,
       projectId,
-      readerExcerptId: citation.readerExcerptId,
+      targetLibraryEntryId: explicitTargetLibraryEntryId,
     }),
+    paperAssetId,
   };
 }
 
@@ -1261,12 +1458,8 @@ async function normalizeAuthorizedCitations(
   projectId: string,
   actorSpaceId: string,
   currentSnapshot: ProjectDocSnapshot | null,
-): Promise<Array<{ evidenceSpan?: string; paperAssetId: string; readerExcerptId?: string }>> {
-  const normalizedCitations: Array<{
-    evidenceSpan?: string;
-    paperAssetId: string;
-    readerExcerptId?: string;
-  }> = [];
+): Promise<NormalizedProjectDocReference[]> {
+  const normalizedCitations: NormalizedProjectDocReference[] = [];
 
   for (const citation of citations) {
     const normalized = await normalizeReferenceForProject(
@@ -1278,11 +1471,7 @@ async function normalizeAuthorizedCitations(
       currentSnapshot,
     );
 
-    normalizedCitations.push({
-      evidenceSpan: normalized.evidenceSpan,
-      paperAssetId: normalized.paperAssetId,
-      readerExcerptId: normalized.readerExcerptId,
-    });
+    normalizedCitations.push(normalized);
   }
 
   return dedupeNormalizedCitations(normalizedCitations);

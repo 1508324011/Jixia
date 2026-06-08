@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
+import * as aiChat from '../../src/shared/contracts/ai-chat';
 import * as aiWorkspace from '../../src/shared/contracts/ai-workspace';
 import * as aiResults from '../../src/shared/contracts/ai-results';
 import * as audit from '../../src/shared/contracts/audit';
@@ -13,7 +14,9 @@ import * as notebook from '../../src/shared/contracts/notebook';
 import * as projects from '../../src/shared/contracts/projects';
 import * as projectDocs from '../../src/shared/contracts/project-docs';
 import * as reading from '../../src/shared/contracts/reading';
+import * as readerAnnotations from '../../src/shared/contracts/reader-annotations';
 import * as spaces from '../../src/shared/contracts/spaces';
+import * as sourceText from '../../src/shared/contracts/source-text';
 import * as todayContinuation from '../../src/shared/contracts/today-continuation';
 import * as writing from '../../src/shared/contracts/writing';
 
@@ -32,6 +35,11 @@ import type {
   AiWorkspaceSessionRecord,
   CreateAiWorkspaceJobRequest,
 } from '../../src/shared/contracts/ai-workspace';
+import type {
+  AiChatRequestTraceRecord,
+  AiChatSessionRecord,
+  CreateAiChatMessageRequest,
+} from '../../src/shared/contracts/ai-chat';
 import type {
   CommandSearchObjectKind,
   CommandSearchResponse,
@@ -100,21 +108,35 @@ import type {
 import type {
   CaptureNotebookEvidenceRequest,
   CaptureNotebookEvidenceResponse,
+  GetReaderDefaultNotebookRequest,
   ListNotebookDocumentsResponse,
   NotebookCitationRecord,
   NotebookDocumentRecord,
   NotebookDocumentSnapshot,
+  NotebookDocumentSnapshotWithSourceLinks,
+  NotebookSourceLinkRecord,
   NotebookSourceExcerptBlock,
+  ReaderNotebookBindingRecord,
 } from '../../src/shared/contracts/notebook';
 import type {
   AdoptNotebookIntoProjectDocRequest,
   AdoptNotebookIntoProjectDocResponse,
+  CreateProjectDocCitationInput,
   ProjectDocCitationRecord,
   ProjectDocCitationTraceResponse,
   ProjectDocNotebookAdoptionProvenance,
   ProjectDocRecord,
   ProjectDocSnapshot,
 } from '../../src/shared/contracts/project-docs';
+import type {
+  CreateReaderAnnotationRequest,
+  PublishReaderAnnotationToProjectRequest,
+  ReaderAnnotationRecord,
+} from '../../src/shared/contracts/reader-annotations';
+import type {
+  SourceTextArtifactRecord,
+  SourceTextAttachmentState,
+} from '../../src/shared/contracts/source-text';
 import type {
   JobAuditRecord,
   CancelJobRequest,
@@ -273,6 +295,117 @@ describe('core contracts', () => {
           libraryEntryId: string;
           sourceType: 'generatedInsight';
         }
+    >();
+  });
+
+  it('exports private AIChat trace contracts with request context refs only', () => {
+    expect(aiChat.aiChatContract).toBe('jixia-private-ai-chat-trace-contract-v1');
+
+    const session: AiChatSessionRecord = {
+      createdAt: '2026-06-08T00:00:00.000Z',
+      id: 'ai-chat-session_001',
+      lifecycleStatus: 'active',
+      sourceContext: {
+        id: 'library-entry_001',
+        type: 'libraryEntry',
+      },
+      title: 'Private reader-side conversation',
+      updatedAt: '2026-06-08T00:00:00.000Z',
+    };
+    const messageRequest: CreateAiChatMessageRequest = {
+      body: 'Compare the selected annotations without attaching whole documents.',
+      contextRefs: [
+        {
+          readerAnnotationId: 'reader-annotation-project-copy_001',
+          sourceType: 'readerAnnotation',
+        },
+        {
+          range: {
+            endOffset: 96,
+            locator: 'p. 4 ¶2',
+            sourceTextArtifactId: 'source-text-artifact_001',
+            startOffset: 48,
+          },
+          sourceType: 'sourceTextArtifactRange',
+        },
+      ],
+      credentialRef: 'credential-ref_001',
+    };
+    const trace: AiChatRequestTraceRecord = {
+      contextRefs: [
+        {
+          chipLabel: 'Annotation · p. 4',
+          createdAt: '2026-06-08T00:00:01.000Z',
+          id: 'ai-chat-request-context_001',
+          requestId: 'ai-chat-request_001',
+          source: {
+            readerAnnotationId: 'reader-annotation-project-copy_001',
+            sourceType: 'readerAnnotation',
+          },
+          tokenEstimate: 64,
+        },
+        {
+          chipLabel: 'Exact text range · p. 4 ¶2',
+          createdAt: '2026-06-08T00:00:01.000Z',
+          id: 'ai-chat-request-context_002',
+          requestId: 'ai-chat-request_001',
+          source: {
+            range: {
+              endOffset: 96,
+              locator: 'p. 4 ¶2',
+              sourceTextArtifactId: 'source-text-artifact_001',
+              startOffset: 48,
+            },
+            sourceType: 'sourceTextArtifactRange',
+          },
+          tokenEstimate: 24,
+        },
+      ],
+      contextTokenEstimate: 88,
+      costEstimate: 0.04,
+      createdAt: '2026-06-08T00:00:01.000Z',
+      id: 'ai-chat-request_001',
+      overBudgetDecision: 'included-selected-ranges-only',
+      promptBuildVersion: 'reader-chat-prompt-v1',
+      responseTokenEstimate: 256,
+      safeMetadata: {
+        selectedContextCount: 2,
+        usedWholeDocumentFallback: false,
+      },
+      sessionId: session.id,
+      status: 'built',
+      updatedAt: '2026-06-08T00:00:01.000Z',
+    };
+
+    expect(session.sourceContext?.type).toBe('libraryEntry');
+    expect(messageRequest.contextRefs?.map((source) => source.sourceType)).toEqual([
+      'readerAnnotation',
+      'sourceTextArtifactRange',
+    ]);
+    expect(trace.contextRefs[0]?.chipLabel).toBe('Annotation · p. 4');
+    expect(trace.contextRefs[1]?.source).toMatchObject({
+      sourceType: 'sourceTextArtifactRange',
+    });
+    if (trace.contextRefs[1]?.source.sourceType !== 'sourceTextArtifactRange') {
+      throw new Error('Expected a source text artifact range ref.');
+    }
+    expect(trace.contextRefs[1].source.range).not.toHaveProperty('quote');
+    expect(trace.promptBuildVersion).toBe('reader-chat-prompt-v1');
+    expect(trace.safeMetadata?.usedWholeDocumentFallback).toBe(false);
+    expect(messageRequest).not.toHaveProperty('actorUserId');
+    expect(messageRequest).not.toHaveProperty('ownerId');
+    expect(messageRequest).not.toHaveProperty('projectId');
+    expect(messageRequest).not.toHaveProperty('visibility');
+    expect(JSON.stringify({ messageRequest, trace })).not.toMatch(
+      /rawContext|rawProviderPayload|attachedSourceText|authHeader|apiKey|password|storageKey|checksum|privateDocumentBody|providerSecret/i,
+    );
+    expectTypeOf<CreateAiChatMessageRequest>().toMatchTypeOf<{
+      body: string;
+      contextRefs?: unknown[];
+      credentialRef?: string;
+    }>();
+    expectTypeOf<AiChatRequestTraceRecord['safeMetadata']>().toMatchTypeOf<
+      Record<string, boolean | null | number | string> | undefined
     >();
   });
 
@@ -992,6 +1125,146 @@ describe('core contracts', () => {
     expect(readingState.progressPercent).toBe(40);
   });
 
+  it('exports explicit source text and canonical reader annotation contracts', () => {
+    expect(sourceText.sourceTextContract).toBe(
+      'jixia-source-text-artifact-contract-v1',
+    );
+    expect(readerAnnotations.readerAnnotationsContract).toBe(
+      'jixia-reader-annotations-contract-v1',
+    );
+
+    const unavailableAttachment: SourceTextAttachmentState = {
+      availabilityState: 'ocr_required',
+      reason: 'OCR required before exact text ranges can be attached.',
+    };
+    const artifact: SourceTextArtifactRecord = {
+      availabilityState: 'available',
+      characterCount: 1280,
+      createdAt: '2026-06-08T00:00:00.000Z',
+      id: 'source-text-artifact_001',
+      kind: 'extracted_text',
+      language: 'en',
+      pageCount: 8,
+      paperAssetId: 'asset_001',
+      textFormat: 'text/plain',
+      updatedAt: '2026-06-08T00:00:00.000Z',
+    };
+    const createAnnotationRequest: CreateReaderAnnotationRequest = {
+      libraryEntryId: 'library-entry-personal_001',
+      locator: {
+        label: 'p. 4 ¶2',
+        pageNumber: 4,
+        range: {
+          endOffset: 96,
+          locator: 'p. 4 ¶2',
+          page: {
+            endOffset: 96,
+            label: '4',
+            pageNumber: 4,
+            startOffset: 48,
+          },
+          quote: 'bounded source text range',
+          sourceTextArtifactId: artifact.id,
+          startOffset: 48,
+        },
+      },
+      note: 'Private interpretation remains owner-only.',
+      quote: 'bounded source text range',
+      selector: {
+        exact: 'bounded source text range',
+        prefix: 'before ',
+        suffix: ' after',
+        type: 'textQuote',
+      },
+      sourceContext: {
+        id: 'library-entry-personal_001',
+        type: 'libraryEntry',
+      },
+      sourceTextArtifactId: artifact.id,
+    };
+    const privateAnnotation: ReaderAnnotationRecord = {
+      copyState: { state: 'private_original' },
+      createdAt: '2026-06-08T00:00:01.000Z',
+      id: 'reader-annotation-private_001',
+      libraryEntryId: 'library-entry-personal_001',
+      lifecycleStatus: 'active',
+      locator: createAnnotationRequest.locator,
+      note: createAnnotationRequest.note,
+      paperAssetId: artifact.paperAssetId,
+      quote: createAnnotationRequest.quote,
+      selector: createAnnotationRequest.selector,
+      sourceContext: createAnnotationRequest.sourceContext,
+      sourceTextArtifactId: artifact.id,
+      updatedAt: '2026-06-08T00:00:01.000Z',
+      visibility: 'private',
+    };
+    const publishRequest: PublishReaderAnnotationToProjectRequest = {
+      sourceAnnotationId: privateAnnotation.id,
+      targetLibraryEntryId: 'library-entry-project_001',
+    };
+    const projectCopy: ReaderAnnotationRecord = {
+      copyState: {
+        copiedAt: '2026-06-08T00:00:02.000Z',
+        state: 'project_copy',
+      },
+      createdAt: privateAnnotation.createdAt,
+      id: 'reader-annotation-project-copy_001',
+      libraryEntryId: publishRequest.targetLibraryEntryId,
+      lifecycleStatus: privateAnnotation.lifecycleStatus,
+      locator: privateAnnotation.locator,
+      paperAssetId: privateAnnotation.paperAssetId,
+      projectId: 'project_001',
+      quote: privateAnnotation.quote,
+      selector: privateAnnotation.selector,
+      sourceContext: privateAnnotation.sourceContext,
+      sourceTextArtifactId: privateAnnotation.sourceTextArtifactId,
+      updatedAt: '2026-06-08T00:00:02.000Z',
+      visibility: 'project',
+    };
+    const serializedProjectCopy = JSON.stringify(projectCopy);
+
+    expect(unavailableAttachment.availabilityState).toBe('ocr_required');
+    expect(artifact.availabilityState).toBe('available');
+    expect(artifact).not.toHaveProperty('storageKey');
+    expect(artifact).not.toHaveProperty('checksum');
+    expect(artifact).not.toHaveProperty('text');
+    expect(createAnnotationRequest).not.toHaveProperty('actorUserId');
+    expect(createAnnotationRequest).not.toHaveProperty('ownerId');
+    expect(createAnnotationRequest).not.toHaveProperty('projectId');
+    expect(createAnnotationRequest).not.toHaveProperty('visibility');
+    expect(privateAnnotation.visibility).toBe('private');
+    expect(projectCopy.visibility).toBe('project');
+    expect(projectCopy.copyState.state).toBe('project_copy');
+    expect(projectCopy.id).not.toBe(privateAnnotation.id);
+    expect(projectCopy.libraryEntryId).toBe('library-entry-project_001');
+    expect(projectCopy).not.toHaveProperty('note');
+    expect(serializedProjectCopy).not.toContain('Private interpretation remains owner-only.');
+    expect(serializedProjectCopy).not.toMatch(
+      /"note"|Private interpretation remains owner-only|rawSourceText|fullText|storageKey|checksum|actorUserId|ownerId|privateDocumentBody|providerSecret/i,
+    );
+    expect(publishRequest).not.toHaveProperty('projectId');
+    expect(publishRequest).not.toHaveProperty('actorUserId');
+    expect(JSON.stringify({ artifact, createAnnotationRequest, projectCopy })).not.toMatch(
+      /rawSourceText|fullText|storageKey|checksum|actorUserId|ownerId|privateDocumentBody|providerSecret/i,
+    );
+    expectTypeOf<SourceTextAttachmentState['availabilityState']>().toEqualTypeOf<
+      | 'archived'
+      | 'available'
+      | 'failed'
+      | 'ocr_required'
+      | 'pdf_unavailable'
+      | 'processing'
+      | 'text_unavailable'
+    >();
+    expectTypeOf<ReaderAnnotationRecord['visibility']>().toEqualTypeOf<
+      'private' | 'project'
+    >();
+    expectTypeOf<Extract<ReaderAnnotationRecord, { visibility: 'private' }>>()
+      .toMatchTypeOf<{ note?: string; visibility: 'private' }>();
+    expectTypeOf<Extract<ReaderAnnotationRecord, { visibility: 'project' }>>()
+      .toMatchTypeOf<{ note?: never; visibility: 'project' }>();
+  });
+
   it('exports versioned document content payloads and legacy projection helpers', () => {
     expect(documentContent.documentContentContract).toBe(
       'jixia-document-content-contract',
@@ -1261,6 +1534,18 @@ describe('core contracts', () => {
     const notebookList: ListNotebookDocumentsResponse = {
       documents: [notebookDoc],
     };
+    const readerNotebookBinding: ReaderNotebookBindingRecord = {
+      createdAt: '2026-06-08T00:00:00.000Z',
+      notebookDocumentId: notebookDoc.id,
+      sourceContext: {
+        id: 'library-entry_001',
+        type: 'libraryEntry',
+      },
+      updatedAt: '2026-06-08T00:00:00.000Z',
+    };
+    const getReaderDefaultNotebookRequest: GetReaderDefaultNotebookRequest = {
+      sourceContext: readerNotebookBinding.sourceContext,
+    };
     const sourceExcerpt: NotebookSourceExcerptBlock = {
       capturedAt: '2026-03-21T00:00:00.000Z',
       evidenceSpan: 'source-backed quote',
@@ -1272,6 +1557,29 @@ describe('core contracts', () => {
       readerExcerptId: 'excerpt_001',
       title: 'Jixia as a server-first research platform',
       type: 'sourceExcerpt',
+    };
+    const sourceLink: NotebookSourceLinkRecord = {
+      createdAt: '2026-06-08T00:00:00.000Z',
+      evidenceSpan: 'source-backed quote',
+      id: 'notebook-source-link_001',
+      locator: {
+        endOffset: 96,
+        locator: 'p. 4 ¶2',
+        quote: 'source-backed quote',
+        sourceTextArtifactId: 'source-text-artifact_001',
+        startOffset: 48,
+      },
+      notebookDocumentVersionId: notebookSnapshot.versionId,
+      paperAssetId: 'asset_001',
+      readerAnnotationId: 'reader-annotation-private_001',
+      sourceId: 'reader-annotation-private_001',
+      sourceLibraryEntryId: 'library-entry_001',
+      sourceTextArtifactId: 'source-text-artifact_001',
+      sourceType: 'readerAnnotation',
+    };
+    const notebookSnapshotWithSourceLinks: NotebookDocumentSnapshotWithSourceLinks = {
+      ...notebookSnapshot,
+      sourceLinks: [sourceLink],
     };
     const captureRequest: CaptureNotebookEvidenceRequest = {
       notebookDocumentId: notebookDoc.id,
@@ -1309,9 +1617,48 @@ describe('core contracts', () => {
       createdAt: '2026-03-21T00:00:00.000Z',
       evidenceSpan: 'fig. 2',
       id: 'project_doc_citation_001',
+      lifecycleStatus: 'active',
+      locator: {
+        endOffset: 96,
+        locator: 'Figure 2',
+        quote: 'source-backed quote',
+        sourceTextArtifactId: 'source-text-artifact_001',
+        startOffset: 48,
+      },
+      locatorSource: {
+        id: 'reader-annotation-project-copy_001',
+        type: 'project_visible_reader_annotation',
+      },
+      occurrence: {
+        key: 'citation-marker:body:0001',
+        label: '[1]',
+      },
       paperAssetId: 'asset_001',
       projectDocVersionId: 'project_doc_version_001',
+      readerAnnotationId: 'reader-annotation-project-copy_001',
       readerExcerptId: 'excerpt_001',
+      sourceTextArtifactId: 'source-text-artifact_001',
+      target: {
+        libraryEntryId: 'entry_project_001',
+        paperAssetId: 'asset_001',
+        projectId: 'project_001',
+      },
+      targetLibraryEntryId: 'entry_project_001',
+    };
+    const createProjectCitationInput: CreateProjectDocCitationInput = {
+      evidenceSpan: 'fig. 2',
+      locator: projectDocCitation.locator,
+      locatorSource: projectDocCitation.locatorSource,
+      occurrence: {
+        key: 'citation-marker:body:0001',
+        label: '[1]',
+      },
+      readerAnnotationId: 'reader-annotation-project-copy_001',
+      sourceTextArtifactId: 'source-text-artifact_001',
+      target: {
+        libraryEntryId: 'entry_project_001',
+        paperAssetId: 'asset_001',
+      },
     };
     const projectDocSnapshot: ProjectDocSnapshot = {
       capturedAt: '2026-03-21T00:00:00.000Z',
@@ -1420,9 +1767,18 @@ describe('core contracts', () => {
     expect(notebookSnapshot.citations[0]?.readerExcerptId).toBe('excerpt_001');
     expect(notebookSnapshot.documentContent?.schemaVersion).toBe(1);
     expect(notebookList.documents).toHaveLength(1);
+    expect(readerNotebookBinding.sourceContext.type).toBe('libraryEntry');
+    expect(getReaderDefaultNotebookRequest).not.toHaveProperty('ownerId');
+    expect(getReaderDefaultNotebookRequest).not.toHaveProperty('actorUserId');
     expect(sourceExcerpt.type).toBe('sourceExcerpt');
     expect(sourceExcerpt.readerExcerptId).toBe('excerpt_001');
     expect(sourceExcerpt.evidenceSpan).toBe('source-backed quote');
+    expect(sourceLink.sourceType).toBe('readerAnnotation');
+    expect(sourceLink.notebookDocumentVersionId).toBe(notebookSnapshot.versionId);
+    expect(sourceLink).not.toHaveProperty('body');
+    expect(sourceLink).not.toHaveProperty('content');
+    expect(sourceLink).not.toHaveProperty('ownerId');
+    expect(notebookSnapshotWithSourceLinks.sourceLinks).toEqual([sourceLink]);
     expect(captureRequest.source.type).toBe('generatedInsight');
     expect(readerExcerptCaptureRequest.source.type).toBe('readerExcerpt');
     expect(readerExcerptCaptureRequest.source).not.toHaveProperty('ownerId');
@@ -1435,6 +1791,23 @@ describe('core contracts', () => {
       'project_doc_version_001',
     );
     expect(projectDocSnapshot.citations[0]?.readerExcerptId).toBe('excerpt_001');
+    expect(projectDocSnapshot.citations[0]?.target).toEqual({
+      libraryEntryId: 'entry_project_001',
+      paperAssetId: 'asset_001',
+      projectId: 'project_001',
+    });
+    expect(projectDocSnapshot.citations[0]?.occurrence?.key).toBe(
+      'citation-marker:body:0001',
+    );
+    expect(projectDocSnapshot.citations[0]?.locatorSource?.type).toBe(
+      'project_visible_reader_annotation',
+    );
+    expect(createProjectCitationInput.target.libraryEntryId).toBe('entry_project_001');
+    expect(createProjectCitationInput.target).not.toHaveProperty('projectId');
+    expect(createProjectCitationInput).not.toHaveProperty('paperAssetId');
+    expect(createProjectCitationInput).not.toHaveProperty('actorUserId');
+    expect(createProjectCitationInput).not.toHaveProperty('ownerId');
+    expect(createProjectCitationInput).not.toHaveProperty('visibility');
     expect(citationTrace.citations[0]?.source.state).toBe('available');
     expect(citationTrace.citations[0]?.paper).not.toHaveProperty('storageKey');
     expect(citationTrace.citations[0]?.paper).not.toHaveProperty('checksum');

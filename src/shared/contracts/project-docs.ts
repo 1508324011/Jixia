@@ -4,6 +4,8 @@ import type {
   DocumentSnapshot,
 } from './document-snapshot';
 import type { JobRecord } from './jobs';
+import type { ReferenceLifecycleStatus } from './reader-annotations';
+import type { SourceTextRangeLocator } from './source-text';
 import type { PublishState } from './writing';
 
 export interface CreateProjectDocRequest {
@@ -27,8 +29,61 @@ export interface AdoptNotebookIntoProjectDocRequest {
 }
 
 export interface ProjectDocCitationRecord extends DocumentCitationRecordBase {
+  lifecycleStatus?: ReferenceLifecycleStatus;
+  locator?: SourceTextRangeLocator;
+  locatorSource?: ProjectDocCitationLocatorSource;
+  occurrence?: ProjectDocCitationOccurrence;
   projectDocVersionId: string;
+  readerAnnotationId?: string;
+  sourceTextArtifactId?: string;
+  target?: ProjectDocCitationTarget;
+  targetLibraryEntryId?: string;
 }
+
+export interface ProjectDocCitationTarget {
+  libraryEntryId: string;
+  paperAssetId: string;
+  projectId: string;
+}
+
+export interface CreateProjectDocCitationTargetInput {
+  libraryEntryId: string;
+  paperAssetId: string;
+}
+
+export interface ProjectDocCitationOccurrence {
+  key: string;
+  label?: string;
+}
+
+export type ProjectDocCitationLocatorSourceType =
+  | 'project_doc_occurrence'
+  | 'project_visible_reader_annotation'
+  | 'source_text_artifact_range';
+
+export interface ProjectDocCitationLocatorSource {
+  id?: string;
+  type: ProjectDocCitationLocatorSourceType;
+}
+
+export interface CreateProjectDocCitationInput {
+  evidenceSpan?: string;
+  locator?: SourceTextRangeLocator;
+  locatorSource?: ProjectDocCitationLocatorSource;
+  occurrence: ProjectDocCitationOccurrence;
+  readerAnnotationId?: string;
+  sourceTextArtifactId?: string;
+  target: CreateProjectDocCitationTargetInput;
+}
+
+export interface ProjectSourceArchiveBlockedDetails {
+  activeCitationIds: string[];
+  projectId: string;
+  targetLibraryEntryId: string;
+}
+
+export const PROJECT_SOURCE_ARCHIVE_BLOCKED =
+  'PROJECT_SOURCE_ARCHIVE_BLOCKED';
 
 export interface ProjectDocRecord {
   createdAt: string;

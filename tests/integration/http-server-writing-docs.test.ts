@@ -1258,6 +1258,398 @@ describe('http server notebook and project-doc api', () => {
     }
   });
 
+  it('round-trips Project Doc citation target occurrence and locator source fields over HTTP', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-doc-citation-sources-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-http-project-doc-citation-sources.db')}`;
+
+    try {
+      const server = await startTestServer(
+        {
+          JIXIA_DATABASE_URL: databaseUrl,
+          JIXIA_STORAGE_ROOT: storageRoot,
+        },
+        { connectors: { pubmed: createHttpTestPubmedConnector() } },
+      );
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const sharedSpace = await createSpace(server.url, aliceCookie, 'user-alice');
+        const project = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({ name: 'HTTP Citation Source Fields', spaceId: sharedSpace.id }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+        const imported = await fetch(`${server.url}/api/import/paper`, {
+          body: JSON.stringify({
+            scope: { id: project.project.id, type: 'project' },
+            sourceLocator: '10.1000/http-project-doc-citation-source-fields',
+            sourceType: 'doi',
+            spaceId: sharedSpace.id,
+            visibility: 'published_to_project',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{
+            asset: { id: string };
+            entry: { id: string };
+          }>,
+        );
+        const projectDoc = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({
+            projectId: project.project.id,
+            title: 'HTTP source fields Project Doc',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const sourceTextArtifactId = 'source-text-http-project-doc-citation-source-fields';
+        const readerAnnotationId = 'reader-annotation-http-project-doc-citation-source-fields';
+        const prisma = createPrismaClient({ url: databaseUrl });
+
+        try {
+          await prisma.sourceTextArtifact.create({
+            data: {
+              availabilityState: 'available',
+              artifactRef: 'test-fixture-artifact-ref',
+              id: sourceTextArtifactId,
+              kind: 'extracted_text',
+              paperAssetId: imported.asset.id,
+              textFormat: 'plain',
+            },
+          });
+          await prisma.readerAnnotation.create({
+            data: {
+              createdByUserId: 'user-alice',
+              id: readerAnnotationId,
+              libraryEntryId: imported.entry.id,
+              lifecycleStatus: 'active',
+              locatorJson: JSON.stringify({ label: 'p. 4' }),
+              originalAnnotationId: null,
+              paperAssetId: imported.asset.id,
+              projectId: project.project.id,
+              quote: 'project-visible annotation quote',
+              selectorJson: JSON.stringify({ exact: 'project-visible annotation quote', type: 'textQuote' }),
+              sourceContextId: projectDoc.id,
+              sourceContextType: 'projectDocVersion',
+              sourceTextArtifactId,
+              visibility: 'project',
+            },
+          });
+        } finally {
+          await prisma.$disconnect().catch(() => undefined);
+        }
+
+        const citationInput = {
+          evidenceSpan: 'source fields quoted evidence',
+          lifecycleStatus: 'active',
+          locator: {
+            endOffset: 96,
+            locator: 'p. 4 paragraph 2',
+            page: {
+              endOffset: 120,
+              label: 'p. 4',
+              pageNumber: 4,
+              startOffset: 0,
+            },
+            quote: 'source fields quoted evidence',
+            sourceTextArtifactId,
+            startOffset: 48,
+          },
+          locatorSource: {
+            id: readerAnnotationId,
+            type: 'project_visible_reader_annotation',
+          },
+          occurrence: {
+            key: 'body-citation-1',
+            label: 'Citation 1',
+          },
+          paperAssetId: imported.asset.id,
+          readerAnnotationId,
+          sourceTextArtifactId,
+          target: {
+            libraryEntryId: imported.entry.id,
+            paperAssetId: imported.asset.id,
+          },
+        };
+        const saveResponse = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/versions`,
+          {
+            body: JSON.stringify({
+              citations: [citationInput],
+              content: 'Project Doc with source-field citation metadata.',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const savedPayload = await saveResponse.json() as {
+          citations: Array<typeof citationInput & {
+            createdAt: string;
+            id: string;
+            projectDocVersionId: string;
+            targetLibraryEntryId?: string;
+            target?: { libraryEntryId: string; paperAssetId: string; projectId: string };
+          }>;
+          versionNumber: number;
+        };
+        const readResponse = await fetch(`${server.url}/api/project-docs/${projectDoc.id}`, {
+          headers: withSessionCookie(aliceCookie),
+        });
+        const readPayload = await readResponse.json() as typeof savedPayload;
+
+        expect(saveResponse.status).toBe(200);
+        expect(readResponse.status).toBe(200);
+        expect(savedPayload.versionNumber).toBe(1);
+        expect(savedPayload.citations).toEqual([
+          expect.objectContaining({
+            evidenceSpan: citationInput.evidenceSpan,
+            lifecycleStatus: 'active',
+            locator: citationInput.locator,
+            locatorSource: citationInput.locatorSource,
+            occurrence: citationInput.occurrence,
+            paperAssetId: imported.asset.id,
+            readerAnnotationId,
+            sourceTextArtifactId,
+            target: {
+              libraryEntryId: imported.entry.id,
+              paperAssetId: imported.asset.id,
+              projectId: project.project.id,
+            },
+            targetLibraryEntryId: imported.entry.id,
+          }),
+        ]);
+        expect(readPayload.citations).toEqual([
+          expect.objectContaining({
+            evidenceSpan: citationInput.evidenceSpan,
+            lifecycleStatus: 'active',
+            locator: citationInput.locator,
+            locatorSource: citationInput.locatorSource,
+            occurrence: citationInput.occurrence,
+            paperAssetId: imported.asset.id,
+            readerAnnotationId,
+            sourceTextArtifactId,
+            target: {
+              libraryEntryId: imported.entry.id,
+              paperAssetId: imported.asset.id,
+              projectId: project.project.id,
+            },
+            targetLibraryEntryId: imported.entry.id,
+          }),
+        ]);
+
+        const serializedPayload = JSON.stringify(readPayload);
+        expect(serializedPayload).not.toContain('artifactRef');
+        expect(serializedPayload).not.toContain('storageKey');
+        expect(serializedPayload).not.toContain('checksum');
+        expect(serializedPayload).not.toContain(storageRoot);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects private or mismatched ReaderAnnotation locator sources over HTTP', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-doc-citation-source-reject-'));
+    const databaseUrl = `file:${join(storageRoot, 'jixia-http-project-doc-citation-source-reject.db')}`;
+
+    try {
+      const server = await startTestServer(
+        {
+          JIXIA_DATABASE_URL: databaseUrl,
+          JIXIA_STORAGE_ROOT: storageRoot,
+        },
+        { connectors: { pubmed: createHttpTestPubmedConnector() } },
+      );
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const sharedSpace = await createSpace(server.url, aliceCookie, 'user-alice');
+        const project = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({ name: 'HTTP Citation Source Rejections', spaceId: sharedSpace.id }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+        const imported = await fetch(`${server.url}/api/import/paper`, {
+          body: JSON.stringify({
+            scope: { id: project.project.id, type: 'project' },
+            sourceLocator: '10.1000/http-project-doc-citation-source-reject',
+            sourceType: 'doi',
+            spaceId: sharedSpace.id,
+            visibility: 'published_to_project',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{
+            asset: { id: string };
+            entry: { id: string };
+          }>,
+        );
+        const projectDoc = await fetch(`${server.url}/api/project-docs`, {
+          body: JSON.stringify({
+            projectId: project.project.id,
+            title: 'HTTP rejected source fields Project Doc',
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const privateAnnotationId = 'reader-annotation-http-private-source-reject';
+        const projectAnnotationId = 'reader-annotation-http-project-source-valid';
+        const mismatchedProjectAnnotationId = 'reader-annotation-http-project-source-mismatch';
+        const personalLibraryEntryId = 'library-entry-http-private-source-reject';
+        const prisma = createPrismaClient({ url: databaseUrl });
+
+        try {
+          await prisma.libraryEntry.create({
+            data: {
+              addedByUserId: 'user-alice',
+              id: personalLibraryEntryId,
+              paperAssetId: imported.asset.id,
+              scopeId: 'user-alice',
+              scopeType: 'user',
+            },
+          });
+          await prisma.readerAnnotation.create({
+            data: {
+              createdByUserId: 'user-alice',
+              id: privateAnnotationId,
+              libraryEntryId: personalLibraryEntryId,
+              note: 'private note must not leak through Project Docs',
+              paperAssetId: imported.asset.id,
+              quote: 'private annotation quote',
+              selectorJson: JSON.stringify({ exact: 'private annotation quote', type: 'textQuote' }),
+              sourceContextId: personalLibraryEntryId,
+              sourceContextType: 'libraryEntry',
+              visibility: 'private',
+            },
+          });
+          await prisma.readerAnnotation.createMany({
+            data: [
+              {
+                createdByUserId: 'user-alice',
+                id: projectAnnotationId,
+                libraryEntryId: imported.entry.id,
+                paperAssetId: imported.asset.id,
+                projectId: project.project.id,
+                quote: 'project annotation quote',
+                selectorJson: JSON.stringify({ exact: 'project annotation quote', type: 'textQuote' }),
+                sourceContextId: imported.entry.id,
+                sourceContextType: 'libraryEntry',
+                visibility: 'project',
+              },
+              {
+                createdByUserId: 'user-alice',
+                id: mismatchedProjectAnnotationId,
+                libraryEntryId: imported.entry.id,
+                paperAssetId: imported.asset.id,
+                projectId: project.project.id,
+                quote: 'mismatched project annotation quote',
+                selectorJson: JSON.stringify({ exact: 'mismatched project annotation quote', type: 'textQuote' }),
+                sourceContextId: imported.entry.id,
+                sourceContextType: 'libraryEntry',
+                visibility: 'project',
+              },
+            ],
+          });
+        } finally {
+          await prisma.$disconnect().catch(() => undefined);
+        }
+
+        const privateLocatorSourceResponse = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/versions`,
+          {
+            body: JSON.stringify({
+              citations: [
+                {
+                  evidenceSpan: 'private annotation must be rejected',
+                  locatorSource: {
+                    id: privateAnnotationId,
+                    type: 'project_visible_reader_annotation',
+                  },
+                  occurrence: { key: 'private-annotation-occurrence' },
+                  paperAssetId: imported.asset.id,
+                  target: {
+                    libraryEntryId: imported.entry.id,
+                    paperAssetId: imported.asset.id,
+                  },
+                },
+              ],
+              content: 'Project Doc private annotation rejection.',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const privateLocatorSourcePayload = await privateLocatorSourceResponse.json() as { error: string };
+        const mismatchedLocatorSourceResponse = await fetch(
+          `${server.url}/api/project-docs/${projectDoc.id}/versions`,
+          {
+            body: JSON.stringify({
+              citations: [
+                {
+                  evidenceSpan: 'mismatched annotation must be rejected',
+                  locatorSource: {
+                    id: mismatchedProjectAnnotationId,
+                    type: 'project_visible_reader_annotation',
+                  },
+                  occurrence: { key: 'mismatched-annotation-occurrence' },
+                  paperAssetId: imported.asset.id,
+                  readerAnnotationId: projectAnnotationId,
+                  target: {
+                    libraryEntryId: imported.entry.id,
+                    paperAssetId: imported.asset.id,
+                  },
+                },
+              ],
+              content: 'Project Doc mismatched annotation rejection.',
+            }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const mismatchedLocatorSourcePayload = await mismatchedLocatorSourceResponse.json() as { error: string };
+
+        expect(privateLocatorSourceResponse.status).toBe(400);
+        expect(privateLocatorSourcePayload.error).toContain(
+          'Project Doc citations require project-visible ReaderAnnotation evidence from the same project.',
+        );
+        expect(mismatchedLocatorSourceResponse.status).toBe(400);
+        expect(mismatchedLocatorSourcePayload.error).toContain(
+          'Project Doc citation locator source reader annotation does not match the citation reader annotation.',
+        );
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('round-trips structured notebook and project-doc payloads over HTTP', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-structured-docs-'));
 
