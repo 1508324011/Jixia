@@ -23,6 +23,7 @@ import type {
 } from "@shared/contracts/ai-workspace";
 import type { NotebookEvidenceCaptureSource } from "@shared/contracts/notebook";
 import type { LoginSessionRequest } from "@shared/contracts/session";
+import type { CreateSpaceRequest } from "@shared/contracts/spaces";
 import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
 import type {
   AddProjectMemberRequest,
@@ -1103,6 +1104,62 @@ function rejectCreateProjectAuthorityBodyFields(
   assertNoClientActorContextField(body.scopeType, "scopeType");
   assertNoClientActorContextField(body.projectId, "projectId");
   assertNoClientActorContextField(body.visibility, "visibility");
+}
+
+function rejectCreateSpaceAuthorityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+  assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
+  assertNoClientActorContextField(body.scope, "scope");
+  assertNoClientActorContextField(body.scopeId, "scopeId");
+  assertNoClientActorContextField(body.scopeType, "scopeType");
+  assertNoClientActorContextField(body.spaceId, "spaceId");
+  assertNoClientActorContextField(body.projectId, "projectId");
+  assertNoClientActorContextField(body.visibility, "visibility");
+}
+
+function assertSpaceKindField(
+  value: unknown,
+): CreateSpaceRequest["kind"] {
+  if (value === "personal" || value === "shared") {
+    return value;
+  }
+
+  throw new Error("kind must be personal or shared.");
+}
+
+function parseCreateSpaceBody(
+  requestBody: unknown,
+  actor: { userId: string },
+): CreateSpaceRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Create space payload must be a JSON object.");
+  }
+
+  rejectCreateSpaceAuthorityBodyFields(actor, requestBody);
+
+  const body = requestBody as Record<string, unknown>;
+  assertAllowedJsonFields(
+    body,
+    new Set(["description", "kind", "name"]),
+    "Create space payload",
+  );
+
+  return {
+    description: assertOptionalStringField(body.description, "description"),
+    kind: assertSpaceKindField(body.kind),
+    name: assertStringField(body.name, "name"),
+  };
 }
 
 function assertOptionalProjectStatusField(
@@ -2587,13 +2644,8 @@ async function handleApiRequest(
     if (pathname === "/api/spaces" && method === "POST") {
       const actor = await getActor(request, actorOptions);
       rejectLegacyIdentityQueryFields(actor, requestUrl);
-      const body = await readJsonBody<{
-        actorUserId?: string;
-        description?: string;
-        kind: "personal" | "shared";
-        name: string;
-      }>(request);
-      rejectLegacyIdentityBodyFields(actor, body);
+      const requestBody = await readJsonBody<unknown>(request);
+      const body = parseCreateSpaceBody(requestBody, actor);
 
       sendJson(
         response,
