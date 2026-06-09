@@ -993,6 +993,8 @@ describe('prisma schema', () => {
     expect(dbIndex).toContain('createLibraryRepository');
     expect(dbIndex).toContain('createReadingRepository');
     expect(dbIndex).toContain('PersistedProjectReadingCommentRecord');
+    expect(dbIndex).toContain('PersistedSourceTextArtifactRecord');
+    expect(dbIndex).toContain('CreatePersistedSourceTextArtifactParams');
     expect(dbIndex).toContain('createNotebookRepository');
     expect(dbIndex).toContain('createProjectDocRepository');
     expect(dbIndex).toContain('initializeAiChatPersistence');
