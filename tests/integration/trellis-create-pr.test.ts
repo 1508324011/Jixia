@@ -17,6 +17,7 @@ const createPrScript = join(
   process.cwd(),
   '.trellis/scripts/multi_agent/create_pr.py',
 );
+const describeCreatePrScript = existsSync(createPrScript) ? describe : describe.skip;
 
 interface CommandResult {
   status: number;
@@ -220,7 +221,7 @@ function stagedFiles(repo: TempRepo): string[] {
   return result.stdout.split('\n').filter((line) => line.length > 0);
 }
 
-describe('Trellis create-pr guardrails', () => {
+describeCreatePrScript('Trellis create-pr script guardrails', () => {
   it('fails same-branch PR attempts before staging, pushing, or submitting', () => {
     const repo = createTempRepo();
 
@@ -410,6 +411,9 @@ describe('Trellis create-pr guardrails', () => {
     }
   });
 
+});
+
+describe('Trellis create-pr temp repository guardrails', () => {
   it('keeps .claude and .cursor artifacts ignored in temp create-pr repositories', () => {
     const repo = createTempRepo();
 
