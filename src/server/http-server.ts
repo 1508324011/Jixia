@@ -2616,7 +2616,7 @@ async function handleApiRequest(
       /^\/api\/projects\/([^/]+)\/members$/,
     );
     if (projectMembersMatch && method === "GET") {
-      const actor = await getActor(request, actorOptions);
+      const actor = await getActor(request, strictSessionActorOptions);
       const [, projectId] = projectMembersMatch;
       rejectLegacyIdentityQueryFields(actor, requestUrl);
       sendJson(
@@ -2629,7 +2629,7 @@ async function handleApiRequest(
     }
 
     if (projectMembersMatch && method === "POST") {
-      const actor = await getActor(request, actorOptions);
+      const actor = await getActor(request, strictSessionActorOptions);
       const [, projectId] = projectMembersMatch;
       rejectLegacyIdentityQueryFields(actor, requestUrl);
       const requestBody = await readJsonBody<unknown>(request);

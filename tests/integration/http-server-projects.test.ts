@@ -363,6 +363,122 @@ describe('http server project api', () => {
     }
   });
 
+  it('rejects legacy actor override headers for project member listing and mutation', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-members-legacy-'));
+
+    try {
+      const server = await startTestServer({
+        JIXIA_ALLOW_LEGACY_ACTOR_OVERRIDE: 'true',
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-project-members-legacy.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'HTTP Member Legacy Gate' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const createdProject = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({
+            name: 'Member Legacy Gate Project',
+            spaceId: createdSpace.id,
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+
+        const membersUrl = `${server.url}/api/projects/${createdProject.project.id}/members`;
+        const legacyGetResponses = await Promise.all([
+          fetch(membersUrl, { headers: { 'x-jixia-actor': 'user-alice' } }),
+          fetch(membersUrl, { headers: { Authorization: 'Bearer user-alice' } }),
+        ]);
+
+        for (const response of legacyGetResponses) {
+          const payload = (await response.json()) as { error: string };
+
+          expect(response.status).toBe(401);
+          expect(payload.error).toMatch(/server-derived actor session/i);
+        }
+
+        const legacyPostResponses = await Promise.all([
+          fetch(membersUrl, {
+            body: JSON.stringify({ role: 'viewer', userId: 'user-bob' }),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-jixia-actor': 'user-alice',
+            },
+            method: 'POST',
+          }),
+          fetch(membersUrl, {
+            body: JSON.stringify({ role: 'viewer', userId: 'user-charlie' }),
+            headers: {
+              Authorization: 'Bearer user-alice',
+              'Content-Type': 'application/json',
+            },
+            method: 'POST',
+          }),
+        ]);
+
+        for (const response of legacyPostResponses) {
+          const payload = (await response.json()) as { error: string };
+
+          expect(response.status).toBe(401);
+          expect(payload.error).toMatch(/server-derived actor session/i);
+        }
+
+        const membersAfterLegacyAttempts = await fetch(membersUrl, {
+          headers: withSessionCookie(aliceCookie),
+        }).then(
+          (response) => response.json() as Promise<Array<{ userId: string }>>,
+        );
+        expect(membersAfterLegacyAttempts.map((member) => member.userId)).toEqual([
+          'user-alice',
+        ]);
+
+        const validSessionMutation = await fetch(membersUrl, {
+          body: JSON.stringify({ role: 'viewer', userId: 'user-bob' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const validSessionPayload = (await validSessionMutation.json()) as {
+          role: string;
+          userId: string;
+        };
+
+        expect(validSessionMutation.status).toBe(200);
+        expect(validSessionPayload).toMatchObject({
+          role: 'viewer',
+          userId: 'user-bob',
+        });
+
+        const membersAfterSessionMutation = await fetch(membersUrl, {
+          headers: withSessionCookie(aliceCookie),
+        }).then(
+          (response) => response.json() as Promise<Array<{ userId: string }>>,
+        );
+        expect(membersAfterSessionMutation.map((member) => member.userId)).toEqual([
+          'user-alice',
+          'user-bob',
+        ]);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('rejects matching legacy actor fields on project routes', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-projects-'));
 
