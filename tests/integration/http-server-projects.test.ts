@@ -174,6 +174,226 @@ describe('http server project api', () => {
     }
   });
 
+  it('validates project creation DTOs before persistence', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-create-dto-'));
+
+    try {
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-project-create-dto.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'HTTP Create DTO Parser' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+
+        const mutationUrl = `${server.url}/api/projects`;
+        const jsonHeaders = withSessionCookie(aliceCookie, {
+          'Content-Type': 'application/json',
+        });
+        const basePayload = {
+          name: 'Invalid project should not persist',
+          spaceId: createdSpace.id,
+        };
+        const invalidPayloads: Array<{
+          body: unknown;
+          expectedError: RegExp;
+          label: string;
+        }> = [
+          {
+            body: 'not-an-object',
+            expectedError: /Create project payload must be a JSON object/i,
+            label: 'string body',
+          },
+          {
+            body: [],
+            expectedError: /Create project payload must be a JSON object/i,
+            label: 'array body',
+          },
+          {
+            body: { spaceId: createdSpace.id },
+            expectedError: /name is required/i,
+            label: 'missing name',
+          },
+          {
+            body: { name: '   ', spaceId: createdSpace.id },
+            expectedError: /name is required/i,
+            label: 'blank name',
+          },
+          {
+            body: { name: 42, spaceId: createdSpace.id },
+            expectedError: /name is required/i,
+            label: 'non-string name',
+          },
+          {
+            body: { name: 'Missing Space' },
+            expectedError: /spaceId is required/i,
+            label: 'missing spaceId',
+          },
+          {
+            body: { name: 'Blank Space', spaceId: '   ' },
+            expectedError: /spaceId is required/i,
+            label: 'blank spaceId',
+          },
+          {
+            body: { name: 'Non-string Space', spaceId: 42 },
+            expectedError: /spaceId is required/i,
+            label: 'non-string spaceId',
+          },
+          {
+            body: { ...basePayload, description: 42 },
+            expectedError: /description must be a string when provided/i,
+            label: 'non-string description',
+          },
+          {
+            body: { ...basePayload, status: 'paused' },
+            expectedError: /status must be active or archived/i,
+            label: 'invalid status',
+          },
+          {
+            body: { ...basePayload, extra: 'ignored-no-more' },
+            expectedError: /Create project payload\.extra is not accepted/i,
+            label: 'unknown extra field',
+          },
+          {
+            body: { ...basePayload, actorUserId: 'user-alice' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'actor residue',
+          },
+          {
+            body: { ...basePayload, userId: 'user-alice' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'user residue',
+          },
+          {
+            body: { ...basePayload, requestedByUserId: 'user-alice' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'requested-by residue',
+          },
+          {
+            body: { ...basePayload, authorUserId: 'user-alice' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'author residue',
+          },
+          {
+            body: { ...basePayload, startedByUserId: 'user-alice' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'started-by residue',
+          },
+          {
+            body: { ...basePayload, ownerId: 'user-alice' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'owner residue',
+          },
+          {
+            body: { ...basePayload, createdByUserId: 'user-alice' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'created-by residue',
+          },
+          {
+            body: { ...basePayload, actorSpaceId: createdSpace.id },
+            expectedError: /not accepted for protected routes/i,
+            label: 'actor-space residue',
+          },
+          {
+            body: {
+              ...basePayload,
+              scope: { id: createdSpace.id, type: 'project' },
+            },
+            expectedError: /not accepted for protected routes/i,
+            label: 'scope residue',
+          },
+          {
+            body: { ...basePayload, scopeId: createdSpace.id },
+            expectedError: /not accepted for protected routes/i,
+            label: 'scopeId residue',
+          },
+          {
+            body: { ...basePayload, scopeType: 'project' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'scopeType residue',
+          },
+          {
+            body: { ...basePayload, projectId: 'project-client-selected' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'project residue',
+          },
+          {
+            body: { ...basePayload, visibility: 'published_to_project' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'visibility residue',
+          },
+        ];
+
+        for (const invalidPayload of invalidPayloads) {
+          const response = await fetch(mutationUrl, {
+            body: JSON.stringify(invalidPayload.body),
+            headers: jsonHeaders,
+            method: 'POST',
+          });
+          const payload = (await response.json()) as { error: string };
+
+          expect(response.status, invalidPayload.label).toBe(400);
+          expect(payload.error, invalidPayload.label).toMatch(
+            invalidPayload.expectedError,
+          );
+        }
+
+        const projectsAfterInvalidPayloads = await fetch(mutationUrl, {
+          headers: withSessionCookie(aliceCookie),
+        }).then(
+          (response) =>
+            response.json() as Promise<Array<{ project: { name: string } }>>,
+        );
+        expect(projectsAfterInvalidPayloads).toEqual([]);
+
+        const validResponse = await fetch(mutationUrl, {
+          body: JSON.stringify({
+            description: 'Strict runtime parser',
+            name: 'Valid strict DTO project',
+            spaceId: createdSpace.id,
+            status: 'archived',
+          }),
+          headers: jsonHeaders,
+          method: 'POST',
+        });
+        const validProject = (await validResponse.json()) as {
+          memberCount: number;
+          membership: { role: string; userId: string };
+          project: {
+            description?: string;
+            name: string;
+            spaceId: string;
+            status: string;
+          };
+        };
+
+        expect(validResponse.status).toBe(200);
+        expect(validProject).toMatchObject({
+          memberCount: 1,
+          membership: { role: 'owner', userId: 'user-alice' },
+          project: {
+            description: 'Strict runtime parser',
+            name: 'Valid strict DTO project',
+            spaceId: createdSpace.id,
+            status: 'archived',
+          },
+        });
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('validates project member mutation DTOs before persistence', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-members-'));
 
