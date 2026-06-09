@@ -27,6 +27,7 @@ Detailed design and implementation plans live under `docs/plans/`:
 
 - `design.md` — current target product baseline
 - `2026-05-03-jixia-project-first-recovery-plan.md` — active project-first recovery plan
+- `2026-06-09-jixia-development-loop-plan.md` — Trellis execution roadmap for the current project-first recovery line
 - `2026-03-20-jixia-open-source-bootstrap-design.md`
 - `2026-03-20-jixia-open-source-bootstrap-implementation.md`
 - `2026-03-20-jixia-platform-design.md`
