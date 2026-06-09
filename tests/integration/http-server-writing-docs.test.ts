@@ -39,7 +39,7 @@ describe('http server notebook and project-doc api', () => {
         const bobCookie = await loginAs(server.url, 'user-bob');
 
         const createResponse = await fetch(`${server.url}/api/notebooks`, {
-          body: JSON.stringify({ title: 'HTTP Notebook' }),
+          body: JSON.stringify({ title: '  HTTP Notebook  ' }),
           headers: withSessionCookie(aliceCookie, {
             'Content-Type': 'application/json',
           }),
@@ -63,9 +63,47 @@ describe('http server notebook and project-doc api', () => {
           method: 'POST',
         });
 
+        const rejectedNotebookTitles = [
+          'Actor Context Notebook',
+          'Matching Owner Notebook',
+          'Project Context Notebook',
+          'Space Context Notebook',
+          'Scope Context Notebook',
+          'Visibility Context Notebook',
+          'Extra Field Notebook',
+        ];
+        const invalidCreateBodies: unknown[] = [
+          null,
+          [],
+          'not-an-object',
+          { title: '' },
+          { title: 123 },
+          { actorUserId: 'user-alice', title: 'Actor Context Notebook' },
+          { ownerId: 'user-alice', title: 'Matching Owner Notebook' },
+          { projectId: 'project-1', title: 'Project Context Notebook' },
+          { spaceId: 'space-1', title: 'Space Context Notebook' },
+          { scope: { id: 'project-1', type: 'project' }, title: 'Scope Context Notebook' },
+          { title: 'Visibility Context Notebook', visibility: 'private' },
+          { extra: true, title: 'Extra Field Notebook' },
+        ];
+        const invalidCreateStatuses: number[] = [];
+
+        for (const invalidCreateBody of invalidCreateBodies) {
+          const invalidCreateResponse = await fetch(`${server.url}/api/notebooks`, {
+            body: JSON.stringify(invalidCreateBody),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          });
+
+          invalidCreateStatuses.push(invalidCreateResponse.status);
+        }
+
         expect(ownerRead.status).toBe(200);
         expect(nonOwnerRead.status).toBe(403);
         expect(actorMismatch.status).toBe(400);
+        expect(invalidCreateStatuses).toEqual(invalidCreateBodies.map(() => 400));
 
         const notebookList = await fetch(`${server.url}/api/notebooks`, {
           headers: withSessionCookie(aliceCookie),
@@ -121,6 +159,13 @@ describe('http server notebook and project-doc api', () => {
             }),
           ]),
         );
+        const listedNotebookTitles = new Set(
+          notebookListPayload.documents.map((document) => document.title),
+        );
+
+        for (const rejectedNotebookTitle of rejectedNotebookTitles) {
+          expect(listedNotebookTitles.has(rejectedNotebookTitle)).toBe(false);
+        }
         expect(emptySnapshot.status).toBe(200);
         expect(emptySnapshotPayload).toMatchObject({
           content: '',
@@ -159,16 +204,6 @@ describe('http server notebook and project-doc api', () => {
           versionNumber: 1,
         });
         expect(bobSnapshotRead.status).toBe(403);
-
-        const matchingOwner = await fetch(`${server.url}/api/notebooks`, {
-          body: JSON.stringify({ ownerId: 'user-alice', title: 'Matching Owner Notebook' }),
-          headers: withSessionCookie(aliceCookie, {
-            'Content-Type': 'application/json',
-          }),
-          method: 'POST',
-        });
-
-        expect(matchingOwner.status).toBe(400);
       } finally {
         await server.close();
       }
