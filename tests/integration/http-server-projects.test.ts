@@ -55,12 +55,14 @@ describe('http server project api', () => {
         }).then(
           (response) =>
             response.json() as Promise<{
+              memberCount: number;
               membership: { role: string; userId: string };
               project: { id: string; name: string; spaceId: string };
             }>,
         );
 
         expect(createdProject.project.spaceId).toBe(createdSpace.id);
+        expect(createdProject.memberCount).toBe(1);
         expect(createdProject.membership).toMatchObject({
           role: 'owner',
           userId: 'user-alice',
@@ -70,11 +72,17 @@ describe('http server project api', () => {
           headers: withSessionCookie(aliceCookie),
         }).then(
           (response) =>
-            response.json() as Promise<Array<{ project: { id: string } }>>,
+            response.json() as Promise<
+              Array<{ memberCount: number; project: { id: string } }>
+            >,
         );
         expect(aliceProjects.map((item) => item.project.id)).toContain(
           createdProject.project.id,
         );
+        expect(
+          aliceProjects.find((item) => item.project.id === createdProject.project.id)
+            ?.memberCount,
+        ).toBe(1);
 
         const bobProjects = await fetch(`${server.url}/api/projects`, {
           headers: withSessionCookie(bobCookie),
@@ -91,6 +99,29 @@ describe('http server project api', () => {
         const bobProjectPayload = (await bobProjectResponse.json()) as { error: string };
         expect(bobProjectResponse.status).toBe(403);
         expect(bobProjectPayload.error).toMatch(/access denied/i);
+
+        await fetch(`${server.url}/api/projects/${createdProject.project.id}/members`, {
+          body: JSON.stringify({ role: 'viewer', userId: 'user-bob' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        });
+        const bobVisibleProjectResponse = await fetch(
+          `${server.url}/api/projects/${createdProject.project.id}`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        const bobVisibleProject = (await bobVisibleProjectResponse.json()) as {
+          memberCount: number;
+          membership: { role: string; userId: string };
+        };
+
+        expect(bobVisibleProjectResponse.status).toBe(200);
+        expect(bobVisibleProject.memberCount).toBe(2);
+        expect(bobVisibleProject.membership).toMatchObject({
+          role: 'viewer',
+          userId: 'user-bob',
+        });
       } finally {
         await server.close();
       }

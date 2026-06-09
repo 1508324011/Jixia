@@ -471,7 +471,7 @@ describe('core contracts', () => {
       role: 'owner',
       userId: 'user_001',
     };
-    const listItem: ProjectListItem = { membership, project };
+    const listItem: ProjectListItem = { memberCount: 1, membership, project };
     const workspace: ProjectWorkspaceResponse = {
       activity: {
         emptyState: {
@@ -686,6 +686,7 @@ describe('core contracts', () => {
     expect(projectScope.type).toBe('project');
     expect(createProjectRequest.spaceId).toBe('space_001');
     expect(listItem.membership.role).toBe('owner');
+    expect(listItem.memberCount).toBe(1);
     expect(workspace.contract).toBe(projects.projectsContract);
     expect(workspace.actor.userId).toBe('user_001');
     expect(workspace.docs.totalCount).toBe(1);

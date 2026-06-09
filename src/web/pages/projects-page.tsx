@@ -139,7 +139,7 @@ export function ProjectsPage() {
       ) : null}
 
       <section className="shell-grid" aria-label="projects list">
-        {projects.map(({ item, memberCount }) => (
+        {projects.map(({ item }) => (
           <article key={item.project.id} className="hero-card">
             <h2 className="panel-title">{item.project.name}</h2>
             <p className="quiet-copy">
@@ -148,7 +148,7 @@ export function ProjectsPage() {
             </p>
             <p className="quiet-copy">Governed by space · {item.project.spaceId}</p>
             <p className="quiet-copy">Your role · {item.membership.role}</p>
-            <p className="quiet-copy">Project members · {memberCount}</p>
+            <p className="quiet-copy">Project members · {item.memberCount}</p>
             <Link className="panel-link" to={`/projects/${item.project.id}/library`}>
               Open project library
             </Link>

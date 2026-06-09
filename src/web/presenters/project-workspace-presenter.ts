@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
-  ProjectListItem,
+  ProjectMemberRecord,
+  ProjectRecord,
   ProjectWorkspaceResponse,
 } from "@shared/contracts/projects";
 
 import { apiClient } from "../lib/http-client";
 
+export interface ProjectWorkspaceProjectContext {
+  membership: ProjectMemberRecord;
+  project: ProjectRecord;
+}
+
 export interface ProjectWorkspaceViewModel {
   error: string | null;
   isLoading: boolean;
-  project: ProjectListItem | null;
+  project: ProjectWorkspaceProjectContext | null;
   refresh(): Promise<void>;
   workspace: ProjectWorkspaceResponse | null;
 }

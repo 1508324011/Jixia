@@ -12,7 +12,6 @@ export interface CreateProjectInput {
 
 export interface ProjectCardView {
   item: ProjectListItem;
-  memberCount: number;
 }
 
 export interface ProjectsViewModel {
@@ -40,12 +39,7 @@ export function useProjectsPresenter(): ProjectsViewModel {
         apiClient.listSpaces(),
         apiClient.listProjects(),
       ]);
-      const nextCards = await Promise.all(
-        nextProjects.map(async (item) => ({
-          item,
-          memberCount: (await apiClient.listProjectMembers(item.project.id)).length,
-        })),
-      );
+      const nextCards = nextProjects.map((item) => ({ item }));
 
       setSpaces(nextSpaces);
       setProjects(nextCards);

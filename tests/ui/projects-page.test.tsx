@@ -18,6 +18,17 @@ function renderWorkbench(pathname: string) {
   render(<App />);
 }
 
+function requestPath(input: string | URL | Request): string {
+  const requestUrl =
+    typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+
+  return new URL(requestUrl, window.location.origin).pathname;
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -27,6 +38,7 @@ describe('projects page', () => {
   it('creates a project only from an explicit name and server-visible governance space', async () => {
     const user = userEvent.setup();
     const createdProjects: Array<{
+      memberCount: number;
       membership: {
         joinedAt: string;
         projectId: string;
@@ -87,6 +99,7 @@ describe('projects page', () => {
         expect(body).not.toHaveProperty('userId');
 
         const createdProject = {
+          memberCount: 1,
           membership: {
             joinedAt: '2026-05-03T00:05:00.000Z',
             projectId: 'project-created',
@@ -112,10 +125,6 @@ describe('projects page', () => {
         return jsonResponse(createdProjects);
       }
 
-      if (url.pathname === '/api/projects/project-created/members') {
-        return jsonResponse([createdProjects[0]?.membership]);
-      }
-
       throw new Error(`Unexpected fetch: ${requestUrl}`);
     });
 
@@ -139,18 +148,16 @@ describe('projects page', () => {
       await screen.findByRole('heading', { name: 'Server-owned collaboration lane' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Governed by space · space-alpha')).toBeInTheDocument();
+    expect(screen.getByText('Project members · 1')).toBeInTheDocument();
     await waitFor(() => {
       expect(
         fetchMock.mock.calls.some(([input, init]) => {
-          const requestUrl =
-            typeof input === 'string'
-              ? input
-              : input instanceof URL
-                ? input.toString()
-                : input.url;
-          return new URL(requestUrl, window.location.origin).pathname === '/api/spaces' &&
+          return requestPath(input) === '/api/spaces' &&
             init?.method === 'POST';
         }),
+      ).toBe(false);
+      expect(
+        fetchMock.mock.calls.some(([input]) => requestPath(input).endsWith('/members')),
       ).toBe(false);
     });
   });
@@ -158,6 +165,7 @@ describe('projects page', () => {
   it('refreshes shell context after creating and opening a project', async () => {
     const user = userEvent.setup();
     const createdProjects: Array<{
+      memberCount: number;
       membership: {
         joinedAt: string;
         projectId: string;
@@ -218,6 +226,7 @@ describe('projects page', () => {
         expect(body).not.toHaveProperty('userId');
 
         const createdProject = {
+          memberCount: 1,
           membership: {
             joinedAt: '2026-05-03T00:05:00.000Z',
             projectId: 'project-created',
@@ -247,10 +256,6 @@ describe('projects page', () => {
         return jsonResponse([]);
       }
 
-      if (url.pathname === '/api/projects/project-created/members') {
-        return jsonResponse([createdProjects[0]?.membership]);
-      }
-
       throw new Error(`Unexpected fetch: ${requestUrl}`);
     });
 
@@ -272,6 +277,13 @@ describe('projects page', () => {
     expect(
       await screen.findByRole('heading', { name: 'Server-owned collaboration lane' }),
     ).toBeInTheDocument();
+    expect(screen.getByText('Project members · 1')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) => requestPath(input).endsWith('/members')),
+      ).toBe(false);
+    });
 
     await user.click(screen.getByRole('link', { name: 'Open project library' }));
 
