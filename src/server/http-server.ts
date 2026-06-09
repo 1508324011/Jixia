@@ -1201,6 +1201,24 @@ function parseCreateProjectBody(
   };
 }
 
+function parseCreateNotebookBody(
+  requestBody: unknown,
+  actor: { userId: string },
+): { title: string } {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Create notebook payload must be a JSON object.");
+  }
+
+  rejectNotebookAuthorityBodyFields(actor, requestBody);
+
+  const body = requestBody as Record<string, unknown>;
+  assertAllowedJsonFields(body, new Set(["title"]), "Create notebook payload");
+
+  return {
+    title: assertStringField(body.title, "title"),
+  };
+}
+
 function assertProjectMemberRoleField(
   value: unknown,
 ): AddProjectMemberRequest["role"] {
@@ -2921,18 +2939,8 @@ async function handleApiRequest(
     if (pathname === "/api/notebooks" && method === "POST") {
       const actor = await getActor(request, actorOptions);
       rejectNotebookAuthorityQueryFields(actor, requestUrl);
-      const body = await readJsonBody<{
-        actorUserId?: string;
-        ownerId?: string;
-        projectId?: unknown;
-        scope?: unknown;
-        scopeId?: unknown;
-        scopeType?: unknown;
-        spaceId?: string;
-        title: string;
-        visibility?: unknown;
-      }>(request);
-      rejectNotebookAuthorityBodyFields(actor, body);
+      const requestBody = await readJsonBody<unknown>(request);
+      const body = parseCreateNotebookBody(requestBody, actor);
 
       sendJson(
         response,
