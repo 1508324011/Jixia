@@ -24,7 +24,11 @@ import type {
 import type { NotebookEvidenceCaptureSource } from "@shared/contracts/notebook";
 import type { LoginSessionRequest } from "@shared/contracts/session";
 import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
-import type { AddProjectMemberRequest } from "@shared/contracts/projects";
+import type {
+  AddProjectMemberRequest,
+  CreateProjectRequest,
+  ProjectStatus,
+} from "@shared/contracts/projects";
 import type { CreateReaderExcerptRequest } from "@shared/contracts/reading";
 import {
   type AdoptNotebookIntoProjectDocRequest,
@@ -1078,6 +1082,66 @@ function rejectProjectMemberMutationAuthorityBodyFields(
   assertNoClientActorContextField(body.spaceId, "spaceId");
   assertNoClientActorContextField(body.visibility, "visibility");
   assertNoClientActorContextField(body.projectId, "projectId");
+}
+
+function rejectCreateProjectAuthorityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  rejectLegacyIdentityBodyFields(actor, requestBody);
+
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+  assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
+  assertNoClientActorContextField(body.scope, "scope");
+  assertNoClientActorContextField(body.scopeId, "scopeId");
+  assertNoClientActorContextField(body.scopeType, "scopeType");
+  assertNoClientActorContextField(body.projectId, "projectId");
+  assertNoClientActorContextField(body.visibility, "visibility");
+}
+
+function assertOptionalProjectStatusField(
+  value: unknown,
+): ProjectStatus | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (value === "active" || value === "archived") {
+    return value;
+  }
+
+  throw new Error("status must be active or archived when provided.");
+}
+
+function parseCreateProjectBody(
+  requestBody: unknown,
+  actor: { userId: string },
+): CreateProjectRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Create project payload must be a JSON object.");
+  }
+
+  rejectCreateProjectAuthorityBodyFields(actor, requestBody);
+
+  const body = requestBody as Record<string, unknown>;
+  assertAllowedJsonFields(
+    body,
+    new Set(["description", "name", "spaceId", "status"]),
+    "Create project payload",
+  );
+
+  return {
+    description: assertOptionalStringField(body.description, "description"),
+    name: assertStringField(body.name, "name"),
+    spaceId: assertStringField(body.spaceId, "spaceId"),
+    status: assertOptionalProjectStatusField(body.status),
+  };
 }
 
 function assertProjectMemberRoleField(
@@ -2586,14 +2650,8 @@ async function handleApiRequest(
     if (pathname === "/api/projects" && method === "POST") {
       const actor = await getActor(request, actorOptions);
       rejectLegacyIdentityQueryFields(actor, requestUrl);
-      const body = await readJsonBody<{
-        actorUserId?: string;
-        description?: string;
-        name: string;
-        spaceId: string;
-        status?: "active" | "archived";
-      }>(request);
-      rejectLegacyIdentityBodyFields(actor, body);
+      const requestBody = await readJsonBody<unknown>(request);
+      const body = parseCreateProjectBody(requestBody, actor);
 
       sendJson(
         response,
