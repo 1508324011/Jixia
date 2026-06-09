@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -33,6 +34,7 @@ interface LibraryEntryViewResponse {
   asset: {
     canonicalId: string;
     createdAt: string;
+    hasFile?: boolean;
     id: string;
     title: string;
   };
@@ -62,7 +64,20 @@ interface ProjectCommentResponse {
   projectId: string;
 }
 
+interface ReaderExcerptResponse {
+  createdByUserId: string;
+  endOffset: number;
+  id: string;
+  libraryEntryId: string;
+  locator?: string;
+  note?: string;
+  paperAssetId: string;
+  quote: string;
+  startOffset: number;
+}
+
 interface ReadingDetailResponse extends LibraryEntryViewResponse {
+  excerpts?: ReaderExcerptResponse[];
   insights: Array<{
     evidenceSpans: Array<{
       paperAssetId: string;
@@ -76,6 +91,11 @@ interface ReadingDetailResponse extends LibraryEntryViewResponse {
   projectComments: ProjectCommentResponse[];
 }
 
+interface AdoptProjectLibraryEntryResponse {
+  entry: LibraryEntryViewResponse;
+  reused: boolean;
+}
+
 interface NotebookDocumentResponse {
   id: string;
   ownerId: string;
@@ -83,9 +103,19 @@ interface NotebookDocumentResponse {
 }
 
 interface NotebookSnapshotResponse {
+  citations?: Array<{
+    evidenceSpan?: string;
+    paperAssetId: string;
+    readerExcerptId?: string;
+  }>;
   content: string;
   document: NotebookDocumentResponse;
   versionNumber: number;
+}
+
+interface NotebookCaptureResponse {
+  document: NotebookDocumentResponse;
+  snapshot: NotebookSnapshotResponse;
 }
 
 interface ProjectDocResponse {
@@ -97,9 +127,41 @@ interface ProjectDocResponse {
 interface ProjectDocSnapshotResponse {
   citations: Array<{
     evidenceSpan?: string;
+    libraryEntryId?: string;
     paperAssetId: string;
+    readerExcerptId?: string;
   }>;
   content: string;
+  document: ProjectDocResponse;
+  versionNumber: number;
+}
+
+interface ProjectDocCitationTraceResponse {
+  citations: Array<{
+    citationId: string;
+    evidenceSpan?: string;
+    paper?: {
+      canonicalId: string;
+      hasFile?: boolean;
+      id: string;
+      title: string;
+    };
+    paperAssetId: string;
+    projectLibraryEntry?: {
+      libraryEntryId: string;
+      projectId: string;
+    };
+    readerExcerpt?: {
+      evidenceSpan?: string;
+      id: string;
+      locator?: string;
+      quote?: string;
+      source: string;
+      sourceLibraryEntryId?: string;
+    };
+    readerExcerptId?: string;
+    source: { state: string };
+  }>;
   document: ProjectDocResponse;
   versionNumber: number;
 }
@@ -114,6 +176,9 @@ interface JobResponse {
   credentialRef: string;
   id: string;
   kind: string;
+  scope?: { id: string; type: 'project' | 'user' };
+  scopeId?: string;
+  scopeType?: 'project' | 'user';
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 }
 
@@ -129,6 +194,20 @@ interface AuditResponse {
   detail: string;
   id: string;
   jobId?: string;
+}
+
+interface ProjectAuditResponse {
+  action: string;
+  actorUserId: string;
+  detail: string;
+  id: string;
+  metadata?: Record<string, unknown>;
+  jobId?: string;
+  object?: { id: string; type: string };
+  projectId?: string;
+  recordedAt?: string;
+  scope?: { id: string; type: 'project' | 'user' };
+  spaceId?: string;
 }
 
 function createMinimalRecoveryEnv(storageRoot: string) {
@@ -180,6 +259,10 @@ function jsonHeaders(cookie: string): HeadersInit {
   return withSessionCookie(cookie, { 'Content-Type': 'application/json' });
 }
 
+function sha256(contents: string): string {
+  return createHash('sha256').update(Buffer.from(contents, 'utf8')).digest('hex');
+}
+
 function assertBrowserPayloadIsSafe(payload: unknown, forbiddenValues: string[]): void {
   const serialized = JSON.stringify(payload);
 
@@ -188,18 +271,59 @@ function assertBrowserPayloadIsSafe(payload: unknown, forbiddenValues: string[])
   }
 }
 
+function assertResponseHeadersAreSafe(
+  response: Response,
+  forbiddenValues: string[],
+): void {
+  assertBrowserPayloadIsSafe([...response.headers.entries()], forbiddenValues);
+}
+
+async function expectPdfFile(
+  response: Response,
+  expectedContents: string,
+): Promise<void> {
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toBe('application/pdf');
+  expect(response.headers.get('content-length')).toBe(
+    String(Buffer.byteLength(expectedContents)),
+  );
+  expect(response.headers.get('content-disposition')).toMatch(
+    /^attachment; filename=".+"$/,
+  );
+  expect(
+    Buffer.from(await response.arrayBuffer()).equals(
+      Buffer.from(expectedContents, 'utf8'),
+    ),
+  ).toBe(true);
+}
+
 describe('minimal recovery loop server truth smoke', () => {
   it('walks the research loop through session-authenticated server APIs and persisted Prisma state', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-minimal-recovery-'));
     const env = createMinimalRecoveryEnv(storageRoot);
     const rawSecret = 'minimal-recovery-provider-secret';
+    const pdfContents = '%PDF-1.4 minimal recovery project adoption fixture';
+    const pdfChecksum = sha256(pdfContents);
+    const privateReaderNoteText = 'Alice private synthesis before project handoff.';
+    const privateNotebookText = 'Alice private notebook synthesis.';
+    const privateNotebookCaptureNote =
+      'Private Notebook-only interpretation from the Reader excerpt.';
+    const secondPrivateNotebookText = 'Alice private notebook synthesis after restart.';
+    const rawJobPrompt = 'Summarize the minimal recovery project evidence.';
     const forbiddenBrowserPayloadValues = [
       rawSecret,
       Buffer.from(rawSecret, 'utf8').toString('base64'),
+      rawJobPrompt,
       storageRoot,
       'papers/',
       'storageKey',
+      'checksum',
+      pdfChecksum,
       'encryptedSecret',
+      privateReaderNoteText,
+      privateNotebookText,
+      privateNotebookCaptureNote,
+      secondPrivateNotebookText,
     ];
 
     try {
@@ -212,7 +336,9 @@ describe('minimal recovery loop server truth smoke', () => {
       let charlieCookie = '';
       let space: SpaceResponse;
       let project: ProjectListItemResponse;
-      let importedProjectEntry: LibraryEntryViewResponse;
+      let personalLibraryEntry: LibraryEntryViewResponse;
+      let projectLibraryEntry: LibraryEntryViewResponse;
+      let readerExcerpt: ReaderExcerptResponse;
       let notebook: NotebookDocumentResponse;
       let projectDoc: ProjectDocResponse;
       let credential: CredentialResponse;
@@ -274,36 +400,176 @@ describe('minimal recovery loop server truth smoke', () => {
           /access denied/i,
         );
 
-        importedProjectEntry = await expectJson<LibraryEntryViewResponse>(
-          await fetch(`${firstServer.url}/api/import/paper`, {
+        await expectError(
+          await fetch(`${firstServer.url}/api/import/pdf`, {
             body: JSON.stringify({
-              scope: { id: project.project.id, type: 'project' },
-              sourceLocator: '10.1000/minimal-recovery-loop',
-              sourceType: 'doi',
+              pdfContents,
+              requestedByUserId: 'user-alice',
+              scope: { id: 'user-alice', type: 'user' },
               spaceId: space.id,
-              visibility: 'published_to_project',
+              visibility: 'private',
+            }),
+            headers: jsonHeaders(aliceCookie),
+            method: 'POST',
+          }),
+          400,
+          /not accepted/i,
+        );
+
+        personalLibraryEntry = await expectJson<LibraryEntryViewResponse>(
+          await fetch(`${firstServer.url}/api/import/pdf`, {
+            body: JSON.stringify({
+              pdfContents,
+              scope: { id: 'user-alice', type: 'user' },
+              spaceId: space.id,
+              visibility: 'private',
             }),
             headers: jsonHeaders(aliceCookie),
             method: 'POST',
           }),
         );
 
-        expect(importedProjectEntry.entry).toMatchObject({
+        expect(personalLibraryEntry.entry).toMatchObject({
+          scope: { id: 'user-alice', type: 'user' },
+          spaceId: '',
+          visibility: 'private',
+        });
+        expect(personalLibraryEntry.entry.paperAssetId).toBe(personalLibraryEntry.asset.id);
+        expect(personalLibraryEntry.asset.hasFile).toBe(true);
+        expect(personalLibraryEntry.asset).not.toHaveProperty('storageKey');
+        expect(personalLibraryEntry.asset).not.toHaveProperty('checksum');
+        assertBrowserPayloadIsSafe(personalLibraryEntry, forbiddenBrowserPayloadValues);
+
+        const storedPdfPath = join(
+          storageRoot,
+          'papers',
+          personalLibraryEntry.asset.id,
+          'paper.pdf',
+        );
+        expect(existsSync(storedPdfPath)).toBe(true);
+        expect(readFileSync(storedPdfPath, 'utf8')).toBe(pdfContents);
+
+        await expectPdfFile(
+          await fetch(`${firstServer.url}/api/library/${personalLibraryEntry.entry.id}/file`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          pdfContents,
+        );
+
+        await expectError(
+          await fetch(`${firstServer.url}/api/library/${personalLibraryEntry.entry.id}`, {
+            headers: withSessionCookie(bobCookie),
+          }),
+          403,
+          /access denied/i,
+        );
+        await expectError(
+          await fetch(`${firstServer.url}/api/library/${personalLibraryEntry.entry.id}`, {
+            headers: withSessionCookie(charlieCookie),
+          }),
+          403,
+          /access denied/i,
+        );
+        await expectError(
+          await fetch(`${firstServer.url}/api/library/${personalLibraryEntry.entry.id}/file`, {
+            headers: withSessionCookie(bobCookie),
+          }),
+          403,
+          /access denied/i,
+        );
+
+        await expectError(
+          await fetch(`${firstServer.url}/api/projects/${project.project.id}/library/adoptions`, {
+            body: JSON.stringify({
+              actorUserId: 'user-alice',
+              sourceLibraryEntryId: personalLibraryEntry.entry.id,
+            }),
+            headers: jsonHeaders(aliceCookie),
+            method: 'POST',
+          }),
+          400,
+          /not accepted/i,
+        );
+
+        const projectAdoption = await expectJson<AdoptProjectLibraryEntryResponse>(
+          await fetch(`${firstServer.url}/api/projects/${project.project.id}/library/adoptions`, {
+            body: JSON.stringify({ sourceLibraryEntryId: personalLibraryEntry.entry.id }),
+            headers: jsonHeaders(aliceCookie),
+            method: 'POST',
+          }),
+        );
+        expect(projectAdoption.reused).toBe(false);
+        projectLibraryEntry = projectAdoption.entry;
+
+        expect(projectLibraryEntry.entry).toMatchObject({
           scope: { id: project.project.id, type: 'project' },
           spaceId: space.id,
           visibility: 'published_to_project',
         });
-        expect(importedProjectEntry.asset).not.toHaveProperty('storageKey');
+        expect(projectLibraryEntry.entry.id).not.toBe(personalLibraryEntry.entry.id);
+        expect(projectLibraryEntry.asset.id).toBe(personalLibraryEntry.asset.id);
+        expect(projectLibraryEntry.entry.paperAssetId).toBe(personalLibraryEntry.entry.paperAssetId);
+        expect(projectLibraryEntry.asset.hasFile).toBe(true);
+        expect(projectLibraryEntry.asset).not.toHaveProperty('storageKey');
+        expect(projectLibraryEntry.asset).not.toHaveProperty('checksum');
+
+        const repeatedProjectAdoption = await expectJson<AdoptProjectLibraryEntryResponse>(
+          await fetch(`${firstServer.url}/api/projects/${project.project.id}/library/adoptions`, {
+            body: JSON.stringify({ sourceLibraryEntryId: personalLibraryEntry.entry.id }),
+            headers: jsonHeaders(aliceCookie),
+            method: 'POST',
+          }),
+        );
+        expect(repeatedProjectAdoption).toMatchObject({
+          reused: true,
+          entry: { entry: { id: projectLibraryEntry.entry.id } },
+        });
+        assertBrowserPayloadIsSafe(projectAdoption, forbiddenBrowserPayloadValues);
 
         const bobLibraryEntry = await expectJson<LibraryEntryViewResponse>(
-          await fetch(`${firstServer.url}/api/library/${importedProjectEntry.entry.id}`, {
+          await fetch(`${firstServer.url}/api/library/${projectLibraryEntry.entry.id}`, {
             headers: withSessionCookie(bobCookie),
           }),
         );
-        expect(bobLibraryEntry.entry.id).toBe(importedProjectEntry.entry.id);
+        expect(bobLibraryEntry.entry.id).toBe(projectLibraryEntry.entry.id);
+        expect(bobLibraryEntry.entry.scope).toEqual({
+          id: project.project.id,
+          type: 'project',
+        });
+
+        await expectPdfFile(
+          await fetch(`${firstServer.url}/api/library/${projectLibraryEntry.entry.id}/file`, {
+            headers: withSessionCookie(aliceCookie),
+          }),
+          pdfContents,
+        );
+        const bobProjectFileResponse = await fetch(
+          `${firstServer.url}/api/library/${projectLibraryEntry.entry.id}/file`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        assertResponseHeadersAreSafe(bobProjectFileResponse, forbiddenBrowserPayloadValues);
+        await expectPdfFile(bobProjectFileResponse, pdfContents);
+        const bobProjectFileHeadResponse = await fetch(
+          `${firstServer.url}/api/library/${projectLibraryEntry.entry.id}/file`,
+          { headers: withSessionCookie(bobCookie), method: 'HEAD' },
+        );
+        expect(bobProjectFileHeadResponse.status).toBe(200);
+        expect(bobProjectFileHeadResponse.headers.get('content-type')).toBe('application/pdf');
+        expect(bobProjectFileHeadResponse.headers.get('content-length')).toBe(
+          String(Buffer.byteLength(pdfContents)),
+        );
+        assertResponseHeadersAreSafe(bobProjectFileHeadResponse, forbiddenBrowserPayloadValues);
+        expect((await bobProjectFileHeadResponse.arrayBuffer()).byteLength).toBe(0);
 
         await expectError(
-          await fetch(`${firstServer.url}/api/library/${importedProjectEntry.entry.id}`, {
+          await fetch(`${firstServer.url}/api/library/${projectLibraryEntry.entry.id}`, {
+            headers: withSessionCookie(charlieCookie),
+          }),
+          403,
+          /access denied/i,
+        );
+        await expectError(
+          await fetch(`${firstServer.url}/api/library/${projectLibraryEntry.entry.id}/file`, {
             headers: withSessionCookie(charlieCookie),
           }),
           403,
@@ -311,7 +577,7 @@ describe('minimal recovery loop server truth smoke', () => {
         );
 
         await expectJson<ReadingDetailResponse>(
-          await fetch(`${firstServer.url}/api/reading/${importedProjectEntry.entry.id}`, {
+          await fetch(`${firstServer.url}/api/reading/${projectLibraryEntry.entry.id}`, {
             headers: withSessionCookie(aliceCookie),
           }),
         );
@@ -319,8 +585,8 @@ describe('minimal recovery loop server truth smoke', () => {
         const privateNote = await expectJson<NoteResponse>(
           await fetch(`${firstServer.url}/api/reading/notes`, {
             body: JSON.stringify({
-              body: 'Alice private synthesis before project handoff.',
-              libraryEntryId: importedProjectEntry.entry.id,
+              body: privateReaderNoteText,
+              libraryEntryId: projectLibraryEntry.entry.id,
             }),
             headers: jsonHeaders(aliceCookie),
             method: 'POST',
@@ -329,7 +595,7 @@ describe('minimal recovery loop server truth smoke', () => {
         const rejectedVisibilityComment = await fetch(`${firstServer.url}/api/reading/notes`, {
           body: JSON.stringify({
             body: 'Rejected visibility-switched evidence comment.',
-            libraryEntryId: importedProjectEntry.entry.id,
+            libraryEntryId: projectLibraryEntry.entry.id,
             visibility: 'space_shared',
           }),
           headers: jsonHeaders(aliceCookie),
@@ -337,7 +603,7 @@ describe('minimal recovery loop server truth smoke', () => {
         });
         await expectError(rejectedVisibilityComment, 400, /not accepted for protected routes/i);
         const projectCommentResponse = await expectJson<{ comment: ProjectCommentResponse }>(
-          await fetch(`${firstServer.url}/api/reading/${importedProjectEntry.entry.id}/project-comments`, {
+          await fetch(`${firstServer.url}/api/reading/${projectLibraryEntry.entry.id}/project-comments`, {
             body: JSON.stringify({
               body: 'Project-visible evidence comment.',
             }),
@@ -369,7 +635,7 @@ describe('minimal recovery loop server truth smoke', () => {
                   startOffset: 0,
                 },
               ],
-              libraryEntryId: importedProjectEntry.entry.id,
+              libraryEntryId: projectLibraryEntry.entry.id,
               summary: 'The imported paper supports the minimal recovery loop.',
               title: 'Minimal recovery insight',
             }),
@@ -378,19 +644,56 @@ describe('minimal recovery loop server truth smoke', () => {
           }),
         );
         expect(insight.evidenceSpans[0]?.paperAssetId).toBe(
-          importedProjectEntry.asset.id,
+          projectLibraryEntry.asset.id,
+        );
+
+        const readerExcerptResponse = await expectJson<{ excerpt: ReaderExcerptResponse }>(
+          await fetch(`${firstServer.url}/api/reading/${projectLibraryEntry.entry.id}/excerpts`, {
+            body: JSON.stringify({
+              endOffset: 31,
+              locator: 'page 1',
+              note: 'Project-visible excerpt locator note.',
+              quote: 'minimal recovery durable excerpt',
+              startOffset: 0,
+            }),
+            headers: jsonHeaders(aliceCookie),
+            method: 'POST',
+          }),
+        );
+        readerExcerpt = readerExcerptResponse.excerpt;
+        expect(readerExcerpt).toMatchObject({
+          createdByUserId: 'user-alice',
+          libraryEntryId: projectLibraryEntry.entry.id,
+          paperAssetId: projectLibraryEntry.asset.id,
+          quote: 'minimal recovery durable excerpt',
+        });
+
+        await expectError(
+          await fetch(`${firstServer.url}/api/reading/${projectLibraryEntry.entry.id}/excerpts`, {
+            body: JSON.stringify({
+              createdByUserId: 'user-alice',
+              endOffset: 9,
+              quote: 'rejected',
+              startOffset: 0,
+            }),
+            headers: jsonHeaders(aliceCookie),
+            method: 'POST',
+          }),
+          400,
+          /not accepted/i,
         );
 
         const bobReading = await expectJson<ReadingDetailResponse>(
-          await fetch(`${firstServer.url}/api/reading/${importedProjectEntry.entry.id}`, {
+          await fetch(`${firstServer.url}/api/reading/${projectLibraryEntry.entry.id}`, {
             headers: withSessionCookie(bobCookie),
           }),
         );
         expect(bobReading.projectComments.map((comment) => comment.body)).toContain(
           'Project-visible evidence comment.',
         );
-        expect(bobReading.notes.map((note) => note.body)).not.toContain(
-          'Alice private synthesis before project handoff.',
+        expect(bobReading.notes.map((note) => note.body)).not.toContain(privateReaderNoteText);
+        expect(bobReading.excerpts?.map((excerpt) => excerpt.quote)).toContain(
+          'minimal recovery durable excerpt',
         );
 
         notebook = await expectJson<NotebookDocumentResponse>(
@@ -411,18 +714,43 @@ describe('minimal recovery loop server truth smoke', () => {
               citations: [
                 {
                   evidenceSpan: 'private notebook evidence span',
-                  paperAssetId: importedProjectEntry.entry.id,
+                  paperAssetId: projectLibraryEntry.entry.id,
                 },
               ],
-              content: 'Alice private notebook synthesis.',
+              content: privateNotebookText,
             }),
             headers: jsonHeaders(aliceCookie),
             method: 'POST',
           }),
         );
         expect(firstNotebookSnapshot).toMatchObject({
-          content: 'Alice private notebook synthesis.',
+          content: privateNotebookText,
           versionNumber: 1,
+        });
+
+        const capturedNotebookEvidence = await expectJson<NotebookCaptureResponse>(
+          await fetch(`${firstServer.url}/api/notebooks/capture`, {
+            body: JSON.stringify({
+              notebookDocumentId: notebook.id,
+              source: {
+                libraryEntryId: projectLibraryEntry.entry.id,
+                note: privateNotebookCaptureNote,
+                readerExcerptId: readerExcerpt.id,
+                type: 'readerExcerpt',
+              },
+            }),
+            headers: jsonHeaders(aliceCookie),
+            method: 'POST',
+          }),
+        );
+        expect(capturedNotebookEvidence.document.id).toBe(notebook.id);
+        expect(capturedNotebookEvidence.snapshot.versionNumber).toBe(2);
+        expect(capturedNotebookEvidence.snapshot.content).toContain(
+          'minimal recovery durable excerpt',
+        );
+        expect(capturedNotebookEvidence.snapshot.citations?.[0]).toMatchObject({
+          paperAssetId: projectLibraryEntry.asset.id,
+          readerExcerptId: readerExcerpt.id,
         });
 
         await expectError(
@@ -457,7 +785,9 @@ describe('minimal recovery loop server truth smoke', () => {
               citations: [
                 {
                   evidenceSpan: 'project evidence span',
-                  paperAssetId: importedProjectEntry.entry.id,
+                  libraryEntryId: projectLibraryEntry.entry.id,
+                  paperAssetId: projectLibraryEntry.asset.id,
+                  readerExcerptId: readerExcerpt.id,
                 },
               ],
               content: 'Project-visible synthesis from Alice.',
@@ -471,8 +801,9 @@ describe('minimal recovery loop server truth smoke', () => {
           versionNumber: 1,
         });
         expect(firstProjectDocSnapshot.citations[0]?.paperAssetId).toBe(
-          importedProjectEntry.asset.id,
+          projectLibraryEntry.asset.id,
         );
+        expect(firstProjectDocSnapshot.citations[0]?.readerExcerptId).toBe(readerExcerpt.id);
 
         const bobProjectDocSnapshot = await expectJson<ProjectDocSnapshotResponse>(
           await fetch(`${firstServer.url}/api/project-docs/${projectDoc.id}`, {
@@ -481,6 +812,38 @@ describe('minimal recovery loop server truth smoke', () => {
         );
         expect(bobProjectDocSnapshot.content).toBe(
           'Project-visible synthesis from Alice.',
+        );
+        assertBrowserPayloadIsSafe(bobProjectDocSnapshot, forbiddenBrowserPayloadValues);
+
+        const bobCitationTrace = await expectJson<ProjectDocCitationTraceResponse>(
+          await fetch(`${firstServer.url}/api/project-docs/${projectDoc.id}/citation-trace`, {
+            headers: withSessionCookie(bobCookie),
+          }),
+        );
+        expect(bobCitationTrace.document.id).toBe(projectDoc.id);
+        expect(bobCitationTrace.versionNumber).toBe(1);
+        expect(bobCitationTrace.citations[0]).toMatchObject({
+          paperAssetId: projectLibraryEntry.asset.id,
+          projectLibraryEntry: {
+            libraryEntryId: projectLibraryEntry.entry.id,
+            projectId: project.project.id,
+          },
+          readerExcerptId: readerExcerpt.id,
+          source: { state: 'available' },
+        });
+        expect(bobCitationTrace.citations[0]?.paper?.hasFile).toBe(true);
+        expect(bobCitationTrace.citations[0]?.readerExcerpt?.quote).toBe(
+          'minimal recovery durable excerpt',
+        );
+        assertBrowserPayloadIsSafe(bobCitationTrace, forbiddenBrowserPayloadValues);
+
+        await expectError(
+          await fetch(
+            `${firstServer.url}/api/project-docs/${projectDoc.id}/citation-trace?actorUserId=user-alice`,
+            { headers: withSessionCookie(aliceCookie) },
+          ),
+          400,
+          /not accepted/i,
         );
 
         await expectError(
@@ -494,6 +857,13 @@ describe('minimal recovery loop server truth smoke', () => {
         );
         await expectError(
           await fetch(`${firstServer.url}/api/project-docs/${projectDoc.id}`, {
+            headers: withSessionCookie(charlieCookie),
+          }),
+          403,
+          /access denied/i,
+        );
+        await expectError(
+          await fetch(`${firstServer.url}/api/project-docs/${projectDoc.id}/citation-trace`, {
             headers: withSessionCookie(charlieCookie),
           }),
           403,
@@ -518,9 +888,10 @@ describe('minimal recovery loop server truth smoke', () => {
               credentialRef: credential.credentialRef,
               kind: 'ai.summary',
               payload: {
-                prompt: 'Summarize the minimal recovery project evidence.',
+                prompt: rawJobPrompt,
                 projectId: project.project.id,
               },
+              scope: { id: project.project.id, type: 'project' },
               spaceId: space.id,
             }),
             headers: jsonHeaders(aliceCookie),
@@ -530,9 +901,43 @@ describe('minimal recovery loop server truth smoke', () => {
         expect(job).toMatchObject({
           credentialRef: credential.credentialRef,
           kind: 'ai.summary',
+          scope: { id: project.project.id, type: 'project' },
+          scopeId: project.project.id,
+          scopeType: 'project',
           status: 'queued',
         });
         expect(job).not.toHaveProperty('payload');
+
+        const bobVisibleJobs = await expectJson<JobResponse[]>(
+          await fetch(
+            `${firstServer.url}/api/jobs?scopeType=project&scopeId=${encodeURIComponent(project.project.id)}&spaceId=${encodeURIComponent(space.id)}`,
+            { headers: withSessionCookie(bobCookie) },
+          ),
+        );
+        expect(bobVisibleJobs.map((visibleJob) => visibleJob.id)).toContain(job.id);
+        assertBrowserPayloadIsSafe(bobVisibleJobs, forbiddenBrowserPayloadValues);
+
+        const bobVisibleJob = await expectJson<JobResponse>(
+          await fetch(`${firstServer.url}/api/jobs/${job.id}`, {
+            headers: withSessionCookie(bobCookie),
+          }),
+        );
+        expect(bobVisibleJob).toMatchObject({
+          id: job.id,
+          scope: { id: project.project.id, type: 'project' },
+          status: 'queued',
+        });
+        expect(bobVisibleJob).not.toHaveProperty('payload');
+
+        await expectError(
+          await fetch(`${firstServer.url}/api/jobs/${job.id}/run`, {
+            body: JSON.stringify({}),
+            headers: jsonHeaders(bobCookie),
+            method: 'POST',
+          }),
+          403,
+          /mutation|credential|access denied/i,
+        );
 
         const completedJob = await expectJson<JobResponse>(
           await fetch(`${firstServer.url}/api/jobs/${job.id}/run`, {
@@ -542,6 +947,11 @@ describe('minimal recovery loop server truth smoke', () => {
           }),
         );
         expect(completedJob.status).toBe('succeeded');
+        expect(completedJob).toMatchObject({
+          scope: { id: project.project.id, type: 'project' },
+          scopeId: project.project.id,
+          scopeType: 'project',
+        });
 
         const events = await expectJson<JobEventResponse[]>(
           await fetch(`${firstServer.url}/api/jobs/${job.id}/events`, {
@@ -549,6 +959,17 @@ describe('minimal recovery loop server truth smoke', () => {
           }),
         );
         expect(events.map((event) => event.status)).toEqual([
+          'queued',
+          'running',
+          'succeeded',
+        ]);
+
+        const bobEvents = await expectJson<JobEventResponse[]>(
+          await fetch(`${firstServer.url}/api/jobs/${job.id}/events`, {
+            headers: withSessionCookie(bobCookie),
+          }),
+        );
+        expect(bobEvents.map((event) => event.status)).toEqual([
           'queued',
           'running',
           'succeeded',
@@ -565,10 +986,41 @@ describe('minimal recovery loop server truth smoke', () => {
           'job.completed',
         ]);
 
+        const bobAudits = await expectJson<AuditResponse[]>(
+          await fetch(`${firstServer.url}/api/jobs/${job.id}/audit`, {
+            headers: withSessionCookie(bobCookie),
+          }),
+        );
+        expect(bobAudits.map((audit) => audit.action)).toEqual([
+          'job.created',
+          'job.started',
+          'job.completed',
+        ]);
+        assertBrowserPayloadIsSafe(bobAudits, forbiddenBrowserPayloadValues);
+
+        const bobProjectAudit = await expectJson<ProjectAuditResponse[]>(
+          await fetch(
+            `${firstServer.url}/api/projects/${project.project.id}/audit?objectType=job&objectId=${job.id}`,
+            { headers: withSessionCookie(bobCookie) },
+          ),
+        );
+        expect(bobProjectAudit.map((audit) => audit.action)).toEqual([
+          'job.created',
+          'job.started',
+          'job.completed',
+        ]);
+        assertBrowserPayloadIsSafe(bobProjectAudit, forbiddenBrowserPayloadValues);
+        assertBrowserPayloadIsSafe(
+          { audits, bobAudits, bobProjectAudit },
+          [credential.credentialRef],
+        );
+
         for (const deniedUrl of [
+          `${firstServer.url}/api/jobs?scopeType=project&scopeId=${encodeURIComponent(project.project.id)}&spaceId=${encodeURIComponent(space.id)}`,
           `${firstServer.url}/api/jobs/${job.id}`,
           `${firstServer.url}/api/jobs/${job.id}/events`,
           `${firstServer.url}/api/jobs/${job.id}/audit`,
+          `${firstServer.url}/api/projects/${project.project.id}/audit?objectType=job&objectId=${job.id}`,
         ]) {
           await expectError(
             await fetch(deniedUrl, { headers: withSessionCookie(charlieCookie) }),
@@ -576,24 +1028,28 @@ describe('minimal recovery loop server truth smoke', () => {
             /access denied/i,
           );
         }
-        await expectError(
-          await fetch(`${firstServer.url}/api/jobs/${job.id}`, {
-            headers: withSessionCookie(bobCookie),
-          }),
-          403,
-          /access denied/i,
-        );
 
         assertBrowserPayloadIsSafe(
           {
             audits,
+            bobAudits,
+            bobCitationTrace,
+            bobLibraryEntry,
+            bobProjectAudit,
+            bobProjectDocSnapshot,
+            bobReading,
+            bobVisibleJob,
+            bobVisibleJobs,
             completedJob,
             credential,
             events,
-            importedProjectEntry,
             job,
+            personalLibraryEntry,
+            projectAdoption,
             projectDoc,
             firstProjectDocSnapshot,
+            projectLibraryEntry,
+            repeatedProjectAdoption,
           },
           forbiddenBrowserPayloadValues,
         );
@@ -608,18 +1064,20 @@ describe('minimal recovery loop server truth smoke', () => {
           prisma.readingState.findUnique({
             where: {
               libraryEntryId_userId: {
-                libraryEntryId: importedProjectEntry.entry.id,
+                libraryEntryId: projectLibraryEntry.entry.id,
                 userId: 'user-alice',
               },
             },
           }),
         ).resolves.toMatchObject({
-          libraryEntryId: importedProjectEntry.entry.id,
+          libraryEntryId: projectLibraryEntry.entry.id,
           userId: 'user-alice',
         });
         await expect(prisma.job.findUnique({ where: { id: job.id } })).resolves.toMatchObject({
           id: job.id,
           requestedByUserId: 'user-alice',
+          scopeId: project.project.id,
+          scopeType: 'project',
           status: 'succeeded',
         });
         await expect(prisma.jobEvent.findMany({ where: { jobId: job.id } })).resolves.toHaveLength(3);
@@ -660,14 +1118,47 @@ describe('minimal recovery loop server truth smoke', () => {
         expect(restartedBobProject.project.id).toBe(project.project.id);
 
         const restartedBobLibraryEntry = await expectJson<LibraryEntryViewResponse>(
-          await fetch(`${restartedServer.url}/api/library/${importedProjectEntry.entry.id}`, {
+          await fetch(`${restartedServer.url}/api/library/${projectLibraryEntry.entry.id}`, {
             headers: withSessionCookie(bobCookie),
           }),
         );
-        expect(restartedBobLibraryEntry.asset.id).toBe(importedProjectEntry.asset.id);
+        expect(restartedBobLibraryEntry.asset.id).toBe(projectLibraryEntry.asset.id);
+        expect(restartedBobLibraryEntry.entry.scope).toEqual({
+          id: project.project.id,
+          type: 'project',
+        });
+
+        await expectPdfFile(
+          await fetch(`${restartedServer.url}/api/library/${projectLibraryEntry.entry.id}/file`, {
+            headers: withSessionCookie(bobCookie),
+          }),
+          pdfContents,
+        );
 
         await expectError(
-          await fetch(`${restartedServer.url}/api/library/${importedProjectEntry.entry.id}`, {
+          await fetch(`${restartedServer.url}/api/library/${personalLibraryEntry.entry.id}`, {
+            headers: withSessionCookie(bobCookie),
+          }),
+          403,
+          /access denied/i,
+        );
+        await expectError(
+          await fetch(`${restartedServer.url}/api/library/${personalLibraryEntry.entry.id}`, {
+            headers: withSessionCookie(charlieCookie),
+          }),
+          403,
+          /access denied/i,
+        );
+
+        await expectError(
+          await fetch(`${restartedServer.url}/api/library/${projectLibraryEntry.entry.id}`, {
+            headers: withSessionCookie(charlieCookie),
+          }),
+          403,
+          /access denied/i,
+        );
+        await expectError(
+          await fetch(`${restartedServer.url}/api/library/${projectLibraryEntry.entry.id}/file`, {
             headers: withSessionCookie(charlieCookie),
           }),
           403,
@@ -675,13 +1166,11 @@ describe('minimal recovery loop server truth smoke', () => {
         );
 
         const restartedAliceReading = await expectJson<ReadingDetailResponse>(
-          await fetch(`${restartedServer.url}/api/reading/${importedProjectEntry.entry.id}`, {
+          await fetch(`${restartedServer.url}/api/reading/${projectLibraryEntry.entry.id}`, {
             headers: withSessionCookie(aliceCookie),
           }),
         );
-        expect(restartedAliceReading.notes.map((note) => note.body)).toContain(
-          'Alice private synthesis before project handoff.',
-        );
+        expect(restartedAliceReading.notes.map((note) => note.body)).toContain(privateReaderNoteText);
         expect(restartedAliceReading.projectComments.map((comment) => comment.body)).toContain(
           'Project-visible evidence comment.',
         );
@@ -690,15 +1179,16 @@ describe('minimal recovery loop server truth smoke', () => {
         );
 
         const restartedBobReading = await expectJson<ReadingDetailResponse>(
-          await fetch(`${restartedServer.url}/api/reading/${importedProjectEntry.entry.id}`, {
+          await fetch(`${restartedServer.url}/api/reading/${projectLibraryEntry.entry.id}`, {
             headers: withSessionCookie(bobCookie),
           }),
         );
         expect(restartedBobReading.projectComments.map((comment) => comment.body)).toContain(
           'Project-visible evidence comment.',
         );
-        expect(restartedBobReading.notes.map((note) => note.body)).not.toContain(
-          'Alice private synthesis before project handoff.',
+        expect(restartedBobReading.notes.map((note) => note.body)).not.toContain(privateReaderNoteText);
+        expect(restartedBobReading.excerpts?.map((excerpt) => excerpt.quote)).toContain(
+          'minimal recovery durable excerpt',
         );
 
         const restartedNotebook = await expectJson<NotebookDocumentResponse>(
@@ -711,14 +1201,14 @@ describe('minimal recovery loop server truth smoke', () => {
         const secondNotebookSnapshot = await expectJson<NotebookSnapshotResponse>(
           await fetch(`${restartedServer.url}/api/notebooks/${notebook.id}/versions`, {
             body: JSON.stringify({
-              citations: [{ paperAssetId: importedProjectEntry.entry.id }],
-              content: 'Alice private notebook synthesis after restart.',
+              citations: [{ paperAssetId: projectLibraryEntry.entry.id }],
+              content: secondPrivateNotebookText,
             }),
             headers: jsonHeaders(aliceCookie),
             method: 'POST',
           }),
         );
-        expect(secondNotebookSnapshot.versionNumber).toBe(2);
+        expect(secondNotebookSnapshot.versionNumber).toBe(3);
 
         await expectError(
           await fetch(`${restartedServer.url}/api/notebooks/${notebook.id}`, {
@@ -737,9 +1227,33 @@ describe('minimal recovery loop server truth smoke', () => {
           content: 'Project-visible synthesis from Alice.',
           versionNumber: 1,
         });
+        assertBrowserPayloadIsSafe(restartedProjectDoc, forbiddenBrowserPayloadValues);
+
+        const restartedBobCitationTrace = await expectJson<ProjectDocCitationTraceResponse>(
+          await fetch(`${restartedServer.url}/api/project-docs/${projectDoc.id}/citation-trace`, {
+            headers: withSessionCookie(bobCookie),
+          }),
+        );
+        expect(restartedBobCitationTrace.citations[0]).toMatchObject({
+          paperAssetId: projectLibraryEntry.asset.id,
+          projectLibraryEntry: {
+            libraryEntryId: projectLibraryEntry.entry.id,
+            projectId: project.project.id,
+          },
+          readerExcerptId: readerExcerpt.id,
+          source: { state: 'available' },
+        });
+        assertBrowserPayloadIsSafe(restartedBobCitationTrace, forbiddenBrowserPayloadValues);
 
         await expectError(
           await fetch(`${restartedServer.url}/api/project-docs/${projectDoc.id}`, {
+            headers: withSessionCookie(charlieCookie),
+          }),
+          403,
+          /access denied/i,
+        );
+        await expectError(
+          await fetch(`${restartedServer.url}/api/project-docs/${projectDoc.id}/citation-trace`, {
             headers: withSessionCookie(charlieCookie),
           }),
           403,
@@ -753,8 +1267,21 @@ describe('minimal recovery loop server truth smoke', () => {
         );
         expect(restartedJob).toMatchObject({
           id: job.id,
+          scope: { id: project.project.id, type: 'project' },
           status: 'succeeded',
         });
+
+        const restartedBobJob = await expectJson<JobResponse>(
+          await fetch(`${restartedServer.url}/api/jobs/${job.id}`, {
+            headers: withSessionCookie(bobCookie),
+          }),
+        );
+        expect(restartedBobJob).toMatchObject({
+          id: job.id,
+          scope: { id: project.project.id, type: 'project' },
+          status: 'succeeded',
+        });
+        assertBrowserPayloadIsSafe(restartedBobJob, forbiddenBrowserPayloadValues);
 
         const restartedEvents = await expectJson<JobEventResponse[]>(
           await fetch(`${restartedServer.url}/api/jobs/${job.id}/events`, {
@@ -764,6 +1291,16 @@ describe('minimal recovery loop server truth smoke', () => {
         const restartedAudits = await expectJson<AuditResponse[]>(
           await fetch(`${restartedServer.url}/api/jobs/${job.id}/audit`, {
             headers: withSessionCookie(aliceCookie),
+          }),
+        );
+        const restartedBobEvents = await expectJson<JobEventResponse[]>(
+          await fetch(`${restartedServer.url}/api/jobs/${job.id}/events`, {
+            headers: withSessionCookie(bobCookie),
+          }),
+        );
+        const restartedBobAudits = await expectJson<AuditResponse[]>(
+          await fetch(`${restartedServer.url}/api/jobs/${job.id}/audit`, {
+            headers: withSessionCookie(bobCookie),
           }),
         );
 
@@ -777,11 +1314,55 @@ describe('minimal recovery loop server truth smoke', () => {
           'job.started',
           'job.completed',
         ]);
+        expect(restartedBobEvents.map((event) => event.status)).toEqual([
+          'queued',
+          'running',
+          'succeeded',
+        ]);
+        expect(restartedBobAudits.map((audit) => audit.action)).toEqual([
+          'job.created',
+          'job.started',
+          'job.completed',
+        ]);
+        const restartedBobProjectAudit = await expectJson<ProjectAuditResponse[]>(
+          await fetch(
+            `${restartedServer.url}/api/projects/${project.project.id}/audit?objectType=job&objectId=${job.id}`,
+            { headers: withSessionCookie(bobCookie) },
+          ),
+        );
+        expect(restartedBobProjectAudit.map((audit) => audit.action)).toEqual([
+          'job.created',
+          'job.started',
+          'job.completed',
+        ]);
+        assertBrowserPayloadIsSafe(restartedBobProjectAudit, forbiddenBrowserPayloadValues);
+        assertBrowserPayloadIsSafe(
+          { restartedAudits, restartedBobAudits, restartedBobProjectAudit },
+          [credential.credentialRef],
+        );
+        assertBrowserPayloadIsSafe(
+          {
+            restartedAudits,
+            restartedBobAudits,
+            restartedBobProjectAudit,
+            restartedBobCitationTrace,
+            restartedBobEvents,
+            restartedBobJob,
+            restartedBobLibraryEntry,
+            restartedBobReading,
+            restartedEvents,
+            restartedJob,
+            restartedProjectDoc,
+          },
+          forbiddenBrowserPayloadValues,
+        );
 
         for (const deniedUrl of [
+          `${restartedServer.url}/api/jobs?scopeType=project&scopeId=${encodeURIComponent(project.project.id)}&spaceId=${encodeURIComponent(space.id)}`,
           `${restartedServer.url}/api/jobs/${job.id}`,
           `${restartedServer.url}/api/jobs/${job.id}/events`,
           `${restartedServer.url}/api/jobs/${job.id}/audit`,
+          `${restartedServer.url}/api/projects/${project.project.id}/audit?objectType=job&objectId=${job.id}`,
         ]) {
           await expectError(
             await fetch(deniedUrl, { headers: withSessionCookie(charlieCookie) }),
