@@ -24,6 +24,7 @@ import type {
 import type { NotebookEvidenceCaptureSource } from "@shared/contracts/notebook";
 import type { LoginSessionRequest } from "@shared/contracts/session";
 import type { AdoptProjectLibraryEntryRequest } from "@shared/contracts/library";
+import type { AddProjectMemberRequest } from "@shared/contracts/projects";
 import type { CreateReaderExcerptRequest } from "@shared/contracts/reading";
 import {
   type AdoptNotebookIntoProjectDocRequest,
@@ -1052,6 +1053,64 @@ function rejectProjectReadingCommentAuthorityBodyFields(
   assertNoClientActorContextField(body.scopeType, "scopeType");
   assertNoClientActorContextField(body.spaceId, "spaceId");
   assertNoClientActorContextField(body.visibility, "visibility");
+}
+
+function rejectProjectMemberMutationAuthorityBodyFields(
+  actor: { userId: string },
+  requestBody: unknown,
+): void {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    return;
+  }
+
+  const body = requestBody as Record<string, unknown>;
+
+  assertNoClientActorIdentityField(actor, body.actorUserId, "actorUserId");
+  assertNoClientActorIdentityField(actor, body.requestedByUserId, "requestedByUserId");
+  assertNoClientActorIdentityField(actor, body.authorUserId, "authorUserId");
+  assertNoClientActorIdentityField(actor, body.startedByUserId, "startedByUserId");
+  assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
+  assertNoClientActorIdentityField(actor, body.createdByUserId, "createdByUserId");
+  assertNoClientActorContextField(body.actorSpaceId, "actorSpaceId");
+  assertNoClientActorContextField(body.scope, "scope");
+  assertNoClientActorContextField(body.scopeId, "scopeId");
+  assertNoClientActorContextField(body.scopeType, "scopeType");
+  assertNoClientActorContextField(body.spaceId, "spaceId");
+  assertNoClientActorContextField(body.visibility, "visibility");
+  assertNoClientActorContextField(body.projectId, "projectId");
+}
+
+function assertProjectMemberRoleField(
+  value: unknown,
+): AddProjectMemberRequest["role"] {
+  if (value === "owner" || value === "editor" || value === "viewer") {
+    return value;
+  }
+
+  throw new Error("role must be owner, editor, or viewer.");
+}
+
+function parseAddProjectMemberBody(
+  requestBody: unknown,
+  actor: { userId: string },
+): AddProjectMemberRequest {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("Project member mutation payload must be a JSON object.");
+  }
+
+  rejectProjectMemberMutationAuthorityBodyFields(actor, requestBody);
+
+  const body = requestBody as Record<string, unknown>;
+  assertAllowedJsonFields(
+    body,
+    new Set(["role", "userId"]),
+    "Project member mutation payload",
+  );
+
+  return {
+    role: assertProjectMemberRoleField(body.role),
+    userId: assertStringField(body.userId, "userId"),
+  };
 }
 
 function assertStringField(
@@ -2573,12 +2632,8 @@ async function handleApiRequest(
       const actor = await getActor(request, actorOptions);
       const [, projectId] = projectMembersMatch;
       rejectLegacyIdentityQueryFields(actor, requestUrl);
-      const body = await readJsonBody<{
-        actorUserId?: string;
-        role: "owner" | "editor" | "viewer";
-        userId: string;
-      }>(request);
-      assertNoClientActorIdentityField(actor, body.actorUserId, "actorUserId");
+      const requestBody = await readJsonBody<unknown>(request);
+      const body = parseAddProjectMemberBody(requestBody, actor);
 
       sendJson(
         response,

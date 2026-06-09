@@ -174,6 +174,195 @@ describe('http server project api', () => {
     }
   });
 
+  it('validates project member mutation DTOs before persistence', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-project-members-'));
+
+    try {
+      const server = await startTestServer({
+        JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-http-project-members.db')}`,
+        JIXIA_STORAGE_ROOT: storageRoot,
+      });
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+
+        const createdSpace = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ kind: 'shared', name: 'HTTP Member Parser' }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then((response) => response.json() as Promise<{ id: string }>);
+        const createdProject = await fetch(`${server.url}/api/projects`, {
+          body: JSON.stringify({
+            name: 'Member Parser Project',
+            spaceId: createdSpace.id,
+          }),
+          headers: withSessionCookie(aliceCookie, {
+            'Content-Type': 'application/json',
+          }),
+          method: 'POST',
+        }).then(
+          (response) => response.json() as Promise<{ project: { id: string } }>,
+        );
+
+        const mutationUrl = `${server.url}/api/projects/${createdProject.project.id}/members`;
+        const jsonHeaders = withSessionCookie(aliceCookie, {
+          'Content-Type': 'application/json',
+        });
+        const invalidPayloads: Array<{
+          body: unknown;
+          expectedError: RegExp;
+          label: string;
+        }> = [
+          {
+            body: { role: 'admin', userId: 'user-bob' },
+            expectedError: /role must be owner, editor, or viewer/i,
+            label: 'invalid role',
+          },
+          {
+            body: { userId: 'user-bob' },
+            expectedError: /role must be owner, editor, or viewer/i,
+            label: 'missing role',
+          },
+          {
+            body: { role: 'viewer' },
+            expectedError: /userId is required/i,
+            label: 'missing userId',
+          },
+          {
+            body: { role: 'viewer', userId: '   ' },
+            expectedError: /userId is required/i,
+            label: 'blank userId',
+          },
+          {
+            body: { role: 'viewer', userId: 42 },
+            expectedError: /userId is required/i,
+            label: 'non-string userId',
+          },
+          {
+            body: { actorUserId: 'user-alice', role: 'viewer', userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'matching actor residue',
+          },
+          {
+            body: { requestedByUserId: 'user-alice', role: 'viewer', userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'requested-by residue',
+          },
+          {
+            body: { authorUserId: 'user-alice', role: 'viewer', userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'author residue',
+          },
+          {
+            body: { startedByUserId: 'user-alice', role: 'viewer', userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'started-by residue',
+          },
+          {
+            body: { createdByUserId: 'user-alice', role: 'viewer', userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'created-by residue',
+          },
+          {
+            body: { ownerId: 'user-alice', role: 'viewer', userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'owner residue',
+          },
+          {
+            body: { actorSpaceId: createdSpace.id, role: 'viewer', userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'actor-space residue',
+          },
+          {
+            body: { role: 'viewer', scope: { id: createdProject.project.id, type: 'project' }, userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'scope residue',
+          },
+          {
+            body: { role: 'viewer', scopeType: 'project', userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'scopeType residue',
+          },
+          {
+            body: { role: 'viewer', scopeId: createdProject.project.id, userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'scopeId residue',
+          },
+          {
+            body: { role: 'viewer', spaceId: createdSpace.id, userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'space residue',
+          },
+          {
+            body: { role: 'viewer', userId: 'user-bob', visibility: 'published_to_project' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'visibility residue',
+          },
+          {
+            body: { projectId: createdProject.project.id, role: 'viewer', userId: 'user-bob' },
+            expectedError: /not accepted for protected routes/i,
+            label: 'project residue',
+          },
+          {
+            body: { extra: 'ignored-no-more', role: 'viewer', userId: 'user-bob' },
+            expectedError: /Project member mutation payload\.extra is not accepted/i,
+            label: 'unknown extra field',
+          },
+        ];
+
+        for (const invalidPayload of invalidPayloads) {
+          const response = await fetch(mutationUrl, {
+            body: JSON.stringify(invalidPayload.body),
+            headers: jsonHeaders,
+            method: 'POST',
+          });
+          const payload = (await response.json()) as { error: string };
+
+          expect(response.status, invalidPayload.label).toBe(400);
+          expect(payload.error, invalidPayload.label).toMatch(
+            invalidPayload.expectedError,
+          );
+        }
+
+        const membersAfterInvalidPayloads = await fetch(mutationUrl, {
+          headers: withSessionCookie(aliceCookie),
+        }).then(
+          (response) => response.json() as Promise<Array<{ userId: string }>>,
+        );
+        expect(membersAfterInvalidPayloads.map((member) => member.userId)).toEqual([
+          'user-alice',
+        ]);
+
+        const validPayloads = [
+          { role: 'viewer', userId: 'user-bob' },
+          { role: 'editor', userId: 'user-charlie' },
+          { role: 'owner', userId: 'user-diana' },
+        ] as const;
+
+        for (const validPayload of validPayloads) {
+          const response = await fetch(mutationUrl, {
+            body: JSON.stringify(validPayload),
+            headers: jsonHeaders,
+            method: 'POST',
+          });
+          const payload = (await response.json()) as {
+            role: string;
+            userId: string;
+          };
+
+          expect(response.status, validPayload.role).toBe(200);
+          expect(payload, validPayload.role).toMatchObject(validPayload);
+        }
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('rejects matching legacy actor fields on project routes', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-projects-'));
 
