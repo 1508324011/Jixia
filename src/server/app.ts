@@ -1020,6 +1020,11 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
 
         return readingRepository.createReaderExcerpt(input);
       },
+      async createSourceTextArtifact(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.createSourceTextArtifact(input);
+      },
       async getGeneratedInsight(query) {
         await ensureReadingBootstrap();
 
@@ -1034,6 +1039,11 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
         await ensureReadingBootstrap();
 
         return readingRepository.getReaderExcerpt(excerptId);
+      },
+      async getSourceTextArtifact(artifactId) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.getSourceTextArtifact(artifactId);
       },
       async listGeneratedInsightsForEntry(libraryEntryId) {
         await ensureReadingBootstrap();
@@ -1059,6 +1069,11 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
         await ensureReadingBootstrap();
 
         return readingRepository.listProjectCommentsForEntry(input);
+      },
+      async listSourceTextArtifactsForPaperAsset(input) {
+        await ensureReadingBootstrap();
+
+        return readingRepository.listSourceTextArtifactsForPaperAsset(input);
       },
       async saveGeneratedInsight(input) {
         await ensureReadingBootstrap();

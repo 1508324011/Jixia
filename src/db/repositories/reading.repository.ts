@@ -7,6 +7,7 @@ import {
   type ProjectReadingComment,
   type ReaderExcerpt,
   type ReadingState,
+  type SourceTextArtifact,
 } from '@prisma/client';
 
 import type { JixiaPrismaClient } from '../client';
@@ -82,6 +83,31 @@ export interface PersistedReadingStateRecord {
   userId: string;
 }
 
+export type PersistedSourceTextArtifactKind = 'extracted_text' | 'ocr_text' | 'page_map';
+
+export type PersistedSourceTextAvailabilityState =
+  | 'available'
+  | 'pdf_unavailable'
+  | 'text_unavailable'
+  | 'ocr_required'
+  | 'processing'
+  | 'failed'
+  | 'archived';
+
+export interface PersistedSourceTextArtifactRecord {
+  availabilityState: PersistedSourceTextAvailabilityState;
+  characterCount?: number;
+  createdAt: string;
+  id: string;
+  kind: PersistedSourceTextArtifactKind;
+  language?: string;
+  pageCount?: number;
+  paperAssetId: string;
+  statusDetail?: string;
+  textFormat?: string;
+  updatedAt: string;
+}
+
 export interface CreatePersistedNoteParams {
   authorUserId: string;
   body: string;
@@ -138,6 +164,20 @@ export interface CreatePersistedReaderExcerptParams {
   startOffset: number;
 }
 
+export interface CreatePersistedSourceTextArtifactParams {
+  artifactRef?: string;
+  availabilityState: PersistedSourceTextAvailabilityState;
+  characterCount?: number;
+  createdAt?: string;
+  id?: string;
+  kind: PersistedSourceTextArtifactKind;
+  language?: string;
+  pageCount?: number;
+  paperAssetId: string;
+  statusDetail?: string;
+  textFormat?: string;
+}
+
 export interface TouchReadingStateParams {
   lastReadAt?: string;
   libraryEntryId: string;
@@ -155,6 +195,11 @@ export interface ListProjectCommentsQuery {
   projectId: string;
 }
 
+export interface ListSourceTextArtifactsQuery {
+  kind?: PersistedSourceTextArtifactKind;
+  paperAssetId: string;
+}
+
 export interface ReadingRepository {
   createConversation(
     input: CreatePersistedConversationParams,
@@ -167,6 +212,9 @@ export interface ReadingRepository {
   createReaderExcerpt(
     input: CreatePersistedReaderExcerptParams,
   ): Promise<PersistedReaderExcerptRecord>;
+  createSourceTextArtifact(
+    input: CreatePersistedSourceTextArtifactParams,
+  ): Promise<PersistedSourceTextArtifactRecord>;
   getGeneratedInsight(
     query: {
       generatedInsightId: string;
@@ -180,6 +228,9 @@ export interface ReadingRepository {
   getReaderExcerpt(
     excerptId: string,
   ): Promise<PersistedReaderExcerptRecord | null>;
+  getSourceTextArtifact(
+    artifactId: string,
+  ): Promise<PersistedSourceTextArtifactRecord | null>;
   listGeneratedInsightsForEntry(
     libraryEntryId: string,
   ): Promise<PersistedGeneratedInsightRecord[]>;
@@ -191,6 +242,9 @@ export interface ReadingRepository {
   listProjectCommentsForEntry(
     input: ListProjectCommentsQuery,
   ): Promise<PersistedProjectReadingCommentRecord[]>;
+  listSourceTextArtifactsForPaperAsset(
+    input: ListSourceTextArtifactsQuery,
+  ): Promise<PersistedSourceTextArtifactRecord[]>;
   saveGeneratedInsight(
     input: SavePersistedGeneratedInsightParams,
   ): Promise<PersistedGeneratedInsightRecord>;
@@ -486,6 +540,24 @@ function mapReadingState(
     progressPercent: readingState.progress,
     updatedAt: toIsoString(readingState.updatedAt),
     userId: readingState.userId,
+  };
+}
+
+function mapSourceTextArtifact(
+  artifact: SourceTextArtifact,
+): PersistedSourceTextArtifactRecord {
+  return {
+    availabilityState: artifact.availabilityState,
+    characterCount: artifact.characterCount ?? undefined,
+    createdAt: toIsoString(artifact.createdAt),
+    id: artifact.id,
+    kind: artifact.kind,
+    language: artifact.language ?? undefined,
+    pageCount: artifact.pageCount ?? undefined,
+    paperAssetId: artifact.paperAssetId,
+    statusDetail: artifact.statusDetail ?? undefined,
+    textFormat: artifact.textFormat ?? undefined,
+    updatedAt: toIsoString(artifact.updatedAt),
   };
 }
 
@@ -954,6 +1026,39 @@ export function createReadingRepository(
 
       return mapReaderExcerpt(excerpt);
     },
+    async createSourceTextArtifact(
+      input: CreatePersistedSourceTextArtifactParams,
+    ): Promise<PersistedSourceTextArtifactRecord> {
+      await ensureInitialized();
+
+      if (input.id) {
+        const existingArtifact = await prisma.sourceTextArtifact.findUnique({
+          where: { id: input.id },
+        });
+
+        if (existingArtifact) {
+          return mapSourceTextArtifact(existingArtifact);
+        }
+      }
+
+      const artifact = await prisma.sourceTextArtifact.create({
+        data: {
+          artifactRef: input.artifactRef,
+          availabilityState: input.availabilityState,
+          characterCount: input.characterCount,
+          createdAt: optionalDate(input.createdAt),
+          id: input.id,
+          kind: input.kind,
+          language: input.language,
+          pageCount: input.pageCount,
+          paperAssetId: input.paperAssetId,
+          statusDetail: input.statusDetail,
+          textFormat: input.textFormat,
+        },
+      });
+
+      return mapSourceTextArtifact(artifact);
+    },
     async getGeneratedInsight(query: {
       generatedInsightId: string;
       libraryEntryId: string;
@@ -999,6 +1104,17 @@ export function createReadingRepository(
       });
 
       return excerpt ? mapReaderExcerpt(excerpt) : null;
+    },
+    async getSourceTextArtifact(
+      artifactId: string,
+    ): Promise<PersistedSourceTextArtifactRecord | null> {
+      await ensureInitialized();
+
+      const artifact = await prisma.sourceTextArtifact.findUnique({
+        where: { id: artifactId },
+      });
+
+      return artifact ? mapSourceTextArtifact(artifact) : null;
     },
     async listGeneratedInsightsForEntry(
       libraryEntryId: string,
@@ -1057,6 +1173,21 @@ export function createReadingRepository(
       });
 
       return comments.map(mapProjectReadingComment);
+    },
+    async listSourceTextArtifactsForPaperAsset(
+      input: ListSourceTextArtifactsQuery,
+    ): Promise<PersistedSourceTextArtifactRecord[]> {
+      await ensureInitialized();
+
+      const artifacts = await prisma.sourceTextArtifact.findMany({
+        orderBy: { createdAt: 'asc' },
+        where: {
+          paperAssetId: input.paperAssetId,
+          ...(input.kind ? { kind: input.kind } : {}),
+        },
+      });
+
+      return artifacts.map(mapSourceTextArtifact);
     },
     async saveGeneratedInsight(
       input: SavePersistedGeneratedInsightParams,
