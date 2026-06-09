@@ -366,6 +366,190 @@ describe('http server actor boundary cleanup', () => {
     }
   });
 
+  it('rejects invalid create-space DTO payloads before persistence', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-create-space-dto-'));
+
+    try {
+      const server = await startTestServer({ JIXIA_STORAGE_ROOT: storageRoot });
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const jsonHeaders = withSessionCookie(aliceCookie, {
+          'Content-Type': 'application/json',
+        });
+        const invalidPayloads: Array<{
+          expectedError: RegExp;
+          name: string;
+          payload: unknown;
+        }> = [
+          {
+            expectedError: /Create space payload must be a JSON object/i,
+            name: 'string payload',
+            payload: 'not-an-object',
+          },
+          {
+            expectedError: /Create space payload must be a JSON object/i,
+            name: 'array payload',
+            payload: [],
+          },
+          {
+            expectedError: /name is required/i,
+            name: 'blank name',
+            payload: { kind: 'shared', name: '   ' },
+          },
+          {
+            expectedError: /name is required/i,
+            name: 'non-string name',
+            payload: { kind: 'shared', name: 42 },
+          },
+          {
+            expectedError: /kind must be personal or shared/i,
+            name: 'missing kind',
+            payload: { name: 'Missing kind' },
+          },
+          {
+            expectedError: /kind must be personal or shared/i,
+            name: 'invalid kind',
+            payload: { kind: 'team', name: 'Invalid kind' },
+          },
+          {
+            expectedError: /description must be a string/i,
+            name: 'non-string description',
+            payload: { description: { text: 'nope' }, kind: 'shared', name: 'Bad description' },
+          },
+          {
+            expectedError: /Create space payload\.extra is not accepted/i,
+            name: 'unknown field',
+            payload: { extra: true, kind: 'shared', name: 'Unknown field' },
+          },
+          {
+            expectedError: /actor does not match/i,
+            name: 'mismatched actorUserId residue',
+            payload: { actorUserId: 'user-bob', kind: 'shared', name: 'Spoofed actor' },
+          },
+          {
+            expectedError: /actorUserId is not accepted for protected routes/i,
+            name: 'matching actorUserId residue',
+            payload: { actorUserId: 'user-alice', kind: 'shared', name: 'Matching actor' },
+          },
+          {
+            expectedError: /userId is not accepted for protected routes/i,
+            name: 'userId residue',
+            payload: { kind: 'shared', name: 'User residue', userId: 'user-alice' },
+          },
+          {
+            expectedError: /requestedByUserId is not accepted for protected routes/i,
+            name: 'requestedByUserId residue',
+            payload: { kind: 'shared', name: 'Requested residue', requestedByUserId: 'user-alice' },
+          },
+          {
+            expectedError: /authorUserId is not accepted for protected routes/i,
+            name: 'authorUserId residue',
+            payload: { authorUserId: 'user-alice', kind: 'shared', name: 'Author residue' },
+          },
+          {
+            expectedError: /startedByUserId is not accepted for protected routes/i,
+            name: 'startedByUserId residue',
+            payload: { kind: 'shared', name: 'Starter residue', startedByUserId: 'user-alice' },
+          },
+          {
+            expectedError: /ownerId is not accepted for protected routes/i,
+            name: 'ownerId residue',
+            payload: { kind: 'shared', name: 'Owner residue', ownerId: 'user-alice' },
+          },
+          {
+            expectedError: /createdByUserId is not accepted for protected routes/i,
+            name: 'createdByUserId residue',
+            payload: { createdByUserId: 'user-alice', kind: 'shared', name: 'Creator residue' },
+          },
+          {
+            expectedError: /actorSpaceId is not accepted for protected routes/i,
+            name: 'actorSpaceId residue',
+            payload: { actorSpaceId: 'space-a', kind: 'shared', name: 'Actor space residue' },
+          },
+          {
+            expectedError: /scope is not accepted for protected routes/i,
+            name: 'scope residue',
+            payload: { kind: 'shared', name: 'Scope residue', scope: { id: 'project-a', type: 'project' } },
+          },
+          {
+            expectedError: /scopeId is not accepted for protected routes/i,
+            name: 'scopeId residue',
+            payload: { kind: 'shared', name: 'Scope id residue', scopeId: 'project-a' },
+          },
+          {
+            expectedError: /scopeType is not accepted for protected routes/i,
+            name: 'scopeType residue',
+            payload: { kind: 'shared', name: 'Scope type residue', scopeType: 'project' },
+          },
+          {
+            expectedError: /spaceId is not accepted for protected routes/i,
+            name: 'spaceId residue',
+            payload: { kind: 'shared', name: 'Space id residue', spaceId: 'space-a' },
+          },
+          {
+            expectedError: /projectId is not accepted for protected routes/i,
+            name: 'projectId residue',
+            payload: { kind: 'shared', name: 'Project id residue', projectId: 'project-a' },
+          },
+          {
+            expectedError: /visibility is not accepted for protected routes/i,
+            name: 'visibility residue',
+            payload: { kind: 'shared', name: 'Visibility residue', visibility: 'private' },
+          },
+        ];
+
+        for (const { expectedError, name, payload } of invalidPayloads) {
+          const response = await fetch(`${server.url}/api/spaces`, {
+            body: JSON.stringify(payload),
+            headers: jsonHeaders,
+            method: 'POST',
+          });
+          const responseBody = await response.json() as { error: string };
+
+          expect(response.status, name).toBe(400);
+          expect(responseBody.error, name).toMatch(expectedError);
+        }
+
+        const spacesAfterInvalidAttempts = await fetch(`${server.url}/api/spaces`, {
+          headers: withSessionCookie(aliceCookie),
+        }).then((response) => response.json() as Promise<Array<{ id: string }>>);
+        expect(spacesAfterInvalidAttempts).toEqual([]);
+
+        const validResponse = await fetch(`${server.url}/api/spaces`, {
+          body: JSON.stringify({ description: '   ', kind: 'shared', name: 'DTO Hardened Space' }),
+          headers: jsonHeaders,
+          method: 'POST',
+        });
+        const validBody = await validResponse.json() as {
+          createdAt: string;
+          id: string;
+          kind: string;
+          name: string;
+        };
+
+        expect(validResponse.status).toBe(200);
+        expect(validBody).toMatchObject({
+          id: expect.any(String),
+          kind: 'shared',
+          name: 'DTO Hardened Space',
+        });
+        expect(validBody.createdAt).toEqual(expect.any(String));
+
+        const listedSpaces = await fetch(`${server.url}/api/spaces`, {
+          headers: withSessionCookie(aliceCookie),
+        }).then((response) => response.json() as Promise<Array<{ id: string }>>);
+        expect(listedSpaces).toEqual([
+          expect.objectContaining({ id: validBody.id, name: 'DTO Hardened Space' }),
+        ]);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  });
+
   it('serves paper files only through authorized library entry access and never by raw storage key', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-http-paper-file-'));
     const env = {
