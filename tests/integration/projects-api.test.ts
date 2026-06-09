@@ -39,6 +39,7 @@ describe('projects api', () => {
         role: 'owner',
         userId: 'user-alice',
       });
+      expect(project.memberCount).toBe(1);
 
       const aliceProjects = await app.projects.listProjects('user-alice');
       const bobProjects = await app.projects.listProjects('user-bob');
@@ -46,6 +47,10 @@ describe('projects api', () => {
       expect(aliceProjects.map((item) => item.project.id)).toContain(
         project.project.id,
       );
+      expect(
+        aliceProjects.find((item) => item.project.id === project.project.id)
+          ?.memberCount,
+      ).toBe(1);
       expect(bobProjects).toHaveLength(0);
       await expect(
         app.projects.getProject(
@@ -103,6 +108,7 @@ describe('projects api', () => {
       }, 'user-alice');
 
       expect(bobProject.membership.role).toBe('viewer');
+      expect(bobProject.memberCount).toBe(2);
       expect(bobMembers.map((member) => member.userId)).toEqual([
         'user-alice',
         'user-bob',
@@ -164,8 +170,13 @@ describe('projects api', () => {
         { projectId: project.project.id },
         'user-alice',
       );
+      const updatedProject = await app.projects.getProject(
+        { projectId: project.project.id },
+        'user-alice',
+      );
 
       expect(duplicateBobMembership).toEqual(firstBobMembership);
+      expect(updatedProject.memberCount).toBe(2);
       expect(
         members.filter((membership) => membership.userId === 'user-bob'),
       ).toHaveLength(1);
@@ -221,7 +232,12 @@ describe('projects api', () => {
       expect(aliceProjects.map((item) => item.project.id)).toContain(
         project.project.id,
       );
+      expect(
+        aliceProjects.find((item) => item.project.id === project.project.id)
+          ?.memberCount,
+      ).toBe(2);
       expect(bobProject).toMatchObject({
+        memberCount: 2,
         membership: {
           projectId: project.project.id,
           role: 'viewer',
@@ -233,6 +249,7 @@ describe('projects api', () => {
         },
       });
       expect(secondProject.project.id).not.toBe(project.project.id);
+      expect(secondProject.memberCount).toBe(1);
       expect(
         postRestartAliceProjects.map((item) => item.project.id),
       ).toEqual(expect.arrayContaining([
