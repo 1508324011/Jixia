@@ -219,6 +219,7 @@ describe('project doc presenter', () => {
 
     vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
       {
+        memberCount: 1,
         membership: {
           joinedAt: '2026-03-23T00:35:00.000Z',
           projectId: 'project-1',
@@ -315,6 +316,7 @@ describe('project doc presenter', () => {
 
     vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
       {
+        memberCount: 1,
         membership: {
           joinedAt: '2026-03-23T00:35:00.000Z',
           projectId: 'project-1',
@@ -413,6 +415,7 @@ describe('project doc presenter', () => {
 
     vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
       {
+        memberCount: 1,
         membership: {
           joinedAt: '2026-03-23T00:35:00.000Z',
           projectId: 'project-1',
@@ -497,6 +500,7 @@ describe('project doc presenter', () => {
 
     vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
       {
+        memberCount: 1,
         membership: {
           joinedAt: '2026-03-23T00:35:00.000Z',
           projectId: 'project-1',
@@ -602,6 +606,7 @@ describe('project doc presenter', () => {
   it('surfaces citation-source-unavailable saves as adoption-needed presenter state', async () => {
     vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
       {
+        memberCount: 1,
         membership: {
           joinedAt: '2026-03-23T00:35:00.000Z',
           projectId: 'project-1',

@@ -36,6 +36,7 @@ export interface ProjectMemberRecord {
 }
 
 export interface ProjectListItem {
+  memberCount: number;
   membership: ProjectMemberRecord;
   project: ProjectRecord;
 }

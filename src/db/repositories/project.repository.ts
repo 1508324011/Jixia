@@ -44,6 +44,7 @@ export interface PersistedProjectMemberRecord {
 }
 
 export interface PersistedProjectWithMembership {
+  memberCount: number;
   membership: PersistedProjectMemberRecord;
   project: PersistedProjectRecord;
 }
@@ -125,6 +126,7 @@ function mapProjectWithMembership(
   }
 
   return {
+    memberCount: project.members.length,
     membership: mapProjectMember(membership),
     project: mapProject(project),
   };
