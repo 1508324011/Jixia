@@ -797,6 +797,25 @@ describe('notebook and project document persistence', () => {
             documentContent: {
               blocks: [
                 {
+                  metadata: { ownerId: 'user-alice' },
+                  text: 'nested notebook authority residue',
+                  type: 'paragraph',
+                },
+              ],
+              schemaVersion: 1,
+            } as unknown as DocumentBlockDocument,
+            documentId: notebook.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/metadata\.ownerId/);
+      await expect(
+        app.notebooks.saveDocument(
+          {
+            citations: [],
+            documentContent: {
+              blocks: [
+                {
                   libraryEntryId: imported.entry.id,
                   text: 'quote with incomplete source metadata',
                   type: 'quote',
@@ -979,6 +998,25 @@ describe('notebook and project document persistence', () => {
           'user-alice',
         ),
       ).rejects.toThrow(/not available in project/i);
+      await expect(
+        app.projectDocs.saveDocument(
+          {
+            citations: [],
+            documentContent: {
+              blocks: [
+                {
+                  project: { id: project.project.id },
+                  text: 'nested project authority residue',
+                  type: 'paragraph',
+                },
+              ],
+              schemaVersion: 1,
+            } as unknown as DocumentBlockDocument,
+            documentId: projectDoc.id,
+          },
+          'user-alice',
+        ),
+      ).rejects.toThrow(/project/);
       await expect(
         app.projectDocs.saveDocument(
           {

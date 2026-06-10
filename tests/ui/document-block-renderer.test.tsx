@@ -65,6 +65,7 @@ describe('DocumentBlockRenderer', () => {
         {
           evidenceSpan: 'AI suggestion evidence span.',
           libraryEntryId: 'entry-ai-1',
+          locator: 'AI appendix',
           paperAssetId: 'asset-ai-1',
           rationale: 'Grounded in the citation trace.',
           readerExcerptId: 'excerpt-ai-1',
@@ -118,6 +119,7 @@ describe('DocumentBlockRenderer', () => {
       'asset-ai-1',
       'entry-ai-1',
       'excerpt-ai-1',
+      'AI appendix',
       'AI suggestion evidence span.',
     ]) {
       expect(screen.getByText(value)).toBeInTheDocument();
