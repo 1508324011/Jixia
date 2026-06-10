@@ -174,6 +174,9 @@ function AdoptionNeededHarness() {
       <div data-testid="adoption-source-entry">
         {presenter.adoptionNeeded?.sourceLibraryEntryId ?? 'none'}
       </div>
+      <div data-testid="adoption-reference-entry">
+        {presenter.adoptionNeeded?.libraryEntryId ?? 'none'}
+      </div>
       <button
         type="button"
         onClick={() =>
@@ -603,7 +606,7 @@ describe('project doc presenter', () => {
     });
   });
 
-  it('surfaces citation-source-unavailable saves as adoption-needed presenter state', async () => {
+  it('keeps citation adoption actions gated by server-provided source entries', async () => {
     vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
       {
         memberCount: 1,
@@ -682,6 +685,9 @@ describe('project doc presenter', () => {
       );
     });
     expect(screen.getByTestId('adoption-source-entry')).toHaveTextContent(
+      'none',
+    );
+    expect(screen.getByTestId('adoption-reference-entry')).toHaveTextContent(
       'entry-personal-source',
     );
     expect(screen.getByTestId('presenter-error')).toHaveTextContent(
@@ -691,12 +697,13 @@ describe('project doc presenter', () => {
     fireEvent.click(screen.getByRole('button', { name: 'adopt citation source' }));
 
     await waitFor(() => {
-      expect(apiClient.adoptProjectLibraryEntry).toHaveBeenCalledWith('project-1', {
-        sourceLibraryEntryId: 'entry-personal-source',
-      });
+      expect(screen.getByTestId('presenter-error')).toHaveTextContent(
+        'A source library entry and visible project are required before adoption.',
+      );
     });
-    await waitFor(() => {
-      expect(screen.getByTestId('adoption-paper-asset')).toHaveTextContent('none');
-    });
+    expect(apiClient.adoptProjectLibraryEntry).not.toHaveBeenCalled();
+    expect(screen.getByTestId('adoption-paper-asset')).toHaveTextContent(
+      'asset-adoption-needed',
+    );
   });
 });

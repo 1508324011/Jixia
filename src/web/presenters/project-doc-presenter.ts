@@ -151,10 +151,6 @@ function createAdoptionStateFromError(
   }
 
   const matchingReference = findReferenceForUnavailableCitation(documentContent, details);
-  const sourceLibraryEntryId =
-    details.sourceLibraryEntryId ??
-    details.libraryEntryId ??
-    matchingReference?.libraryEntryId;
 
   return {
     evidenceSpan: details.evidenceSpan ?? matchingReference?.evidenceSpan,
@@ -163,7 +159,7 @@ function createAdoptionStateFromError(
     paperAssetId: details.paperAssetId,
     projectId: details.projectId,
     readerExcerptId: details.readerExcerptId ?? matchingReference?.readerExcerptId,
-    sourceLibraryEntryId,
+    sourceLibraryEntryId: details.sourceLibraryEntryId,
   };
 }
 
