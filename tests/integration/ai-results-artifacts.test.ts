@@ -407,6 +407,10 @@ describe('server-owned AI result artifacts', () => {
           'projectId=project-spoof',
           'spaceId=space-spoof',
           'visibility=private',
+          'status=draft',
+          'credentialRef=credential-spoof',
+          'rawProviderPayload=provider-spoof',
+          'rawJobPayload=job-spoof',
         ]) {
           const response = await fetch(`${server.url}/api/ai-results?${query}`, {
             headers: withSessionCookie(aliceCookie),
@@ -519,6 +523,307 @@ describe('server-owned AI result artifacts', () => {
             method: 'POST',
           },
         );
+        expect(conflictResponse.status).toBe(409);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it('requires explicit Project Doc apply requests to be actor-free and editor-authorized', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-ai-results-http-project-doc-'));
+
+    try {
+      const env = createAiResultsEnv(storageRoot);
+      const seedApp = createJixiaApp({ env });
+      let projectId = '';
+      let projectResultId = '';
+      let targetProjectDocId = '';
+
+      try {
+        const sharedSpace = await seedApp.spaces.createSpace(
+          { kind: 'shared', name: 'HTTP Project Doc AI results space' },
+          'user-alice',
+        );
+        const project = await seedApp.projects.createProject(
+          { name: 'HTTP AI result project', spaceId: sharedSpace.id },
+          'user-alice',
+        );
+        await seedApp.projects.addProjectMember(
+          project.project.id,
+          { role: 'editor', userId: 'user-bob' },
+          'user-alice',
+        );
+        await seedApp.projects.addProjectMember(
+          project.project.id,
+          { role: 'viewer', userId: 'user-charlie' },
+          'user-alice',
+        );
+        const credential = await seedApp.credentials.createCredential(
+          { provider: 'openai', rawSecret: 'http-project-doc-ai-results-secret-placeholder' },
+          'user-alice',
+        );
+        const projectDoc = await seedApp.projectDocs.createDocument(
+          { projectId: project.project.id, title: 'HTTP AI result target Project Doc' },
+          'user-alice',
+        );
+        const job = await seedApp.jobs.createJob(
+          {
+            credentialRef: credential.credentialRef,
+            kind: 'ai.http-project-summary',
+            payload: {
+              contextPackId: 'http-project-context-pack',
+              contextRefs: [
+                {
+                  projectDocId: projectDoc.id,
+                  projectDocVersionId: 'http-project-doc-version-ref',
+                  sourceType: 'projectDocVersion',
+                },
+              ],
+            },
+            scope: { id: project.project.id, type: 'project' },
+            spaceId: sharedSpace.id,
+          },
+          'user-alice',
+        );
+        await seedApp.jobs.runJob({ actorUserId: 'user-alice', jobId: job.id });
+        const result = await seedApp.aiResults.createFromJob(
+          {
+            documentContent: {
+              blocks: [
+                {
+                  id: 'http-project-result-block',
+                  text: 'HTTP Project Doc synthesis result.',
+                  type: 'paragraph',
+                },
+              ],
+              schemaVersion: 1,
+            },
+            jobId: job.id,
+            title: 'HTTP Project Doc result',
+          },
+          'user-alice',
+        );
+
+        projectId = project.project.id;
+        projectResultId = result.id;
+        targetProjectDocId = projectDoc.id;
+      } finally {
+        await seedApp.close();
+      }
+
+      const server = await startTestServer(env);
+
+      try {
+        const missingSession = await fetch(
+          `${server.url}/api/ai-results/${projectResultId}/apply/project-doc`,
+          {
+            body: JSON.stringify({ projectDocId: targetProjectDocId }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          },
+        );
+
+        expect(missingSession.status).toBe(401);
+
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+        const charlieCookie = await loginAs(server.url, 'user-charlie');
+
+        const beforeApplyResponse = await fetch(
+          `${server.url}/api/project-docs/${targetProjectDocId}`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const beforeApplyPayload = await beforeApplyResponse.json() as {
+          versionNumber: number;
+        };
+
+        expect(beforeApplyResponse.status).toBe(200);
+        expect(beforeApplyPayload.versionNumber).toBe(0);
+
+        for (const query of [
+          'actorUserId=user-bob',
+          'requestedByUserId=user-bob',
+          'authorUserId=user-bob',
+          'startedByUserId=user-bob',
+          'userId=user-bob',
+          'actorSpaceId=space-spoof',
+          'ownerId=user-bob',
+          'createdByUserId=user-bob',
+          'scopeType=project',
+          `scopeId=${projectId}`,
+          `projectId=${projectId}`,
+          'spaceId=space-spoof',
+          'visibility=project',
+          'status=draft',
+          'credentialRef=credential-spoof',
+          'rawProviderPayload=provider-spoof',
+          'rawJobPayload=job-spoof',
+        ]) {
+          const response = await fetch(
+            `${server.url}/api/ai-results/${projectResultId}/apply/project-doc?${query}`,
+            {
+              body: JSON.stringify({ projectDocId: targetProjectDocId }),
+              headers: withSessionCookie(bobCookie, {
+                'Content-Type': 'application/json',
+              }),
+              method: 'POST',
+            },
+          );
+
+          expect(response.status).toBe(400);
+        }
+
+        const forbiddenBodies: Array<Record<string, unknown>> = [
+          { actorUserId: 'user-bob' },
+          { requestedByUserId: 'user-bob' },
+          { authorUserId: 'user-bob' },
+          { startedByUserId: 'user-bob' },
+          { userId: 'user-bob' },
+          { actorSpaceId: 'space-spoof' },
+          { ownerId: 'user-bob' },
+          { createdByUserId: 'user-bob' },
+          { scope: { id: projectId, type: 'project' } },
+          { scopeType: 'project' },
+          { scopeId: projectId },
+          { projectId },
+          { spaceId: 'space-spoof' },
+          { visibility: 'project' },
+          { status: 'draft' },
+          { credentialRef: 'credential-spoof' },
+          { rawProviderPayload: { text: 'provider residue' } },
+          { rawJobPayload: { text: 'job residue' } },
+        ];
+
+        for (const forbiddenBody of forbiddenBodies) {
+          const response = await fetch(
+            `${server.url}/api/ai-results/${projectResultId}/apply/project-doc`,
+            {
+              body: JSON.stringify({
+                projectDocId: targetProjectDocId,
+                ...forbiddenBody,
+              }),
+              headers: withSessionCookie(bobCookie, {
+                'Content-Type': 'application/json',
+              }),
+              method: 'POST',
+            },
+          );
+
+          expect(response.status).toBe(400);
+        }
+
+        const forbiddenInsertionFields: Array<Record<string, unknown>> = [
+          { actorUserId: 'user-bob' },
+          { requestedByUserId: 'user-bob' },
+          { authorUserId: 'user-bob' },
+          { startedByUserId: 'user-bob' },
+          { userId: 'user-bob' },
+          { actorSpaceId: 'space-spoof' },
+          { ownerId: 'user-bob' },
+          { createdByUserId: 'user-bob' },
+          { scope: { id: projectId, type: 'project' } },
+          { scopeType: 'project' },
+          { scopeId: projectId },
+          { projectId },
+          { spaceId: 'space-spoof' },
+          { visibility: 'project' },
+          { status: 'draft' },
+          { credentialRef: 'credential-spoof' },
+          { rawProviderPayload: { text: 'provider residue' } },
+          { rawJobPayload: { text: 'job residue' } },
+        ];
+
+        for (const forbiddenInsertionField of forbiddenInsertionFields) {
+          const response = await fetch(
+            `${server.url}/api/ai-results/${projectResultId}/apply/project-doc`,
+            {
+              body: JSON.stringify({
+                insertion: { mode: 'append', ...forbiddenInsertionField },
+                projectDocId: targetProjectDocId,
+              }),
+              headers: withSessionCookie(bobCookie, {
+                'Content-Type': 'application/json',
+              }),
+              method: 'POST',
+            },
+          );
+
+          expect(response.status).toBe(400);
+        }
+
+        const viewerApply = await fetch(
+          `${server.url}/api/ai-results/${projectResultId}/apply/project-doc`,
+          {
+            body: JSON.stringify({ projectDocId: targetProjectDocId }),
+            headers: withSessionCookie(charlieCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+
+        expect(viewerApply.status).toBe(403);
+
+        const afterRejectedApplyResponse = await fetch(
+          `${server.url}/api/project-docs/${targetProjectDocId}`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const afterRejectedApplyPayload = await afterRejectedApplyResponse.json() as {
+          versionNumber: number;
+        };
+
+        expect(afterRejectedApplyResponse.status).toBe(200);
+        expect(afterRejectedApplyPayload.versionNumber).toBe(0);
+
+        const applyResponse = await fetch(
+          `${server.url}/api/ai-results/${projectResultId}/apply/project-doc`,
+          {
+            body: JSON.stringify({ projectDocId: targetProjectDocId }),
+            headers: withSessionCookie(bobCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const applyPayload = await applyResponse.json() as {
+          appliedTarget: { projectDocId: string; projectId: string; type: string };
+          contract: string;
+          result: { id: string; status: string };
+          snapshot: { document: { id: string; projectId: string }; versionNumber: number };
+        };
+
+        expect(applyResponse.status).toBe(200);
+        expect(applyPayload).toMatchObject({
+          appliedTarget: {
+            projectDocId: targetProjectDocId,
+            projectId,
+            type: 'projectDoc',
+          },
+          contract: 'jixia-ai-results-contract-v1',
+          result: { id: projectResultId, status: 'applied' },
+          snapshot: {
+            document: { id: targetProjectDocId, projectId },
+            versionNumber: 1,
+          },
+        });
+        expect(JSON.stringify(applyPayload)).not.toMatch(
+          /rawSecret|http-project-doc-ai-results-secret-placeholder|credentialRef|rawProviderPayload|rawJobPayload|storageKey|checksum/i,
+        );
+
+        const conflictResponse = await fetch(
+          `${server.url}/api/ai-results/${projectResultId}/apply/project-doc`,
+          {
+            body: JSON.stringify({ projectDocId: targetProjectDocId }),
+            headers: withSessionCookie(bobCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+
         expect(conflictResponse.status).toBe(409);
       } finally {
         await server.close();
