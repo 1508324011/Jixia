@@ -2419,6 +2419,247 @@ describe('project docs flow', () => {
     );
   });
 
+  it('writing page shows manual adoption guidance when the server omits sourceLibraryEntryId', async () => {
+    const user = userEvent.setup();
+    const projectFixture = {
+      membership: {
+        joinedAt: '2026-03-23T00:35:00.000Z',
+        projectId: 'project-1',
+        role: 'owner',
+        userId: 'user-alice',
+      },
+      project: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'project-1',
+        name: 'Tumor board project',
+        spaceId: 'space-project-1',
+        status: 'active',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+    };
+    const documentState = {
+      capturedAt: '2026-03-23T00:40:00.000Z',
+      citations: [
+        {
+          createdAt: '2026-03-23T00:40:00.000Z',
+          evidenceSpan: 'Manual adoption quote survives save failure.',
+          id: 'citation-1',
+          paperAssetId: 'asset-manual-adoption-needed',
+          projectDocVersionId: 'project-doc-version-1',
+          readerExcerptId: 'excerpt-manual-adoption-needed',
+        },
+      ],
+      content: 'Manual adoption quote survives save failure.',
+      documentContent: {
+        blocks: [
+          {
+            evidenceSpan: 'Manual adoption quote survives save failure.',
+            libraryEntryId: 'entry-local-reference-only',
+            paperAssetId: 'asset-manual-adoption-needed',
+            quote: 'Manual adoption quote survives save failure.',
+            readerExcerptId: 'excerpt-manual-adoption-needed',
+            title: 'Manual adoption needed paper',
+            type: 'sourceExcerpt',
+          },
+        ],
+        schemaVersion: 1,
+      },
+      document: {
+        createdAt: '2026-03-23T00:35:00.000Z',
+        createdByUserId: 'user-alice',
+        id: 'doc-project-1',
+        projectId: 'project-1',
+        publishState: 'draft',
+        title: 'Tumor board literature synthesis',
+        updatedAt: '2026-03-23T00:35:00.000Z',
+      },
+      versionId: 'project-doc-version-1',
+      versionNumber: 1,
+    };
+    const saveBodies: unknown[] = [];
+
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const requestUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/projects')) {
+        return jsonResponse([projectFixture]);
+      }
+
+      if (requestUrl.endsWith('/api/project-docs/doc-project-1/citation-trace')) {
+        return jsonResponse({
+          capturedAt: documentState.capturedAt,
+          citations: [
+            {
+              citationId: 'citation-1',
+              createdAt: '2026-03-23T00:40:00.000Z',
+              evidenceSpan: 'Manual adoption quote survives save failure.',
+              paperAssetId: 'asset-manual-adoption-needed',
+              projectDocVersionId: documentState.versionId,
+              readerExcerpt: {
+                evidenceSpan: 'Manual adoption quote survives save failure.',
+                id: 'excerpt-manual-adoption-needed',
+                quote: 'Manual adoption quote survives save failure.',
+                source: 'project_doc_snapshot',
+              },
+              readerExcerptId: 'excerpt-manual-adoption-needed',
+              source: {
+                code: 'PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE',
+                details: {
+                  actorUserId: 'user-alice',
+                  checksum: 'checksum-should-not-render',
+                  credentialRef: 'credentialRef-should-not-render',
+                  evidenceSpan: 'Manual adoption quote survives save failure.',
+                  libraryEntryId: 'entry-local-reference-only',
+                  ownerId: 'user-alice',
+                  paperAssetId: 'asset-manual-adoption-needed',
+                  privateNotebookBody: 'Private notebook body should stay private.',
+                  privateReaderNote: 'private reader note should stay private.',
+                  projectId: 'project-1',
+                  rawSecret: 'rawSecret-should-not-render',
+                  readerExcerptId: 'excerpt-manual-adoption-needed',
+                  storageKey: 'storageKey-should-not-render',
+                },
+                message: 'Paper asset asset-manual-adoption-needed is not available in project project-1.',
+                state: 'adoption_needed',
+              },
+            },
+          ],
+          document: documentState.document,
+          generatedAt: '2026-03-23T00:48:30.000Z',
+          versionId: documentState.versionId,
+          versionNumber: documentState.versionNumber,
+        });
+      }
+
+      if (requestUrl.endsWith('/api/project-docs/doc-project-1') && (!init?.method || init.method === 'GET')) {
+        return jsonResponse(documentState);
+      }
+
+      if (requestUrl.endsWith('/api/project-docs/doc-project-1/versions') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as {
+          citations: Array<{
+            evidenceSpan?: string;
+            libraryEntryId?: string;
+            paperAssetId: string;
+            readerExcerptId?: string;
+          }>;
+          documentContent: typeof documentState.documentContent;
+        };
+
+        saveBodies.push(body);
+        expect(body.citations).toEqual([
+          {
+            evidenceSpan: 'Manual adoption quote survives save failure.',
+            libraryEntryId: 'entry-local-reference-only',
+            paperAssetId: 'asset-manual-adoption-needed',
+            readerExcerptId: 'excerpt-manual-adoption-needed',
+          },
+        ]);
+        expect(body.documentContent.blocks[0]).toMatchObject({
+          evidenceSpan: 'Manual adoption quote survives save failure.',
+          libraryEntryId: 'entry-local-reference-only',
+          paperAssetId: 'asset-manual-adoption-needed',
+          quote: 'Manual adoption quote survives save failure.',
+          readerExcerptId: 'excerpt-manual-adoption-needed',
+          type: 'sourceExcerpt',
+        });
+
+        return jsonResponse(
+          {
+            code: 'PROJECT_DOC_CITATION_SOURCE_UNAVAILABLE',
+            details: {
+              actorUserId: 'user-alice',
+              checksum: 'checksum-should-not-render',
+              credentialRef: 'credentialRef-should-not-render',
+              evidenceSpan: 'Manual adoption quote survives save failure.',
+              libraryEntryId: 'entry-local-reference-only',
+              ownerId: 'user-alice',
+              paperAssetId: 'asset-manual-adoption-needed',
+              privateNotebookBody: 'Private notebook body should stay private.',
+              privateReaderNote: 'private reader note should stay private.',
+              projectId: 'project-1',
+              rawSecret: 'rawSecret-should-not-render',
+              readerExcerptId: 'excerpt-manual-adoption-needed',
+              storageKey: 'storageKey-should-not-render',
+            },
+            error: 'Paper asset asset-manual-adoption-needed is not available in project project-1.',
+          },
+          400,
+        );
+      }
+
+      if (requestUrl.endsWith('/api/projects/project-1/library/adoptions')) {
+        throw new Error('The UI must not call the project library adoption route without a server-provided sourceLibraryEntryId.');
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench('/projects/project-1/writing/doc-project-1');
+
+    expect(await screen.findByText('Manual adoption needed paper')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    const adoptionHeading = await screen.findByRole('heading', {
+      name: 'Citation source needs project adoption',
+    });
+    const adoptionPanel = adoptionHeading.closest('section');
+
+    expect(adoptionHeading).toBeInTheDocument();
+    if (!(adoptionPanel instanceof HTMLElement)) {
+      throw new Error('Citation adoption panel was not rendered.');
+    }
+    expect(within(adoptionPanel).getByText('Paper asset · asset-manual-adoption-needed')).toBeInTheDocument();
+    expect(within(adoptionPanel).getByText('Referenced library entry · entry-local-reference-only')).toBeInTheDocument();
+    expect(within(adoptionPanel).getByText('Reader excerpt · excerpt-manual-adoption-needed')).toBeInTheDocument();
+    expect(within(adoptionPanel).getByText('Evidence span · Manual adoption quote survives save failure.')).toBeInTheDocument();
+    expect(
+      within(adoptionPanel).getByText(
+        'This save failure did not include a source library entry that the browser can request for adoption. Open the source in Reader or Library and add it to the project library, then retry the save.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Add source to project library and retry save' }),
+    ).not.toBeInTheDocument();
+
+    const calledUrls = fetchMock.mock.calls.map(([requestInput]) => (
+      typeof requestInput === 'string'
+        ? requestInput
+        : requestInput instanceof URL
+          ? requestInput.toString()
+          : requestInput.url
+    ));
+
+    expect(calledUrls.some((requestUrl) => requestUrl.includes('/api/projects/project-1/library/adoptions'))).toBe(false);
+    expect(saveBodies).toHaveLength(1);
+    expect(screen.queryByText(/storageKey/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/checksum/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Private notebook body/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/private reader note/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/credentialRef/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/rawSecret/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/actorUserId/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ownerId/i)).not.toBeInTheDocument();
+  });
+
   it('project page treats an empty Project Docs index as an empty state instead of a runtime failure', async () => {
     const workspaceFixture = {
       activity: {

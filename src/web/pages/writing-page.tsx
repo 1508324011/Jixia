@@ -586,6 +586,9 @@ export function WritingPage() {
                         {adoptionNeeded.sourceLibraryEntryId ? (
                           <p className="quiet-copy">Source library entry · {adoptionNeeded.sourceLibraryEntryId}</p>
                         ) : null}
+                        {adoptionNeeded.libraryEntryId && adoptionNeeded.libraryEntryId !== adoptionNeeded.sourceLibraryEntryId ? (
+                          <p className="quiet-copy">Referenced library entry · {adoptionNeeded.libraryEntryId}</p>
+                        ) : null}
                         {adoptionNeeded.readerExcerptId ? (
                           <p className="quiet-copy">Reader excerpt · {adoptionNeeded.readerExcerptId}</p>
                         ) : null}
