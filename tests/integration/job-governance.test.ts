@@ -1069,6 +1069,49 @@ describe('job governance', () => {
           jobId: projectJob.id,
         }),
       ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.jobs.listJobs({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-charlie',
+          scope: { id: project.project.id, type: 'project' },
+          spaceId: sharedSpace.id,
+        }),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.jobs.runJob({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-charlie',
+          jobId: projectJob.id,
+        }),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.jobs.cancelJob({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-charlie',
+          jobId: projectJob.id,
+        }),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.jobs.listAuditRecords({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-charlie',
+          jobId: projectJob.id,
+        }),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.jobStream.listEvents({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-charlie',
+          jobId: projectJob.id,
+        }),
+      ).rejects.toThrow(/access denied/i);
+      await expect(
+        app.jobStream.toSse({
+          actorSpaceId: sharedSpace.id,
+          actorUserId: 'user-charlie',
+          jobId: projectJob.id,
+        }),
+      ).rejects.toThrow(/access denied/i);
     } finally {
       await prisma.$disconnect();
       rmSync(storageRoot, { force: true, recursive: true });
