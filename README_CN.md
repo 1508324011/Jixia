@@ -68,7 +68,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 - `GET|HEAD /api/library/:entryId/file` 是浏览器唯一的论文文件读取入口。路径参数是带 scope 的 `LibraryEntry.id`，服务端从 `jixia_session` cookie 派生 actor，再按个人 / 项目成员权限授权；浏览器 DTO 不暴露原始 `storageKey`、`papers/...` key、绝对文件路径或 `JIXIA_STORAGE_ROOT`。
 - `GET /api/reading/:entryId`、`POST /api/reading/notes`、`POST /api/reading/:entryId/project-comments`、`POST /api/reading/:entryId/insights` 支撑 paper workspace；私人笔记与项目评论走分离的 server-authorized 写入路径。
 - `POST /api/reading/:entryId/excerpts` 持久化 Reader excerpt；`POST /api/notebooks/capture` 可以把生成的 insight 或 Reader excerpt 捕获到 actor owner-only Notebook，且不接受浏览器传入的 actor、owner 或 project authority 字段。
-- `POST /api/projects/:projectId/library/adoptions` 是显式的项目来源采纳路径。浏览器只发送 `{ sourceLibraryEntryId }`，服务端检查来源可读性与目标项目 owner/editor 成员资格后，才创建或复用 project-scoped `LibraryEntry`。
+- `POST /api/projects/:projectId/library/adoptions` 是显式的项目来源采纳路径。浏览器只发送 `{ sourceLibraryEntryId }`，服务端检查来源可读性与目标项目 owner/editor 成员资格后，才创建或复用 project-scoped `LibraryEntry`。首次成功采纳会在同一个事务中创建目标 `LibraryEntry` 与经过脱敏的 `project_library.source_adopted` governance audit 记录；重复、拒绝或被拦截的采纳请求不会产生重复的采纳 audit。
 - `POST /api/project-docs/:documentId/notebook-adoptions` 仅保留为 legacy/internal 兼容端点。前台 Project Docs 通过选中的 Reader 证据、项目可见 citation/reference 与显式 Project Library source adoption 建立共享知识，而不是提供整本私有 Notebook 的转移入口。
 - `GET /api/project-docs/:documentId/citation-trace` 返回 ProjectMember-gated、浏览器安全的最新 Project Doc citation trace，包括 source availability / adoption-needed 状态，但不包含 storage keys、checksums、私有 Notebook 正文、Reader 私人笔记、credential refs 或 actor authority 字段。
 - `GET /api/projects/:projectId/writing-document` 让兼容调用方重新打开最新可见的共享 Project Doc；如果项目尚无共享 Project Doc，服务端会真实返回空状态。

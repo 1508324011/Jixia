@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createAuditRepository,
+  createLibraryRepository,
   createPrismaClient,
   initializeAuditPersistence,
 } from '../../src/db';
@@ -309,6 +310,379 @@ describe('generic governance audit', () => {
           { headers: withSessionCookie(aliceCookie) },
         );
         expect(legacyActorSpaceResponse.status).toBe(400);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 30_000);
+
+  it('records new Project Library source adoption audits without duplicating reused or denied attempts', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-project-library-audit-'));
+    const env = {
+      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-project-library-audit.db')}`,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+
+    try {
+      const app = createJixiaApp({
+        connectors: { pubmed: createHttpTestPubmedConnector() },
+        env,
+      });
+      let projectId = '';
+      let editorSourceLibraryEntryId = '';
+      let editorTargetProjectLibraryEntryId = '';
+      let rollbackSourcePaperAssetId = '';
+      let sourceLibraryEntryId = '';
+      let targetProjectLibraryEntryId = '';
+      let rejectedHttpSourceLibraryEntryId = '';
+      let sharedSpaceId = '';
+
+      try {
+        const sharedSpace = await app.spaces.createSpace(
+          { kind: 'shared', name: 'Project Library Audit Space' },
+          'user-alice',
+        );
+        sharedSpaceId = sharedSpace.id;
+        const project = await app.projects.createProject(
+          { name: 'Project Library Audit Project', spaceId: sharedSpace.id },
+          'user-alice',
+        );
+        projectId = project.project.id;
+        await app.projects.addProjectMember(
+          projectId,
+          { role: 'viewer', userId: 'user-bob' },
+          'user-alice',
+        );
+        await app.projects.addProjectMember(
+          projectId,
+          { role: 'editor', userId: 'user-editor' },
+          'user-alice',
+        );
+
+        const personalSource = await app.imports.importPaper(
+          {
+            scope: { id: 'user-alice', type: 'user' },
+            sourceLocator: '10.1000/project-library-adoption-audit-source',
+            sourceType: 'doi',
+            spaceId: sharedSpace.id,
+            visibility: 'private',
+          },
+          'user-alice',
+        );
+        sourceLibraryEntryId = personalSource.entry.id;
+        await app.reading.createNote({
+          actorUserId: 'user-alice',
+          body: 'Private adoption audit note must not leak.',
+          libraryEntryId: personalSource.entry.id,
+        });
+
+        const rejectedHttpSource = await app.imports.importPaper(
+          {
+            scope: { id: 'user-alice', type: 'user' },
+            sourceLocator: '10.1000/project-library-adoption-rejected-http-source',
+            sourceType: 'doi',
+            spaceId: sharedSpace.id,
+            visibility: 'private',
+          },
+          'user-alice',
+        );
+        rejectedHttpSourceLibraryEntryId = rejectedHttpSource.entry.id;
+
+        const editorPersonalSource = await app.imports.importPaper(
+          {
+            scope: { id: 'user-editor', type: 'user' },
+            sourceLocator: '10.1000/project-library-adoption-editor-source',
+            sourceType: 'doi',
+            spaceId: sharedSpace.id,
+            visibility: 'private',
+          },
+          'user-editor',
+        );
+        editorSourceLibraryEntryId = editorPersonalSource.entry.id;
+
+        const rollbackPersonalSource = await app.imports.importPaper(
+          {
+            scope: { id: 'user-alice', type: 'user' },
+            sourceLocator: '10.1000/project-library-adoption-audit-rollback-source',
+            sourceType: 'doi',
+            spaceId: sharedSpace.id,
+            visibility: 'private',
+          },
+          'user-alice',
+        );
+        rollbackSourcePaperAssetId = rollbackPersonalSource.asset.id;
+
+        const firstAdoption = await app.library.adoptProjectLibraryEntry({
+          actorUserId: 'user-alice',
+          projectId,
+          sourceLibraryEntryId,
+        });
+        targetProjectLibraryEntryId = firstAdoption.entry.entry.id;
+        const repeatedAdoption = await app.library.adoptProjectLibraryEntry({
+          actorUserId: 'user-alice',
+          projectId,
+          sourceLibraryEntryId,
+        });
+        const editorAdoption = await app.library.adoptProjectLibraryEntry({
+          actorUserId: 'user-editor',
+          projectId,
+          sourceLibraryEntryId: editorSourceLibraryEntryId,
+        });
+        editorTargetProjectLibraryEntryId = editorAdoption.entry.entry.id;
+
+        expect(firstAdoption.reused).toBe(false);
+        expect(repeatedAdoption.reused).toBe(true);
+        expect(repeatedAdoption.entry.entry.id).toBe(targetProjectLibraryEntryId);
+        expect(editorAdoption.reused).toBe(false);
+        expect(editorAdoption.entry.entry.scope).toEqual({ id: projectId, type: 'project' });
+
+        await expect(
+          app.library.adoptProjectLibraryEntry({
+            actorUserId: 'user-bob',
+            projectId,
+            sourceLibraryEntryId: targetProjectLibraryEntryId,
+          }),
+        ).rejects.toThrow(/mutation|access denied/i);
+        await expect(
+          app.library.adoptProjectLibraryEntry({
+            actorUserId: 'user-charlie',
+            projectId,
+            sourceLibraryEntryId: targetProjectLibraryEntryId,
+          }),
+        ).rejects.toThrow(/access denied/i);
+        await expect(
+          app.library.adoptProjectLibraryEntry({
+            actorUserId: 'user-editor',
+            projectId,
+            sourceLibraryEntryId,
+          }),
+        ).rejects.toThrow(/access denied/i);
+        await expect(
+          app.library.adoptProjectLibraryEntry({
+            actorUserId: 'user-alice',
+            projectId,
+            sourceLibraryEntryId: '',
+          }),
+        ).rejects.toThrow(/sourceLibraryEntryId/i);
+        await expect(
+          app.library.adoptProjectLibraryEntry({
+            actorUserId: 'user-alice',
+            projectId,
+            sourceLibraryEntryId: 'entry-missing-adoption-audit-source',
+          }),
+        ).rejects.toThrow(/does not exist/i);
+        await expect(
+          app.library.adoptProjectLibraryEntry({
+            actorUserId: 'user-alice',
+            projectId: 'project-missing-adoption-audit-target',
+            sourceLibraryEntryId,
+          }),
+        ).rejects.toThrow(/does not exist/i);
+      } finally {
+        await app.close();
+      }
+
+      const rollbackPrisma = createPrismaClient({ url: env.JIXIA_DATABASE_URL });
+
+      try {
+        const libraryRepository = createLibraryRepository(rollbackPrisma);
+
+        await expect(
+          libraryRepository.adoptExistingPaperAsset({
+            addedByUserId: 'user-alice',
+            audit: {
+              action: 'project_library.source_adopted',
+              actorUserId: 'user-alice',
+              detail: 'Adopted source into Project Library.',
+              metadata: { sourceType: 'doi' },
+              objectType: 'library_entry',
+              projectId,
+              scope: { id: projectId, type: 'project' },
+              spaceId: 'space-missing-adoption-audit-rollback',
+            },
+            paperAssetId: rollbackSourcePaperAssetId,
+            scope: { id: projectId, type: 'project' },
+          }),
+        ).rejects.toThrow();
+
+        const rollbackEntries = await libraryRepository.listLibraryEntriesForAsset(
+          rollbackSourcePaperAssetId,
+        );
+
+        expect(
+          rollbackEntries.some(
+            (view) =>
+              view.entry.scope.type === 'project' && view.entry.scope.id === projectId,
+          ),
+        ).toBe(false);
+      } finally {
+        await rollbackPrisma.$disconnect();
+      }
+
+      const server = await startTestServer(env);
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+        const charlieCookie = await loginAs(server.url, 'user-charlie');
+
+        const objectFilterResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/audit?objectType=library_entry&objectId=${targetProjectLibraryEntryId}`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        const objectFilterPayload = await objectFilterResponse.json() as Array<{
+          action: string;
+          actorUserId: string;
+          detail: string;
+          metadata?: Record<string, string | number | boolean | null>;
+          object: { id: string; type: string };
+          projectId?: string;
+          scope: { id: string; type: string };
+          spaceId?: string;
+        }>;
+
+        expect(objectFilterResponse.status).toBe(200);
+        expect(objectFilterPayload).toHaveLength(1);
+        expect(objectFilterPayload[0]).toMatchObject({
+          action: 'project_library.source_adopted',
+          actorUserId: 'user-alice',
+          detail: 'Adopted source into Project Library.',
+          metadata: { sourceType: 'doi' },
+          object: { id: targetProjectLibraryEntryId, type: 'library_entry' },
+          projectId,
+          scope: { id: projectId, type: 'project' },
+          spaceId: sharedSpaceId,
+        });
+        expect(JSON.stringify(objectFilterPayload)).not.toContain(sourceLibraryEntryId);
+        expect(JSON.stringify(objectFilterPayload)).not.toContain(editorSourceLibraryEntryId);
+        expect(JSON.stringify(objectFilterPayload)).not.toContain(rejectedHttpSourceLibraryEntryId);
+        expect(JSON.stringify(objectFilterPayload)).not.toMatch(
+          /sourceLibraryEntryId|rawSecret|credentialRef|payload|storageKey|checksum|content|snapshot|body|private note|JIXIA_STORAGE_ROOT|papers\//i,
+        );
+        expect(JSON.stringify(objectFilterPayload)).not.toContain(
+          'HTTP DOI paper 10.1000/project-library-adoption-audit-source',
+        );
+
+        const allLibraryEntryAuditResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/audit?objectType=library_entry`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        const allLibraryEntryAuditPayload = await allLibraryEntryAuditResponse.json() as Array<{
+          action: string;
+          actorUserId: string;
+          object: { id: string; type: string };
+        }>;
+
+        expect(allLibraryEntryAuditResponse.status).toBe(200);
+        expect(allLibraryEntryAuditPayload).toHaveLength(2);
+        expect(allLibraryEntryAuditPayload).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              action: 'project_library.source_adopted',
+              actorUserId: 'user-alice',
+              object: { id: targetProjectLibraryEntryId, type: 'library_entry' },
+            }),
+            expect.objectContaining({
+              action: 'project_library.source_adopted',
+              actorUserId: 'user-editor',
+              object: { id: editorTargetProjectLibraryEntryId, type: 'library_entry' },
+            }),
+          ]),
+        );
+        expect(JSON.stringify(allLibraryEntryAuditPayload)).not.toContain(sourceLibraryEntryId);
+        expect(JSON.stringify(allLibraryEntryAuditPayload)).not.toContain(editorSourceLibraryEntryId);
+
+        const nonMemberAuditResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/audit?objectType=library_entry`,
+          { headers: withSessionCookie(charlieCookie) },
+        );
+        expect(nonMemberAuditResponse.status).toBe(403);
+
+        const unsafeAuditQueryResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/audit?objectType=library_entry&metadataJson={}`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        expect(unsafeAuditQueryResponse.status).toBe(400);
+
+        const rejectedAdoptionQueryResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/library/adoptions?projectId=${projectId}`,
+          {
+            body: JSON.stringify({ sourceLibraryEntryId: rejectedHttpSourceLibraryEntryId }),
+            headers: withSessionCookie(aliceCookie, { 'Content-Type': 'application/json' }),
+            method: 'POST',
+          },
+        );
+        expect(rejectedAdoptionQueryResponse.status).toBe(400);
+
+        const rejectedCreatedByQueryResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/library/adoptions?createdByUserId=user-alice`,
+          {
+            body: JSON.stringify({ sourceLibraryEntryId: rejectedHttpSourceLibraryEntryId }),
+            headers: withSessionCookie(aliceCookie, { 'Content-Type': 'application/json' }),
+            method: 'POST',
+          },
+        );
+        expect(rejectedCreatedByQueryResponse.status).toBe(400);
+
+        const rejectedArbitraryQueryResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/library/adoptions?payload=ignored`,
+          {
+            body: JSON.stringify({ sourceLibraryEntryId: rejectedHttpSourceLibraryEntryId }),
+            headers: withSessionCookie(aliceCookie, { 'Content-Type': 'application/json' }),
+            method: 'POST',
+          },
+        );
+        expect(rejectedArbitraryQueryResponse.status).toBe(400);
+
+        const rejectedAdoptionBodyResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/library/adoptions`,
+          {
+            body: JSON.stringify({
+              sourceLibraryEntryId: rejectedHttpSourceLibraryEntryId,
+              visibility: 'published_to_project',
+            }),
+            headers: withSessionCookie(aliceCookie, { 'Content-Type': 'application/json' }),
+            method: 'POST',
+          },
+        );
+        expect(rejectedAdoptionBodyResponse.status).toBe(400);
+
+        const rejectedCreatedByBodyResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/library/adoptions`,
+          {
+            body: JSON.stringify({
+              createdByUserId: 'user-alice',
+              sourceLibraryEntryId: rejectedHttpSourceLibraryEntryId,
+            }),
+            headers: withSessionCookie(aliceCookie, { 'Content-Type': 'application/json' }),
+            method: 'POST',
+          },
+        );
+        expect(rejectedCreatedByBodyResponse.status).toBe(400);
+
+        const rejectedArbitraryBodyResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/library/adoptions`,
+          {
+            body: JSON.stringify({
+              payload: 'ignored',
+              sourceLibraryEntryId: rejectedHttpSourceLibraryEntryId,
+            }),
+            headers: withSessionCookie(aliceCookie, { 'Content-Type': 'application/json' }),
+            method: 'POST',
+          },
+        );
+        expect(rejectedArbitraryBodyResponse.status).toBe(400);
+
+        const allAfterRejectedHttpResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/audit?objectType=library_entry`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        const allAfterRejectedHttpPayload = await allAfterRejectedHttpResponse.json() as unknown[];
+
+        expect(allAfterRejectedHttpResponse.status).toBe(200);
+        expect(allAfterRejectedHttpPayload).toHaveLength(2);
       } finally {
         await server.close();
       }

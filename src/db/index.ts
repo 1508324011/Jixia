@@ -106,6 +106,7 @@ export {
 export {
   createLibraryRepository,
   initializeLibraryPersistence,
+  type AdoptExistingLibraryEntryAuditParams,
   type AdoptExistingLibraryEntryParams,
   type AdoptExistingLibraryEntryResult,
   type BootstrapLegacyLibraryInput,

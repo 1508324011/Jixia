@@ -5,6 +5,11 @@ import {
 } from '@prisma/client';
 
 import type { JixiaPrismaClient } from '../client';
+import {
+  initializeAuditPersistence,
+  insertGovernanceAuditRecord,
+  type CreatePersistedAuditRecordParams,
+} from './audit.repository';
 import { initializeProjectPersistence } from './project.repository';
 
 export type PersistedLibraryScopeType = 'user' | 'project';
@@ -46,8 +51,14 @@ export interface ImportScopedLibraryEntryParams {
   entry: Omit<UpsertLibraryEntryParams, 'paperAssetId'>;
 }
 
+export interface AdoptExistingLibraryEntryAuditParams
+  extends Omit<CreatePersistedAuditRecordParams, 'object'> {
+  objectType: string;
+}
+
 export interface AdoptExistingLibraryEntryParams {
   addedByUserId: string;
+  audit?: AdoptExistingLibraryEntryAuditParams;
   paperAssetId: string;
   scope: PersistedLibraryScopeRef;
 }
@@ -407,7 +418,14 @@ export async function initializeLibraryPersistence(
 export function createLibraryRepository(
   prisma: JixiaPrismaClient,
 ): LibraryRepository {
+  let auditInitialized: Promise<void> | null = null;
   let initialized: Promise<void> | null = null;
+
+  async function ensureAuditInitialized(): Promise<void> {
+    auditInitialized ??= initializeAuditPersistence(prisma);
+
+    await auditInitialized;
+  }
 
   async function ensureInitialized(): Promise<void> {
     initialized ??= initializeLibraryPersistence(prisma);
@@ -420,6 +438,10 @@ export function createLibraryRepository(
       input: AdoptExistingLibraryEntryParams,
     ): Promise<AdoptExistingLibraryEntryResult> {
       await ensureInitialized();
+
+      if (input.audit) {
+        await ensureAuditInitialized();
+      }
 
       const scopedAssetWhere = {
         LibraryEntry_scope_asset_unique: {
@@ -462,6 +484,18 @@ export function createLibraryRepository(
             },
             include: LIBRARY_ENTRY_WITH_ASSET,
           });
+
+          if (input.audit) {
+            const { objectType, ...auditInput } = input.audit;
+
+            await insertGovernanceAuditRecord(transaction, {
+              ...auditInput,
+              object: {
+                id: createdEntry.id,
+                type: objectType,
+              },
+            });
+          }
 
           return {
             reused: false,
