@@ -230,31 +230,56 @@ describe('http server Home cockpit API', () => {
       try {
         const aliceCookie = await loginAs(server.url, 'user-alice');
 
-        const missingSessionResponse = await fetch(
-          `${server.url}/api/home-cockpit?actorUserId=user-alice`,
-        );
+        const missingSessionResponse = await fetch(`${server.url}/api/home-cockpit`);
         const missingSessionPayload = (await missingSessionResponse.json()) as { error: string };
 
         expect(missingSessionResponse.status).toBe(401);
         expect(missingSessionPayload.error).toMatch(/server-derived actor session/i);
 
-        const matchingLegacyResponse = await fetch(
+        const missingSessionWithLegacyActorResponse = await fetch(
           `${server.url}/api/home-cockpit?actorUserId=user-alice`,
+        );
+        const missingSessionWithLegacyActorPayload = (await missingSessionWithLegacyActorResponse.json()) as { error: string };
+
+        expect(missingSessionWithLegacyActorResponse.status).toBe(401);
+        expect(missingSessionWithLegacyActorPayload.error).toMatch(/server-derived actor session/i);
+
+        const rejectedFields = [
+          'actorUserId',
+          'requestedByUserId',
+          'userId',
+          'authorUserId',
+          'startedByUserId',
+          'actorSpaceId',
+          'ownerId',
+          'createdByUserId',
+          'scope',
+          'scopeId',
+          'scopeType',
+          'spaceId',
+          'projectId',
+          'visibility',
+        ];
+
+        for (const fieldName of rejectedFields) {
+          const matchingLegacyResponse = await fetch(
+            `${server.url}/api/home-cockpit?${fieldName}=user-alice`,
+            { headers: withSessionCookie(aliceCookie) },
+          );
+          const matchingLegacyPayload = (await matchingLegacyResponse.json()) as { error: string };
+
+          expect(matchingLegacyResponse.status).toBe(400);
+          expect(matchingLegacyPayload.error).toMatch(/not accepted for protected routes/i);
+        }
+
+        const mismatchedLegacyResponse = await fetch(
+          `${server.url}/api/home-cockpit?actorUserId=user-bob`,
           { headers: withSessionCookie(aliceCookie) },
         );
-        const matchingLegacyPayload = (await matchingLegacyResponse.json()) as { error: string };
+        const mismatchedLegacyPayload = (await mismatchedLegacyResponse.json()) as { error: string };
 
-        expect(matchingLegacyResponse.status).toBe(400);
-        expect(matchingLegacyPayload.error).toMatch(/not accepted for protected routes/i);
-
-        const contextLegacyResponse = await fetch(
-          `${server.url}/api/home-cockpit?actorSpaceId=space-alpha`,
-          { headers: withSessionCookie(aliceCookie) },
-        );
-        const contextLegacyPayload = (await contextLegacyResponse.json()) as { error: string };
-
-        expect(contextLegacyResponse.status).toBe(400);
-        expect(contextLegacyPayload.error).toMatch(/actorSpaceId is not accepted/i);
+        expect(mismatchedLegacyResponse.status).toBe(400);
+        expect(mismatchedLegacyPayload.error).toMatch(/does not match the server-derived actor/i);
       } finally {
         await server.close();
       }

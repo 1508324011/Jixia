@@ -281,6 +281,43 @@ function createTodayContinuationFixture(
   };
 }
 
+const homeTodayAuthorityQueryFields = [
+  'actorUserId',
+  'requestedByUserId',
+  'userId',
+  'authorUserId',
+  'startedByUserId',
+  'actorSpaceId',
+  'createdByUserId',
+  'ownerId',
+  'projectId',
+  'scope',
+  'scopeType',
+  'scopeId',
+  'spaceId',
+  'visibility',
+];
+
+function expectSameOriginRequest(requestUrl: string): URL {
+  const url = new URL(requestUrl, window.location.origin);
+
+  expect(url.origin).toBe(window.location.origin);
+
+  return url;
+}
+
+function expectNoAuthorityQueryFields(requestUrl: string): void {
+  const url = expectSameOriginRequest(requestUrl);
+
+  for (const fieldName of homeTodayAuthorityQueryFields) {
+    expect(url.searchParams.get(fieldName)).toBeNull();
+  }
+}
+
+function getRequestPath(requestUrl: string): string {
+  return expectSameOriginRequest(requestUrl).pathname;
+}
+
 type HomeCockpitFetchMode =
   | { type: 'error'; message: string; status?: number }
   | { type: 'success'; cockpit: HomeCockpitResponse };
@@ -308,8 +345,9 @@ function renderHomePage(
           : input instanceof URL
             ? input.toString()
             : input.url;
+      const requestPath = getRequestPath(requestUrl);
 
-      if (requestUrl.endsWith('/api/session/me')) {
+      if (requestPath === '/api/session/me') {
         return jsonResponse({
           user: {
             displayName: 'Alice',
@@ -319,12 +357,14 @@ function renderHomePage(
         });
       }
 
-      if (requestUrl.endsWith('/api/projects')) {
+      if (requestPath === '/api/projects') {
         return jsonResponse([]);
       }
 
-      if (requestUrl.endsWith('/api/home-cockpit')) {
+      if (requestPath === '/api/home-cockpit') {
         expect(init?.body).toBeUndefined();
+        expect(init?.credentials).toBe('same-origin');
+        expectNoAuthorityQueryFields(requestUrl);
 
         if (mode.type === 'error') {
           return jsonResponse(
@@ -336,28 +376,10 @@ function renderHomePage(
         return jsonResponse(mode.cockpit);
       }
 
-      if (requestUrl.endsWith('/api/today/continuation')) {
+      if (requestPath === '/api/today/continuation') {
         expect(init?.body).toBeUndefined();
         expect(init?.credentials).toBe('same-origin');
-        const url = new URL(requestUrl);
-        for (const fieldName of [
-          'actorUserId',
-          'requestedByUserId',
-          'userId',
-          'authorUserId',
-          'startedByUserId',
-          'actorSpaceId',
-          'createdByUserId',
-          'ownerId',
-          'projectId',
-          'scope',
-          'scopeType',
-          'scopeId',
-          'spaceId',
-          'visibility',
-        ]) {
-          expect(url.searchParams.get(fieldName)).toBeNull();
-        }
+        expectNoAuthorityQueryFields(requestUrl);
 
         if (continuationMode.type === 'error') {
           return jsonResponse(
@@ -503,8 +525,9 @@ describe('home page', () => {
             : input instanceof URL
               ? input.toString()
               : input.url;
+        const requestPath = getRequestPath(requestUrl);
 
-        if (requestUrl.endsWith('/api/session/me')) {
+        if (requestPath === '/api/session/me') {
           return jsonResponse({
             user: {
               displayName: 'Alice',
@@ -514,12 +537,14 @@ describe('home page', () => {
           });
         }
 
-        if (requestUrl.endsWith('/api/projects')) {
+        if (requestPath === '/api/projects') {
           return jsonResponse([]);
         }
 
-        if (requestUrl.endsWith('/api/home-cockpit')) {
+        if (requestPath === '/api/home-cockpit') {
           expect(init?.body).toBeUndefined();
+          expect(init?.credentials).toBe('same-origin');
+          expectNoAuthorityQueryFields(requestUrl);
 
           if (shouldFailHomeCockpit) {
             shouldFailHomeCockpit = false;
@@ -529,8 +554,10 @@ describe('home page', () => {
           return jsonResponse(createHomeCockpitFixture());
         }
 
-        if (requestUrl.endsWith('/api/today/continuation')) {
+        if (requestPath === '/api/today/continuation') {
           expect(init?.body).toBeUndefined();
+          expect(init?.credentials).toBe('same-origin');
+          expectNoAuthorityQueryFields(requestUrl);
           return jsonResponse(createTodayContinuationFixture());
         }
 

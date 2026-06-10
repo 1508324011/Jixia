@@ -2318,7 +2318,7 @@ async function handleApiRequest(
 
     if (pathname === "/api/home-cockpit" && method === "GET") {
       const actor = await getActor(request, strictSessionActorOptions);
-      rejectLegacyIdentityQueryFields(actor, requestUrl);
+      rejectTodayContinuationAuthorityQueryFields(actor, requestUrl);
 
       const sessionToken = readSessionTokenFromCookieHeader(
         readSingleHeader(request.headers.cookie),
