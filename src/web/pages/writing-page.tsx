@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import type { DocumentBlockDocument } from "@shared/contracts/document-content";
+import { normalizeDocumentBlockDocument } from "@shared/contracts/document-content";
 import type { CreateProjectDocAiSuggestionRequest } from "@shared/contracts/project-docs";
 import type { ProjectDocCitationTraceRow } from "@shared/contracts/project-docs";
 
@@ -170,14 +171,14 @@ function AiSuggestionPanel({
       return;
     }
 
-    const nextDocumentContent = {
-      ...documentContent,
+    const nextDocumentContent = normalizeDocumentBlockDocument({
       blocks: [...documentContent.blocks, suggestion.suggestion.block ?? {
         status: 'proposed',
         text: suggestion.suggestion.text,
         type: 'aiSuggestion',
       }],
-    };
+      schemaVersion: 1,
+    });
 
     onApply(nextDocumentContent);
     setApplyStatus('Suggestion applied to the local draft. Use Save draft to persist a new version.');
@@ -285,10 +286,9 @@ function AiSuggestionPanel({
       {suggestion ? (
         <section className="stack-sm" aria-label="ai suggestion result">
           <h4 className="panel-title">Suggestion preview</h4>
-          <DocumentBlockEditor
-            disabled
-            label="AI suggestion"
-            showProjection={false}
+          <DocumentBlockRenderer
+            emptyState="No AI suggestion block returned."
+            label="AI suggestion preview"
             value={{
               blocks: [suggestion.suggestion?.block ?? {
                 status: 'proposed',
@@ -297,7 +297,6 @@ function AiSuggestionPanel({
               }],
               schemaVersion: 1,
             }}
-            onChange={() => undefined}
           />
           <p className="quiet-copy">{suggestion.suggestion?.rationale ?? 'Review the suggestion before applying it locally.'}</p>
           <div className="button-row">

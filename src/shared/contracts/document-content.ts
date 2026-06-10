@@ -77,6 +77,7 @@ export interface DocumentPaperReferenceBlock extends DocumentBlockBase {
 export interface DocumentAiSuggestionBlock extends DocumentBlockBase {
   evidenceSpan?: string;
   libraryEntryId?: string;
+  locator?: string;
   paperAssetId?: string;
   rationale?: string;
   readerExcerptId?: string;
@@ -106,6 +107,7 @@ export type DocumentBlockDocument = DocumentContentPayload;
 export interface DocumentBlockReference {
   evidenceSpan?: string;
   libraryEntryId?: string;
+  locator?: string;
   paperAssetId: string;
   readerExcerptId?: string;
   sourceBlockId?: string;
@@ -127,13 +129,19 @@ export const DOCUMENT_BLOCK_SNAPSHOT_FORMAT = 'jixia-document-blocks-v1';
 export const documentContentContract = 'jixia-document-content-contract';
 
 const AUTHORITY_FIELD_NAMES = new Set([
+  'actor',
+  'actorId',
   'actorSpaceId',
   'actorUserId',
   'authorUserId',
+  'createdBy',
   'createdByUserId',
+  'owner',
   'ownerId',
+  'project',
   'projectId',
   'requestedByUserId',
+  'space',
   'scope',
   'scopeId',
   'scopeType',
@@ -157,6 +165,21 @@ function assertNoAuthorityFields(
         `${path}.${key} is not accepted in Jixia document blocks.`,
       );
     }
+
+    assertNoAuthorityFieldsInValue(block[key], `${path}.${key}`);
+  }
+}
+
+function assertNoAuthorityFieldsInValue(value: unknown, path: string): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      assertNoAuthorityFieldsInValue(item, `${path}[${index}]`);
+    });
+    return;
+  }
+
+  if (isRecord(value)) {
+    assertNoAuthorityFields(value, path);
   }
 }
 
@@ -323,6 +346,7 @@ function normalizeBlock(block: unknown, index: number): DocumentBlock {
         ...(id ? { id } : {}),
         evidenceSpan: optionalString(block.evidenceSpan, `${path}.evidenceSpan`),
         libraryEntryId: libraryEntryId || undefined,
+        locator: optionalString(block.locator, `${path}.locator`),
         paperAssetId: paperAssetId || undefined,
         rationale: optionalString(block.rationale, `${path}.rationale`),
         readerExcerptId: readerExcerptId || undefined,
@@ -459,6 +483,7 @@ export function extractDocumentBlockReferences(
         references.push({
           evidenceSpan: block.evidenceSpan,
           libraryEntryId: block.libraryEntryId,
+          ...(block.locator ? { locator: block.locator } : {}),
           paperAssetId: block.paperAssetId,
           readerExcerptId: block.readerExcerptId,
           sourceBlockId: block.id,
@@ -469,6 +494,7 @@ export function extractDocumentBlockReferences(
         references.push({
           evidenceSpan: block.evidenceSpan ?? block.quote,
           libraryEntryId: block.libraryEntryId,
+          ...(block.locator ? { locator: block.locator } : {}),
           paperAssetId: block.paperAssetId,
           readerExcerptId: block.readerExcerptId,
           sourceBlockId: block.id,
@@ -478,6 +504,7 @@ export function extractDocumentBlockReferences(
       case 'paperReference':
         references.push({
           libraryEntryId: block.libraryEntryId,
+          ...(block.locator ? { locator: block.locator } : {}),
           paperAssetId: block.paperAssetId,
           sourceBlockId: block.id,
           sourceType: 'paperReference',
@@ -488,6 +515,7 @@ export function extractDocumentBlockReferences(
           references.push({
             evidenceSpan: block.evidenceSpan ?? block.text,
             libraryEntryId: block.libraryEntryId,
+            ...(block.locator ? { locator: block.locator } : {}),
             paperAssetId: block.paperAssetId,
             readerExcerptId: block.readerExcerptId,
             sourceBlockId: block.id,
@@ -500,6 +528,7 @@ export function extractDocumentBlockReferences(
           references.push({
             evidenceSpan: block.evidenceSpan,
             libraryEntryId: block.libraryEntryId,
+            ...(block.locator ? { locator: block.locator } : {}),
             paperAssetId: block.paperAssetId,
             readerExcerptId: block.readerExcerptId,
             sourceBlockId: block.id,

@@ -1356,10 +1356,12 @@ describe('core contracts', () => {
       documentContent.extractDocumentBlockReferences(structuredDocument),
     ).toMatchObject([
       {
+        locator: 'p. 4',
         paperAssetId: 'asset_001',
         sourceType: 'citation',
       },
       {
+        locator: 'p. 4',
         paperAssetId: 'asset_001',
         sourceType: 'sourceExcerpt',
       },
@@ -1378,6 +1380,7 @@ describe('core contracts', () => {
           {
             evidenceSpan: 'suggested evidence',
             libraryEntryId: 'entry_001',
+            locator: 'p. 9',
             paperAssetId: 'asset_001',
             status: 'proposed',
             text: 'Use this supporting point.',
@@ -1397,6 +1400,7 @@ describe('core contracts', () => {
       {
         evidenceSpan: 'suggested evidence',
         libraryEntryId: 'entry_001',
+        locator: 'p. 9',
         paperAssetId: 'asset_001',
         sourceType: 'aiSuggestion',
       },
@@ -1420,6 +1424,36 @@ describe('core contracts', () => {
         schemaVersion: 1,
       }),
     ).toThrow(/ownerId/);
+    expect(() =>
+      documentContent.normalizeDocumentBlockDocument({
+        blocks: [
+          {
+            metadata: { ownerId: 'user_001' },
+            text: 'nested authority field',
+            type: 'paragraph',
+          },
+        ],
+        schemaVersion: 1,
+      }),
+    ).toThrow(/metadata\.ownerId/);
+    expect(() =>
+      documentContent.normalizeDocumentBlockDocument({
+        blocks: [
+          {
+            metadata: [[{ projectId: 'project_001' }]],
+            text: 'nested array authority field',
+            type: 'paragraph',
+          },
+        ],
+        schemaVersion: 1,
+      }),
+    ).toThrow(/metadata\[0\]\[0\]\.projectId/);
+    expect(() =>
+      documentContent.normalizeDocumentBlockDocument({
+        blocks: [{ project: { id: 'project_001' }, text: 'x', type: 'paragraph' }],
+        schemaVersion: 1,
+      }),
+    ).toThrow(/project/);
     expect(() =>
       documentContent.normalizeDocumentBlockDocument({
         blocks: [

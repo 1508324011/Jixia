@@ -586,6 +586,7 @@ function createProjectDocAiSuggestion(
     block: {
       evidenceSpan: primaryCitation?.evidenceSpan,
       libraryEntryId: primaryCitation?.libraryEntryId,
+      locator: primaryCitation?.locator,
       paperAssetId: primaryCitation?.paperAssetId,
       rationale,
       readerExcerptId: primaryCitation?.readerExcerptId,

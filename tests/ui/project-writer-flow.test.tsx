@@ -1954,6 +1954,7 @@ describe('project docs flow', () => {
           suggestion: {
             block: {
               evidenceSpan: 'Initial citation evidence.',
+              locator: 'p. 9',
               paperAssetId: 'asset-ai-1',
               rationale: 'Grounded rationale from the saved citation trace.',
               readerExcerptId: 'excerpt-ai-1',
@@ -1983,6 +1984,7 @@ describe('project docs flow', () => {
             },
             {
               evidenceSpan: 'Initial citation evidence.',
+              locator: 'p. 9',
               paperAssetId: 'asset-ai-1',
               rationale: 'Grounded rationale from the saved citation trace.',
               readerExcerptId: 'excerpt-ai-1',
@@ -2025,6 +2027,17 @@ describe('project docs flow', () => {
     await user.click(screen.getByRole('button', { name: 'Create AI suggestion' }));
 
     expect(await screen.findByText('Suggestion preview')).toBeInTheDocument();
+    const suggestionPreview = await screen.findByLabelText('AI suggestion preview');
+    expect(within(suggestionPreview).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(suggestionPreview).queryByRole('button', { name: 'Add paragraph' })).not.toBeInTheDocument();
+    expect(within(suggestionPreview).getByText('Paper asset')).toBeInTheDocument();
+    expect(within(suggestionPreview).getByText('asset-ai-1')).toBeInTheDocument();
+    expect(within(suggestionPreview).getByText('Reader excerpt')).toBeInTheDocument();
+    expect(within(suggestionPreview).getByText('excerpt-ai-1')).toBeInTheDocument();
+    expect(within(suggestionPreview).getByText('Locator')).toBeInTheDocument();
+    expect(within(suggestionPreview).getByText('p. 9')).toBeInTheDocument();
+    expect(within(suggestionPreview).getByText('Evidence span')).toBeInTheDocument();
+    expect(within(suggestionPreview).getByText('Initial citation evidence.')).toBeInTheDocument();
     expect(screen.getAllByText('AI suggested evidence synthesis.').length).toBeGreaterThan(0);
     expect(screen.getByText('Job · job-ai-suggestion-1')).toBeInTheDocument();
     expect(suggestionBodies).toHaveLength(1);
