@@ -50,6 +50,7 @@ import type {
 
 import type { LibraryService } from './library.service';
 import type { ReadingService } from './reading.service';
+import type { AuditService } from './audit.service';
 
 export interface SaveProjectDocRequest {
   citations: ProjectDocCitationInput[];
@@ -117,6 +118,7 @@ export interface ProjectDocsService {
 }
 
 export interface ProjectDocsStore {
+  auditService: AuditService;
   jobs: ProjectDocSuggestionJobCreator;
   libraryRepository: LibraryRepository;
   libraryService: LibraryService;
@@ -855,7 +857,7 @@ async function getAuthorizedProject(
   projectId: string,
   actorUserId: string,
 ): Promise<{
-  membership: Awaited<ReturnType<ProjectRepository['getProjectMember']>>;
+  membership: NonNullable<Awaited<ReturnType<ProjectRepository['getProjectMember']>>>;
   project: NonNullable<Awaited<ReturnType<ProjectRepository['findProject']>>>;
 }> {
   const membership = await store.projectRepository.getProjectMember(projectId, actorUserId);
@@ -1928,6 +1930,103 @@ async function getOwnedNotebookSnapshotForAdoption(
   return mapNotebookSnapshot(notebookSnapshot);
 }
 
+type ProjectDocWriteAuditAction =
+  | 'project_doc.created'
+  | 'project_doc.saved'
+  | 'project_doc.publish_state_changed'
+  | 'project_doc.notebook_adopted';
+
+function projectDocWriteAuditDetail(action: ProjectDocWriteAuditAction): string {
+  switch (action) {
+    case 'project_doc.created':
+      return 'Created Project Doc.';
+    case 'project_doc.saved':
+      return 'Saved Project Doc version.';
+    case 'project_doc.publish_state_changed':
+      return 'Changed Project Doc publish state.';
+    case 'project_doc.notebook_adopted':
+      return 'Adopted Notebook sources into Project Doc.';
+  }
+}
+
+async function recordProjectDocWriteAudit(
+  store: ProjectDocsStore,
+  input: {
+    action: ProjectDocWriteAuditAction;
+    actorUserId: string;
+    documentId: string;
+    metadata?: Record<string, unknown>;
+    projectId: string;
+    spaceId: string;
+  },
+): Promise<void> {
+  await store.auditService.createRecord({
+    action: input.action,
+    actorUserId: input.actorUserId,
+    detail: projectDocWriteAuditDetail(input.action),
+    metadata: input.metadata,
+    object: { id: input.documentId, type: 'project_doc' },
+    projectId: input.projectId,
+    scope: { id: input.projectId, type: 'project' },
+    spaceId: input.spaceId,
+  });
+}
+
+async function saveProjectDocVersion(
+  store: ProjectDocsStore,
+  input: {
+    actorUserId: string;
+    citations: ProjectDocCitationInput[];
+    content?: string;
+    document: ProjectDocRecord;
+    documentContent?: DocumentBlockDocument;
+    projectSpaceId: string;
+  },
+): Promise<ProjectDocSnapshot> {
+  const documentContent = normalizeSaveDocumentContent(input);
+  const currentSnapshot = await store.projectDocRepository.getLatestSnapshot(
+    input.document.id,
+  );
+  const citations = await normalizeAuthorizedCitations(
+    store,
+    mergeCitationInputs(input.citations, documentContent),
+    input.actorUserId,
+    input.document.projectId,
+    input.projectSpaceId,
+    currentSnapshot ? mapSnapshot(currentSnapshot) : null,
+  );
+
+  return mapSnapshot(
+    await store.projectDocRepository.saveVersion({
+      citations,
+      content: serializeDocumentBlockSnapshotPayload(documentContent),
+      documentId: input.document.id,
+    }),
+  );
+}
+
+async function recordProjectDocSavedAudit(
+  store: ProjectDocsStore,
+  input: {
+    actorUserId: string;
+    projectSpaceId: string;
+    snapshot: ProjectDocSnapshot;
+  },
+): Promise<void> {
+  await recordProjectDocWriteAudit(store, {
+    action: 'project_doc.saved',
+    actorUserId: input.actorUserId,
+    documentId: input.snapshot.document.id,
+    metadata: {
+      citationCount: input.snapshot.citations.length,
+      versionId: input.snapshot.versionId,
+      versionNumber: input.snapshot.versionNumber,
+    },
+    projectId: input.snapshot.document.projectId,
+    spaceId: input.projectSpaceId,
+  });
+}
+
 export function createProjectDocsService(
   store: ProjectDocsStore,
 ): ProjectDocsService {
@@ -1936,20 +2035,17 @@ export function createProjectDocsService(
       input: CreateProjectDocRequest,
       actorUserId: string,
     ): Promise<ProjectDocRecord> {
-      const membership = await store.projectRepository.getProjectMember(
+      const { membership, project } = await getAuthorizedProject(
+        store,
         input.projectId,
         actorUserId,
       );
 
-      if (!membership) {
-        throw new Error('Access denied for the requested project document.');
-      }
-
-      if (membership.role === 'viewer') {
+      if (membership?.role === 'viewer') {
         throw new Error('Access denied for the requested project document mutation.');
       }
 
-      return mapDocument(
+      const document = mapDocument(
         await store.projectDocRepository.createDocument({
           createdByUserId: actorUserId,
           projectId: input.projectId,
@@ -1957,6 +2053,17 @@ export function createProjectDocsService(
           title: input.title,
         }),
       );
+
+      await recordProjectDocWriteAudit(store, {
+        action: 'project_doc.created',
+        actorUserId,
+        documentId: document.id,
+        metadata: { publishState: document.publishState },
+        projectId: document.projectId,
+        spaceId: project.spaceId,
+      });
+
+      return document;
     },
     /**
      * @deprecated Legacy/internal compatibility ingestion only. Foreground UI
@@ -2030,21 +2137,36 @@ export function createProjectDocsService(
         actorUserId,
         snapshot,
       });
+      const provenance = createNotebookAdoptionProvenance({
+        projectDocId: snapshot.document.id,
+        projectDocVersionId: snapshot.versionId,
+        projectDocVersionNumber: snapshot.versionNumber,
+        projectId: snapshot.document.projectId,
+        projectLibraryEntryIdsByAsset,
+        references,
+        sourceNotebookCapturedAt: notebookSnapshot.capturedAt,
+        sourceNotebookDocumentId: notebookSnapshot.documentId,
+        sourceNotebookVersionId: notebookSnapshot.versionId,
+        sourceNotebookVersionNumber: notebookSnapshot.versionNumber,
+      });
+
+      await recordProjectDocWriteAudit(store, {
+        action: 'project_doc.notebook_adopted',
+        actorUserId,
+        documentId: snapshot.document.id,
+        metadata: {
+          citationCount: snapshot.citations.length,
+          sourceCount: provenance.paperAssetIds.length,
+          versionId: snapshot.versionId,
+          versionNumber: snapshot.versionNumber,
+        },
+        projectId: snapshot.document.projectId,
+        spaceId: projectSpaceId,
+      });
 
       return {
         citationTrace,
-        provenance: createNotebookAdoptionProvenance({
-          projectDocId: snapshot.document.id,
-          projectDocVersionId: snapshot.versionId,
-          projectDocVersionNumber: snapshot.versionNumber,
-          projectId: snapshot.document.projectId,
-          projectLibraryEntryIdsByAsset,
-          references,
-          sourceNotebookCapturedAt: notebookSnapshot.capturedAt,
-          sourceNotebookDocumentId: notebookSnapshot.documentId,
-          sourceNotebookVersionId: notebookSnapshot.versionId,
-          sourceNotebookVersionNumber: notebookSnapshot.versionNumber,
-        }),
+        provenance,
         snapshot,
       };
     },
@@ -2178,26 +2300,23 @@ export function createProjectDocsService(
         input.documentId,
         actorUserId,
       );
-      const documentContent = normalizeSaveDocumentContent(input);
-      const currentSnapshot = await store.projectDocRepository.getLatestSnapshot(
-        input.documentId,
-      );
-      const citations = await normalizeAuthorizedCitations(
-        store,
-        mergeCitationInputs(input.citations, documentContent),
-        actorUserId,
-        document.projectId,
-        projectSpaceId,
-        currentSnapshot ? mapSnapshot(currentSnapshot) : null,
-      );
 
-      return mapSnapshot(
-        await store.projectDocRepository.saveVersion({
-          citations,
-          content: serializeDocumentBlockSnapshotPayload(documentContent),
-          documentId: input.documentId,
-        }),
-      );
+      const snapshot = await saveProjectDocVersion(store, {
+        actorUserId,
+        citations: input.citations,
+        content: input.content,
+        document,
+        documentContent: input.documentContent,
+        projectSpaceId,
+      });
+
+      await recordProjectDocSavedAudit(store, {
+        actorUserId,
+        projectSpaceId,
+        snapshot,
+      });
+
+      return snapshot;
     },
     async getWorkbenchDocument(
       projectId: string,
@@ -2239,6 +2358,7 @@ export function createProjectDocsService(
       }
 
       let document = await store.projectDocRepository.findLatestDocumentForProject(input.projectId);
+      let createdDocument: ProjectDocRecord | null = null;
 
       if (!document) {
         document = await store.projectDocRepository.createDocument({
@@ -2246,17 +2366,36 @@ export function createProjectDocsService(
           projectId: input.projectId,
           title: input.title,
         });
+        createdDocument = mapDocument(document);
       }
 
-      const snapshot = await this.saveDocument(
-        {
-          citations: input.citations,
-          content: input.content,
-          documentContent: input.documentContent,
-          documentId: document.id,
-        },
+      const projectDoc = createdDocument ?? mapDocument(document);
+
+      const snapshot = await saveProjectDocVersion(store, {
         actorUserId,
-      );
+        citations: input.citations,
+        content: input.content,
+        document: projectDoc,
+        documentContent: input.documentContent,
+        projectSpaceId: project.spaceId,
+      });
+
+      if (createdDocument) {
+        await recordProjectDocWriteAudit(store, {
+          action: 'project_doc.created',
+          actorUserId,
+          documentId: createdDocument.id,
+          metadata: { publishState: createdDocument.publishState },
+          projectId: createdDocument.projectId,
+          spaceId: project.spaceId,
+        });
+      }
+
+      await recordProjectDocSavedAudit(store, {
+        actorUserId,
+        projectSpaceId: project.spaceId,
+        snapshot,
+      });
 
       return mapWritingDocument(snapshot.document, project.spaceId, snapshot);
     },
@@ -2264,14 +2403,29 @@ export function createProjectDocsService(
       input: TransitionProjectDocPublishStateRequest,
       actorUserId: string,
     ): Promise<ProjectDocRecord> {
-      await assertProjectWriteAccess(store, input.documentId, actorUserId);
+      const { projectSpaceId } = await assertProjectWriteAccess(
+        store,
+        input.documentId,
+        actorUserId,
+      );
 
-      return mapDocument(
+      const document = mapDocument(
         await store.projectDocRepository.updatePublishState(
           input.documentId,
           input.publishState,
         ),
       );
+
+      await recordProjectDocWriteAudit(store, {
+        action: 'project_doc.publish_state_changed',
+        actorUserId,
+        documentId: document.id,
+        metadata: { publishState: document.publishState },
+        projectId: document.projectId,
+        spaceId: projectSpaceId,
+      });
+
+      return document;
     },
   };
 }
