@@ -1136,6 +1136,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
     spaceRepository,
   });
   const projectDocsService = createProjectDocsService({
+    auditService,
     jobs: jobsRoutes,
     libraryRepository,
     libraryService,

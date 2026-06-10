@@ -12,6 +12,7 @@ import {
 import { createJixiaApp } from '../../src/server/app';
 import { createAuditService } from '../../src/server/services/audit.service';
 import {
+  createHttpTestPubmedConnector,
   loginAs,
   startTestServer,
   withSessionCookie,
@@ -186,7 +187,10 @@ describe('generic governance audit', () => {
     };
 
     try {
-      const app = createJixiaApp({ env });
+      const app = createJixiaApp({
+        connectors: { pubmed: createHttpTestPubmedConnector() },
+        env,
+      });
       let auditedJobId = '';
       let projectId = '';
 
@@ -305,6 +309,310 @@ describe('generic governance audit', () => {
           { headers: withSessionCookie(aliceCookie) },
         );
         expect(legacyActorSpaceResponse.status).toBe(400);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 30_000);
+
+  it('records Project Doc writes through the project audit route without leaking write payloads', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-project-doc-audit-'));
+    const env = {
+      JIXIA_DATABASE_URL: `file:${join(storageRoot, 'jixia-project-doc-audit.db')}`,
+      JIXIA_STORAGE_ROOT: storageRoot,
+    };
+
+    try {
+      const app = createJixiaApp({
+        connectors: { pubmed: createHttpTestPubmedConnector() },
+        env,
+      });
+      let documentId = '';
+      let projectId = '';
+      let sharedSpaceId = '';
+      let failedWorkbenchProjectId = '';
+      let workbenchDocumentId = '';
+      let workbenchProjectId = '';
+
+      try {
+        const sharedSpace = await app.spaces.createSpace(
+          { kind: 'shared', name: 'Project Doc Audit Space' },
+          'user-alice',
+        );
+        sharedSpaceId = sharedSpace.id;
+        const project = await app.projects.createProject(
+          { name: 'Project Doc Audit Project', spaceId: sharedSpace.id },
+          'user-alice',
+        );
+        projectId = project.project.id;
+        await app.projects.addProjectMember(
+          projectId,
+          { role: 'viewer', userId: 'user-bob' },
+          'user-alice',
+        );
+        const projectSource = await app.imports.importPaper(
+          {
+            scope: { id: projectId, type: 'project' },
+            sourceLocator: '10.1000/project-doc-audit-source',
+            sourceType: 'doi',
+            spaceId: sharedSpace.id,
+            visibility: 'published_to_project',
+          },
+          'user-alice',
+        );
+        const privateSource = await app.imports.importPaper(
+          {
+            scope: { id: 'user-alice', type: 'user' },
+            sourceLocator: '10.1000/project-doc-audit-private-source',
+            sourceType: 'doi',
+            spaceId: sharedSpace.id,
+            visibility: 'private',
+          },
+          'user-alice',
+        );
+        const projectDoc = await app.projectDocs.createDocument(
+          { projectId, title: 'Audited Project Doc' },
+          'user-alice',
+        );
+        documentId = projectDoc.id;
+        await app.projectDocs.saveDocument(
+          {
+            citations: [
+              {
+                evidenceSpan: 'citation evidence text must not leak',
+                paperAssetId: projectSource.asset.id,
+              },
+            ],
+            content: 'Shared Project Doc body must not leak into audit records.',
+            documentId,
+          },
+          'user-alice',
+        );
+        await app.projectDocs.transitionPublishState(
+          { documentId, publishState: 'review' },
+          'user-alice',
+        );
+        const notebook = await app.notebooks.createDocument(
+          { title: 'Private audit adoption notebook' },
+          'user-alice',
+        );
+        await app.notebooks.saveDocument(
+          {
+            citations: [],
+            content: 'Private notebook body must not leak into audit records.',
+            documentId: notebook.id,
+          },
+          'user-alice',
+        );
+        await app.projectDocs.adoptNotebook(
+          { documentId, notebookDocumentId: notebook.id },
+          'user-alice',
+        );
+
+        await expect(
+          app.projectDocs.saveDocument(
+            {
+              citations: [],
+              content: 'Viewer write body must not produce audit records.',
+              documentId,
+            },
+            'user-bob',
+          ),
+        ).rejects.toThrow(/mutation/i);
+        await expect(
+          app.projectDocs.saveDocument(
+            {
+              citations: [],
+              content: 'Non-member write body must not produce audit records.',
+              documentId,
+            },
+            'user-charlie',
+          ),
+        ).rejects.toThrow(/access denied/i);
+        await expect(
+          app.projectDocs.createDocument(
+            { projectId, title: 'Viewer forbidden Project Doc' },
+            'user-bob',
+          ),
+        ).rejects.toThrow(/mutation/i);
+        await expect(
+          app.projectDocs.saveDocument(
+            {
+              citations: [
+                {
+                  evidenceSpan: 'private citation evidence must not produce audit records',
+                  paperAssetId: privateSource.asset.id,
+                },
+              ],
+              content: 'Invalid citation save body must not produce audit records.',
+              documentId,
+            },
+            'user-alice',
+          ),
+        ).rejects.toThrow(/not available in project/i);
+        await expect(
+          app.projectDocs.adoptNotebook(
+            { documentId, notebookDocumentId: 'notebook-missing-project-doc-audit' },
+            'user-alice',
+          ),
+        ).rejects.toThrow(/does not exist/i);
+
+        const failedWorkbenchProject = await app.projects.createProject(
+          { name: 'Failed Workbench Project Doc Audit Project', spaceId: sharedSpace.id },
+          'user-alice',
+        );
+        failedWorkbenchProjectId = failedWorkbenchProject.project.id;
+        await expect(
+          app.projectDocs.saveWorkbenchDocument(
+            {
+              citations: [
+                {
+                  evidenceSpan: 'failed workbench citation evidence must not produce audit records',
+                  paperAssetId: privateSource.asset.id,
+                },
+              ],
+              content: 'Failed workbench compatibility body must not produce audit records.',
+              projectId: failedWorkbenchProjectId,
+              title: 'Failed Workbench Draft',
+            },
+            'user-alice',
+          ),
+        ).rejects.toThrow(/not available in project/i);
+
+        const workbenchProject = await app.projects.createProject(
+          { name: 'Workbench Project Doc Audit Project', spaceId: sharedSpace.id },
+          'user-alice',
+        );
+        workbenchProjectId = workbenchProject.project.id;
+        const workbenchDocument = await app.projectDocs.saveWorkbenchDocument(
+          {
+            citations: [],
+            content: 'Workbench compatibility body must not leak into audit records.',
+            projectId: workbenchProjectId,
+            title: 'Audited Workbench Draft',
+          },
+          'user-alice',
+        );
+        workbenchDocumentId = workbenchDocument.documentId;
+      } finally {
+        await app.close();
+      }
+
+      const server = await startTestServer(env);
+
+      try {
+        const aliceCookie = await loginAs(server.url, 'user-alice');
+        const bobCookie = await loginAs(server.url, 'user-bob');
+
+        const invalidPublishStateResponse = await fetch(
+          `${server.url}/api/project-docs/${documentId}/publish-state`,
+          {
+            body: JSON.stringify({ publishState: 'archived' }),
+            headers: withSessionCookie(aliceCookie, { 'Content-Type': 'application/json' }),
+            method: 'POST',
+          },
+        );
+        expect(invalidPublishStateResponse.status).toBe(400);
+
+        const bobResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/audit?objectType=project_doc&objectId=${documentId}`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        const bobPayload = await bobResponse.json() as Array<{
+          action: string;
+          actorUserId: string;
+          detail: string;
+          metadata?: Record<string, string | number | boolean | null>;
+          object: { id: string; type: string };
+          projectId?: string;
+          scope: { id: string; type: string };
+          spaceId?: string;
+        }>;
+
+        expect(bobResponse.status).toBe(200);
+        expect(bobPayload.map((record) => record.action)).toEqual(
+          expect.arrayContaining([
+            'project_doc.created',
+            'project_doc.saved',
+            'project_doc.publish_state_changed',
+            'project_doc.notebook_adopted',
+          ]),
+        );
+        expect(bobPayload).toHaveLength(4);
+        for (const record of bobPayload) {
+          expect(record.actorUserId).toBe('user-alice');
+          expect(record.object).toEqual({ id: documentId, type: 'project_doc' });
+          expect(record.projectId).toBe(projectId);
+          expect(record.scope).toEqual({ id: projectId, type: 'project' });
+          expect(record.spaceId).toBe(sharedSpaceId);
+        }
+        expect(bobPayload.find((record) => record.action === 'project_doc.created')?.metadata).toEqual({
+          publishState: 'draft',
+        });
+        expect(bobPayload.find((record) => record.action === 'project_doc.saved')?.metadata).toMatchObject({
+          citationCount: 1,
+          versionNumber: 1,
+        });
+        expect(bobPayload.find((record) => record.action === 'project_doc.saved')?.metadata?.versionId).toEqual(expect.any(String));
+        expect(bobPayload.find((record) => record.action === 'project_doc.publish_state_changed')?.metadata).toEqual({
+          publishState: 'review',
+        });
+        expect(bobPayload.find((record) => record.action === 'project_doc.notebook_adopted')?.metadata).toMatchObject({
+          citationCount: 0,
+          sourceCount: 0,
+          versionNumber: 2,
+        });
+        expect(bobPayload.find((record) => record.action === 'project_doc.notebook_adopted')?.metadata?.versionId).toEqual(expect.any(String));
+        expect(JSON.stringify(bobPayload)).not.toMatch(
+          /rawSecret|credentialRef|payload|storageKey|checksum|content|snapshot|body|private note|citation evidence text|private citation evidence|Shared Project Doc body|Private notebook body|Workbench compatibility body/i,
+        );
+
+        const allProjectDocResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/audit?objectType=project_doc`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const allProjectDocPayload = await allProjectDocResponse.json() as Array<{
+          action: string;
+          object: { id: string; type: string };
+        }>;
+        expect(allProjectDocResponse.status).toBe(200);
+        expect(allProjectDocPayload).toHaveLength(4);
+        expect(allProjectDocPayload.every((record) => record.object.id === documentId)).toBe(true);
+
+        const failedWorkbenchResponse = await fetch(
+          `${server.url}/api/projects/${failedWorkbenchProjectId}/audit?objectType=project_doc`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const failedWorkbenchPayload = await failedWorkbenchResponse.json() as unknown[];
+        expect(failedWorkbenchResponse.status).toBe(200);
+        expect(failedWorkbenchPayload).toHaveLength(0);
+
+        const workbenchResponse = await fetch(
+          `${server.url}/api/projects/${workbenchProjectId}/audit?objectType=project_doc&objectId=${workbenchDocumentId}`,
+          { headers: withSessionCookie(aliceCookie) },
+        );
+        const workbenchPayload = await workbenchResponse.json() as Array<{
+          action: string;
+          metadata?: Record<string, string | number | boolean | null>;
+          object: { id: string; type: string };
+          projectId?: string;
+          scope: { id: string; type: string };
+        }>;
+
+        expect(workbenchResponse.status).toBe(200);
+        expect(workbenchPayload.map((record) => record.action)).toEqual(
+          expect.arrayContaining(['project_doc.created', 'project_doc.saved']),
+        );
+        expect(workbenchPayload).toHaveLength(2);
+        expect(workbenchPayload.every((record) => record.object.id === workbenchDocumentId)).toBe(true);
+        expect(workbenchPayload.every((record) => record.projectId === workbenchProjectId)).toBe(true);
+        expect(workbenchPayload.every((record) => record.scope.id === workbenchProjectId)).toBe(true);
+        expect(workbenchPayload.find((record) => record.action === 'project_doc.saved')?.metadata).toMatchObject({
+          citationCount: 0,
+          versionNumber: 1,
+        });
       } finally {
         await server.close();
       }
