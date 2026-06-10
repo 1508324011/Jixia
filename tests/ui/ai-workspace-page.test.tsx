@@ -26,6 +26,20 @@ function requestUrlFrom(input: string | URL | Request): string {
       : input.url;
 }
 
+function findAiResultApplyMutations(
+  calls: Array<[string | URL | Request, RequestInit?]>,
+) {
+  return calls.filter(([input, init]) => {
+    if ((init?.method ?? 'GET') !== 'POST') {
+      return false;
+    }
+
+    const pathname = new URL(requestUrlFrom(input)).pathname;
+
+    return /^\/api\/ai-results\/[^/]+\/apply\/(notebook|project-doc)$/.test(pathname);
+  });
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -267,6 +281,24 @@ describe('AI Workspace page', () => {
 
     expect(await screen.findByRole('heading', { name: 'Server-owned AI result artifacts' })).toBeInTheDocument();
     expect(await screen.findByRole('option', { name: /Notebook draft · draft · result-notebook/ })).toBeInTheDocument();
+
+    expect(findAiResultApplyMutations(fetchMock.mock.calls)).toEqual([]);
+    await user.selectOptions(screen.getByLabelText('AI result artifact'), 'result-project-doc');
+    expect(findAiResultApplyMutations(fetchMock.mock.calls)).toEqual([]);
+    await user.selectOptions(screen.getByLabelText('AI result artifact'), 'result-notebook');
+    expect(findAiResultApplyMutations(fetchMock.mock.calls)).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Apply selected result to Notebook' }));
+    expect(
+      await screen.findByText('Choose an AI result and Notebook document id before applying.'),
+    ).toBeInTheDocument();
+    expect(findAiResultApplyMutations(fetchMock.mock.calls)).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Apply selected result to Project Doc' }));
+    expect(
+      await screen.findByText('Choose an AI result and Project Doc id before applying.'),
+    ).toBeInTheDocument();
+    expect(findAiResultApplyMutations(fetchMock.mock.calls)).toEqual([]);
 
     await user.type(screen.getByLabelText('AI result target notebook document id'), 'notebook-target');
     await user.click(screen.getByRole('button', { name: 'Apply selected result to Notebook' }));

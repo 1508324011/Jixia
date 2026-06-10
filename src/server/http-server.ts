@@ -1848,6 +1848,22 @@ function rejectAiResultAuthorityQueryFields(
     optionalQueryParam(requestUrl, "visibility"),
     "visibility",
   );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "status"),
+    "status",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "credentialRef"),
+    "credentialRef",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "rawProviderPayload"),
+    "rawProviderPayload",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "rawJobPayload"),
+    "rawJobPayload",
+  );
 }
 
 function rejectAiResultAuthorityBodyFields(
@@ -1880,14 +1896,23 @@ function rejectAiResultAuthorityBodyFields(
     const insertionRecord = insertion as Record<string, unknown>;
 
     assertNoClientActorIdentityField(actor, insertionRecord.actorUserId, "insertion.actorUserId");
+    assertNoClientActorIdentityField(actor, insertionRecord.requestedByUserId, "insertion.requestedByUserId");
+    assertNoClientActorIdentityField(actor, insertionRecord.userId, "insertion.userId");
+    assertNoClientActorIdentityField(actor, insertionRecord.authorUserId, "insertion.authorUserId");
+    assertNoClientActorIdentityField(actor, insertionRecord.startedByUserId, "insertion.startedByUserId");
     assertNoClientActorIdentityField(actor, insertionRecord.ownerId, "insertion.ownerId");
     assertNoClientActorIdentityField(actor, insertionRecord.createdByUserId, "insertion.createdByUserId");
+    assertNoClientActorContextField(insertionRecord.actorSpaceId, "insertion.actorSpaceId");
     assertNoClientActorContextField(insertionRecord.spaceId, "insertion.spaceId");
     assertNoClientActorContextField(insertionRecord.scope, "insertion.scope");
     assertNoClientActorContextField(insertionRecord.scopeId, "insertion.scopeId");
     assertNoClientActorContextField(insertionRecord.scopeType, "insertion.scopeType");
     assertNoClientActorContextField(insertionRecord.projectId, "insertion.projectId");
     assertNoClientActorContextField(insertionRecord.visibility, "insertion.visibility");
+    assertNoClientActorContextField(insertionRecord.status, "insertion.status");
+    assertNoClientActorContextField(insertionRecord.credentialRef, "insertion.credentialRef");
+    assertNoClientActorContextField(insertionRecord.rawProviderPayload, "insertion.rawProviderPayload");
+    assertNoClientActorContextField(insertionRecord.rawJobPayload, "insertion.rawJobPayload");
   }
 }
 
