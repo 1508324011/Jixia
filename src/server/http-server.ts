@@ -519,13 +519,13 @@ function rejectProjectDocAuthorityQueryFields(
   rejectLegacyIdentityQueryFields(actor, requestUrl);
   assertNoClientActorIdentityField(
     actor,
-    optionalQueryParam(requestUrl, "createdByUserId"),
-    "createdByUserId",
+    optionalQueryParam(requestUrl, "ownerId"),
+    "ownerId",
   );
   assertNoClientActorIdentityField(
     actor,
-    optionalQueryParam(requestUrl, "ownerId"),
-    "ownerId",
+    optionalQueryParam(requestUrl, "createdByUserId"),
+    "createdByUserId",
   );
   assertNoClientActorContextField(
     optionalQueryParam(requestUrl, "spaceId"),
@@ -563,6 +563,11 @@ function rejectProjectLibraryAdoptionAuthorityQueryFields(
     optionalQueryParam(requestUrl, "ownerId"),
     "ownerId",
   );
+  assertNoClientActorIdentityField(
+    actor,
+    optionalQueryParam(requestUrl, "createdByUserId"),
+    "createdByUserId",
+  );
   assertNoClientActorContextField(
     optionalQueryParam(requestUrl, "spaceId"),
     "spaceId",
@@ -587,6 +592,10 @@ function rejectProjectLibraryAdoptionAuthorityQueryFields(
     optionalQueryParam(requestUrl, "projectId"),
     "projectId",
   );
+
+  for (const fieldName of requestUrl.searchParams.keys()) {
+    throw new Error(`${fieldName} is not accepted for project library adoption.`);
+  }
 }
 
 function rejectProjectAuditAuthorityQueryFields(
@@ -985,6 +994,11 @@ function rejectProjectLibraryAdoptionAuthorityBodyFields(
 
   const body = requestBody as Record<string, unknown>;
 
+  assertNoClientActorIdentityField(
+    actor,
+    body.createdByUserId,
+    "createdByUserId",
+  );
   assertNoClientActorIdentityField(actor, body.ownerId, "ownerId");
   assertNoClientActorContextField(body.spaceId, "spaceId");
   assertNoClientActorContextField(body.scopeType, "scopeType");
@@ -1718,6 +1732,13 @@ function parseAdoptProjectLibraryEntryBody(
   }
 
   const body = requestBody as Record<string, unknown>;
+  const allowedFields = new Set(["sourceLibraryEntryId"]);
+
+  for (const fieldName of Object.keys(body)) {
+    if (!allowedFields.has(fieldName)) {
+      throw new Error(`${fieldName} is not accepted for project library adoption.`);
+    }
+  }
 
   return {
     sourceLibraryEntryId: assertStringField(

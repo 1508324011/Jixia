@@ -223,8 +223,18 @@ export function createLibraryService(store: LibraryStore): LibraryService {
 
       const adoption = await store.libraryRepository.adoptExistingPaperAsset({
         addedByUserId: input.actorUserId,
+        audit: {
+          action: "project_library.source_adopted",
+          actorUserId: input.actorUserId,
+          detail: "Adopted source into Project Library.",
+          metadata: { sourceType: sourceView.asset.sourceType },
+          objectType: "library_entry",
+          projectId: project.id,
+          scope: { id: project.id, type: "project" },
+          spaceId: project.spaceId,
+        },
         paperAssetId: sourceView.asset.id,
-        scope: { id: input.projectId, type: "project" },
+        scope: { id: project.id, type: "project" },
       });
 
       return {
