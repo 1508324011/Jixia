@@ -5,7 +5,8 @@ export type CommandSearchObjectKind =
   | "project-doc"
   | "library-entry"
   | "notebook"
-  | "job";
+  | "job"
+  | "ai-result";
 
 export type CommandSearchMetadataValue = string | number | boolean | null;
 
