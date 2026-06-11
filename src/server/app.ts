@@ -1178,6 +1178,7 @@ export function createJixiaApp(options: CreateJixiaAppOptions = {}): JixiaApp {
   const libraryRoutes = createLibraryRoutes(libraryService);
   const readingRoutes = createReadingRoutes(readingService);
   const commandSearchService = createCommandSearchService({
+    aiResults: aiResultsRoutes,
     jobs: jobsRoutes,
     library: libraryRoutes,
     notebooks: notebooksRoutes,

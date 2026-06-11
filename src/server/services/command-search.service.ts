@@ -3,6 +3,7 @@ import {
   type CommandSearchResponse,
   type CommandSearchResult,
 } from '@shared/contracts/command-search';
+import type { AiResultArtifactRecord } from '@shared/contracts/ai-results';
 import type { JobRecord } from '@shared/contracts/jobs';
 import type { LibraryEntryView } from '@shared/contracts/library';
 import type { ListNotebookDocumentsResponse } from '@shared/contracts/notebook';
@@ -10,6 +11,7 @@ import type { ProjectListItem } from '@shared/contracts/projects';
 
 import type { ProjectDocRepository } from '../../db';
 
+import type { AiResultsRoutes } from '../routes/ai-results.routes';
 import type { JobsRoutes } from '../routes/jobs.routes';
 import type { LibraryRoutes } from '../routes/library.routes';
 import type { NotebooksRoutes } from '../routes/notebooks.routes';
@@ -26,6 +28,7 @@ export interface CommandSearchService {
 }
 
 export interface CommandSearchStore {
+  aiResults: AiResultsRoutes;
   jobs: JobsRoutes;
   library: LibraryRoutes;
   notebooks: NotebooksRoutes;
@@ -248,13 +251,49 @@ function jobResult(job: JobRecord): CommandSearchResult {
   };
 }
 
+function aiResultResult(artifact: AiResultArtifactRecord): CommandSearchResult {
+  const isProjectScope = artifact.scope.type === 'project';
+
+  return {
+    id: `ai-result:${artifact.id}`,
+    kind: 'ai-result',
+    metadata: {
+      jobId: artifact.jobId,
+      projectId: isProjectScope ? artifact.scope.id : null,
+      resultKind: artifact.kind,
+      status: artifact.status,
+    },
+    route: routeWithSearchParams('/jobs', {
+      scopeType: artifact.scope.type,
+      scopeId: artifact.scope.id,
+      jobId: artifact.jobId,
+    }),
+    scope: {
+      id: artifact.scope.id,
+      projectId: isProjectScope ? artifact.scope.id : undefined,
+      type: artifact.scope.type,
+    },
+    subtitle: `${artifact.kind} · ${artifact.status}`,
+    title: artifact.title?.trim() || 'AI result',
+    updatedAt: latestTimestamp(
+      artifact.updatedAt,
+      artifact.appliedAt,
+      artifact.createdAt,
+    ),
+  };
+}
+
 async function collectProjectScopedResults(
   store: CommandSearchStore,
   project: ProjectListItem,
   actorUserId: string,
 ): Promise<CommandSearchResult[]> {
   const projectId = project.project.id;
-  const [documents, libraryEntries, jobs] = await Promise.all([
+  const [aiResults, documents, libraryEntries, jobs] = await Promise.all([
+    store.aiResults.listArtifacts({
+      actorUserId,
+      scope: { id: projectId, type: 'project' },
+    }),
     store.projectDocRepository.listDocumentsForProject(projectId),
     store.library.listEntries({
       actorSpaceId: project.project.spaceId,
@@ -273,6 +312,7 @@ async function collectProjectScopedResults(
     ...documents.map(projectDocResult),
     ...libraryEntries.map(libraryResult),
     ...jobs.map(jobResult),
+    ...aiResults.results.map(aiResultResult),
   ];
 }
 
@@ -305,6 +345,9 @@ export function createCommandSearchService(
       const personalResults = input.projectId
         ? []
         : [
+            ...(await store.aiResults.listArtifacts({
+              actorUserId: input.actorUserId,
+            })).results.map(aiResultResult),
             ...(await store.library.listPersonalEntries(input.actorUserId)).map(
               libraryResult,
             ),
