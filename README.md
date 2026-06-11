@@ -9,7 +9,7 @@ The `main` branch now carries an integrated workbench beta rather than a placeho
 1. a server-first backend scaffold for spaces, library, reading, writing, and governed AI jobs
 2. a project-first browser shell that loads real server-owned projects before entering library, reader, and writing lanes
 3. an integrated workbench-first beta for `Login -> Home -> Today/Search/Library/Projects/Settings`
-4. a current-host beta path that can persist settings, personal imports, paper notes/comments, and Project Docs across restart
+4. a current-host beta path that can persist settings, personal/project library entries, Reader excerpts/notes/comments/insights, private Notebook capture, Project Docs/citation trace, governed job/audit state where applicable, and uploaded paper availability across restart
 
 Bootstrap guardrails remain in place, but the repository has moved beyond bootstrap-only setup. The active product baseline is `docs/plans/design.md`; older Space-first plans are historical server-first scaffolding notes unless reconciled with the project-first recovery plan.
 
@@ -19,7 +19,7 @@ The fastest truthful entry for the integrated product flow on `main` is:
 
 - `docs/runbooks/native-demo-showcase.md`
 
-That runbook documents the **current-host beta path** for `main`: start the app natively, enter the workbench, set up Settings, search PubMed, import into Personal Library, explicitly adopt a source into a target Project Library, open the project Reader, persist excerpts/notes/comments/insights, explicitly capture Reader evidence into a private Notebook, create or reopen a Project Doc, use selected Reader evidence and project-visible citations/references for shared Project Doc saves, inspect the browser-safe citation trace, restart the process, and confirm the persisted state still exists. The packaged reset/showcase workflow is a **demo-only convenience** that still belongs to the downstream `demo-native-showcase` branch.
+That runbook documents the **current-host beta path** for `main`: start the app natively, verify `/health` and `/api/health`, enter the session-backed workbench, set up Settings, search PubMed, import into Personal Library, explicitly adopt a source into a target Project Library, open the ProjectMember-gated project Reader, persist excerpts/notes/comments/insights, explicitly capture Reader evidence into a private Notebook, create or reopen a Project Doc, use selected Reader evidence and project-visible citations/references for shared Project Doc saves, inspect the browser-safe citation trace, restart the process with the same `.env`, and confirm session entry, projects, personal/project library entries, Reader state, private Notebook capture, Project Docs/citation trace, governed jobs/job events/audit records where applicable, and uploaded paper file availability still exist. The packaged reset/showcase workflow is a **demo-only convenience** that still belongs to the downstream `demo-native-showcase` branch and is not product truth on `main`.
 
 ## Planning Documents
 
@@ -86,7 +86,7 @@ Current branch verification is maintained with:
 - `npm run typecheck`
 - `npm run build`
 
-Targeted verification also covers workbench routing/navigation, personal vs project context switching, discovery/search to Personal Library import, explicit project-source adoption, paper workspace persistence, Reader excerpt and insight capture into private Notebook, Project Docs creation/reopen, selected-evidence Project Doc saves, absence of foreground whole-Notebook Project Docs adoption, citation trace visibility/safety, current-host beta runbook truthfulness, and server-first Prisma-backed project membership.
+Targeted verification also covers workbench routing/navigation, personal vs project context switching, discovery/search to Personal Library import, explicit project-source adoption, paper workspace persistence, Reader excerpt and insight capture into private Notebook, Project Docs creation/reopen, selected-evidence Project Doc saves, absence of foreground whole-Notebook Project Docs adoption, citation trace visibility/safety, current-host beta runbook truthfulness, real `/health` and `/api/health` listener behavior through `tests/integration/http-server-health.test.ts`, and server-first Prisma-backed project membership.
 
 ## Near-Term Direction
 
@@ -134,6 +134,19 @@ npm run start:server
 After startup, the server serves the built workbench shell from `dist/`, responds on `/health` and `/api/health`, and exposes the current beta browser/API surface under `/api/`.
 
 Use `http://127.0.0.1:3000/health` as the first runtime sanity check, then verify the API-scoped mirror at `http://127.0.0.1:3000/api/health` when checking the browser/API handoff. A healthy Task 11 process returns `{"service":"jixia-server","status":"ok"}` from both endpoints.
+
+### Current-host restart verification gate
+
+After the native Node process passes `/health` and `/api/health` and the browser flow has created real state, stop the process and restart it with the same `.env` and `npm run start:server`. The operator pass is not complete until the restarted runtime proves that authority and storage remained server-owned:
+
+- `/login` and the `jixia_session` flow still establish user/session authority without browser-supplied actor fields.
+- Server-visible projects and project workspaces still load through Prisma/SQLite `Project` and `ProjectMember` checks.
+- Personal and project-scoped Library entries still exist, including explicit project-source adoption results.
+- Reader excerpts, private notes, project comments, and governed insights still reopen from server-owned persistence.
+- Private Reader evidence Notebook capture still reopens only for its owner.
+- Project Docs still reopen with saved selected evidence, project-visible citations/references, and the browser-safe citation trace.
+- Governed jobs, job events, project review/attention rows, and governance audit records remain server-derived and browser-safe wherever the flow created them.
+- File-backed uploaded PDFs still report safe availability such as `asset.hasFile` and serve bytes only through authorized `GET|HEAD /api/library/:entryId/file`; metadata-only imports must keep showing the metadata-only/no-file state instead of fabricating file bytes.
 
 ### Optional Docker Compose packaging path
 

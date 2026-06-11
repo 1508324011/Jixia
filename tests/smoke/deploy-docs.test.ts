@@ -134,6 +134,9 @@ describe('deployment and operator scaffolding', () => {
     expect(envExample).toContain('file:/var/lib/jixia/data/jixia.db');
     expect(envExample).toContain('Prisma/SQLite');
     expect(envExample).toContain('server-state.json is legacy compatibility/bootstrap state only');
+    expect(envExample).toContain('JIXIA_STORAGE_ROOT/credentials.key');
+    expect(envExample).toContain('fail closed');
+    expect(envExample).toContain('GET|HEAD /api/library/:entryId/file');
   });
 
   it('documents the english startup path', () => {
@@ -147,6 +150,7 @@ describe('deployment and operator scaffolding', () => {
     expect(readme).toContain('Optional Docker Compose packaging path');
     expect(readme).toContain('/health');
     expect(readme).toContain('/api/health');
+    expect(readme).toContain('{"service":"jixia-server","status":"ok"}');
     expect(readme).toContain('JIXIA_STORAGE_ROOT');
     expect(readme).toContain('JIXIA_DATABASE_URL');
     expect(readme).toContain('/var/lib/jixia/storage');
@@ -156,6 +160,12 @@ describe('deployment and operator scaffolding', () => {
     expect(readme).toContain('explicit one-time compatibility bootstrap path');
     expect(readme).toContain('rather than normal runtime persistence');
     expect(readme).toContain('Prisma-backed project collaboration');
+    expect(readme).toContain('Current-host restart verification gate');
+    expect(readme).toContain('ProjectMember');
+    expect(readme).toContain('Governed jobs, job events');
+    expect(readme).toContain('asset.hasFile');
+    expect(readme).toContain('metadata-only/no-file state');
+    expect(readme).toContain('tests/integration/http-server-health.test.ts');
   });
 
   it('documents the chinese startup path and keeps build in CI', () => {
@@ -169,6 +179,7 @@ describe('deployment and operator scaffolding', () => {
     expect(readmeCn).toContain('可选 Docker Compose 打包路径');
     expect(readmeCn).toContain('/health');
     expect(readmeCn).toContain('/api/health');
+    expect(readmeCn).toContain('{"service":"jixia-server","status":"ok"}');
     expect(readmeCn).toContain('JIXIA_STORAGE_ROOT');
     expect(readmeCn).toContain('JIXIA_DATABASE_URL');
     expect(readmeCn).toContain('POST /api/import/pdf');
@@ -177,6 +188,12 @@ describe('deployment and operator scaffolding', () => {
     expect(readmeCn).toContain('显式的一次性兼容 bootstrap 路径');
     expect(readmeCn).toContain('而不是正常运行时持久化');
     expect(readmeCn).toContain('Prisma-backed Project 协作数据');
+    expect(readmeCn).toContain('当前主机重启验证 gate');
+    expect(readmeCn).toContain('ProjectMember');
+    expect(readmeCn).toContain('jobs/job events/audit records');
+    expect(readmeCn).toContain('asset.hasFile');
+    expect(readmeCn).toContain('metadata-only/no-file 状态');
+    expect(readmeCn).toContain('tests/integration/http-server-health.test.ts');
     expect(ciWorkflow).toContain('npm run build');
   });
 
