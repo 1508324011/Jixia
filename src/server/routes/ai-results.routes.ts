@@ -4,6 +4,7 @@ import type {
   ApplyAiResultToNotebookResponse,
   ApplyAiResultToProjectDocRequest,
   ApplyAiResultToProjectDocResponse,
+  DiscardAiResultResponse,
   GetAiResultResponse,
   ListAiResultArtifactsResponse,
 } from '@shared/contracts/ai-results';
@@ -29,6 +30,10 @@ export interface AiResultsRoutes {
     input: CreateAiResultArtifactRequest,
     actorUserId: string,
   ): Promise<AiResultArtifactRecord>;
+  discardArtifact(
+    resultId: string,
+    actorUserId: string,
+  ): Promise<DiscardAiResultResponse>;
   getArtifact(resultId: string, actorUserId: string): Promise<GetAiResultResponse>;
   listArtifacts(
     input: ListAiResultArtifactsRequest,
@@ -45,6 +50,9 @@ export function createAiResultsRoutes(service: AiResultsService): AiResultsRoute
     },
     createFromJob(input, actorUserId) {
       return service.createFromJob(input, actorUserId);
+    },
+    discardArtifact(resultId, actorUserId) {
+      return service.discardArtifact(resultId, actorUserId);
     },
     getArtifact(resultId, actorUserId) {
       return service.getArtifact(resultId, actorUserId);

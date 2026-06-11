@@ -287,7 +287,7 @@ function statusCodeForError(error: unknown): number {
     return 403;
   }
 
-  if (/already applied/i.test(error.message)) {
+  if (/already applied|already discarded/i.test(error.message)) {
     return 409;
   }
 
@@ -1874,8 +1874,32 @@ function rejectAiResultAuthorityQueryFields(
     "status",
   );
   assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "authorizationState"),
+    "authorizationState",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "authorized"),
+    "authorized",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "isAuthorized"),
+    "isAuthorized",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "canApply"),
+    "canApply",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "canDiscard"),
+    "canDiscard",
+  );
+  assertNoClientActorContextField(
     optionalQueryParam(requestUrl, "credentialRef"),
     "credentialRef",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "provider"),
+    "provider",
   );
   assertNoClientActorContextField(
     optionalQueryParam(requestUrl, "rawProviderPayload"),
@@ -1884,6 +1908,58 @@ function rejectAiResultAuthorityQueryFields(
   assertNoClientActorContextField(
     optionalQueryParam(requestUrl, "rawJobPayload"),
     "rawJobPayload",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "rawAiOutput"),
+    "rawAiOutput",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "documentContent"),
+    "documentContent",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "content"),
+    "content",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "body"),
+    "body",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "payload"),
+    "payload",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "storageKey"),
+    "storageKey",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "path"),
+    "path",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "storagePath"),
+    "storagePath",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "storageRoot"),
+    "storageRoot",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "JIXIA_STORAGE_ROOT"),
+    "JIXIA_STORAGE_ROOT",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "checksum"),
+    "checksum",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "filePath"),
+    "filePath",
+  );
+  assertNoClientActorContextField(
+    optionalQueryParam(requestUrl, "filesystemPath"),
+    "filesystemPath",
   );
 }
 
@@ -1908,9 +1984,28 @@ function rejectAiResultAuthorityBodyFields(
   assertNoClientActorContextField(body.projectId, "projectId");
   assertNoClientActorContextField(body.visibility, "visibility");
   assertNoClientActorContextField(body.status, "status");
+  assertNoClientActorContextField(body.authorizationState, "authorizationState");
+  assertNoClientActorContextField(body.authorized, "authorized");
+  assertNoClientActorContextField(body.isAuthorized, "isAuthorized");
+  assertNoClientActorContextField(body.canApply, "canApply");
+  assertNoClientActorContextField(body.canDiscard, "canDiscard");
   assertNoClientActorContextField(body.credentialRef, "credentialRef");
+  assertNoClientActorContextField(body.provider, "provider");
   assertNoClientActorContextField(body.rawProviderPayload, "rawProviderPayload");
   assertNoClientActorContextField(body.rawJobPayload, "rawJobPayload");
+  assertNoClientActorContextField(body.rawAiOutput, "rawAiOutput");
+  assertNoClientActorContextField(body.documentContent, "documentContent");
+  assertNoClientActorContextField(body.content, "content");
+  assertNoClientActorContextField(body.body, "body");
+  assertNoClientActorContextField(body.payload, "payload");
+  assertNoClientActorContextField(body.storageKey, "storageKey");
+  assertNoClientActorContextField(body.path, "path");
+  assertNoClientActorContextField(body.storagePath, "storagePath");
+  assertNoClientActorContextField(body.storageRoot, "storageRoot");
+  assertNoClientActorContextField(body.JIXIA_STORAGE_ROOT, "JIXIA_STORAGE_ROOT");
+  assertNoClientActorContextField(body.checksum, "checksum");
+  assertNoClientActorContextField(body.filePath, "filePath");
+  assertNoClientActorContextField(body.filesystemPath, "filesystemPath");
 
   const insertion = body.insertion;
   if (insertion && typeof insertion === "object" && !Array.isArray(insertion)) {
@@ -1931,10 +2026,41 @@ function rejectAiResultAuthorityBodyFields(
     assertNoClientActorContextField(insertionRecord.projectId, "insertion.projectId");
     assertNoClientActorContextField(insertionRecord.visibility, "insertion.visibility");
     assertNoClientActorContextField(insertionRecord.status, "insertion.status");
+    assertNoClientActorContextField(insertionRecord.authorizationState, "insertion.authorizationState");
+    assertNoClientActorContextField(insertionRecord.authorized, "insertion.authorized");
+    assertNoClientActorContextField(insertionRecord.isAuthorized, "insertion.isAuthorized");
+    assertNoClientActorContextField(insertionRecord.canApply, "insertion.canApply");
+    assertNoClientActorContextField(insertionRecord.canDiscard, "insertion.canDiscard");
     assertNoClientActorContextField(insertionRecord.credentialRef, "insertion.credentialRef");
+    assertNoClientActorContextField(insertionRecord.provider, "insertion.provider");
     assertNoClientActorContextField(insertionRecord.rawProviderPayload, "insertion.rawProviderPayload");
     assertNoClientActorContextField(insertionRecord.rawJobPayload, "insertion.rawJobPayload");
+    assertNoClientActorContextField(insertionRecord.rawAiOutput, "insertion.rawAiOutput");
+    assertNoClientActorContextField(insertionRecord.documentContent, "insertion.documentContent");
+    assertNoClientActorContextField(insertionRecord.content, "insertion.content");
+    assertNoClientActorContextField(insertionRecord.body, "insertion.body");
+    assertNoClientActorContextField(insertionRecord.payload, "insertion.payload");
+    assertNoClientActorContextField(insertionRecord.storageKey, "insertion.storageKey");
+    assertNoClientActorContextField(insertionRecord.path, "insertion.path");
+    assertNoClientActorContextField(insertionRecord.storagePath, "insertion.storagePath");
+    assertNoClientActorContextField(insertionRecord.storageRoot, "insertion.storageRoot");
+    assertNoClientActorContextField(insertionRecord.JIXIA_STORAGE_ROOT, "insertion.JIXIA_STORAGE_ROOT");
+    assertNoClientActorContextField(insertionRecord.checksum, "insertion.checksum");
+    assertNoClientActorContextField(insertionRecord.filePath, "insertion.filePath");
+    assertNoClientActorContextField(insertionRecord.filesystemPath, "insertion.filesystemPath");
   }
+}
+
+function parseDiscardAiResultBody(requestBody: unknown): void {
+  if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody)) {
+    throw new Error("AI result discard payload must be an empty JSON object.");
+  }
+
+  assertAllowedJsonFields(
+    requestBody as Record<string, unknown>,
+    new Set(),
+    "AI result discard payload",
+  );
 }
 
 function parseAiResultInsertion(value: unknown): AiResultApplyInsertion | undefined {
@@ -2698,6 +2824,29 @@ async function handleApiRequest(
         await app.aiResults.applyToProjectDoc(
           decodePathSegment(encodedResultId),
           body,
+          actor.userId,
+        ),
+        method,
+      );
+      return true;
+    }
+
+    const aiResultDiscardMatch = pathname.match(
+      /^\/api\/ai-results\/([^/]+)\/discard$/,
+    );
+    if (aiResultDiscardMatch && method === "POST") {
+      const actor = await getActor(request, strictSessionActorOptions);
+      const [, encodedResultId] = aiResultDiscardMatch;
+      rejectAiResultAuthorityQueryFields(actor, requestUrl);
+      const requestBody = await readJsonBody<unknown>(request);
+      rejectAiResultAuthorityBodyFields(actor, requestBody);
+      parseDiscardAiResultBody(requestBody);
+
+      sendJson(
+        response,
+        200,
+        await app.aiResults.discardArtifact(
+          decodePathSegment(encodedResultId),
           actor.userId,
         ),
         method,

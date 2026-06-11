@@ -27,6 +27,7 @@ import type {
   AiResultAppliedTarget,
   AiResultArtifactRecord,
   ApplyAiResultToNotebookRequest,
+  DiscardAiResultResponse,
   ListAiResultArtifactsResponse,
 } from '../../src/shared/contracts/ai-results';
 import type {
@@ -199,13 +200,23 @@ describe('core contracts', () => {
       insertion: { mode: 'append', targetBlockId: 'block_001' },
       notebookDocumentId: 'notebook-document_001',
     };
+    const discardResponse: DiscardAiResultResponse = {
+      contract: aiResults.aiResultsContract,
+      result: {
+        ...result,
+        appliedAt: undefined,
+        appliedTarget: undefined,
+        status: 'discarded',
+      },
+    };
 
     expect(listResponse.results[0]?.provenance.contextPackId).toBe('context-pack_001');
     expect(applyRequest).toEqual({
       insertion: { mode: 'append', targetBlockId: 'block_001' },
       notebookDocumentId: 'notebook-document_001',
     });
-    expect(JSON.stringify({ applyRequest, listResponse })).not.toMatch(
+    expect(discardResponse.result.status).toBe('discarded');
+    expect(JSON.stringify({ applyRequest, discardResponse, listResponse })).not.toMatch(
       /credentialRef|rawSecret|apiKey|password|token|storageKey|checksum|rawProviderPayload|rawJobPayload|payload|ownerId|scopeId|scopeType|spaceId|visibility/i,
     );
     expectTypeOf<ApplyAiResultToNotebookRequest>().toEqualTypeOf<{
@@ -214,6 +225,10 @@ describe('core contracts', () => {
         targetBlockId?: string;
       };
       notebookDocumentId: string;
+    }>();
+    expectTypeOf<DiscardAiResultResponse>().toEqualTypeOf<{
+      contract: typeof aiResults.aiResultsContract;
+      result: AiResultArtifactRecord;
     }>();
   });
 

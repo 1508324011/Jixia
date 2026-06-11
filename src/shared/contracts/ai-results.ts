@@ -73,6 +73,11 @@ export interface GetAiResultResponse {
   result: AiResultArtifactRecord;
 }
 
+export interface DiscardAiResultResponse {
+  contract: typeof aiResultsContract;
+  result: AiResultArtifactRecord;
+}
+
 export interface ApplyAiResultToNotebookRequest {
   insertion?: AiResultApplyInsertion;
   notebookDocumentId: string;

@@ -340,6 +340,239 @@ describe('server-owned AI result artifacts', () => {
     }
   }, 60_000);
 
+  it('discards draft artifacts with mutation authorization, sanitized audit, and no later apply side effects', async () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-ai-results-discard-service-'));
+
+    try {
+      const env = createAiResultsEnv(storageRoot);
+      const app = createJixiaApp({ env });
+
+      try {
+        const personalSpace = await app.spaces.createSpace(
+          { kind: 'personal', name: 'Alice AI result discard space' },
+          'user-alice',
+        );
+        const credential = await app.credentials.createCredential(
+          { provider: 'openai', rawSecret: 'discard-secret-placeholder' },
+          'user-alice',
+        );
+        const personalJob = await app.jobs.createJob(
+          {
+            credentialRef: credential.credentialRef,
+            kind: 'ai.discard-summary',
+            payload: { contextPackId: 'discard-context-pack', contextRefs: [] },
+            scope: { id: 'user-alice', type: 'user' },
+            spaceId: personalSpace.id,
+          },
+          'user-alice',
+        );
+        await app.jobs.runJob({ actorUserId: 'user-alice', jobId: personalJob.id });
+        const personalResult = await app.aiResults.createFromJob(
+          {
+            documentContent: AI_RESULT_DOCUMENT,
+            jobId: personalJob.id,
+            title: 'Discardable personal result',
+          },
+          'user-alice',
+        );
+        const notebook = await app.notebooks.createDocument(
+          { title: 'Discard apply target notebook' },
+          'user-alice',
+        );
+
+        await expect(
+          app.aiResults.discardArtifact(personalResult.id, 'user-bob'),
+        ).rejects.toThrow(/access denied/i);
+
+        const discardedPersonal = await app.aiResults.discardArtifact(
+          personalResult.id,
+          'user-alice',
+        );
+        const personalAudits = await app.audit.listByJob(personalJob.id);
+
+        expect(discardedPersonal).toMatchObject({
+          contract: 'jixia-ai-results-contract-v1',
+          result: {
+            appliedAt: undefined,
+            appliedTarget: undefined,
+            id: personalResult.id,
+            status: 'discarded',
+          },
+        });
+        expect(
+          personalAudits.filter((record) => record.action === 'ai_result.discarded'),
+        ).toHaveLength(1);
+
+        await expect(
+          app.aiResults.discardArtifact(personalResult.id, 'user-alice'),
+        ).rejects.toThrow(/already discarded/i);
+        await expect(
+          app.aiResults.applyToNotebook(
+            personalResult.id,
+            { notebookDocumentId: notebook.id },
+            'user-alice',
+          ),
+        ).rejects.toThrow(/not available for application/i);
+        expect(
+          await app.notebooks.getLatestSnapshot({ documentId: notebook.id }, 'user-alice'),
+        ).toMatchObject({ versionNumber: 0 });
+        expect(
+          (await app.audit.listByJob(personalJob.id)).filter(
+            (record) => record.action === 'ai_result.discarded',
+          ),
+        ).toHaveLength(1);
+
+        const appliedJob = await app.jobs.createJob(
+          {
+            credentialRef: credential.credentialRef,
+            kind: 'ai.applied-before-discard',
+            payload: { contextPackId: 'applied-context-pack', contextRefs: [] },
+            scope: { id: 'user-alice', type: 'user' },
+            spaceId: personalSpace.id,
+          },
+          'user-alice',
+        );
+        await app.jobs.runJob({ actorUserId: 'user-alice', jobId: appliedJob.id });
+        const appliedResult = await app.aiResults.createFromJob(
+          {
+            documentContent: AI_RESULT_DOCUMENT,
+            jobId: appliedJob.id,
+            title: 'Already applied result',
+          },
+          'user-alice',
+        );
+        const appliedTargetNotebook = await app.notebooks.createDocument(
+          { title: 'Already applied target notebook' },
+          'user-alice',
+        );
+        const appliedResponse = await app.aiResults.applyToNotebook(
+          appliedResult.id,
+          { notebookDocumentId: appliedTargetNotebook.id },
+          'user-alice',
+        );
+
+        await expect(
+          app.aiResults.discardArtifact(appliedResult.id, 'user-alice'),
+        ).rejects.toThrow(/already applied/i);
+        expect(
+          await app.aiResults.getArtifact(appliedResult.id, 'user-alice'),
+        ).toMatchObject({
+          result: {
+            appliedAt: expect.any(String),
+            appliedTarget: appliedResponse.appliedTarget,
+            status: 'applied',
+          },
+        });
+
+        const sharedSpace = await app.spaces.createSpace(
+          { kind: 'shared', name: 'Project AI result discard space' },
+          'user-alice',
+        );
+        const project = await app.projects.createProject(
+          { name: 'Discard Project', spaceId: sharedSpace.id },
+          'user-alice',
+        );
+        await app.projects.addProjectMember(
+          project.project.id,
+          { role: 'editor', userId: 'user-bob' },
+          'user-alice',
+        );
+        await app.projects.addProjectMember(
+          project.project.id,
+          { role: 'viewer', userId: 'user-charlie' },
+          'user-alice',
+        );
+        const projectDoc = await app.projectDocs.createDocument(
+          { projectId: project.project.id, title: 'Discard Project Doc' },
+          'user-alice',
+        );
+        const projectJob = await app.jobs.createJob(
+          {
+            credentialRef: credential.credentialRef,
+            kind: 'ai.project-discard-summary',
+            payload: { contextPackId: 'project-discard-context-pack', contextRefs: [] },
+            scope: { id: project.project.id, type: 'project' },
+            spaceId: sharedSpace.id,
+          },
+          'user-alice',
+        );
+        await app.jobs.runJob({ actorUserId: 'user-alice', jobId: projectJob.id });
+        const projectResult = await app.aiResults.createFromJob(
+          {
+            documentContent: {
+              blocks: [{ text: 'Project discard synthesis result.', type: 'paragraph' }],
+              schemaVersion: 1,
+            },
+            jobId: projectJob.id,
+            title: 'Project discard result',
+          },
+          'user-alice',
+        );
+
+        await expect(
+          app.aiResults.discardArtifact(projectResult.id, 'user-charlie'),
+        ).rejects.toThrow(/mutation/i);
+        await expect(
+          app.aiResults.getArtifact(projectResult.id, 'user-dora'),
+        ).rejects.toThrow(/access denied/i);
+        await expect(
+          app.aiResults.discardArtifact(projectResult.id, 'user-dora'),
+        ).rejects.toThrow(/access denied/i);
+
+        const discardedProject = await app.aiResults.discardArtifact(
+          projectResult.id,
+          'user-bob',
+        );
+        const projectAudits = await app.audit.listByProject({
+          objectId: projectResult.id,
+          objectType: 'ai_result',
+          projectId: project.project.id,
+        });
+
+        expect(discardedProject.result.status).toBe('discarded');
+        expect(
+          projectAudits.filter((record) => record.action === 'ai_result.discarded'),
+        ).toHaveLength(1);
+        expect(projectAudits.map((record) => record.action)).toEqual(
+          expect.arrayContaining(['ai_result.created', 'ai_result.discarded']),
+        );
+        expect(JSON.stringify(projectAudits)).not.toMatch(
+          /rawSecret|discard-secret-placeholder|credentialRef|payload|Project discard synthesis result|storageKey|checksum|content|body|snapshot|papers\//i,
+        );
+        const discardAudit = projectAudits.find(
+          (record) => record.action === 'ai_result.discarded',
+        );
+        expect(discardAudit).toMatchObject({
+          actorUserId: 'user-bob',
+          jobId: projectJob.id,
+          metadata: {
+            resultArtifactId: projectResult.id,
+            resultKind: 'ai.project-discard-summary',
+            sourceCount: expect.any(Number),
+          },
+          object: { id: projectResult.id, type: 'ai_result' },
+          projectId: project.project.id,
+          scope: { id: project.project.id, type: 'project' },
+          spaceId: sharedSpace.id,
+        });
+        await expect(
+          app.aiResults.applyToProjectDoc(
+            projectResult.id,
+            { projectDocId: projectDoc.id },
+            'user-bob',
+          ),
+        ).rejects.toThrow(/not available for application/i);
+        expect(
+          await app.projectDocs.getDocument({ documentId: projectDoc.id }, 'user-bob'),
+        ).toMatchObject({ versionNumber: 0 });
+      } finally {
+        await app.close();
+      }
+    } finally {
+      rmSync(storageRoot, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   it('protects HTTP result routes with session actors and rejects client authority fields', async () => {
     const storageRoot = mkdtempSync(join(tmpdir(), 'jixia-ai-results-http-'));
 
@@ -347,6 +580,7 @@ describe('server-owned AI result artifacts', () => {
       const env = createAiResultsEnv(storageRoot);
       const seedApp = createJixiaApp({ env });
       let resultId = '';
+      let discardResultId = '';
       let notebookId = '';
 
       try {
@@ -377,12 +611,21 @@ describe('server-owned AI result artifacts', () => {
           },
           'user-alice',
         );
+        const discardResult = await seedApp.aiResults.createFromJob(
+          {
+            documentContent: AI_RESULT_DOCUMENT,
+            jobId: job.id,
+            title: 'HTTP discard result',
+          },
+          'user-alice',
+        );
         const notebook = await seedApp.notebooks.createDocument(
           { title: 'HTTP target notebook' },
           'user-alice',
         );
 
         resultId = result.id;
+        discardResultId = discardResult.id;
         notebookId = notebook.id;
       } finally {
         await seedApp.close();
@@ -409,8 +652,21 @@ describe('server-owned AI result artifacts', () => {
           'visibility=private',
           'status=draft',
           'credentialRef=credential-spoof',
+          'provider=openai',
           'rawProviderPayload=provider-spoof',
           'rawJobPayload=job-spoof',
+          'rawAiOutput=raw-output',
+          'documentContent=document-spoof',
+          'content=content-spoof',
+          'authorizationState=authorized',
+          'canDiscard=true',
+          'storageKey=papers/spoof.pdf',
+          'path=papers/spoof.pdf',
+          'storagePath=papers/spoof.pdf',
+          'storageRoot=/tmp/jixia-storage',
+          'JIXIA_STORAGE_ROOT=/tmp/jixia-storage',
+          'checksum=checksum-spoof',
+          'filePath=/tmp/spoof.pdf',
         ]) {
           const response = await fetch(`${server.url}/api/ai-results?${query}`, {
             headers: withSessionCookie(aliceCookie),
@@ -487,6 +743,150 @@ describe('server-owned AI result artifacts', () => {
         expect(authorityBody.status).toBe(400);
         expect(nestedAuthorityBody.status).toBe(400);
 
+        const discardMissingSession = await fetch(
+          `${server.url}/api/ai-results/${discardResultId}/discard`,
+          { method: 'POST' },
+        );
+        expect(discardMissingSession.status).toBe(401);
+
+        for (const query of [
+          'actorUserId=user-alice',
+          'requestedByUserId=user-alice',
+          'userId=user-alice',
+          'ownerId=user-alice',
+          'scope=user-spoof',
+          'scopeId=user-alice',
+          'scopeType=user',
+          'projectId=project-spoof',
+          'spaceId=space-spoof',
+          'visibility=private',
+          'status=draft',
+          'credentialRef=credential-spoof',
+          'provider=openai',
+          'rawJobPayload=job-spoof',
+          'rawAiOutput=raw-output',
+          'documentContent=document-spoof',
+          'storageKey=papers/spoof.pdf',
+          'path=papers/spoof.pdf',
+          'storagePath=papers/spoof.pdf',
+          'storageRoot=/tmp/jixia-storage',
+          'JIXIA_STORAGE_ROOT=/tmp/jixia-storage',
+          'checksum=checksum-spoof',
+          'filePath=/tmp/spoof.pdf',
+          'authorizationState=authorized',
+          'canDiscard=true',
+        ]) {
+          const response = await fetch(
+            `${server.url}/api/ai-results/${discardResultId}/discard?${query}`,
+            {
+              headers: withSessionCookie(aliceCookie),
+              method: 'POST',
+            },
+          );
+
+          expect(response.status).toBe(400);
+        }
+
+        for (const body of [
+          { actorUserId: 'user-alice' },
+          { requestedByUserId: 'user-alice' },
+          { userId: 'user-alice' },
+          { ownerId: 'user-alice' },
+          { scope: { id: 'user-alice', type: 'user' } },
+          { scopeId: 'user-alice' },
+          { scopeType: 'user' },
+          { projectId: 'project-spoof' },
+          { spaceId: 'space-spoof' },
+          { visibility: 'private' },
+          { status: 'draft' },
+          { credentialRef: 'credential-spoof' },
+          { provider: 'openai' },
+          { rawJobPayload: { prompt: 'job residue' } },
+          { rawAiOutput: 'raw-output' },
+          { documentContent: AI_RESULT_DOCUMENT },
+          { body: 'document body residue' },
+          { payload: { rawOutput: 'payload residue' } },
+          { content: 'document content residue' },
+          { storageKey: 'papers/spoof.pdf' },
+          { path: 'papers/spoof.pdf' },
+          { storagePath: 'papers/spoof.pdf' },
+          { storageRoot: '/tmp/jixia-storage' },
+          { JIXIA_STORAGE_ROOT: '/tmp/jixia-storage' },
+          { checksum: 'checksum-spoof' },
+          { filePath: '/tmp/spoof.pdf' },
+          { authorizationState: 'authorized' },
+          { canDiscard: true },
+        ]) {
+          const response = await fetch(
+            `${server.url}/api/ai-results/${discardResultId}/discard`,
+            {
+              body: JSON.stringify(body),
+              headers: withSessionCookie(aliceCookie, {
+                'Content-Type': 'application/json',
+              }),
+              method: 'POST',
+            },
+          );
+
+          expect(response.status).toBe(400);
+        }
+
+        const bobDiscard = await fetch(
+          `${server.url}/api/ai-results/${discardResultId}/discard`,
+          {
+            headers: withSessionCookie(bobCookie),
+            method: 'POST',
+          },
+        );
+        expect(bobDiscard.status).toBe(403);
+
+        const discardResponse = await fetch(
+          `${server.url}/api/ai-results/${discardResultId}/discard`,
+          {
+            body: JSON.stringify({}),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        const discardPayload = await discardResponse.json() as {
+          contract: string;
+          result: { appliedAt?: string; appliedTarget?: unknown; id: string; status: string };
+        };
+
+        expect(discardResponse.status).toBe(200);
+        expect(discardPayload).toMatchObject({
+          contract: 'jixia-ai-results-contract-v1',
+          result: { id: discardResultId, status: 'discarded' },
+        });
+        expect(discardPayload.result.appliedAt).toBeUndefined();
+        expect(discardPayload.result.appliedTarget).toBeUndefined();
+        expect(JSON.stringify(discardPayload)).not.toMatch(
+          /rawSecret|http-ai-results-secret-placeholder|credentialRef|payload|storageKey|checksum|content|body/i,
+        );
+
+        const repeatedDiscard = await fetch(
+          `${server.url}/api/ai-results/${discardResultId}/discard`,
+          {
+            headers: withSessionCookie(aliceCookie),
+            method: 'POST',
+          },
+        );
+        expect(repeatedDiscard.status).toBe(409);
+
+        const discardedApply = await fetch(
+          `${server.url}/api/ai-results/${discardResultId}/apply/notebook`,
+          {
+            body: JSON.stringify({ notebookDocumentId: notebookId }),
+            headers: withSessionCookie(aliceCookie, {
+              'Content-Type': 'application/json',
+            }),
+            method: 'POST',
+          },
+        );
+        expect(discardedApply.status).toBe(400);
+
         const applyResponse = await fetch(
           `${server.url}/api/ai-results/${resultId}/apply/notebook`,
           {
@@ -540,6 +940,7 @@ describe('server-owned AI result artifacts', () => {
       const seedApp = createJixiaApp({ env });
       let projectId = '';
       let projectResultId = '';
+      let projectDiscardResultId = '';
       let targetProjectDocId = '';
 
       try {
@@ -554,11 +955,6 @@ describe('server-owned AI result artifacts', () => {
         await seedApp.projects.addProjectMember(
           project.project.id,
           { role: 'editor', userId: 'user-bob' },
-          'user-alice',
-        );
-        await seedApp.projects.addProjectMember(
-          project.project.id,
-          { role: 'viewer', userId: 'user-charlie' },
           'user-alice',
         );
         const credential = await seedApp.credentials.createCredential(
@@ -606,9 +1002,27 @@ describe('server-owned AI result artifacts', () => {
           },
           'user-alice',
         );
+        const discardResult = await seedApp.aiResults.createFromJob(
+          {
+            documentContent: {
+              blocks: [
+                {
+                  id: 'http-project-discard-result-block',
+                  text: 'HTTP Project Doc discard synthesis result.',
+                  type: 'paragraph',
+                },
+              ],
+              schemaVersion: 1,
+            },
+            jobId: job.id,
+            title: 'HTTP Project Doc discard result',
+          },
+          'user-alice',
+        );
 
         projectId = project.project.id;
         projectResultId = result.id;
+        projectDiscardResultId = discardResult.id;
         targetProjectDocId = projectDoc.id;
       } finally {
         await seedApp.close();
@@ -754,7 +1168,7 @@ describe('server-owned AI result artifacts', () => {
           expect(response.status).toBe(400);
         }
 
-        const viewerApply = await fetch(
+        const nonMemberApply = await fetch(
           `${server.url}/api/ai-results/${projectResultId}/apply/project-doc`,
           {
             body: JSON.stringify({ projectDocId: targetProjectDocId }),
@@ -765,7 +1179,7 @@ describe('server-owned AI result artifacts', () => {
           },
         );
 
-        expect(viewerApply.status).toBe(403);
+        expect(nonMemberApply.status).toBe(403);
 
         const afterRejectedApplyResponse = await fetch(
           `${server.url}/api/project-docs/${targetProjectDocId}`,
@@ -777,6 +1191,58 @@ describe('server-owned AI result artifacts', () => {
 
         expect(afterRejectedApplyResponse.status).toBe(200);
         expect(afterRejectedApplyPayload.versionNumber).toBe(0);
+
+        const projectDiscardResponse = await fetch(
+          `${server.url}/api/ai-results/${projectDiscardResultId}/discard`,
+          {
+            headers: withSessionCookie(bobCookie),
+            method: 'POST',
+          },
+        );
+        const projectDiscardPayload = await projectDiscardResponse.json() as {
+          contract: string;
+          result: { id: string; status: string };
+        };
+
+        expect(projectDiscardResponse.status).toBe(200);
+        expect(projectDiscardPayload).toMatchObject({
+          contract: 'jixia-ai-results-contract-v1',
+          result: { id: projectDiscardResultId, status: 'discarded' },
+        });
+
+        const memberAuditResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/audit?objectType=ai_result&objectId=${projectDiscardResultId}`,
+          { headers: withSessionCookie(bobCookie) },
+        );
+        const memberAuditPayload = await memberAuditResponse.json() as Array<{
+          action: string;
+          metadata?: Record<string, unknown>;
+          object: { id: string; type: string };
+          projectId?: string;
+        }>;
+
+        expect(memberAuditResponse.status).toBe(200);
+        expect(memberAuditPayload.map((record) => record.action)).toEqual(
+          expect.arrayContaining(['ai_result.discarded']),
+        );
+        expect(memberAuditPayload.find((record) => record.action === 'ai_result.discarded')).toMatchObject({
+          metadata: {
+            resultArtifactId: projectDiscardResultId,
+            resultKind: 'ai.http-project-summary',
+            sourceCount: expect.any(Number),
+          },
+          object: { id: projectDiscardResultId, type: 'ai_result' },
+          projectId,
+        });
+        expect(JSON.stringify(memberAuditPayload)).not.toMatch(
+          /rawSecret|http-project-doc-ai-results-secret-placeholder|credentialRef|rawProviderPayload|rawJobPayload|payload|HTTP Project Doc discard synthesis result|storageKey|checksum|content|body|snapshot|papers\//i,
+        );
+
+        const nonMemberAuditResponse = await fetch(
+          `${server.url}/api/projects/${projectId}/audit?objectType=ai_result&objectId=${projectDiscardResultId}`,
+          { headers: withSessionCookie(charlieCookie) },
+        );
+        expect(nonMemberAuditResponse.status).toBe(403);
 
         const applyResponse = await fetch(
           `${server.url}/api/ai-results/${projectResultId}/apply/project-doc`,

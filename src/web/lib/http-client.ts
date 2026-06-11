@@ -4,6 +4,7 @@ import type {
   ApplyAiResultToNotebookResponse,
   ApplyAiResultToProjectDocRequest,
   ApplyAiResultToProjectDocResponse,
+  DiscardAiResultResponse,
   GetAiResultResponse,
   ListAiResultArtifactsResponse,
 } from "@shared/contracts/ai-results";
@@ -499,6 +500,11 @@ export const apiClient = {
   ): Promise<ApplyAiResultToProjectDocResponse> {
     return requestJson(`/api/ai-results/${resultId}/apply/project-doc`, {
       body: JSON.stringify(input),
+      method: "POST",
+    });
+  },
+  discardAiResult(resultId: string): Promise<DiscardAiResultResponse> {
+    return requestJson(`/api/ai-results/${resultId}/discard`, {
       method: "POST",
     });
   },
