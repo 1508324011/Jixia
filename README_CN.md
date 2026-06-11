@@ -9,7 +9,7 @@
 1. 面向 spaces、library、reading、writing 与 governed AI jobs 的 server-first 后端骨架
 2. 一个 project-first 浏览器工作流壳，会先加载服务端持有的真实 Project，再进入 library、reader 与 writing lane
 3. 面向 `Login -> Home -> Today/Search/Library/Projects/Settings` 的集成式 workbench beta
-4. 一条可在当前主机上原生跑通、并可跨重启保留 settings、个人导入、paper 注释/评论与 Project Docs 的 beta 路径
+4. 一条可在当前主机上原生跑通、并可跨重启保留 settings、个人/项目 Library 条目、Reader excerpt / 私人笔记 / 项目评论 / insight、私有 Notebook capture、Project Docs / citation trace、必要时的 governed job/audit 状态，以及上传论文文件可用性的 beta 路径
 
 bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当前目标态产品基线是 `docs/plans/design.md`；较早的 Space-first 计划属于历史 server-first 脚手架说明，除非已经与 project-first recovery plan 对齐，否则不再定义前台产品模型。
 
@@ -19,7 +19,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 
 - `docs/runbooks/native-demo-showcase.md`
 
-这份 runbook 记录的是 `main` 上的**当前主机 beta 路径**：原生启动应用、进入 workbench、配置设置、检索 PubMed、导入到 Personal Library、显式把来源采纳到目标 Project Library、打开项目 Reader、持久化 excerpt / 私人笔记 / 项目评论 / insight、显式把 Reader 证据捕获到 actor 私有 Notebook、创建或重新打开 Project Doc、通过选中的 Reader 证据与项目可见 citation/reference 保存共享 Project Doc、检查浏览器安全的 citation trace，并在重启进程后确认状态仍然存在。打包、reset、showcase 这一类能力仍然属于下游 `demo-native-showcase` 分支上的 **demo-only convenience**。
+这份 runbook 记录的是 `main` 上的**当前主机 beta 路径**：原生启动应用，先验证 `/health` 与 `/api/health`，进入由 session 支撑的 workbench、配置设置、检索 PubMed、导入到 Personal Library、显式把来源采纳到目标 Project Library、打开由 ProjectMember 授权的项目 Reader、持久化 excerpt / 私人笔记 / 项目评论 / insight、显式把 Reader 证据捕获到 actor 私有 Notebook、创建或重新打开 Project Doc、通过选中的 Reader 证据与项目可见 citation/reference 保存共享 Project Doc、检查浏览器安全的 citation trace，并使用同一个 `.env` 重启进程后确认 session 入口、Project、个人/项目 Library、Reader 状态、私有 Notebook capture、Project Docs / citation trace、必要时的 jobs/job events/audit records，以及上传论文文件可用性仍然存在。打包、reset、showcase 这一类能力仍然属于下游 `demo-native-showcase` 分支上的 **demo-only convenience**，不是 `main` 上的产品事实。
 
 ## 计划文档
 
@@ -84,7 +84,7 @@ bootstrap 护栏仍然保留，但仓库已经不再只是初始化状态。当�
 - `npm run typecheck`
 - `npm run build`
 
-额外的定向验证还覆盖 workbench 路由与导航、personal / project 上下文切换、discovery/search 到 Personal Library 的导入路径、paper workspace 持久化、Reader evidence 捕获到私有 Notebook、选中证据进入 Project Doc draft/reopen、前台没有整本 Notebook 进入 Project Docs 的 affordance、当前主机 beta runbook 的真实性，以及 server-first Prisma-backed project membership。
+额外的定向验证还覆盖 workbench 路由与导航、personal / project 上下文切换、discovery/search 到 Personal Library 的导入路径、paper workspace 持久化、Reader evidence 捕获到私有 Notebook、选中证据进入 Project Doc draft/reopen、前台没有整本 Notebook 进入 Project Docs 的 affordance、当前主机 beta runbook 的真实性、通过 `tests/integration/http-server-health.test.ts` 验证真实 `/health` 与 `/api/health` listener 行为，以及 server-first Prisma-backed project membership。
 
 ## 近期方向
 
@@ -132,6 +132,19 @@ npm run start:server
 启动后，服务会从 `dist/` 提供构建后的 workbench shell，响应 `/health` 与 `/api/health`，并在 `/api/` 下暴露当前 beta 需要的浏览器接口。
 
 推荐把 `http://127.0.0.1:3000/health` 作为第一步运行时自检；检查浏览器/API handoff 时再验证 API 范围内的 mirror：`http://127.0.0.1:3000/api/health`。健康的 Task 11 进程会在两个端点都返回 `{"service":"jixia-server","status":"ok"}`。
+
+### 当前主机重启验证 gate
+
+本地 Node 进程通过 `/health` 与 `/api/health`，并且浏览器流程已经创建真实状态之后，停止进程，再使用同一个 `.env` 和 `npm run start:server` 重启。只有重启后的运行时再次证明权威状态与存储都仍由服务端持有，operator pass 才算完成：
+
+- `/login` 与 `jixia_session` 流程仍然建立 user/session 权限，不接受浏览器传入的 actor 字段作为权威。
+- 服务端可见 Project 与 project workspace 仍然通过 Prisma/SQLite `Project` 与 `ProjectMember` 校验加载。
+- Personal 与 project-scoped Library 条目仍然存在，包括显式项目来源采纳的结果。
+- Reader excerpt、私人笔记、项目评论与 governed insight 仍然从服务端持久化中重新打开。
+- 私有 Reader evidence Notebook capture 仍然只对 owner 重新打开。
+- Project Docs 仍然带着保存过的 selected evidence、项目可见 citation/reference 与浏览器安全 citation trace 重新打开。
+- 如果流程创建了 governed jobs、job events、project review/attention 或 governance audit records，这些记录仍然是服务端派生且浏览器安全的。
+- file-backed uploaded PDFs 仍然只报告 `asset.hasFile` 这类安全可用性，并且文件字节只能通过授权的 `GET|HEAD /api/library/:entryId/file` 读取；metadata-only imports 必须继续显示 metadata-only/no-file 状态，不能伪造上传文件字节。
 
 ### 可选 Docker Compose 打包路径
 
