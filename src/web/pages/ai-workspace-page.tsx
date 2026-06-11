@@ -501,6 +501,30 @@ export function AiWorkspacePage() {
     }
   }, [applyProjectDocId, loadAiResults, selectedAiResultId]);
 
+  const discardSelectedAiResult = useCallback(async () => {
+    if (!selectedAiResultId) {
+      setAiWorkspaceError("Choose an AI result before discarding.");
+      return;
+    }
+
+    try {
+      setIsAiWorkspaceBusy(true);
+      setAiWorkspaceError(null);
+      setAiResultApplyMessage(null);
+      await apiClient.discardAiResult(selectedAiResultId);
+      setAiResultApplyMessage("Discarded AI result artifact.");
+      await loadAiResults();
+    } catch (workspaceError) {
+      setAiWorkspaceError(
+        workspaceError instanceof Error
+          ? workspaceError.message
+          : "Failed to discard AI result.",
+      );
+    } finally {
+      setIsAiWorkspaceBusy(false);
+    }
+  }, [loadAiResults, selectedAiResultId]);
+
   return (
     <main className="page-shell">
       <header className="page-header">
@@ -891,6 +915,14 @@ export function AiWorkspacePage() {
             the server. They do not send actor, owner, project scope, status,
             credential, or raw provider payload fields.
           </p>
+          <button
+            className="panel-link"
+            type="button"
+            onClick={() => void discardSelectedAiResult()}
+            disabled={!selectedAiResult || selectedAiResult.status !== "draft" || isAiWorkspaceBusy}
+          >
+            Discard selected result
+          </button>
           <label>
             Notebook document id
             <input

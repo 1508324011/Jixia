@@ -40,6 +40,20 @@ function findAiResultApplyMutations(
   });
 }
 
+function findAiResultDiscardMutations(
+  calls: Array<[string | URL | Request, RequestInit?]>,
+) {
+  return calls.filter(([input, init]) => {
+    if ((init?.method ?? 'GET') !== 'POST') {
+      return false;
+    }
+
+    const pathname = new URL(requestUrlFrom(input)).pathname;
+
+    return /^\/api\/ai-results\/[^/]+\/discard$/.test(pathname);
+  });
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -310,6 +324,129 @@ describe('AI Workspace page', () => {
     await user.click(screen.getByRole('button', { name: 'Apply selected result to Project Doc' }));
     await waitFor(() => expect(projectDocApplyBody).toEqual({ projectDocId: 'project-doc-target' }));
     expect(await screen.findByText('Applied to Project Doc version 5.')).toBeInTheDocument();
+  });
+
+  it('discards a draft AI result artifact with an actor-free empty request and disables apply after refresh', async () => {
+    const user = userEvent.setup();
+    const createdAt = '2026-06-06T00:00:00.000Z';
+    let discardRequested = false;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const requestUrl = requestUrlFrom(input);
+
+      if (requestUrl.endsWith('/api/session/me')) {
+        return jsonResponse({
+          user: {
+            displayName: 'Alice',
+            email: 'alice@example.test',
+            id: 'user-alice',
+          },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/spaces')) {
+        return jsonResponse([
+          {
+            createdAt,
+            id: 'space-personal-alice',
+            kind: 'personal',
+            name: 'Alice Personal Space',
+          },
+        ]);
+      }
+
+      if (requestUrl.endsWith('/api/projects')) {
+        return jsonResponse([]);
+      }
+
+      if (requestUrl.endsWith('/api/credentials')) {
+        return jsonResponse([]);
+      }
+
+      if (requestUrl.includes('/api/jobs?')) {
+        return jsonResponse([]);
+      }
+
+      if (requestUrl.endsWith('/api/ai-workspace/sessions')) {
+        return jsonResponse({
+          contract: 'jixia-ai-workspace-context-packs-v1',
+          sessions: [],
+        });
+      }
+
+      if (requestUrl.endsWith('/api/ai-results') && init?.method !== 'POST') {
+        return jsonResponse({
+          contract: 'jixia-ai-results-contract-v1',
+          results: [
+            {
+              createdAt,
+              createdByUserId: 'user-alice',
+              id: 'result-discard',
+              jobId: 'job-result-discard',
+              kind: 'ai.summary',
+              plainTextPreview: 'Discardable server-owned draft.',
+              provenance: { contextPackId: 'context-pack-discard' },
+              scope: { id: 'user-alice', type: 'user' as const },
+              status: discardRequested ? 'discarded' : 'draft',
+              title: 'Discard draft',
+              updatedAt: createdAt,
+            },
+          ],
+          scope: { id: 'user-alice', type: 'user' },
+        });
+      }
+
+      if (requestUrl.endsWith('/api/ai-results/result-discard/discard') && init?.method === 'POST') {
+        const headers = new Headers(init.headers);
+        const url = new URL(requestUrl);
+        discardRequested = true;
+
+        expect(init.credentials).toBe('same-origin');
+        expect(init.body).toBeUndefined();
+        expect(headers.has('Authorization')).toBe(false);
+        expect(headers.has('x-jixia-actor')).toBe(false);
+        expect(url.searchParams.get('actorUserId')).toBeNull();
+        expect(url.searchParams.get('scopeType')).toBeNull();
+        expect(url.searchParams.get('projectId')).toBeNull();
+        expect(url.searchParams.get('status')).toBeNull();
+
+        return jsonResponse({
+          contract: 'jixia-ai-results-contract-v1',
+          result: {
+            createdAt,
+            createdByUserId: 'user-alice',
+            id: 'result-discard',
+            jobId: 'job-result-discard',
+            kind: 'ai.summary',
+            plainTextPreview: 'Discardable server-owned draft.',
+            provenance: { contextPackId: 'context-pack-discard' },
+            scope: { id: 'user-alice', type: 'user' },
+            status: 'discarded',
+            title: 'Discard draft',
+            updatedAt: createdAt,
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${requestUrl}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWorkbench();
+
+    expect(await screen.findByRole('option', { name: /Discard draft · draft · result-discard/ })).toBeInTheDocument();
+    expect(findAiResultDiscardMutations(fetchMock.mock.calls)).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Discard selected result' }));
+
+    await waitFor(() => expect(findAiResultDiscardMutations(fetchMock.mock.calls)).toHaveLength(1));
+    expect(await screen.findByText('Discarded AI result artifact.')).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: /Discard draft · discarded · result-discard/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Apply selected result to Notebook' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Apply selected result to Project Doc' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Discard selected result' })).toBeDisabled();
+    });
   });
 
   it('launches a governed project AI run through context-pack refs only', async () => {
