@@ -46,6 +46,24 @@ describe('command palette', () => {
             query: requestUrl.searchParams.get('query') ?? '',
             results: [
               {
+                id: 'ai-result:result-command',
+                kind: 'ai-result',
+                metadata: {
+                  jobId: 'job-command',
+                  resultKind: 'ai-workspace.context-pack',
+                  status: 'draft',
+                },
+                route: '/jobs?scopeType=project&scopeId=project-1&jobId=job-command',
+                scope: {
+                  id: 'project-1',
+                  projectId: 'project-1',
+                  type: 'project',
+                },
+                subtitle: 'ai-workspace.context-pack · draft',
+                title: 'Shared command AI result',
+                updatedAt: '2026-05-18T00:00:30.000Z',
+              },
+              {
                 id: 'project-doc:doc-command',
                 kind: 'project-doc',
                 route: '/projects/project-1/writing/doc-command',
@@ -59,7 +77,7 @@ describe('command palette', () => {
                 updatedAt: '2026-05-18T00:00:00.000Z',
               },
             ],
-            totalCount: 1,
+            totalCount: 2,
           });
         }
 
@@ -93,8 +111,9 @@ describe('command palette', () => {
       expect(latestCall?.url.searchParams.has(forbiddenField)).toBe(false);
     }
 
-    await userEvent.click(await screen.findByRole('option', { name: /shared command synthesis/i }));
-    expect(navigate).toHaveBeenCalledWith('/projects/project-1/writing/doc-command');
+    expect(await screen.findByText('AI Result')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('option', { name: /shared command ai result/i }));
+    expect(navigate).toHaveBeenCalledWith('/jobs?scopeType=project&scopeId=project-1&jobId=job-command');
   });
 
   it('opens from Ctrl+K or Cmd+K and renders loading then empty state from the server index', async () => {

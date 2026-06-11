@@ -11,6 +11,7 @@ interface CommandPaletteProps {
 const SEARCH_DEBOUNCE_MS = 180;
 
 const KIND_LABELS: Record<CommandSearchResult["kind"], string> = {
+  "ai-result": "AI Result",
   job: "Job",
   "library-entry": "Library",
   notebook: "Notebook",
@@ -180,7 +181,7 @@ export function CommandPalette({ onNavigate, projectId }: CommandPaletteProps) {
               ref={inputRef}
               id="command-palette-search"
               className="command-palette__input"
-              placeholder="Search projects, docs, library entries, notebooks, jobs…"
+              placeholder="Search projects, docs, library entries, notebooks, jobs, AI results…"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />

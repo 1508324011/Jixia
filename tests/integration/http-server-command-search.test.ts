@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import {
+  createAiResultArtifactRepository,
   createJobRepository,
   createLibraryRepository,
   createNotebookRepository,
@@ -179,6 +180,7 @@ describe('http server command search api', () => {
           const projectDocRepository = createProjectDocRepository(prisma);
           const notebookRepository = createNotebookRepository(prisma);
           const jobRepository = createJobRepository(prisma);
+          const aiResultRepository = createAiResultArtifactRepository(prisma);
 
           const projectDoc = await projectDocRepository.createDocument({
             createdByUserId: 'user-alice',
@@ -279,6 +281,133 @@ describe('http server command search api', () => {
               spaceId: createdSpace.id,
             },
           });
+          await jobRepository.createProviderCredentialReference({
+            credentialRef: 'cred-command-bob',
+            provider: 'openrouter',
+            secretRef: 'secret-command-bob',
+            userId: 'user-bob',
+          });
+          await jobRepository.createQueuedJobWithAudit({
+            audit: {
+              action: 'job.created',
+              actorUserId: 'user-bob',
+              detail: 'Created hidden command job with sensitive audit detail.',
+              id: 'audit-command-bob-hidden',
+              recordedAt: '2026-05-18T00:00:00.000Z',
+            },
+            event: {
+              id: 'job-event-command-bob-hidden',
+              message: 'Hidden command job queued.',
+              recordedAt: '2026-05-18T00:00:00.000Z',
+              status: 'queued',
+            },
+            job: {
+              credentialRef: 'cred-command-bob',
+              id: 'job-command-bob-hidden',
+              kind: 'command-index-test',
+              payload: JSON.stringify({ hiddenSecretPayloadShouldNotLeak: true }),
+              requestedByUserId: 'user-bob',
+              scope: { id: bobProject.project.id, type: 'project' },
+              spaceId: bobSpace.id,
+            },
+          });
+          await jobRepository.createQueuedJobWithAudit({
+            audit: {
+              action: 'job.created',
+              actorUserId: 'user-alice',
+              detail: 'Created command personal job with sensitive audit detail.',
+              id: 'audit-command-alice-personal',
+              recordedAt: '2026-05-18T00:00:00.000Z',
+            },
+            event: {
+              id: 'job-event-command-alice-personal',
+              message: 'Command personal job queued.',
+              recordedAt: '2026-05-18T00:00:00.000Z',
+              status: 'queued',
+            },
+            job: {
+              credentialRef: 'cred-command-alice',
+              id: 'job-command-alice-personal',
+              kind: 'command-index-test',
+              payload: JSON.stringify({ personalAiSecretPayloadShouldNotLeak: true }),
+              requestedByUserId: 'user-alice',
+              scope: { id: 'user-alice', type: 'user' },
+              spaceId: createdSpace.id,
+            },
+          });
+          await aiResultRepository.createArtifact({
+            createdAt: '2026-05-18T00:01:00.000Z',
+            createdByUserId: 'user-alice',
+            documentContent: {
+              blocks: [
+                {
+                  text: 'Sensitive AI result document content should not be indexed.',
+                  type: 'paragraph',
+                },
+              ],
+              schemaVersion: 1,
+            },
+            id: 'ai-result-command-personal',
+            jobId: 'job-command-alice-personal',
+            kind: 'ai-workspace.context-pack',
+            plainTextPreview: 'Sensitive AI plain text preview should not be indexed.',
+            provenance: {
+              contextPackId: 'context-pack-secret-command',
+              projectLibraryEntryIds: ['library-entry-secret-command'],
+            },
+            scope: { id: 'user-alice', type: 'user' },
+            summary: 'Sensitive AI summary should not be indexed.',
+            title: 'Command Personal AI Result',
+          });
+          await aiResultRepository.createArtifact({
+            createdAt: '2026-05-18T00:02:00.000Z',
+            createdByUserId: 'user-alice',
+            documentContent: {
+              blocks: [
+                {
+                  text: 'Sensitive project AI result document content should not be indexed.',
+                  type: 'paragraph',
+                },
+              ],
+              schemaVersion: 1,
+            },
+            id: 'ai-result-command-project',
+            jobId: 'job-command-alice',
+            kind: 'ai-workspace.context-pack',
+            plainTextPreview: 'Sensitive project AI preview should not be indexed.',
+            projectId: project.project.id,
+            provenance: {
+              contextPackId: 'context-pack-project-secret-command',
+              projectDocVersionIds: ['project-doc-version-secret-command'],
+            },
+            scope: { id: project.project.id, type: 'project' },
+            summary: 'Sensitive project AI summary should not be indexed.',
+            title: 'Command Project AI Result',
+          });
+          await aiResultRepository.createArtifact({
+            createdAt: '2026-05-18T00:03:00.000Z',
+            createdByUserId: 'user-bob',
+            documentContent: {
+              blocks: [
+                {
+                  text: 'Hidden Bob AI content should not be visible.',
+                  type: 'paragraph',
+                },
+              ],
+              schemaVersion: 1,
+            },
+            id: 'ai-result-command-hidden-bob',
+            jobId: 'job-command-bob-hidden',
+            kind: 'ai-workspace.context-pack',
+            plainTextPreview: 'Hidden Bob AI preview should not be visible.',
+            projectId: bobProject.project.id,
+            provenance: {
+              contextPackId: 'hidden-bob-context-pack-secret',
+            },
+            scope: { id: bobProject.project.id, type: 'project' },
+            summary: 'Hidden Bob AI summary should not be visible.',
+            title: 'Hidden Bob Command AI Result',
+          });
         } finally {
           await prisma.$disconnect();
         }
@@ -302,6 +431,7 @@ describe('http server command search api', () => {
             'library-entry',
             'notebook',
             'job',
+            'ai-result',
           ]),
         );
         expect(payload.results.map((result) => result.title)).toEqual(
@@ -312,6 +442,8 @@ describe('http server command search api', () => {
             'Command Project Paper',
             'Command Private Notebook',
             'job-command-alice',
+            'Command Personal AI Result',
+            'Command Project AI Result',
           ]),
         );
         expect(payload.results).toContainEqual(
@@ -326,7 +458,9 @@ describe('http server command search api', () => {
             route: `/notebook/${encodeURIComponent(notebookDocumentId)}`,
           }),
         );
-        const jobRoute = payload.results.find((result) => result.kind === 'job')?.route;
+        const jobRoute = payload.results.find(
+          (result) => result.id === 'job:job-command-alice',
+        )?.route;
         expect(jobRoute).toBeTruthy();
         const jobUrl = new URL(jobRoute ?? '', server.url);
         expect(jobUrl.pathname).toBe('/jobs');
@@ -336,6 +470,24 @@ describe('http server command search api', () => {
         expect(jobUrl.searchParams.has('actorUserId')).toBe(false);
         expect(jobUrl.searchParams.has('requestedByUserId')).toBe(false);
         expect(jobUrl.searchParams.has('userId')).toBe(false);
+        const aiResult = payload.results.find(
+          (result) => result.id === 'ai-result:ai-result-command-project',
+        );
+        expect(aiResult).toEqual(
+          expect.objectContaining({
+            kind: 'ai-result',
+            route: expect.stringContaining('/jobs?'),
+            title: 'Command Project AI Result',
+          }),
+        );
+        const aiResultUrl = new URL(aiResult?.route ?? '', server.url);
+        expect(aiResultUrl.pathname).toBe('/jobs');
+        expect(aiResultUrl.searchParams.get('scopeType')).toBe('project');
+        expect(aiResultUrl.searchParams.get('scopeId')).toBe(project.project.id);
+        expect(aiResultUrl.searchParams.get('jobId')).toBe('job-command-alice');
+        expect(aiResultUrl.searchParams.has('actorUserId')).toBe(false);
+        expect(aiResultUrl.searchParams.has('requestedByUserId')).toBe(false);
+        expect(aiResultUrl.searchParams.has('userId')).toBe(false);
         const serializedPayload = JSON.stringify(payload);
         expect(serializedPayload).not.toContain('Hidden Bob Command');
         expect(serializedPayload).not.toContain('private-storage-key-command.pdf');
@@ -343,6 +495,16 @@ describe('http server command search api', () => {
         expect(serializedPayload).not.toContain('secretPayloadShouldNotLeak');
         expect(serializedPayload).not.toContain('Sensitive Project Doc snapshot');
         expect(serializedPayload).not.toContain('sensitive audit detail');
+        expect(serializedPayload).not.toContain('Sensitive AI result document content');
+        expect(serializedPayload).not.toContain('Sensitive AI plain text preview');
+        expect(serializedPayload).not.toContain('Sensitive AI summary');
+        expect(serializedPayload).not.toContain('context-pack-secret-command');
+        expect(serializedPayload).not.toContain('library-entry-secret-command');
+        expect(serializedPayload).not.toContain('project-doc-version-secret-command');
+        expect(serializedPayload).not.toContain('personalAiSecretPayloadShouldNotLeak');
+        expect(serializedPayload).not.toMatch(
+          /documentContent|plainTextPreview|summary|provenance|createdByUserId|credentialRef|storageKey|checksum|JIXIA_STORAGE_ROOT|papers\//i,
+        );
 
         const projectOnlyResponse = await fetch(
           `${server.url}/api/command-search?projectId=${project.project.id}&query=Command`,
@@ -356,6 +518,8 @@ describe('http server command search api', () => {
           (result) => result.scope.type === 'project' && result.scope.id === project.project.id,
         )).toBe(true);
         expect(JSON.stringify(projectOnlyPayload)).not.toContain('Command Private Notebook');
+        expect(JSON.stringify(projectOnlyPayload)).toContain('Command Project AI Result');
+        expect(JSON.stringify(projectOnlyPayload)).not.toContain('Command Personal AI Result');
 
         const deniedProjectResponse = await fetch(
           `${server.url}/api/command-search?projectId=${bobProject.project.id}&query=Command`,
@@ -384,13 +548,21 @@ describe('http server command search api', () => {
             'Command Shared Synthesis',
             'Command Project Paper',
             'job-command-alice',
+            'Command Project AI Result',
           ]),
         );
         expect(serializedBobVisiblePayload).not.toContain('Command Personal Paper');
         expect(serializedBobVisiblePayload).not.toContain('Command Private Notebook');
+        expect(serializedBobVisiblePayload).not.toContain('Command Personal AI Result');
         expect(serializedBobVisiblePayload).not.toContain('private-storage-key-command.pdf');
         expect(serializedBobVisiblePayload).not.toContain('Sensitive Project Doc snapshot');
         expect(serializedBobVisiblePayload).not.toContain('secretPayloadShouldNotLeak');
+        expect(serializedBobVisiblePayload).not.toContain('Sensitive project AI preview');
+        expect(serializedBobVisiblePayload).not.toContain('context-pack-project-secret-command');
+        expect(serializedBobVisiblePayload).not.toContain('Hidden Bob AI content');
+        expect(serializedBobVisiblePayload).not.toContain('Hidden Bob AI preview');
+        expect(serializedBobVisiblePayload).not.toContain('Hidden Bob AI summary');
+        expect(serializedBobVisiblePayload).not.toContain('hidden-bob-context-pack-secret');
       } finally {
         await server.close();
       }

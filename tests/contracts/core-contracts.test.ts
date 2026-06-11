@@ -2028,20 +2028,40 @@ describe('core contracts', () => {
       title: 'Shared synthesis',
       updatedAt: '2026-05-18T00:00:00.000Z',
     };
+    const aiResult: CommandSearchResult = {
+      id: 'ai-result:ai-result_001',
+      kind: 'ai-result',
+      metadata: {
+        jobId: 'job_001',
+        projectId: 'project_001',
+        resultKind: 'ai-workspace.context-pack',
+        status: 'draft',
+      },
+      route: '/jobs?scopeType=project&scopeId=project_001&jobId=job_001',
+      scope,
+      subtitle: 'ai-workspace.context-pack · draft',
+      title: 'Evidence-linked AI result',
+      updatedAt: '2026-05-18T00:00:30.000Z',
+    };
     const response: CommandSearchResponse = {
       contract: commandSearch.commandSearchContract,
       generatedAt: '2026-05-18T00:01:00.000Z',
       projectId: 'project_001',
       query: 'synthesis',
-      results: [result],
-      totalCount: 1,
+      results: [result, aiResult],
+      totalCount: 2,
     };
+    const serialized = JSON.stringify(response);
 
     expect(response.contract).toBe('jixia-command-search-contract');
     expect(response.results[0]?.route).toBe('/projects/project_001/writing/doc_001');
     expect(response.results[0]?.metadata?.versionNumber).toBe(2);
+    expect(response.results[1]?.kind).toBe('ai-result');
+    expect(serialized).not.toMatch(
+      /documentContent|plainTextPreview|raw generated|result body|provider response|credentialRef|storageKey|checksum|JIXIA_STORAGE_ROOT|provenance|createdByUserId/i,
+    );
     expectTypeOf<CommandSearchObjectKind>().toEqualTypeOf<
-      'project' | 'project-doc' | 'library-entry' | 'notebook' | 'job'
+      'project' | 'project-doc' | 'library-entry' | 'notebook' | 'job' | 'ai-result'
     >();
     expectTypeOf<CommandSearchResult['metadata']>().toMatchTypeOf<
       Record<string, string | number | boolean | null> | undefined
