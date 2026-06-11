@@ -6,6 +6,7 @@ import type {
   ApplyAiResultToNotebookResponse,
   ApplyAiResultToProjectDocRequest,
   ApplyAiResultToProjectDocResponse,
+  DiscardAiResultResponse,
   GetAiResultResponse,
   ListAiResultArtifactsResponse,
 } from '@shared/contracts/ai-results';
@@ -69,6 +70,10 @@ export interface AiResultsService {
     input: CreateAiResultArtifactRequest,
     actorUserId: string,
   ): Promise<AiResultArtifactRecord>;
+  discardArtifact(
+    resultId: string,
+    actorUserId: string,
+  ): Promise<DiscardAiResultResponse>;
   getArtifact(
     resultId: string,
     actorUserId: string,
@@ -300,6 +305,17 @@ function toAiResultRecord(
   };
 }
 
+function toDiscardAiResultRecord(
+  artifact: PersistedAiResultArtifactRecord,
+): AiResultArtifactRecord {
+  const result = toAiResultRecord(artifact);
+
+  return {
+    ...result,
+    documentContent: undefined,
+  };
+}
+
 function createFallbackDocumentContent(
   artifact: PersistedAiResultArtifactRecord,
 ): DocumentBlockDocument {
@@ -398,6 +414,29 @@ async function requireAuthorizedArtifact(
   return artifact;
 }
 
+async function requireMutationAuthorizedArtifact(
+  store: AiResultsStore,
+  resultId: string,
+  actorUserId: string,
+): Promise<PersistedAiResultArtifactRecord> {
+  const artifact = await store.aiResultRepository.getArtifact(resultId);
+
+  if (!artifact) {
+    throw new Error(`AI result artifact ${resultId} does not exist.`);
+  }
+
+  await findAuthorizedJob(
+    store,
+    {
+      actorUserId,
+      jobId: artifact.jobId,
+    },
+    'run',
+  );
+
+  return artifact;
+}
+
 function buildAuditMetadata(input: {
   artifact: PersistedAiResultArtifactRecord;
   targetId?: string;
@@ -483,6 +522,32 @@ async function recordAppliedAudit(
     ),
     object: { id: input.artifact.id, type: 'ai_result' },
     projectId: input.targetProjectId ?? input.artifact.projectId,
+    scope: input.artifact.scope,
+    spaceId: job.spaceId,
+  });
+}
+
+async function recordDiscardedAudit(
+  store: AiResultsStore,
+  input: {
+    actorUserId: string;
+    artifact: PersistedAiResultArtifactRecord;
+  },
+): Promise<void> {
+  const job = await store.jobRepository.getJob({ jobId: input.artifact.jobId });
+
+  if (!job) {
+    throw new Error(`Job ${input.artifact.jobId} does not exist.`);
+  }
+
+  await store.auditService.createRecord({
+    action: 'ai_result.discarded',
+    actorUserId: input.actorUserId,
+    detail: `Discarded AI result artifact ${input.artifact.id}.`,
+    jobId: input.artifact.jobId,
+    metadata: pruneUndefinedMetadata(buildAuditMetadata({ artifact: input.artifact })),
+    object: { id: input.artifact.id, type: 'ai_result' },
+    projectId: input.artifact.projectId,
     scope: input.artifact.scope,
     spaceId: job.spaceId,
   });
@@ -673,6 +738,36 @@ export function createAiResultsService(store: AiResultsStore): AiResultsService 
       await recordCreatedAudit(store, artifact);
 
       return toAiResultRecord(artifact);
+    },
+    async discardArtifact(
+      resultId: string,
+      actorUserId: string,
+    ): Promise<DiscardAiResultResponse> {
+      const artifact = await requireMutationAuthorizedArtifact(
+        store,
+        resultId,
+        actorUserId,
+      );
+
+      if (artifact.status === 'applied') {
+        throw new Error(`AI result artifact ${resultId} is already applied.`);
+      }
+
+      if (artifact.status === 'discarded') {
+        throw new Error(`AI result artifact ${resultId} is already discarded.`);
+      }
+
+      if (artifact.status !== 'draft') {
+        throw new Error(`AI result artifact ${resultId} is not available for discard.`);
+      }
+
+      const discarded = await store.aiResultRepository.markArtifactDiscarded(resultId);
+      await recordDiscardedAudit(store, { actorUserId, artifact: discarded });
+
+      return {
+        contract: aiResultsContract,
+        result: toDiscardAiResultRecord(discarded),
+      };
     },
     async getArtifact(
       resultId: string,

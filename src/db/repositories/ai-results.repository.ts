@@ -98,6 +98,7 @@ export interface AiResultArtifactRepository {
   markArtifactApplied(
     input: MarkAiResultArtifactAppliedParams,
   ): Promise<PersistedAiResultArtifactRecord>;
+  markArtifactDiscarded(resultId: string): Promise<PersistedAiResultArtifactRecord>;
 }
 
 type TransactionClient = Prisma.TransactionClient;
@@ -420,6 +421,28 @@ export function createAiResultArtifactRepository(
         },
         where: { id: input.resultId },
       });
+
+      return mapArtifact(artifact);
+    },
+    async markArtifactDiscarded(resultId: string): Promise<PersistedAiResultArtifactRecord> {
+      await ensureInitialized();
+
+      const updateResult = await prisma.aiResultArtifact.updateMany({
+        data: { status: 'discarded' },
+        where: { id: resultId, status: 'draft' },
+      });
+
+      const artifact = await prisma.aiResultArtifact.findUnique({
+        where: { id: resultId },
+      });
+
+      if (!artifact) {
+        throw new Error(`AI result artifact ${resultId} does not exist.`);
+      }
+
+      if (updateResult.count !== 1) {
+        throw new Error(`AI result artifact ${resultId} is already ${artifact.status}.`);
+      }
 
       return mapArtifact(artifact);
     },
