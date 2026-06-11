@@ -23,6 +23,7 @@ describe('workbench beta runbook contract', () => {
     expect(existsSync(RUNBOOK_PATH)).toBe(true);
 
     expect(runbook).toContain('current host');
+    expect(runbook).toContain('native Node current-host gate');
     expect(runbook).toContain('no-Docker');
     expect(runbook).toContain('npm install');
     expect(runbook).toContain('npm run build');
@@ -40,6 +41,7 @@ describe('workbench beta runbook contract', () => {
     expect(runbook).toContain('metadata-only asset');
     expect(runbook).toContain('POST /api/import/pdf');
     expect(runbook).toContain('GET|HEAD /api/library/:entryId/file');
+    expect(runbook).toContain('uploaded PDFs are the only paper entries whose file bytes should survive restart');
     expect(runbook).toContain('Save private note');
     expect(runbook).toContain('Save project comment');
     expect(runbook).toContain('Save insight');
@@ -48,6 +50,13 @@ describe('workbench beta runbook contract', () => {
     expect(runbook).toContain('Open Project Doc');
     expect(runbook).toContain('Reload draft');
     expect(runbook).toContain('restart the app process');
+    expect(runbook).toContain('same `.env`');
+    expect(runbook).toContain('session-backed login entry');
+    expect(runbook).toContain('ProjectMember-gated collaboration');
+    expect(runbook).toContain('governed Reader insight');
+    expect(runbook).toContain('jobs, job events, and governance audit records');
+    expect(runbook).toContain('asset.hasFile');
+    expect(runbook).toContain('metadata-only/no-file state');
     expect(runbook).toContain('server-state.json');
     expect(runbook).toContain('one-time compatibility bootstrap path');
     expect(runbook).toContain('provider-failure');
@@ -61,9 +70,13 @@ describe('workbench beta runbook contract', () => {
 
     expect(readme).toContain('docs/runbooks/native-demo-showcase.md');
     expect(readme).toContain('current-host beta path');
+    expect(readme).toContain('Current-host restart verification gate');
+    expect(readme).toContain('not product truth on `main`');
     expect(readme).toContain('demo-native-showcase');
     expect(readmeCn).toContain('docs/runbooks/native-demo-showcase.md');
     expect(readmeCn).toContain('当前主机 beta 路径');
+    expect(readmeCn).toContain('当前主机重启验证 gate');
+    expect(readmeCn).toContain('不是 `main` 上的产品事实');
     expect(readmeCn).toContain('demo-native-showcase');
   });
 });

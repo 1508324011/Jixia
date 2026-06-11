@@ -1,8 +1,9 @@
 # Current-Host Workbench Beta Runbook
 
-This runbook is the truthful **current host** browser path for `main`.
-It is intentionally a **no-Docker** walkthrough that starts from the integrated workbench beta,
-proves the persisted vertical slice once, restarts the process, and reopens the same state.
+This runbook is the truthful **current host** browser path for `main` and the required
+native Node current-host gate before claiming an operator pass. It is intentionally a
+**no-Docker** walkthrough that starts from the integrated workbench beta, proves the
+persisted vertical slice once, restarts the process, and reopens the same state.
 
 The packaged reset/showcase path is a **demo-only convenience** that belongs to the downstream
 `demo-native-showcase` branch. On `main`, use this runbook when you want to validate the product
@@ -32,6 +33,9 @@ the server, deduplicates global file-backed `PaperAsset` rows by checksum, and
 returns only browser-safe availability such as `asset.hasFile`. Reader file access
 must go through `GET|HEAD /api/library/:entryId/file`; the browser never receives
 raw storage keys, `papers/...` paths, checksums, or filesystem locations.
+Metadata-only imports are not file-backed and must keep showing a no-file state;
+uploaded PDFs are the only paper entries whose file bytes should survive restart
+behind the authorized Reader file route.
 
 ## Native startup on the current host
 
@@ -57,7 +61,7 @@ API boundary are up before validating workbench behavior.
 
 The full happy path, when the upstream PubMed request returns at least one result, is:
 
-workbench entry -> Home project review check -> settings ready -> PubMed search -> personal import -> explicit project-source adoption -> project Reader evidence persistence -> explicit Reader evidence capture into private Notebook -> project page review check -> Project Doc creation/reopen -> selected evidence/citation trace verification -> restart -> reopen persisted state
+workbench entry -> Home project review check -> settings ready -> PubMed search -> personal import -> explicit project-source adoption -> project Reader evidence persistence -> explicit Reader evidence capture into private Notebook -> project page review check -> Project Doc creation/reopen -> selected evidence/citation trace verification -> restart -> reopen session-backed, project-gated, library, Reader, Notebook, Project Doc, job/audit, and uploaded-file state
 
 Live PubMed is intentionally not backed by a synthetic fallback on `main`. Success
 depends on upstream PubMed availability, current network access, and the runtime
@@ -104,15 +108,21 @@ steps below to validate the full vertical slice.
 28. In **Project Doc editor**, update **Draft content**, click **Save draft**, then click **Reload draft**.
 29. Confirm the Project Doc editor reopens with the saved document content and citation trace still present.
 30. Stop the server process and restart the app process with the same `.env` and `npm run start:server` command.
-31. Reopen `http://127.0.0.1:3000`, return to **Library**, the project **Reader**, **Notebook**, and the same `/projects/:projectId` Project Doc route, and confirm:
+31. Reopen `http://127.0.0.1:3000`, complete the session-backed login entry if the `jixia_session` cookie was cleared, then return to **Library**, the project **Reader**, **Notebook**, and the same `/projects/:projectId` Project Doc route. Confirm:
+     - the login/session entry still derives authority from the server-owned session flow, not browser-supplied user fields
+     - visible projects and the project workspace still load through ProjectMember-gated collaboration rather than local fixtures
      - the imported personal-library paper still exists
      - the project-adopted library source still exists
      - the saved reader excerpt still exists with its quote, offsets, and locator
      - the saved private note still exists only in the reader owner's private context
      - the saved project comment is visible to project members
+     - the governed Reader insight still reopens from server-owned Reader state
      - the private Reader evidence Notebook still reopens for its owner
      - the Project Doc still reopens with saved selected evidence and citations
      - the Project Doc citation trace still shows browser-safe availability/adoption-needed state
+     - project review/attention, jobs, job events, and governance audit records remain browser-safe and server-derived where the flow created them
+     - if a PDF was uploaded through `POST /api/import/pdf`, the file-backed entry still reports safe file availability such as `asset.hasFile` and opens bytes only through `GET|HEAD /api/library/:entryId/file`
+     - metadata-only imported entries still show the metadata-only/no-file state and do not fabricate uploaded file bytes
 
 ## What this beta currently proves
 
@@ -125,6 +135,11 @@ steps below to validate the full vertical slice.
 - Reader file availability is explicit: metadata-only imports do not pretend a
   file exists, while uploaded PDFs are read only through the session-authorized
   `GET|HEAD /api/library/:entryId/file` route
+- restart validation covers the server-owned session entry, ProjectMember-gated
+  project collaboration, personal/project Library entries, Reader excerpts,
+  notes, comments, governed insights, private Notebook capture, Project Docs,
+  citation trace, jobs/job events/audit records where applicable, and uploaded
+  PDF availability without exposing storage internals
 - the paper workspace persists a private note separately from a project-visible comment
 - reader excerpts and governed insights can be explicitly captured into an owner-only private Notebook without browser-supplied actor or project authority
 - private Notebook remains an owner-only synthesis surface; selected Reader evidence, citations, references, and explicit Project Library source adoption are the foreground bridge into Project Docs
