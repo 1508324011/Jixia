@@ -1,0 +1,463 @@
+.jixia-chat-surface {
+  gap: 14px;
+}
+
+.jixia-chat-surface__meta,
+.jixia-chat-composer__chips,
+.jixia-chat-composer__hints,
+.jixia-chat-thread__pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.jixia-chat-shell {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 14px;
+  min-height: min(780px, calc(100vh - 210px));
+}
+
+.jixia-chat-sidebar,
+.jixia-chat-thread,
+.jixia-chat-main {
+  min-width: 0;
+  min-height: 0;
+}
+
+.jixia-chat-sidebar {
+  align-content: start;
+  border: 1px solid #dbe5ed;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.jixia-chat-sidebar__rail-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-block: 1px solid #e2e8f0;
+  color: #52606d;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 10px 0;
+}
+
+.jixia-chat-main {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.jixia-chat-thread {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #dbe5ed;
+  background:
+    radial-gradient(circle at top left, rgba(15, 113, 128, 0.08), transparent 32%),
+    #ffffff;
+}
+
+.jixia-chat-thread__runline,
+.jixia-chat-thread__summary {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 8px 10px;
+  border-block: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 12px;
+  padding-block: 9px;
+}
+
+.jixia-chat-thread__runline strong,
+.jixia-chat-thread__summary strong {
+  overflow: hidden;
+  color: #10202a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jixia-chat-thread__runline span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jixia-chat-message-stream {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 4px 4px;
+  scroll-behavior: smooth;
+}
+
+.jixia-chat-message {
+  display: grid;
+  gap: 8px;
+  max-width: min(100%, 840px);
+  border: 1px solid #dbe5ed;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(15, 32, 42, 0.06);
+  padding: 12px;
+}
+
+.jixia-chat-message--user {
+  justify-self: end;
+  width: min(100%, 720px);
+  border-color: #b8e4e8;
+  background: #f0fdff;
+}
+
+.jixia-chat-message--assistant {
+  justify-self: start;
+  width: min(100%, 840px);
+}
+
+.jixia-chat-message__header,
+.jixia-chat-message__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.jixia-chat-message__content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.jixia-chat-message__cursor {
+  display: inline-block;
+  width: 7px;
+  height: 16px;
+  background: #0f7180;
+  animation: jixia-chat-cursor 1s steps(2, start) infinite;
+}
+
+.jixia-chat-message__error {
+  margin: 0;
+  border-left: 3px solid #ef4444;
+  background: #fff1f2;
+  color: #991b1b;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 10px;
+}
+
+.jixia-chat-message__text,
+.jixia-chat-markdown p {
+  margin: 0;
+  color: #1f2933;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.jixia-chat-markdown {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.jixia-chat-markdown h3,
+.jixia-chat-markdown h4 {
+  margin: 0;
+  color: #10202a;
+  letter-spacing: -0.035em;
+}
+
+.jixia-chat-markdown h3 {
+  font-size: 18px;
+}
+
+.jixia-chat-markdown h4 {
+  font-size: 15px;
+}
+
+.jixia-chat-markdown ul,
+.jixia-chat-markdown ol {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.jixia-chat-markdown blockquote {
+  margin: 0;
+  border-left: 3px solid #b8e4e8;
+  background: #f8fafc;
+  color: #475569;
+  padding: 9px 12px;
+}
+
+.jixia-chat-markdown code,
+.jixia-chat-code-block code {
+  color: #0f172a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.jixia-chat-markdown :not(pre) > code {
+  border: 1px solid #dbe5ed;
+  background: #f8fafc;
+  padding: 1px 4px;
+}
+
+.jixia-chat-code-block {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid #cbd5df;
+  background: #0f172a;
+}
+
+.jixia-chat-code-block figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.13);
+  color: #bae6fd;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 9px;
+}
+
+.jixia-chat-code-block button {
+  border: 1px solid rgba(186, 230, 253, 0.35);
+  background: rgba(15, 23, 42, 0.72);
+  color: #e0f2fe;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 7px;
+}
+
+.jixia-chat-code-block button:hover {
+  border-color: #bae6fd;
+  background: rgba(14, 116, 144, 0.45);
+}
+
+.jixia-chat-code-block pre {
+  overflow: auto;
+  margin: 0;
+  max-width: 100%;
+  padding: 12px;
+}
+
+.jixia-chat-code-block code {
+  color: #e2e8f0;
+}
+
+.jixia-chat-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #dbe5ed;
+}
+
+.jixia-chat-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.jixia-chat-table-wrap th,
+.jixia-chat-table-wrap td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 8px 9px;
+}
+
+.jixia-chat-table-wrap th {
+  background: #f8fafc;
+  color: #334e68;
+  font-weight: 850;
+}
+
+.jixia-chat-run-card,
+.jixia-chat-action-card,
+.jixia-chat-source-card {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #dbe5ed;
+  background: #fbfcfd;
+  color: #475569;
+  font-size: 12px;
+  padding: 10px;
+}
+
+.jixia-chat-run-card strong,
+.jixia-chat-action-card strong,
+.jixia-chat-source-card strong {
+  color: #10202a;
+}
+
+.jixia-chat-run-card--running,
+.jixia-chat-run-card--queued {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
+.jixia-chat-run-card--failed {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #991b1b;
+}
+
+.jixia-chat-run-card--succeeded {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.jixia-chat-source-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.jixia-chat-source-card span,
+.jixia-chat-source-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jixia-chat-composer {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #cbd5df;
+  background: #ffffff;
+  box-shadow: 0 16px 36px rgba(15, 32, 42, 0.08);
+  padding: 12px;
+}
+
+.jixia-chat-composer__input-shell {
+  display: grid;
+  gap: 8px;
+}
+
+.jixia-chat-composer__modelbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.jixia-chat-composer__modelbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #334e68;
+  font-weight: 800;
+}
+
+.jixia-chat-composer__modelbar select {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid #cbd5df;
+  background: #ffffff;
+  color: #10202a;
+  font: inherit;
+  padding: 6px 8px;
+}
+
+.jixia-chat-composer__modelbar > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jixia-chat-composer textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  max-height: 220px;
+  border: 1px solid #dbe5ed;
+  background: #fbfcfd;
+  color: #10202a;
+  font: inherit;
+  line-height: 1.5;
+  outline-color: #087f8c;
+  padding: 10px 12px;
+  resize: none;
+}
+
+.jixia-chat-composer__footer,
+.jixia-chat-composer__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.jixia-chat-composer__hints span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.jixia-chat-composer__help summary {
+  color: #0f7180;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.jixia-chat-composer__meta label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(100%, 320px);
+  color: #334e68;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.jixia-chat-composer__meta select {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid #cbd5df;
+  background: #ffffff;
+  color: #10202a;
+  font: inherit;
+  padding: 7px 9px;
+}
+
+@media (max-width: 980px) {
+  .jixia-chat-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .jixia-chat-thread__summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .jixia-chat-thread__runline,
+  .jixia-chat-composer__modelbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@keyframes jixia-chat-cursor {
+  0%,
+  45% {
+    opacity: 1;
+  }
+
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
