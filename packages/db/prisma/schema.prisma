@@ -1,0 +1,337 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+enum SpaceRole {
+  SpaceAdmin
+  SpaceMember
+}
+
+enum ProjectRole {
+  ProjectOwner
+  ProjectEditor
+  ProjectViewer
+}
+
+enum DocumentType {
+  notebook
+  project
+}
+
+enum DocumentStatus {
+  active
+  archived
+}
+
+enum AttachmentBlockType {
+  image
+  file
+}
+
+enum UploadIntentStatus {
+  pending
+  confirmed
+  failed
+  expired
+  cleaned
+}
+
+enum UploadFailureReason {
+  expired
+  object_missing
+  size_mismatch
+  mime_mismatch
+  storage_error
+  permission_revoked
+}
+
+enum AIUsageScope {
+  user
+  space
+}
+
+model User {
+  id                  String              @id @default(cuid())
+  email               String              @unique
+  displayName         String
+  passwordHash        String
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  spaceMembers        SpaceMember[]
+  projectsCreated     Project[]           @relation("ProjectCreator")
+  projectMembers      ProjectMember[]
+  sessions            Session[]
+  invitationsCreated  Invitation[]        @relation("InvitationCreator")
+  invitationsAccepted Invitation[]        @relation("InvitationAcceptedBy")
+  documents           Document[]          @relation("DocumentOwner")
+  documentDrafts      DocumentDraft[]
+  documentRevisions   DocumentRevision[]
+  documentAttachments DocumentAttachment[]
+  uploadIntents       UploadIntent[]
+  aiProviderConfigs   AIProviderConfig[]
+  aiConversations     AIConversation[]
+  aiUsageAggregates   AIUsageAggregate[]
+  auditEvents         AuditEvent[]        @relation("ActorAuditEvents")
+}
+
+model Space {
+  id                String             @id @default(cuid())
+  name              String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  members           SpaceMember[]
+  projects          Project[]
+  invitations       Invitation[]
+  aiUsageAggregates AIUsageAggregate[]
+}
+
+model SpaceMember {
+  id        String    @id @default(cuid())
+  spaceId   String
+  userId    String
+  role      SpaceRole
+  createdAt DateTime  @default(now())
+  space     Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([spaceId, userId])
+  @@index([userId])
+}
+
+model Project {
+  id              String          @id @default(cuid())
+  spaceId         String
+  name            String
+  createdByUserId String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  space           Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdBy       User            @relation("ProjectCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  members         ProjectMember[]
+  documents       Document[]
+
+  @@index([spaceId])
+  @@index([createdByUserId])
+}
+
+model ProjectMember {
+  id        String      @id @default(cuid())
+  projectId String
+  userId    String
+  role      ProjectRole
+  createdAt DateTime    @default(now())
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, expiresAt])
+}
+
+model Invitation {
+  id               String    @id @default(cuid())
+  spaceId          String
+  email            String
+  role             SpaceRole
+  tokenHash        String    @unique
+  invitedByUserId  String
+  acceptedByUserId String?
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  space            Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  invitedBy        User      @relation("InvitationCreator", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+  acceptedBy       User?     @relation("InvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([spaceId, email])
+  @@index([invitedByUserId])
+  @@index([acceptedByUserId])
+}
+
+model Document {
+  id                String               @id @default(cuid())
+  type              DocumentType
+  status            DocumentStatus       @default(active)
+  title             String
+  ownerUserId       String?
+  projectId         String?
+  currentRevisionId String?              @unique
+  revisionNumber    Int                  @default(0)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  owner             User?                @relation("DocumentOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  project           Project?             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  currentRevision   DocumentRevision?    @relation("CurrentDocumentRevision", fields: [currentRevisionId], references: [id], onDelete: SetNull)
+  drafts            DocumentDraft[]
+  revisions         DocumentRevision[]   @relation("DocumentRevisions")
+  attachments       DocumentAttachment[]
+  uploadIntents     UploadIntent[]
+  aiConversations   AIConversation[]
+
+  @@index([ownerUserId])
+  @@index([projectId])
+}
+
+model DocumentDraft {
+  documentId   String
+  userId       String
+  baseRevision Int
+  draftContent Json
+  updatedAt    DateTime @updatedAt
+  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, userId])
+  @@index([userId])
+}
+
+model DocumentRevision {
+  id                 String    @id @default(cuid())
+  documentId         String
+  revisionNumber     Int
+  contentSnapshot    Json
+  editorUserId       String
+  createdAt          DateTime  @default(now())
+  document           Document  @relation("DocumentRevisions", fields: [documentId], references: [id], onDelete: Cascade)
+  editor             User      @relation(fields: [editorUserId], references: [id], onDelete: Restrict)
+  currentForDocument Document? @relation("CurrentDocumentRevision")
+
+  @@unique([documentId, revisionNumber])
+  @@index([editorUserId])
+}
+
+model DocumentAttachment {
+  id               String        @id @default(cuid())
+  documentId       String
+  uploadIntentId   String?       @unique
+  uploadedByUserId String
+  storageKey       String        @unique
+  fileName         String
+  mimeType         String
+  sizeBytes        Int
+  checksum         String?
+  etag             String?
+  createdAt        DateTime      @default(now())
+  document         Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploadIntent     UploadIntent? @relation(fields: [uploadIntentId], references: [id], onDelete: SetNull)
+  uploadedBy       User          @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([documentId])
+  @@index([uploadedByUserId])
+}
+
+model UploadIntent {
+  id             String               @id @default(cuid())
+  documentId     String
+  uploaderUserId String
+  blockType      AttachmentBlockType
+  storageKey     String               @unique
+  fileName       String
+  mimeType       String
+  sizeBytes      Int
+  checksum       String?
+  status         UploadIntentStatus   @default(pending)
+  failureReason  UploadFailureReason?
+  failureDetail  String?
+  expiresAt      DateTime
+  confirmedAt    DateTime?
+  cleanedAt      DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  document       Document             @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploader       User                 @relation(fields: [uploaderUserId], references: [id], onDelete: Cascade)
+  attachment     DocumentAttachment?
+
+  @@index([documentId])
+  @@index([uploaderUserId])
+  @@index([status, expiresAt])
+}
+
+model AIProviderConfig {
+  id              String   @id @default(cuid())
+  ownerUserId     String
+  name            String
+  provider        String
+  baseURL         String
+  model           String
+  temperature     Float
+  maxTokens       Int
+  encryptedApiKey String?
+  keyPreview      String?
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  owner           User     @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerUserId, name])
+  @@index([ownerUserId, isDefault])
+}
+
+model AIConversation {
+  id                      String    @id @default(cuid())
+  ownerUserId             String
+  title                   String
+  currentDocumentId       String?
+  selectedContextSnapshot Json
+  messages                Json
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  owner                   User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  currentDocument         Document? @relation(fields: [currentDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([ownerUserId])
+  @@index([currentDocumentId])
+}
+
+model AIUsageAggregate {
+  id                  String       @id @default(cuid())
+  scope               AIUsageScope
+  userId              String?
+  spaceId             String?
+  periodStart         DateTime
+  periodEnd           DateTime
+  provider            String
+  model               String
+  promptTokens        Int          @default(0)
+  completionTokens    Int          @default(0)
+  totalTokens         Int          @default(0)
+  estimatedCostMicros Int          @default(0)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  user                User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  space               Space?       @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([scope, periodStart, periodEnd])
+  @@index([userId, periodStart])
+  @@index([spaceId, periodStart])
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  actorUserId String
+  action      String
+  targetType  String
+  targetId    String
+  metadata    Json
+  createdAt   DateTime @default(now())
+  actor       User     @relation("ActorAuditEvents", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, createdAt])
+  @@index([targetType, targetId])
+}
