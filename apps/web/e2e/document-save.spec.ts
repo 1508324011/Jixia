@@ -1,0 +1,73 @@
+import { expect, test } from "@playwright/test";
+
+import {
+  acceptInvitationThroughUi,
+  collectApiPathRequests,
+  collectApiRequestsWithAuthorization,
+  createProjectDocumentThroughUi,
+  createProjectThroughUi,
+  identityFor,
+  saveFormalRevision,
+  waitForDraftSave
+} from "./helpers";
+
+test("saves project document drafts and formal revisions without AI writeback", async ({ page }, testInfo) => {
+  const authorizationHeaderRequests = collectApiRequestsWithAuthorization(page);
+  const aiRequests = collectApiPathRequests(page, "/api/ai");
+  const identity = identityFor(testInfo, "document-save");
+
+  await acceptInvitationThroughUi(page, identity);
+  await createProjectThroughUi(page, "Draft and revision smoke project");
+  const documentId = await createProjectDocumentThroughUi(page, "Draft and revision smoke document");
+
+  const draftSavePromise = waitForDraftSave(page);
+  await page.getByLabel("Block 1 text").fill("Draft text saved through the document draft API.");
+  await draftSavePromise;
+
+  await saveFormalRevision(page);
+  await expect(page.getByText("Base revision 1")).toBeVisible();
+
+  const secondDraftPromise = waitForDraftSave(page);
+  await page.getByLabel("Block 1 text").fill("Local edit should conflict after a newer server revision.");
+  await secondDraftPromise;
+
+  const externalSaveStatus = await page.evaluate(async (input) => {
+    const response = await fetch(`/api/documents/${encodeURIComponent(input.documentId)}/revisions`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        baseRevision: 1,
+        title: "Draft and revision smoke document",
+        contentSnapshot: {
+          editorSchemaVersion: 1,
+          blocks: [
+            {
+              id: "external-conflict-block",
+              type: "paragraph",
+              text: "A newer server revision exists."
+            }
+          ]
+        }
+      })
+    });
+
+    return response.status;
+  }, { documentId });
+  expect(externalSaveStatus).toBe(200);
+
+  const conflictResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname.match(/^\/api\/documents\/[^/]+\/revisions$/) !== null && response.status() === 409;
+  });
+  await page.getByRole("button", { name: "Save revision" }).click();
+  await conflictResponse;
+
+  await expect(page.getByRole("heading", { name: "Revision conflict" })).toBeVisible();
+  await expect(page.getByText("Human merge required")).toBeVisible();
+  await expect(page.getByText("Jixia does not call AI or auto-merge conflicts.")).toBeVisible();
+  expect(aiRequests).toEqual([]);
+  expect(authorizationHeaderRequests).toEqual([]);
+});
