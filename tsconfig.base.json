@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@jixia/shared": ["packages/shared/src/index.ts"],
+      "@jixia/db": ["packages/db/src/index.ts"],
+      "@jixia/db/client": ["packages/db/src/client.ts"],
+      "@jixia/db/generated": ["packages/db/src/generated/prisma/client.ts"],
+      "@jixia/db/browser": ["packages/db/src/generated/prisma/browser.ts"]
+    },
+    "noEmit": true
+  },
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "apps/**/*.d.ts", "packages/**/*.ts", "packages/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "build", "coverage", "playwright-report", "test-results"]
+}

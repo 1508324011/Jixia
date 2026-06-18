@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: jixia
+      POSTGRES_PASSWORD: jixia_dev_password
+      POSTGRES_DB: jixia
+    ports:
+      - "5432:5432"
+    volumes:
+      - jixia-postgres:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: jixia_minio
+      MINIO_ROOT_PASSWORD: jixia_minio_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - jixia-minio:/data
+
+volumes:
+  jixia-postgres:
+  jixia-minio:

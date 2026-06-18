@@ -1,0 +1,22 @@
+{
+  "name": "jixia",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @jixia/api --filter @jixia/web --filter @jixia/worker dev",
+    "build": "pnpm -r build",
+    "type-check": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "db:generate": "pnpm --filter @jixia/db db:generate",
+    "db:validate": "pnpm --filter @jixia/db db:validate",
+    "db:migrate": "pnpm --filter @jixia/db db:migrate",
+    "db:deploy": "pnpm --filter @jixia/db db:deploy"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}
