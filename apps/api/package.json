@@ -1,0 +1,22 @@
+{
+  "name": "@jixia/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc --project ../../tsconfig.base.json",
+    "test": "vitest run --passWithNoTests",
+    "lint": "tsc --project ../../tsconfig.base.json"
+  },
+  "dependencies": {
+    "@fastify/cookie": "latest",
+    "@jixia/db": "workspace:*",
+    "@jixia/shared": "workspace:*",
+    "argon2": "^0.44.0",
+    "fastify": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "tsx": "latest"
+  }
+}
