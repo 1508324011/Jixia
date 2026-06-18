@@ -1,0 +1,26 @@
+{
+  "title": "End-to-end smoke tests",
+  "slug": "mvp-e2e-smoke-tests",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-15T18:40:40+00:00",
+  "updatedAt": "2026-06-15T20:42:46+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement Playwright setup and MVP browser smoke specs"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate E2E smoke coverage, server-first boundaries, and verification evidence"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}

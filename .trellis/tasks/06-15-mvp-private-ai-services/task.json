@@ -1,0 +1,26 @@
+{
+  "title": "Implement AI provider configs private conversations usage aggregates",
+  "slug": "mvp-private-ai-services",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-15T14:29:32+00:00",
+  "updatedAt": "2026-06-15T15:09:49+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement private AI configs, owner-only conversations, aggregate usage, and cleanup job"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate AI privacy, encryption, permission re-checks, usage aggregation, and tests"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}

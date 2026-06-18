@@ -1,0 +1,27 @@
+{
+  "title": "Build web app shell and auth UI",
+  "slug": "mvp-web-auth-shell",
+  "type": "frontend",
+  "status": "finished",
+  "createdAt": "2026-06-15T15:45:49+00:00",
+  "updatedAt": "2026-06-15T16:28:25+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement web API client, auth pages, app shell, and focused tests"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate auth UI behavior, cookie session boundary, frontend tests, and build"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ],
+  "updated_at": "2026-06-15T15:46:20+00:00"
+}

@@ -1,0 +1,26 @@
+{
+  "title": "Add worker jobs",
+  "slug": "mvp-worker-jobs",
+  "type": "backend",
+  "status": "finished",
+  "createdAt": "2026-06-15T18:14:50+00:00",
+  "updatedAt": "2026-06-15T18:40:08+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement worker scheduler, upload-intent metadata cleanup, and focused worker tests"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate worker intervals, non-overlap, retention cleanup, privacy boundary, tests, and build"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "title": "Build attachment UI",
+  "slug": "mvp-attachment-ui",
+  "type": "frontend",
+  "status": "finished",
+  "createdAt": "2026-06-15T17:09:46+00:00",
+  "updatedAt": "2026-06-15T17:39:53+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement attachment upload/download helpers, attachment block UI, and focused tests"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate attachment UI privacy boundary, upload/confirm/download flow, tests, and build"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}

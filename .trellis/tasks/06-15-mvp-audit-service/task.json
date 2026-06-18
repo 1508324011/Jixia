@@ -1,0 +1,27 @@
+{
+  "title": "Implement audit service",
+  "slug": "mvp-audit-service",
+  "type": "backend",
+  "status": "finished",
+  "createdAt": "2026-06-15T15:12:04+00:00",
+  "updatedAt": "2026-06-15T15:45:24+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement audit writer, redaction validation, routes, and tests"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate audit redaction, privacy boundary, route auth, and verification evidence"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ],
+  "updated_at": "2026-06-15T15:12:46+00:00"
+}

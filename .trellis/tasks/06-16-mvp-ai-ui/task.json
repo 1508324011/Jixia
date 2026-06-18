@@ -1,0 +1,26 @@
+{
+  "title": "Build AI config and private conversation UI",
+  "slug": "mvp-ai-ui",
+  "type": "frontend",
+  "status": "finished",
+  "createdAt": "2026-06-15T17:40:29+00:00",
+  "updatedAt": "2026-06-15T18:14:20+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement AI settings, private conversation panel, aggregate usage UI, and focused tests"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate AI UI privacy boundary, no document writeback, tests, and build"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}

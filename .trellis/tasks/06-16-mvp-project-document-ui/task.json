@@ -1,0 +1,26 @@
+{
+  "title": "Build project and document UI",
+  "slug": "mvp-project-document-ui",
+  "type": "frontend",
+  "status": "finished",
+  "createdAt": "2026-06-15T16:28:49+00:00",
+  "updatedAt": "2026-06-15T17:09:21+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement project list/detail, document list/editor, draft/formal save, and conflict UI"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate project/document UI, server-first boundaries, editor saves, tests, and build"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}
