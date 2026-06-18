@@ -1,0 +1,4 @@
+.developer
+.current-task
+__pycache__/
+*.pyc
