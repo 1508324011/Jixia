@@ -1,0 +1,26 @@
+{
+  "title": "Implement document revision service",
+  "slug": "mvp-document-revision-service",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-14T05:29:00+00:00",
+  "updatedAt": "2026-06-14T07:02:33+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement document service, revisions, drafts, and lifecycle routes"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate document revisions, permissions, conflicts, lifecycle, and tests"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}

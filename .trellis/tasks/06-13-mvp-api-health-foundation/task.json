@@ -1,0 +1,26 @@
+{
+  "title": "Add API health foundation",
+  "slug": "mvp-api-health-foundation",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-13T15:08:17+00:00",
+  "updatedAt": "2026-06-14T02:15:04+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement Fastify app foundation and health endpoint"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate API health foundation scope and tests"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}

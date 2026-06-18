@@ -1,0 +1,26 @@
+{
+  "title": "Implement MVP Prisma data model",
+  "slug": "mvp-prisma-data-model",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-13T14:04:24+00:00",
+  "updatedAt": "2026-06-13T15:03:34+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement Prisma schema, DB client, and invariant tests"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate schema scope, invariants, and workspace checks"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}

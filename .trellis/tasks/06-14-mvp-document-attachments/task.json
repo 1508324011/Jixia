@@ -1,0 +1,26 @@
+{
+  "title": "Implement document attachments",
+  "slug": "mvp-document-attachments",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-14T07:02:48+00:00",
+  "updatedAt": "2026-06-14T14:46:27+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement attachment upload intents, confirmation, download URLs, and cleanup job"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate attachment permissions, storage boundaries, cleanup races, and tests"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}

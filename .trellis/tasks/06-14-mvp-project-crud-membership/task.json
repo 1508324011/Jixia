@@ -1,0 +1,26 @@
+{
+  "title": "Implement project CRUD membership",
+  "slug": "mvp-project-crud-membership",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-14T04:18:22+00:00",
+  "updatedAt": "2026-06-14T05:28:27+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement Project CRUD and membership services/routes"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate project CRUD, membership rules, audit metadata, and tests"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}

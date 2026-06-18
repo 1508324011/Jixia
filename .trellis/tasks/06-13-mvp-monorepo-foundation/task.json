@@ -1,0 +1,23 @@
+{
+  "title": "Initialize MVP monorepo foundation",
+  "slug": "mvp-monorepo-foundation",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-13T12:29:00+00:00",
+  "updatedAt": "2026-06-13T13:15:19+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ]
+}

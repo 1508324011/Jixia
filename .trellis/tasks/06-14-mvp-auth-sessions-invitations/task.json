@@ -1,0 +1,26 @@
+{
+  "title": "Implement auth sessions invitations",
+  "slug": "mvp-auth-sessions-invitations",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-14T02:15:31+00:00",
+  "updatedAt": "2026-06-14T03:15:16+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement auth sessions invitations foundation"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate auth/session/invitation scope and tests"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}

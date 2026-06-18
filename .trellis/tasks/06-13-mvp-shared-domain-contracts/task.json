@@ -1,0 +1,23 @@
+{
+  "title": "Define MVP shared domain contracts",
+  "slug": "mvp-shared-domain-contracts",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-13T13:15:49+00:00",
+  "updatedAt": "2026-06-13T14:04:03+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "title": "Implement permission service",
+  "slug": "mvp-permission-service",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-14T03:15:16+00:00",
+  "updatedAt": "2026-06-14T04:18:07+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement server-side document and attachment permission service"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate permission matrix, SpaceAdmin non-bypass, and tests"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check before PR"
+    }
+  ]
+}
