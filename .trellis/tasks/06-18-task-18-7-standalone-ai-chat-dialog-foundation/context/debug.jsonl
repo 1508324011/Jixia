@@ -1,0 +1,33 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Required Trellis pre-implementation discipline."}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Fullstack boundary and contract coordination."}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse mature chat primitives and existing patterns before hand-rolling."}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Frontend component decomposition for reusable chat shell primitives."}
+{"path": ".trellis/spec/frontend/directory-structure.md", "reason": "Placement for new AI chat module files."}
+{"path": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Hook boundaries for chat runtime/thread state."}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Local/server state split for threads/messages/composer."}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "Typed props and DTO-safe UI contracts."}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Focused UI tests, accessibility, and verification expectations."}
+{"path": ".trellis/spec/backend/shared-domain-contracts.md", "reason": "Transport-safe DTO boundary if AI shared/API contracts are touched."}
+{"path": ".trellis/spec/backend/api-foundation.md", "reason": "API route/service ownership if chat transport changes are needed."}
+{"path": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend test guardrails if API changes are needed."}
+{"path": ".trellis/tasks/06-17-task-18-6-copilot-work-surface-refactor/prd.md", "reason": "Prior failed work-surface requirements and boundary constraints."}
+{"path": ".trellis/tasks/06-17-task-18-6-copilot-work-surface-refactor/info.md", "reason": "Prior 18.6 technical design to avoid repeating wrong model."}
+{"path": ".trellis/tasks/06-17-task-18-6-copilot-work-surface-refactor/research.md", "reason": "Prior copilot audit and comparison notes."}
+{"path": ".trellis/tasks/06-18-task-18-7-standalone-ai-chat-dialog-foundation/info.md", "reason": "Task 18.7 target data model and technical preparation."}
+{"path": ".trellis/tasks/06-18-task-18-7-standalone-ai-chat-dialog-foundation/research.md", "reason": "Task 18.7 research and reuse plan."}
+{"path": "apps/web/src/features/ai/AIConversationPanel.tsx", "reason": "Current document-copilot panel to avoid or adapt carefully."}
+{"path": "apps/web/src/features/ai/AIConversationPanel.test.tsx", "reason": "Existing focused AI UI tests and forbidden-control patterns."}
+{"path": "apps/web/src/app/App.tsx", "reason": "Top-level AI route placeholder and app navigation integration."}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Current workbench/copilot CSS and inspector constraints."}
+{"path": "apps/web/src/features/layout/workbench.tsx", "reason": "Workbench/Inspector primitives that currently host copilot."}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Current document editor copilot mount point."}
+{"path": "apps/web/package.json", "reason": "Frontend dependencies for evaluating chat/markdown primitives."}
+{"path": "packages/shared/src/ai.ts", "reason": "Existing AI DTO/message parts/source/run/action contracts."}
+{"path": "apps/api/src/modules/ai/ai.routes.ts", "reason": "AI API route boundary if standalone chat transport changes."}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.ts", "reason": "Server-owned conversation projection/provider execution boundary."}
+{"path": "doc/Figures/copilot1.png", "reason": "Reference empty-state AI dialog screenshot."}
+{"path": "doc/Figures/copilot2.png", "reason": "Reference active source-grounded chat screenshot."}
+{"path": "doc/MVP_implement.md", "reason": "MVP task context and roadmap references."}

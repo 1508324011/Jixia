@@ -1,0 +1,15 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/tasks/06-18-task-18-7-standalone-ai-chat-dialog-foundation/prd.md", "reason": "Verify Task 18.8 preserves Task 18.7 standalone chat boundaries"}
+{"path": "apps/web/src/features/ai/chat", "reason": "Check chat UX, tests, and server-first UI constraints"}
+{"path": "apps/web/src/features/ai/AISettingsPage.tsx", "reason": "Check provider settings usability and key preservation"}
+{"path": "apps/api/src/modules/ai", "reason": "Check AI server-owned auth, streaming, cancellation, provider error contracts"}
+{"path": "packages/shared/src/ai.ts", "reason": "Check transport-safe shared AI contracts"}
+{"path": "apps/web/src/features/ai/chat/AIChatDialog.test.tsx", "reason": "Existing focused standalone chat tests and forbidden-control assertions"}
+{"path": "apps/web/src/features/ai/AISettingsPage.test.tsx", "reason": "Existing provider settings tests for safe key handling and preset payloads"}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.test.ts", "reason": "Existing AI conversation service tests to extend for streaming/run lifecycle"}
+{"path": "apps/api/src/modules/ai/ai-config.service.test.ts", "reason": "Existing provider config tests to extend for test connection and error taxonomy"}
+{"path": "apps/api/src/modules/ai/ai-provider-adapter.test.ts", "reason": "Existing provider adapter tests to extend for streaming/errors/cancellation"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Verify API/shared/frontend contracts and Good/Base/Bad cases"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Check reuse decisions and avoid unnecessary dependencies"}

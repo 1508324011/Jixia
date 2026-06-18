@@ -1,0 +1,26 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Required Trellis pre-implementation discipline"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Fullstack boundary and contract coordination"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse existing panel and workbench patterns before adding abstractions"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Copilot component split and composition rules"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Local and server state split for thread source and composer state"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "DTO and component prop safety"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend tests accessibility and verification"}
+{"path": ".trellis/spec/backend/shared-domain-contracts.md", "reason": "Transport-safe AI DTO boundary if shared or API contracts change"}
+{"path": ".trellis/tasks/06-17-task-18-5-mature-ai-copilot-chat-surface/prd.md", "reason": "Preserve Task 18.5 safe copilot requirements"}
+{"path": ".trellis/tasks/06-17-task-18-5-mature-ai-copilot-chat-surface/info.md", "reason": "Preserve Task 18.5 contract and UI design details"}
+{"path": ".trellis/tasks/06-17-task-18-6-copilot-work-surface-refactor/info.md", "reason": "Task 18.6 target data relationships and safety rules"}
+{"path": ".trellis/tasks/06-17-task-18-6-copilot-work-surface-refactor/research.md", "reason": "Audit and reference synthesis for implement and check"}
+{"path": "apps/web/src/features/ai/AIConversationPanel.tsx", "reason": "Current copilot monolith and surface state"}
+{"path": "apps/web/src/features/ai/AIConversationPanel.test.tsx", "reason": "Existing focused web tests"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Current inspector and copilot layout CSS"}
+{"path": "apps/web/src/features/layout/workbench.tsx", "reason": "Workbench split and inspector primitives"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Copilot mount and fixed inspector width"}
+{"path": "packages/shared/src/ai.ts", "reason": "Existing AI DTO message part source run and action contracts"}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.ts", "reason": "Server projection and source provenance behavior"}
+{"path": "apps/api/src/modules/ai/ai.routes.ts", "reason": "AI route contracts if request or response changes"}
+{"path": "packages/db/prisma/schema.prisma", "reason": "Persistence guardrail if conversation storage changes become necessary"}
+{"path": "doc/Figures/copilot1.png", "reason": "Visual grammar reference for mature empty copilot launcher"}
+{"path": "doc/Figures/copilot2.png", "reason": "Visual grammar reference for source-grounded active answer state"}

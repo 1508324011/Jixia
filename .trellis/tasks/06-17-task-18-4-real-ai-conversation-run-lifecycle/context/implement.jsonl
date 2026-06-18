@@ -1,0 +1,22 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/tasks/06-15-mvp-private-ai-services/prd.md", "reason": "Prior backend AI privacy and service boundary"}
+{"path": ".trellis/tasks/06-16-mvp-ai-ui/prd.md", "reason": "Prior frontend AI conversation and privacy boundary"}
+{"path": ".trellis/tasks/06-17-post-mvp-workbench-anatomy-conversation-surface/prd.md", "reason": "Workbench conversation surface constraints"}
+{"path": ".trellis/tasks/06-17-post-mvp-workbench-interaction-correction/prd.md", "reason": "No writeback or fake interaction constraints"}
+{"path": "doc/MVP_rule.md", "reason": "Authoritative MVP privacy and server-first rules"}
+{"path": "doc/MVP_implement.md", "reason": "MVP implementation plan references"}
+{"path": ".trellis/spec/backend/shared-domain-contracts.md", "reason": "Shared contract boundary guidance"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Frontend component boundary guidance"}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.ts", "reason": "Core AI conversation send lifecycle service"}
+{"path": "apps/api/src/modules/ai/ai.routes.ts", "reason": "AI conversation route contract"}
+{"path": "apps/api/src/modules/ai/ai-config.service.ts", "reason": "Provider config ownership and metadata"}
+{"path": "apps/api/src/modules/ai/crypto.ts", "reason": "Server-side provider key crypto boundary"}
+{"path": "apps/api/src/modules/ai/ai-usage.service.ts", "reason": "Aggregate-only AI usage accounting"}
+{"path": "packages/shared/src/ai.ts", "reason": "Transport-safe AI DTO contracts"}
+{"path": "packages/db/prisma/schema.prisma", "reason": "AI conversation and usage persistence model"}
+{"path": "apps/web/src/features/ai/AIConversationPanel.tsx", "reason": "AI conversation panel lifecycle UI"}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.test.ts", "reason": "Backend conversation lifecycle coverage"}
+{"path": "apps/web/src/features/ai/AIConversationPanel.test.tsx", "reason": "Frontend conversation lifecycle coverage"}
+{"path": "packages/db/src/schema-rules.test.ts", "reason": "Schema privacy guardrails"}

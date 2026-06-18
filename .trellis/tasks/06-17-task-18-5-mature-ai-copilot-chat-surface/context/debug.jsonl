@@ -1,0 +1,40 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/tasks/06-17-task-18-5-mature-ai-copilot-chat-surface/prd.md", "reason": "Task 18.5 requirements and safety boundary"}
+{"path": "doc/MVP_rule.md", "reason": "Authoritative MVP privacy/server-first/no-writeback rules"}
+{"path": "doc/MVP_implement.md", "reason": "MVP implementation plan and AI surface references"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Pre-implementation discipline"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Cross-layer contract discipline"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse existing patterns before adding abstractions"}
+{"path": ".trellis/spec/backend/shared-domain-contracts.md", "reason": "Transport-safe shared AI DTO boundary"}
+{"path": ".trellis/spec/backend/api-foundation.md", "reason": "API route and response conventions"}
+{"path": ".trellis/spec/backend/database-guidelines.md", "reason": "Persistence and schema guardrails"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Workbench UI and component guidance"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Frontend state ownership guidance"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "Frontend DTO/type-safety guidance"}
+{"path": "packages/shared/src/ai.ts", "reason": "AI conversation DTOs, message parts, sources, runs, actions"}
+{"path": "packages/shared/src/index.ts", "reason": "Shared export boundary"}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.ts", "reason": "Server-owned conversation projection and lifecycle"}
+{"path": "apps/api/src/modules/ai/ai.routes.ts", "reason": "AI route contracts"}
+{"path": "apps/api/src/modules/ai/ai-provider-adapter.ts", "reason": "Provider adapter boundary and safe provider metadata"}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.test.ts", "reason": "Backend lifecycle/privacy tests to preserve and extend"}
+{"path": "apps/api/src/modules/ai/ai-provider-adapter.test.ts", "reason": "Provider adapter tests to preserve"}
+{"path": "packages/db/prisma/schema.prisma", "reason": "AI persistence model if structured messages require schema changes"}
+{"path": "packages/db/src/schema-rules.test.ts", "reason": "Schema privacy guardrails"}
+{"path": "apps/web/src/features/ai/AIConversationPanel.tsx", "reason": "Current copilot panel to refactor into mature chat surface"}
+{"path": "apps/web/src/features/ai/AIConversationPanel.test.tsx", "reason": "Frontend safety and copilot UX tests"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Workbench mounting and document-scoped context"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "Document page no-AI-writeback coverage"}
+{"path": "apps/web/src/features/layout/workbench.tsx", "reason": "Workbench/inspector primitives"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Workbench and copilot layout styling"}
+{"path": "doc/Figures/copilot1.png", "reason": "Reference empty-state copilot launchpad screenshot"}
+{"path": "doc/Figures/copilot2.png", "reason": "Reference active document-grounded copilot screenshot"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/chat/UnifiedChatModal.tsx", "reason": "ResearchClaw right drawer, session sidebar, context chips, composer"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/pages/papers/reader/page.tsx", "reason": "ResearchClaw split reader/chat, quick actions, attachments, send/stop"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/MessageStream.tsx", "reason": "ResearchClaw message stream, tool grouping, plan/error/permission cards"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/TextMessage.tsx", "reason": "ResearchClaw dense Markdown/code/table chat rendering"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/ToolCallCard.tsx", "reason": "ResearchClaw tool-call card pattern"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/PermissionCard.tsx", "reason": "ResearchClaw approval card pattern"}
+{"path": ".trellis/tasks/06-17-task-18-5-mature-ai-copilot-chat-surface/info.md", "reason": "Task 18.5 technical design and failure boundaries"}
+{"path": ".trellis/tasks/06-17-task-18-5-mature-ai-copilot-chat-surface/research.md", "reason": "Task 18.5 research-backed debugging context"}

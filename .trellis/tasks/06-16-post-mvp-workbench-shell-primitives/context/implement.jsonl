@@ -1,0 +1,36 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "frontend specification index for required guideline set"}
+{"path": ".trellis/spec/frontend/directory-structure.md", "reason": "server-first frontend boundaries and file ownership"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "IDE-like workbench visual and component constraints"}
+{"path": ".trellis/spec/frontend/hook-guidelines.md", "reason": "server-authorized data loading and hook constraints"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "draft revision and conflict state boundaries"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "frontend verification and smoke test expectations"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "shared payload typing and no suppression rules"}
+{"path": ".trellis/spec/guides/index.md", "reason": "general engineering guide index"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "pre-coding checklist and acceptance discipline"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "cross-layer contract and permission rules"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "reuse and no speculative framework constraints"}
+{"path": "doc/MVP_implement.md", "reason": "Task 18 post-MVP implementation sequence source of truth"}
+{"path": "doc/MVP_rule.md", "reason": "MVP server-first scope and AI/document boundary rules"}
+{"path": "doc/Design.md", "reason": "target product IA and IDE-like research workbench direction"}
+{"path": ".trellis/workspace/manual-qa-notes.md", "reason": "manual QA decisions driving shell and workbench refactor"}
+{"path": "apps/web/src/app/App.tsx", "reason": "current route model and shell mounting"}
+{"path": "apps/web/src/features/layout/AppShell.tsx", "reason": "current sidebar shell and navigation surface model"}
+{"path": "apps/web/src/lib/api.ts", "reason": "browser API helper and cookie-backed server boundary"}
+{"path": "apps/web/src/features/projects/ProjectListPage.tsx", "reason": "card-heavy project collection surface to refactor"}
+{"path": "apps/web/src/features/projects/ProjectDetailPage.tsx", "reason": "project workbench/detail surface to preserve and refactor"}
+{"path": "apps/web/src/features/documents/DocumentList.tsx", "reason": "project document list patterns and creation flow"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "high-risk editor page with draft revision conflict behavior"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "current block editor canvas and card-heavy block UI"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "server-issued attachment upload/open UI boundary"}
+{"path": "apps/web/src/features/ai/AISettingsPage.tsx", "reason": "AI provider settings and secret-safe key handling"}
+{"path": "apps/web/src/features/ai/AIUsagePage.tsx", "reason": "AI usage surface to move into shared workbench primitives"}
+{"path": "apps/web/src/features/ai/AIConversationPanel.tsx", "reason": "embedded document copilot panel with no writeback path"}
+{"path": "apps/web/src/app/App.test.tsx", "reason": "route and shell behavior tests affected by nav changes"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "editor draft save conflict no-AI-writeback tests"}
+{"path": "apps/web/src/features/ai/AISettingsPage.test.tsx", "reason": "AI key secrecy and settings behavior tests"}
+{"path": "apps/web/e2e/helpers.ts", "reason": "browser smoke helper selectors and login setup"}
+{"path": "apps/web/e2e/auth-and-project.spec.ts", "reason": "auth project smoke flow affected by nav labels"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "document save smoke flow affected by editor shell"}
+{"path": "apps/web/e2e/attachment-upload.spec.ts", "reason": "attachment smoke flow and server boundary checks"}

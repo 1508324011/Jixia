@@ -1,0 +1,16 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/tasks/06-18-task-18-7-standalone-ai-chat-dialog-foundation/prd.md", "reason": "Prior standalone chat foundation requirements and non-negotiable server-first boundaries"}
+{"path": "apps/web/src/features/ai/chat", "reason": "Current Jixia standalone chat UI components to refactor"}
+{"path": "apps/web/src/features/ai/AISettingsPage.tsx", "reason": "Current provider settings page to simplify into card workflow"}
+{"path": "apps/api/src/modules/ai", "reason": "Current AI config, conversation, usage, and provider adapter services"}
+{"path": "packages/shared/src/ai.ts", "reason": "Shared AI DTOs likely need stream/run/provider-test contracts"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/hooks/use-acp-chat-stream.ts", "reason": "Reference streaming chunk accumulation pattern"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/chat/UnifiedChatModal.tsx", "reason": "Reference mature chat drawer/history/composer anatomy"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/provider-settings.tsx", "reason": "Reference provider card settings workflow"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/model-combobox.tsx", "reason": "Reference searchable provider-grouped model selector"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/markdown-content.tsx", "reason": "Reference code block copy and highlighted markdown rendering"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/main/services/acp-chat.service.ts", "reason": "Reference run/job streaming and cancellation service model"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Cross-layer API/shared DTO changes are required"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse ResearchClaw/mature chat patterns before hand-rolling"}

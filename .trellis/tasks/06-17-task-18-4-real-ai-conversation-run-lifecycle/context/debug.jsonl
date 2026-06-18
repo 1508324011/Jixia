@@ -1,0 +1,14 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.ts", "reason": "Core AI conversation send lifecycle service"}
+{"path": "apps/api/src/modules/ai/ai.routes.ts", "reason": "AI conversation route contract"}
+{"path": "apps/api/src/modules/ai/ai-config.service.ts", "reason": "Provider config ownership and metadata"}
+{"path": "apps/api/src/modules/ai/crypto.ts", "reason": "Server-side provider key crypto boundary"}
+{"path": "apps/api/src/modules/ai/ai-usage.service.ts", "reason": "Aggregate-only AI usage accounting"}
+{"path": "packages/shared/src/ai.ts", "reason": "Transport-safe AI DTO contracts"}
+{"path": "packages/db/prisma/schema.prisma", "reason": "AI conversation and usage persistence model"}
+{"path": "apps/web/src/features/ai/AIConversationPanel.tsx", "reason": "AI conversation panel lifecycle UI"}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.test.ts", "reason": "Backend conversation lifecycle coverage"}
+{"path": "apps/web/src/features/ai/AIConversationPanel.test.tsx", "reason": "Frontend conversation lifecycle coverage"}
+{"path": "packages/db/src/schema-rules.test.ts", "reason": "Schema privacy guardrails"}

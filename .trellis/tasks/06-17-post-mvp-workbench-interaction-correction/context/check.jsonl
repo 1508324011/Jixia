@@ -1,0 +1,39 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "IDE-like ResearchClaw-adjacent UI direction and card-avoidance rules"}
+{"path": ".trellis/spec/frontend/directory-structure.md", "reason": "frontend server-first boundaries and file organization"}
+{"path": ".trellis/spec/frontend/hook-guidelines.md", "reason": "server-authorized data and permission rendering constraints"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "document draft/revision state and client-state boundaries"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "web test and smoke verification expectations"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "typed frontend changes without suppressions"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "pre-implementation discipline and acceptance framing"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "server-first contract and boundary checks"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "avoid speculative helpers and reuse existing primitives carefully"}
+{"path": "doc/MVP_implement.md", "reason": "post-MVP implementation sequence and Task 18/19 context"}
+{"path": ".trellis/workspace/manual-qa-notes.md", "reason": "manual QA decisions behind workbench and editor redesign"}
+{"path": ".trellis/tasks/06-16-post-mvp-workbench-shell-primitives/prd.md", "reason": "predecessor Task 18 requirements and known limitations"}
+{"path": ".trellis/tasks/06-17-post-mvp-workbench-interaction-correction/prd.md", "reason": "Task 18.2 requirements and acceptance criteria"}
+{"path": "apps/web/src/app/App.tsx", "reason": "route model and surface routing affected by shell correction"}
+{"path": "apps/web/src/features/layout/AppShell.tsx", "reason": "current shell/sidebar navigation needing interaction correction"}
+{"path": "apps/web/src/features/layout/workbench.tsx", "reason": "current primitive components to refine or constrain"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "current boxed visual grammar and density tokens"}
+{"path": "apps/web/src/features/projects/ProjectListPage.tsx", "reason": "project object list surface using current primitives"}
+{"path": "apps/web/src/features/projects/ProjectDetailPage.tsx", "reason": "project detail surface and metadata/document layout"}
+{"path": "apps/web/src/features/documents/DocumentList.tsx", "reason": "document object browser surface"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "high-risk editor page with draft/revision/conflict behavior"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "block editor UI needing canvas-first correction"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "attachment UI safety and nested panel interaction"}
+{"path": "apps/web/src/features/ai/AIConversationPanel.tsx", "reason": "right copilot panel needing true conversation structure"}
+{"path": "apps/web/src/features/ai/AISettingsPage.tsx", "reason": "AI provider key secrecy and settings surface preservation"}
+{"path": "apps/web/src/features/ai/AIUsagePage.tsx", "reason": "AI usage/status surface preservation"}
+{"path": "apps/web/src/app/App.test.tsx", "reason": "shell/auth routing expectations"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "draft/revision/conflict/no-AI-writeback tests"}
+{"path": "apps/web/src/features/ai/AISettingsPage.test.tsx", "reason": "AI key secrecy regression tests"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "manual-save/editor smoke expectations"}
+{"path": "AGENTS.md", "reason": "Repository engineering charter and hard server-first blocks"}
+{"path": "doc/Design.md", "reason": "Approved IDE-like workbench product design reference"}
+{"path": "doc/MVP_rule.md", "reason": "MVP server-first scope and AI/editor invariants"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Attachment upload safety flow must remain unchanged"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.test.ts", "reason": "Attachment upload safety regression coverage"}
+{"path": ".trellis/tasks/06-17-post-mvp-workbench-interaction-correction/info.md", "reason": "Task 18.2 technical design and implementation boundaries"}
+{"path": ".trellis/tasks/06-17-post-mvp-workbench-interaction-correction/mature-ui-research.md", "reason": "Mature workbench/chat/editor research synthesis for Task 18.2"}

@@ -1,0 +1,7 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/tasks/06-17-task-18-6-copilot-work-surface-refactor/info.md", "reason": "Task 18.6 target data relationships and safety rules"}
+{"path": ".trellis/tasks/06-17-task-18-6-copilot-work-surface-refactor/research.md", "reason": "Audit and reference synthesis for debugging"}
+{"path": "apps/web/src/features/ai/AIConversationPanel.tsx", "reason": "Primary copilot surface for debugging implementation failures"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Primary layout CSS for debugging surface regressions"}
