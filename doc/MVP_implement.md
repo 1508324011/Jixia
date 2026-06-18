@@ -1837,6 +1837,254 @@ pnpm --filter @jixia/web e2e
 
 Expected: unit tests, builds, and browser smoke tests pass.
 
+
+---
+
+## Post-MVP manual QA implementation sequence
+
+Manual QA confirmed that Jixia should not add full `Home`, `Search`, `Library`,
+or `Notebook` pages on top of the current card-heavy MVP shell. The next
+implementation stage must first establish a compact research workbench foundation,
+then expand product surfaces in an order that follows available server-owned
+contracts.
+
+This sequence extends the MVP after Tasks 12-17. It must not weaken the
+server-first rules already implemented for cookie sessions, project permissions,
+document drafts, formal revisions, attachment storage, AI keys, AI writeback
+boundaries, or audit redaction.
+
+### Post-MVP Stage A: Refactor workbench shell and UI primitives
+
+**Decision:** do this before building new top-level product surfaces.
+
+**Primary files:**
+
+- Update: `apps/web/src/app/App.tsx`
+- Update: `apps/web/src/features/layout/AppShell.tsx`
+- Create or update: shared web workbench primitives under `apps/web/src/features/layout/` or a focused shared UI directory
+- Update tests that encode route labels, headings, and shell navigation
+
+- [ ] **Step 1: Define the target surface matrix**
+
+Represent the post-MVP product spine explicitly:
+
+```text
+Home
+Search
+Library
+Projects
+Notebook
+AI
+Setting
+```
+
+`Setting` must be bottom-pinned and visually separated from daily work surfaces.
+`AI` is a first-class standalone chat workspace. It must open to a clean private
+conversation surface without automatic current-document context; future document
+grounding belongs behind explicit server-authorized attachment controls.
+
+- [ ] **Step 2: Extract only demanded workbench primitives**
+
+Keep this narrow. Extract primitives already repeated by current pages instead
+of creating a speculative design system:
+
+```text
+WorkbenchSurface
+SurfaceHeader
+Toolbar
+Pane
+Panel
+SplitPane
+ListRow
+MetaGrid
+Field
+Button
+Pill
+Notice
+EmptyState
+StatusStrip
+```
+
+Cards may remain for empty states, onboarding, compact summaries, and visual
+assets, but object-heavy surfaces must default to rows, tables, panes,
+inspectors, and compact toolbars.
+
+- [ ] **Step 3: Apply primitives to existing implemented surfaces**
+
+Refactor existing UI without changing product behavior:
+
+```text
+ProjectListPage
+ProjectDetailPage
+DocumentList
+DocumentEditorPage
+AISettingsPage
+AIUsagePage
+AIConversationPanel
+AIChatDialog
+AttachmentBlock
+```
+
+Preserve existing API calls, cookie-based auth, document permissions, attachment
+upload/download flows, AI key secrecy, and AI no-writeback behavior.
+
+- [ ] **Step 4: Verify shell primitive refactor**
+
+Run the smallest relevant web checks first, then broader checks before handoff:
+
+```bash
+pnpm --filter @jixia/web test
+pnpm --filter @jixia/web build
+```
+
+Expected: current auth, project, document, attachment, and AI behavior remains
+semantically unchanged while the shell/navigation can host the target IA.
+
+### Post-MVP Stage B: Redesign Document Editor as the proof surface
+
+**Decision:** use the document editor to prove the workbench direction before
+implementing broad new pages.
+
+**Primary files:**
+
+- Update: `apps/web/src/features/documents/DocumentEditorPage.tsx`
+- Update: `apps/web/src/features/documents/editor/JixiaEditor.tsx`
+- Update: `apps/web/src/features/ai/AIConversationPanel.tsx`
+- Update: `apps/web/src/features/attachments/AttachmentBlock.tsx`
+- Update: `apps/web/src/features/documents/DocumentEditorPage.test.tsx`
+- Update: `apps/web/e2e/document-save.spec.ts`
+
+- [ ] **Step 1: Make the editor editor-first**
+
+Move away from one heavy card per block. The editor should feel closer to a
+continuous Notion-like writing surface with lightweight block controls, compact
+insert affordances, and unobtrusive block type changes.
+
+- [ ] **Step 2: Preserve server-first document behavior**
+
+Keep these behaviors intact:
+
+```text
+GET /documents/:documentId
+PUT /documents/:documentId/draft
+POST /documents/:documentId/revisions
+409 conflict opens human merge flow
+archived documents are read-only
+AI cannot write into Document
+```
+
+- [ ] **Step 3: Reframe AI as contextual copilot/inspector**
+
+The embedded AI panel should remain document-scoped and suggestion-oriented. It
+may become a right workbench pane, but it must not become the authoritative edit
+path or silently persist generated content.
+
+- [ ] **Step 4: Verify editor redesign**
+
+Run:
+
+```bash
+pnpm --filter @jixia/web test -- DocumentEditorPage
+pnpm --filter @jixia/web build
+pnpm --filter @jixia/web e2e -- document-save
+```
+
+Expected: draft save, formal revision save, conflict display, read-only state,
+and AI no-writeback guarantees still pass.
+
+### Post-MVP Stage C: Add Notebook as the first new product surface
+
+**Decision:** Notebook comes before full Home/Search/Library because notebook
+contracts already exist in the document model.
+
+**Primary files:**
+
+- Update: `apps/web/src/app/App.tsx`
+- Update: `apps/web/src/features/layout/AppShell.tsx`
+- Create: notebook web surface under `apps/web/src/features/notebook/`
+- Update or add server routes only if a notebook listing/opening contract is missing
+- Update shared contracts only if needed for transport-safe notebook list payloads
+
+- [ ] **Step 1: Reuse the shared document editor frame**
+
+Notebook and Project Docs share the same editor grammar, draft mechanism,
+revision mechanism, attachment behavior, and document-scoped AI. Ownership and
+visibility semantics differ; the editor core should not fork.
+
+- [ ] **Step 2: Confirm server-owned notebook list behavior**
+
+Use existing server contracts where possible:
+
+```text
+Document.type = notebook | project
+POST /documents/notebook
+GET /documents/:documentId
+PUT /documents/:documentId/draft
+POST /documents/:documentId/revisions
+```
+
+If notebook listing is not available, add a minimal server-authorized notebook
+listing endpoint before building a rich Notebook landing page.
+
+- [ ] **Step 3: Preserve Notebook-to-Project boundary**
+
+Do not implement automatic promotion from personal Notebook to Project Docs.
+Only explicit copy, rewrite, or organization flows are allowed.
+
+- [ ] **Step 4: Verify Notebook surface**
+
+Run focused API/web tests for notebook creation, listing/opening, draft save,
+formal save, and permission boundaries before broader web verification.
+
+### Post-MVP Stage D: Add lightweight Home only after Notebook stabilizes
+
+**Decision:** Home should aggregate real server-authorized work state; it should
+not become a card dashboard or project-list wrapper.
+
+- [ ] **Step 1: Show continuation, not a generic dashboard**
+
+Home should start with compact rows such as recent documents, recent projects,
+recent notebooks, unresolved save/conflict status, and relevant AI/job status
+only when those records are server-backed.
+
+- [ ] **Step 2: Keep Home card-light**
+
+Cards are acceptable for short summaries or empty states. Do not use Home to
+reintroduce the SaaS dashboard/card pattern that manual QA rejected.
+
+- [ ] **Step 3: Verify Home data boundaries**
+
+Home must only render records the current user is authorized to see. Project
+content still requires project membership.
+
+### Post-MVP Stage E: Define Search and Library contracts before full UI
+
+**Decision:** defer full `Search` and `Library` implementation until server-owned
+literature, asset, citation, and external discovery contracts are explicit.
+
+- [ ] **Step 1: Keep Search semantics external**
+
+Top-level `Search` means external literature/DOI/URL discovery, not internal
+global object search. Internal object lookup should be handled by command/global
+search separately.
+
+- [ ] **Step 2: Keep Library semantics personal/local**
+
+`Library` means stored literature/assets owned by the user's workspace context,
+with local search over saved assets. It is not the same as external discovery.
+
+- [ ] **Step 3: Add contracts before UI-heavy work**
+
+Do not build full Search/Library pages until the relevant server-owned models
+and shared payloads exist, such as external discovery results, saved literature
+assets, reader metadata, references, citations, excerpts, and provenance.
+
+- [ ] **Step 4: Verify no fake client-owned library state**
+
+Search and Library must not rely on fake browser-only state or raw provider keys.
+They must follow the same server-first storage, authorization, and audit rules as
+Projects, Documents, Attachments, and AI.
+
 ---
 
 ## Self-review checklist
