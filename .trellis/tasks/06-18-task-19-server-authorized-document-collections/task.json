@@ -1,0 +1,26 @@
+{
+  "title": "Task 19 Server-authorized document collections",
+  "slug": "task-19-server-authorized-document-collections",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-18T15:17:48+00:00",
+  "updatedAt": "2026-06-18T16:02:51+00:00",
+  "current_phase": "implement",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement",
+      "description": "Implement server-authorized Project Docs and Notebook collection routes, UI surfaces, and tests"
+    },
+    {
+      "phase": 2,
+      "action": "check",
+      "description": "Validate permissions, cross-layer contracts, Notebook/Project isolation, tests, lint, and build"
+    },
+    {
+      "phase": 3,
+      "action": "finish",
+      "description": "Run final completion check and stop at Gate A for manual review"
+    }
+  ]
+}
