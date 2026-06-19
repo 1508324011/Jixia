@@ -3,7 +3,6 @@ import "@blocknote/mantine/style.css";
 
 import {
   BlockNoteSchema,
-  type BlockNoteEditor,
   type PartialBlock,
 } from "@blocknote/core";
 import { BlockNoteView } from "@blocknote/mantine";
@@ -17,9 +16,19 @@ import {
   type EditorBlockType,
   type EditorSnapshot
 } from "@jixia/shared";
-import { forwardRef, type ReactElement, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  type ClipboardEvent,
+  type DragEvent,
+  forwardRef,
+  type ReactElement,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState
+} from "react";
 
 import { AttachmentBlock } from "../../attachments/AttachmentBlock";
+import { uploadAttachment, type UploadedAttachmentResult } from "../../attachments/uploadAttachment";
 import { Button } from "../../layout/workbench";
 
 export type JixiaEditorHandle = {
@@ -37,16 +46,27 @@ type JixiaEditorProps = {
 const jixiaImageBlock = createJixiaAttachmentBlockSpec("image");
 const jixiaFileBlock = createJixiaAttachmentBlockSpec("file");
 const jixiaCalloutBlock = createJixiaCalloutBlockSpec();
+const jixiaCodeBlock = createJixiaCodeBlockSpec();
 
 const jixiaBlockNoteSchema = BlockNoteSchema.create().extend({
   blockSpecs: {
     jixiaCallout: jixiaCalloutBlock(),
+    jixiaCodeBlock: jixiaCodeBlock(),
     jixiaImage: jixiaImageBlock(),
     jixiaFile: jixiaFileBlock()
   }
 });
 
-type JixiaBlockNoteEditor = BlockNoteEditor;
+type JixiaBlockNoteEditor = {
+  documentId?: string;
+  isEditable?: boolean;
+  readonly document: readonly { readonly id: string }[];
+  readonly getTextCursorPosition?: () => { readonly block?: { readonly id: string } };
+  readonly insertBlocks: (blocks: readonly PartialBlock[], referenceBlock: { readonly id: string }, placement: "after" | "before") => void;
+  readonly removeBlocks: (blocks: readonly string[]) => void;
+  readonly replaceBlocks: (blocksToRemove: readonly { readonly id: string }[], blocksToInsert: readonly PartialBlock[]) => void;
+  readonly updateBlock: (block: string, update: { readonly props?: Record<string, boolean | number | string> }) => void;
+};
 type JixiaBlockNoteBlock = {
   readonly id: string;
   readonly type: string;
@@ -61,6 +81,8 @@ type JixiaBlockNotePartialBlock = {
   readonly content?: unknown;
   readonly children?: readonly JixiaBlockNotePartialBlock[];
 };
+
+type AttachmentUploadStatus = "uploading" | "success" | "error";
 
 type JixiaBlockNoteViewProps = {
   readonly "data-testid": string;
@@ -115,6 +137,26 @@ const blockLabels: Record<EditorBlockType, string> = {
   file: "File attachment"
 };
 
+const codeLanguageOptions = [
+  "text",
+  "bash",
+  "css",
+  "html",
+  "json",
+  "js",
+  "markdown",
+  "python",
+  "r",
+  "sql",
+  "ts",
+  "tsx",
+  "typescript",
+  "yaml"
+] as const;
+type CodeLanguageOption = (typeof codeLanguageOptions)[number];
+const codeLanguageOptionSet = new Set<string>(codeLanguageOptions);
+let generatedBlockSequence = 0;
+
 type AttachmentEditorBlock = EditorBlock & {
   readonly type: AttachmentBlockType;
 };
@@ -124,6 +166,7 @@ export const JixiaEditor = forwardRef<JixiaEditorHandle, JixiaEditorProps>(funct
   ref
 ) {
   const [insertType, setInsertType] = useState<EditorBlockType>("paragraph");
+  const [dragState, setDragState] = useState<"idle" | "ready">("idle");
   const lastSnapshotRef = useRef<EditorSnapshot>(ensureSnapshotHasBlocks(value));
   const skipNextChangeRef = useRef(false);
   const initialDocumentVersionKeyRef = useRef(documentVersionKey);
@@ -134,7 +177,7 @@ export const JixiaEditor = forwardRef<JixiaEditorHandle, JixiaEditorProps>(funct
     initialContentRef.current = snapshotToBlockNoteBlocks(value);
   }
 
-  const editor = useCreateBlockNote(
+  const blockNoteEditor = useCreateBlockNote(
     {
       schema: jixiaBlockNoteSchema,
       initialContent: initialContentRef.current as unknown as PartialBlock[],
@@ -155,6 +198,7 @@ export const JixiaEditor = forwardRef<JixiaEditorHandle, JixiaEditorProps>(funct
     },
     [documentVersionKey]
   );
+  const editor = blockNoteEditor as unknown as JixiaBlockNoteEditor;
   editor.documentId = documentId;
   editor.isEditable = !readOnly;
 
@@ -187,19 +231,95 @@ export const JixiaEditor = forwardRef<JixiaEditorHandle, JixiaEditorProps>(funct
     }
 
     const currentBlocks = editor.document;
-    const referenceBlock = currentBlocks.at(-1);
+    const nextBlock = createBlock(type, currentBlocks.length + 1);
+    const nextBlockNoteBlock = editorBlockToBlockNoteBlock(nextBlock);
+    const referenceBlock = currentBlocks[currentBlocks.length - 1];
     if (!referenceBlock) {
       skipNextChangeRef.current = true;
-      editor.replaceBlocks(editor.document, [editorBlockToBlockNoteBlock(createBlock(type, 1))] as unknown as PartialBlock[]);
+      editor.replaceBlocks(editor.document, [nextBlockNoteBlock] as unknown as PartialBlock[]);
       publishRuntimeSnapshot();
       return;
     }
 
     editor.insertBlocks(
-      [editorBlockToBlockNoteBlock(createBlock(type, currentBlocks.length + 1))] as unknown as PartialBlock[],
+      [nextBlockNoteBlock] as unknown as PartialBlock[],
       referenceBlock,
       "after"
     );
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLDivElement>): void {
+    if (readOnly) {
+      return;
+    }
+
+    const files = filesFromClipboardData(event.clipboardData);
+    if (files.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    void insertUploadedFiles(files);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>): void {
+    if (readOnly || !dataTransferHasFiles(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDragState("ready");
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLDivElement>): void {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setDragState("idle");
+    }
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>): void {
+    if (readOnly) {
+      return;
+    }
+
+    const files = filesFromDataTransfer(event.dataTransfer);
+    if (files.length === 0) {
+      setDragState("idle");
+      return;
+    }
+
+    event.preventDefault();
+    setDragState("idle");
+    void insertUploadedFiles(files);
+  }
+
+  async function insertUploadedFiles(files: readonly File[]): Promise<void> {
+    for (const file of files) {
+      const blockType = attachmentBlockTypeForFile(file);
+      const blockId = generatedBlockId(blockType);
+      insertPartialBlockAtCursor(editor, attachmentUploadPlaceholderBlock(blockId, blockType, file));
+
+      try {
+        const uploadedAttachment = await uploadAttachment({
+          documentId,
+          blockType,
+          file
+        });
+        editor.updateBlock(blockId, {
+          props: uploadedAttachmentProps(uploadedAttachment, "success", "Attachment uploaded and linked to this block.")
+        });
+      } catch (error) {
+        editor.updateBlock(blockId, {
+          props: attachmentUploadProps(
+            blockType,
+            file,
+            "error",
+            error instanceof Error ? error.message : "Unable to upload attachment."
+          )
+        });
+      }
+    }
   }
 
   return (
@@ -230,7 +350,20 @@ export const JixiaEditor = forwardRef<JixiaEditorHandle, JixiaEditorProps>(funct
         </div>
       </div>
 
-      <div className="jixia-blocknote-shell" data-readonly={readOnly ? "true" : "false"}>
+      <div
+        className="jixia-blocknote-shell"
+        data-drag-state={dragState}
+        data-readonly={readOnly ? "true" : "false"}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onPaste={handlePaste}
+      >
+        {!readOnly ? (
+          <p className="jixia-blocknote-shell__drop-hint" role="status">
+            Drop or paste images/files to upload them into this document.
+          </p>
+        ) : null}
         <JixiaBlockNoteView
           data-testid="jixia-blocknote-view"
           emojiPicker={false}
@@ -321,8 +454,8 @@ function editorBlockToBlockNoteBlock(block: EditorBlock): JixiaBlockNotePartialB
     case "codeBlock":
       return {
         id: block.id,
-        type: "codeBlock",
-        props: { language: readStringAttr(block.attrs, "language") ?? "text" },
+        type: "jixiaCodeBlock",
+        props: codeBlockProps(block),
         content: block.text ?? "",
         children
       };
@@ -393,6 +526,8 @@ function blockNoteBlockToEditorBlock(block: JixiaBlockNotePartialBlock): readonl
       return [compactBlock({ id: blockId, type: "quote", text: inlineText(block.content), content })];
     case "jixiaCallout":
       return [compactBlock({ id: blockId, type: "callout", attrs: { tone: readStringProp(blockProps, "tone") ?? "note" }, text: inlineText(block.content), content })];
+    case "jixiaCodeBlock":
+      return [compactBlock({ id: blockId, type: "codeBlock", attrs: codeBlockAttrs(blockProps), text: inlineText(block.content), content })];
     case "codeBlock":
       return [compactBlock({ id: blockId, type: "codeBlock", attrs: { language: readStringProp(blockProps, "language") ?? "text" }, text: inlineText(block.content), content })];
     case "divider":
@@ -422,7 +557,8 @@ function attachmentBlockToBlockNoteBlock(block: EditorBlock, type: "jixiaImage" 
       mimeType: metadata?.mimeType ?? "",
       sizeBytes: metadata?.sizeBytes ?? 0,
       checksum: metadata?.checksum ?? "",
-      uploadedAt: metadata?.uploadedAt ?? ""
+      uploadedAt: metadata?.uploadedAt ?? "",
+      ...attachmentDisplayMetadataProps(block.attrs, block.type as AttachmentBlockType)
     },
     children: block.content?.map(editorBlockToBlockNoteBlock) ?? []
   };
@@ -439,29 +575,33 @@ function blockNoteAttachmentBlockToEditorBlock(
   const sizeBytes = readNumberProp(blockProps, "sizeBytes");
   const uploadedAt = readStringProp(blockProps, "uploadedAt");
   const checksum = readStringProp(blockProps, "checksum");
+  const attachmentMetadata = fileName && mimeType && sizeBytes !== undefined && uploadedAt
+    ? {
+        fileName,
+        mimeType,
+        sizeBytes,
+        checksum: checksum || null,
+        uploadedAt
+      }
+    : undefined;
+  const attrs = compactAttrs({
+    ...(attachmentMetadata ? { attachment: attachmentMetadata } : {}),
+    ...attachmentDisplayMetadataAttrs(blockProps, type)
+  });
   const content = (block.children ?? []).map(blockNoteBlockToEditorBlock).flat();
 
   return compactBlock({
     id: block.id ?? generatedBlockId(type),
     type,
     attachmentId,
-    attrs: fileName && mimeType && sizeBytes !== undefined && uploadedAt
-      ? {
-          attachment: {
-            fileName,
-            mimeType,
-            sizeBytes,
-            checksum: checksum || null,
-            uploadedAt
-          }
-        }
-      : undefined,
+    attrs,
     content
   });
 }
 
 function generatedBlockId(type: string): string {
-  return `${type || "paragraph"}-${Date.now().toString(36)}`;
+  generatedBlockSequence += 1;
+  return `${type || "paragraph"}-${Date.now().toString(36)}-${generatedBlockSequence.toString(36)}`;
 }
 
 function markdownTableBlockToBlockNoteTable(block: EditorBlock): JixiaBlockNotePartialBlock {
@@ -574,6 +714,10 @@ function inlineEntryText(entry: unknown): string {
     return entry.text;
   }
 
+  if (entry.type === "hardBreak") {
+    return "\n";
+  }
+
   if (Array.isArray(entry.content)) {
     return blockContentText(entry.content);
   }
@@ -583,6 +727,102 @@ function inlineEntryText(entry: unknown): string {
   }
 
   return "";
+}
+
+function createJixiaCodeBlockSpec() {
+  return createReactBlockSpec(
+    {
+      type: "jixiaCodeBlock",
+      propSchema: {
+        language: { default: "text" },
+        wrap: { default: false },
+        hasWrap: { default: false }
+      },
+      content: "inline"
+    },
+    {
+      meta: {
+        selectable: true
+      },
+      render: ({ block, contentRef, editor }) => {
+        const language = typeof block.props.language === "string" ? block.props.language : "text";
+        const wrap = Boolean(block.props.wrap);
+        const hasWrap = Boolean(block.props.hasWrap);
+        const isEditable = (editor as unknown as { readonly isEditable?: boolean }).isEditable !== false;
+
+        return (
+          <section className="jixia-code-block" data-wrap={wrap ? "true" : "false"}>
+            <div className="jixia-code-block__toolbar" contentEditable={false}>
+              {isEditable ? (
+                <label className="jixia-code-block__language">
+                  <span>Language</span>
+                  <select
+                    aria-label="Code block language"
+                    onChange={(event) => {
+                      editor.updateBlock(block.id, {
+                        props: {
+                          language: event.currentTarget.value,
+                          wrap,
+                          hasWrap
+                        }
+                      });
+                    }}
+                    value={language}
+                  >
+                    {codeLanguageOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <span aria-label="Code block language" className="jixia-code-block__language">
+                  <span>Language</span>
+                  {language}
+                </span>
+              )}
+              <button
+                aria-label="Copy code block"
+                className="jixia-code-block__control"
+                onClick={(event) => {
+                  const codeBlock = event.currentTarget.closest(".jixia-code-block");
+                  const codeText = codeBlock?.querySelector(".jixia-code-block__content")?.textContent ?? "";
+                  void navigator.clipboard?.writeText(codeText);
+                }}
+                type="button"
+              >
+                Copy
+              </button>
+              {isEditable ? (
+                <button
+                  aria-label={wrap ? "Disable code wrapping" : "Enable code wrapping"}
+                  aria-pressed={wrap}
+                  className="jixia-code-block__control"
+                  onClick={() => {
+                    editor.updateBlock(block.id, {
+                      props: {
+                        language,
+                        wrap: !wrap,
+                        hasWrap: true
+                      }
+                    });
+                  }}
+                  type="button"
+                >
+                  {wrap ? "Unwrap" : "Wrap"}
+                </button>
+              ) : null}
+            </div>
+            <pre className="jixia-code-block__pre">
+              <code className="jixia-code-block__content" ref={contentRef} spellCheck={false} />
+            </pre>
+          </section>
+        );
+      },
+      toExternalHTML: ({ contentRef }) => <pre><code ref={contentRef} /></pre>
+    }
+  );
 }
 
 function createJixiaAttachmentBlockSpec(type: AttachmentBlockType) {
@@ -601,7 +841,22 @@ function createJixiaAttachmentBlockSpec(type: AttachmentBlockType) {
         mimeType: { default: "" },
         sizeBytes: { default: 0 },
         checksum: { default: "" },
-        uploadedAt: { default: "" }
+        uploadedAt: { default: "" },
+        caption: { default: "" },
+        altText: { default: "" },
+        description: { default: "" },
+        previewWidth: { default: 420 },
+        showPreview: { default: type === "image" },
+        hasCaption: { default: false },
+        hasAltText: { default: false },
+        hasDescription: { default: false },
+        hasPreviewWidth: { default: false },
+        hasShowPreview: { default: false },
+        uploadStatus: { default: "" },
+        uploadMessage: { default: "" },
+        pendingFileName: { default: "" },
+        pendingMimeType: { default: "" },
+        pendingSizeBytes: { default: 0 }
       },
       content: "none"
     },
@@ -617,7 +872,11 @@ function createJixiaAttachmentBlockSpec(type: AttachmentBlockType) {
               props: editorBlockAttachmentProps(nextBlock)
             });
           }}
+          onRemove={() => {
+            editor.removeBlocks([block.id]);
+          }}
           readOnly={!editor.isEditable}
+          runtimeUpload={attachmentRuntimeUploadProps(block.props)}
         />
       ),
       toExternalHTML: ({ block }) => (
@@ -661,22 +920,26 @@ function attachmentPropsToEditorBlock(
   const sizeBytes = readNumberProp(props, "sizeBytes");
   const checksum = readStringProp(props, "checksum");
   const uploadedAt = readStringProp(props, "uploadedAt");
+  const attachmentMetadata = fileName && mimeType && sizeBytes !== undefined && uploadedAt
+    ? {
+        attachment: {
+          fileName,
+          mimeType,
+          sizeBytes,
+          checksum: checksum || null,
+          uploadedAt
+        }
+      }
+    : {};
 
   return compactBlock({
     id,
     type,
     attachmentId,
-    attrs: fileName && mimeType && sizeBytes !== undefined && uploadedAt
-      ? {
-          attachment: {
-            fileName,
-            mimeType,
-            sizeBytes,
-            checksum: checksum || null,
-            uploadedAt
-          }
-        }
-      : undefined
+    attrs: compactAttrs({
+      ...attachmentMetadata,
+      ...attachmentDisplayMetadataAttrs(props, type)
+    })
   }) as AttachmentEditorBlock;
 }
 
@@ -689,12 +952,86 @@ function editorBlockAttachmentProps(block: EditorBlock): Record<string, boolean 
     mimeType: metadata?.mimeType ?? "",
     sizeBytes: metadata?.sizeBytes ?? 0,
     checksum: metadata?.checksum ?? "",
-    uploadedAt: metadata?.uploadedAt ?? ""
+    uploadedAt: metadata?.uploadedAt ?? "",
+    ...attachmentDisplayMetadataProps(block.attrs, block.type as AttachmentBlockType)
   };
 }
 
 function blockIndex(editor: { readonly document: readonly { readonly id: string }[] }, blockId: string): number {
   return Math.max(0, editor.document.findIndex((block) => block.id === blockId));
+}
+
+function attachmentDisplayMetadataProps(
+  attrs: EditorBlock["attrs"],
+  type: AttachmentBlockType
+): Record<string, boolean | number | string> {
+  const metadata = attachmentDisplayMetadataAttrs(attrs ?? {}, type);
+
+  return {
+    caption: typeof metadata.caption === "string" ? metadata.caption : "",
+    altText: typeof metadata.altText === "string" ? metadata.altText : "",
+    description: typeof metadata.description === "string" ? metadata.description : "",
+    previewWidth: typeof metadata.previewWidth === "number" ? metadata.previewWidth : 420,
+    showPreview: typeof metadata.showPreview === "boolean" ? metadata.showPreview : type === "image",
+    hasCaption: typeof metadata.caption === "string",
+    hasAltText: typeof metadata.altText === "string",
+    hasDescription: typeof metadata.description === "string",
+    hasPreviewWidth: typeof metadata.previewWidth === "number",
+    hasShowPreview: typeof metadata.showPreview === "boolean"
+  };
+}
+
+function attachmentDisplayMetadataAttrs(
+  props: Record<string, unknown>,
+  type: AttachmentBlockType
+): EditorBlockAttributes {
+  const hasCaption = hasAuthoredAttachmentProp(props, "hasCaption", safeDisplayText(readStringProp(props, "caption")) !== undefined);
+  const hasAltText = hasAuthoredAttachmentProp(props, "hasAltText", safeDisplayText(readStringProp(props, "altText")) !== undefined);
+  const hasDescription = hasAuthoredAttachmentProp(props, "hasDescription", safeDisplayText(readStringProp(props, "description")) !== undefined);
+  const hasPreviewWidth = hasAuthoredAttachmentProp(props, "hasPreviewWidth", safePreviewWidth(readNumberProp(props, "previewWidth")) !== undefined);
+  const hasShowPreview = hasAuthoredAttachmentProp(props, "hasShowPreview", readBooleanProp(props, "showPreview") !== undefined);
+
+  return compactAttrs({
+    ...(hasCaption ? { caption: safeDisplayText(readStringProp(props, "caption")) ?? "" } : {}),
+    ...(type === "image" && hasAltText
+      ? { altText: safeDisplayText(readStringProp(props, "altText")) ?? "" }
+      : {}),
+    ...(hasDescription
+      ? { description: safeDisplayText(readStringProp(props, "description")) ?? "" }
+      : {}),
+    ...(hasPreviewWidth
+      ? { previewWidth: safePreviewWidth(readNumberProp(props, "previewWidth")) ?? 420 }
+      : {}),
+    ...(hasShowPreview
+      ? { showPreview: Boolean(readBooleanProp(props, "showPreview")) }
+      : {})
+  }) ?? {};
+}
+
+function hasAuthoredAttachmentProp(
+  props: Record<string, unknown>,
+  flag: string,
+  fallback: boolean
+): boolean {
+  const explicitFlag = readBooleanProp(props, flag);
+  return explicitFlag === undefined ? fallback : explicitFlag;
+}
+
+function safeDisplayText(value: string | undefined): string | undefined {
+  const trimmedValue = value?.trim();
+  return trimmedValue ? trimmedValue.slice(0, 500) : undefined;
+}
+
+function safePreviewWidth(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return Math.min(820, Math.max(160, Math.round(value)));
+}
+
+function compactAttrs(attrs: Record<string, unknown>): EditorBlockAttributes | undefined {
+  return Object.keys(attrs).length > 0 ? attrs : undefined;
 }
 
 function createBlock(type: EditorBlockType, index: number): EditorBlock {
@@ -707,6 +1044,8 @@ function createBlock(type: EditorBlockType, index: number): EditorBlock {
       return { id, type, attrs: { checked: false }, text: "" };
     case "callout":
       return { id, type, attrs: { tone: "note" }, text: "" };
+    case "codeBlock":
+      return { id, type, attrs: { language: "text" }, text: "" };
     case "divider":
       return { id, type };
     case "table":
@@ -778,6 +1117,11 @@ function readStringAttr(blockAttrs: EditorBlock["attrs"], key: string): string |
   return typeof value === "string" ? value : undefined;
 }
 
+function readBooleanAttr(blockAttrs: EditorBlock["attrs"], key: string): boolean | undefined {
+  const value = blockAttrs?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function readStringProp(props: Record<string, unknown>, key: string): string | undefined {
   const value = props[key];
   return typeof value === "string" ? value : undefined;
@@ -791,6 +1135,189 @@ function readNumberProp(props: Record<string, unknown>, key: string): number | u
 function readBooleanProp(props: Record<string, unknown>, key: string): boolean | undefined {
   const value = props[key];
   return typeof value === "boolean" ? value : undefined;
+}
+
+function codeBlockProps(block: EditorBlock): Record<string, boolean | number | string> {
+  const wrap = readBooleanAttr(block.attrs, "wrap");
+
+  return {
+    language: safeCodeLanguage(readStringAttr(block.attrs, "language")),
+    wrap: wrap ?? false,
+    hasWrap: typeof wrap === "boolean"
+  };
+}
+
+function codeBlockAttrs(props: Record<string, unknown>): EditorBlockAttributes {
+  return compactAttrs({
+    language: safeCodeLanguage(readStringProp(props, "language")),
+    ...(readBooleanProp(props, "hasWrap") ? { wrap: Boolean(readBooleanProp(props, "wrap")) } : {})
+  }) ?? { language: "text" };
+}
+
+function safeCodeLanguage(value: string | undefined): CodeLanguageOption {
+  const normalizedLanguage = value?.trim().toLowerCase();
+  return normalizedLanguage && codeLanguageOptionSet.has(normalizedLanguage)
+    ? (normalizedLanguage as CodeLanguageOption)
+    : "text";
+}
+
+function attachmentRuntimeUploadProps(props: Record<string, unknown>): {
+  readonly status?: AttachmentUploadStatus;
+  readonly message?: string;
+  readonly fileName?: string;
+  readonly mimeType?: string;
+  readonly sizeBytes?: number;
+} | undefined {
+  const status = readAttachmentUploadStatus(props.uploadStatus);
+  if (!status) {
+    return undefined;
+  }
+
+  return compactAttrs({
+    status,
+    message: readStringProp(props, "uploadMessage"),
+    fileName: readStringProp(props, "pendingFileName") || readStringProp(props, "fileName"),
+    mimeType: readStringProp(props, "pendingMimeType") || readStringProp(props, "mimeType"),
+    sizeBytes: readNumberProp(props, "pendingSizeBytes") ?? readNumberProp(props, "sizeBytes")
+  }) as {
+    readonly status?: AttachmentUploadStatus;
+    readonly message?: string;
+    readonly fileName?: string;
+    readonly mimeType?: string;
+    readonly sizeBytes?: number;
+  };
+}
+
+function readAttachmentUploadStatus(value: unknown): AttachmentUploadStatus | undefined {
+  return value === "uploading" || value === "success" || value === "error" ? value : undefined;
+}
+
+function filesFromClipboardData(data: DataTransfer): readonly File[] {
+  const itemFiles = Array.from(data.items ?? [])
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+
+  return itemFiles.length > 0 ? itemFiles : filesFromDataTransfer(data);
+}
+
+function filesFromDataTransfer(data: DataTransfer): readonly File[] {
+  return Array.from(data.files ?? []).filter((file) => file.size > 0 || file.name.trim().length > 0);
+}
+
+function dataTransferHasFiles(data: DataTransfer): boolean {
+  return Array.from(data.types ?? []).includes("Files") || data.files.length > 0;
+}
+
+function attachmentBlockTypeForFile(file: File): AttachmentBlockType {
+  return file.type.toLowerCase().startsWith("image/") ? "image" : "file";
+}
+
+function insertPartialBlockAtCursor(editor: JixiaBlockNoteEditor, block: JixiaBlockNotePartialBlock): void {
+  const referenceBlock = currentTextCursorBlock(editor) ?? editor.document[editor.document.length - 1];
+  if (!referenceBlock) {
+    editor.replaceBlocks(editor.document, [block] as unknown as PartialBlock[]);
+    return;
+  }
+
+  editor.insertBlocks([block] as unknown as PartialBlock[], referenceBlock, "after");
+}
+
+function currentTextCursorBlock(editor: JixiaBlockNoteEditor): { readonly id: string } | undefined {
+  try {
+    return editor.getTextCursorPosition?.().block;
+  } catch {
+    return undefined;
+  }
+}
+
+function attachmentUploadPlaceholderBlock(
+  id: string,
+  blockType: AttachmentBlockType,
+  file: File
+): JixiaBlockNotePartialBlock {
+  return {
+    id,
+    type: blockType === "image" ? "jixiaImage" : "jixiaFile",
+    props: attachmentUploadProps(blockType, file, "uploading", "Uploading through server-issued intent…"),
+    children: []
+  };
+}
+
+function attachmentUploadProps(
+  blockType: AttachmentBlockType,
+  file: File,
+  status: AttachmentUploadStatus,
+  message: string
+): Record<string, boolean | number | string> {
+  return {
+    attachmentId: "",
+    fileName: "",
+    mimeType: "",
+    sizeBytes: 0,
+    checksum: "",
+    uploadedAt: "",
+    caption: "",
+    altText: "",
+    description: "",
+    previewWidth: 420,
+    showPreview: blockType === "image",
+    hasCaption: false,
+    hasAltText: false,
+    hasDescription: false,
+    hasPreviewWidth: false,
+    hasShowPreview: false,
+    uploadStatus: status,
+    uploadMessage: safeRuntimeUploadMessage(message),
+    pendingFileName: safeRuntimeFileName(file),
+    pendingMimeType: safeRuntimeMimeType(file),
+    pendingSizeBytes: file.size
+  };
+}
+
+function uploadedAttachmentProps(
+  uploadedAttachment: UploadedAttachmentResult,
+  status: AttachmentUploadStatus,
+  message: string
+): Record<string, boolean | number | string> {
+  return {
+    attachmentId: uploadedAttachment.attachmentId,
+    fileName: uploadedAttachment.fileName,
+    mimeType: uploadedAttachment.mimeType,
+    sizeBytes: uploadedAttachment.sizeBytes,
+    checksum: uploadedAttachment.checksum ?? "",
+    uploadedAt: uploadedAttachment.createdAt,
+    caption: "",
+    altText: "",
+    description: "",
+    previewWidth: 420,
+    showPreview: uploadedAttachment.blockType === "image",
+    hasCaption: false,
+    hasAltText: false,
+    hasDescription: false,
+    hasPreviewWidth: false,
+    hasShowPreview: false,
+    uploadStatus: status,
+    uploadMessage: safeRuntimeUploadMessage(message),
+    pendingFileName: "",
+    pendingMimeType: "",
+    pendingSizeBytes: 0
+  };
+}
+
+function safeRuntimeFileName(file: File): string {
+  return (file.name.trim() || "attachment").slice(0, 240);
+}
+
+function safeRuntimeMimeType(file: File): string {
+  return (file.type.trim().toLowerCase() || "application/octet-stream").slice(0, 120);
+}
+
+function safeRuntimeUploadMessage(message: string): string {
+  return message
+    .replace(/https?:\/\/\S+/gi, "[redacted attachment url]")
+    .replace(/\b(?:authorization|bearer|credential|credentials|secret|signature|token|storageKey|objectKey)\b\S*/gi, "[redacted]")
+    .slice(0, 500);
 }
 
 function isTableContent(value: unknown): value is { readonly rows: readonly { readonly cells: readonly unknown[] }[] } {
