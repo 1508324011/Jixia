@@ -13,5 +13,6 @@ Read these files before frontend work:
 
 - Confirm the frontend only renders server-authorized data.
 - Confirm document editor behavior follows draft/revision separation.
+- Confirm document editor runtimes keep DOM editing state behind the shared editor boundary.
 - Confirm AI UI cannot write into documents in MVP.
 - Confirm UI direction stays IDE-like and ResearchClaw-adjacent, not generic SaaS dashboard/card UI.
