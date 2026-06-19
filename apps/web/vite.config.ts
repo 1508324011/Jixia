@@ -27,8 +27,7 @@ const webConfig = defineConfig({
           proxy: {
             "/api": {
               target: e2eApiUrl,
-              changeOrigin: true,
-              rewrite: (path) => path.replace(/^\/api/, "")
+              changeOrigin: true
             }
           }
         }
