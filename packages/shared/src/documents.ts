@@ -101,6 +101,10 @@ export type CreateDocumentResponse = {
   readonly revision: DocumentRevisionDTO | null;
 };
 
+export type ListDocumentsResponse = {
+  readonly documents: readonly DocumentDTO[];
+};
+
 export type SaveDocumentDraftRequest = {
   readonly documentId: string;
   readonly baseRevision: number;
