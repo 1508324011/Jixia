@@ -10,7 +10,12 @@
     "e2e": "playwright test --config ../../playwright.config.ts"
   },
   "dependencies": {
+    "@blocknote/core": "^0.51.4",
+    "@blocknote/mantine": "^0.51.4",
+    "@blocknote/react": "^0.51.4",
     "@jixia/shared": "workspace:*",
+    "@mantine/core": "^9.3.2",
+    "@mantine/hooks": "^9.3.2",
     "react": "latest",
     "react-dom": "latest",
     "react-markdown": "^10.1.0",
