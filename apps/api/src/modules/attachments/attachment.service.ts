@@ -208,7 +208,8 @@ function normalizeChecksum(checksum: string | undefined): string | null {
 }
 
 function safeFileName(fileName: string): string {
-  const baseName = fileName.split(/[\\/]/).filter(Boolean).at(-1) ?? "attachment";
+  const pathSegments = fileName.split(/[\\/]/).filter(Boolean);
+  const baseName = pathSegments[pathSegments.length - 1] ?? "attachment";
   const sanitized = baseName
     .normalize("NFKD")
     .replace(/[^a-zA-Z0-9._-]+/g, "-")

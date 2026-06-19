@@ -6,6 +6,9 @@ import type {
   UploadFailureReason,
   UploadIntentStatus
 } from "@jixia/shared";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -25,7 +28,13 @@ import {
   type ConfirmUploadIntentRepositoryResult,
   type UploadIntentRecord
 } from "./attachment.service.js";
-import { ObjectStorageError, type ObjectMetadata, type ObjectStorage } from "./object-storage.js";
+import {
+  createObjectStorageFromEnv,
+  LocalObjectStorage,
+  ObjectStorageError,
+  type ObjectMetadata,
+  type ObjectStorage
+} from "./object-storage.js";
 
 const baseNow = new Date("2026-06-14T12:00:00.000Z");
 const oneHourLater = new Date("2026-06-14T13:00:00.000Z");
@@ -712,5 +721,195 @@ describe("attachment routes", () => {
     });
     expect(downloadResponse.json().downloadUrl).toContain("/download/");
     expect(repository.auditEvents).toHaveLength(0);
+  });
+});
+
+describe("local object storage", () => {
+  let rootDirectory: string;
+  let app: FastifyInstance | undefined;
+
+  beforeEach(async () => {
+    rootDirectory = await mkdtemp(join(tmpdir(), "jixia-local-storage-test-"));
+  });
+
+  afterEach(async () => {
+    await app?.close();
+    app = undefined;
+    await rm(rootDirectory, { recursive: true, force: true });
+  });
+
+  function createLocalStorage(): LocalObjectStorage {
+    return new LocalObjectStorage({
+      rootDirectory,
+      publicBaseUrl: "http://127.0.0.1:3000/local-object-storage",
+      signingSecret: "test-local-storage-signing-secret",
+      allowedOrigins: ["http://127.0.0.1:5173"]
+    });
+  }
+
+  it("defaults to local storage outside production when S3 configuration is absent", async () => {
+    expect(createObjectStorageFromEnv({ NODE_ENV: "development" })).toBeInstanceOf(LocalObjectStorage);
+    expect(() => createObjectStorageFromEnv({ NODE_ENV: "development", S3_ENDPOINT: "http://127.0.0.1:9000" })).toThrow(
+      /configuration is incomplete/i
+    );
+    expect(() =>
+      createObjectStorageFromEnv({ NODE_ENV: "production", ATTACHMENT_STORAGE_DRIVER: "local" })
+    ).toThrow(/not available in production/i);
+    expect(() =>
+      createObjectStorageFromEnv({ NODE_ENV: "development", ATTACHMENT_STORAGE_DRIVER: "bogus" })
+    ).toThrow(/driver is invalid/i);
+    expect(() => createObjectStorageFromEnv({ NODE_ENV: "production" })).toThrow(/configuration is incomplete/i);
+
+    const localStorage = createObjectStorageFromEnv({
+      NODE_ENV: "development",
+      API_HOST: "0.0.0.0",
+      API_PORT: "3333",
+      ATTACHMENT_STORAGE_DRIVER: "local"
+    });
+    const upload = await localStorage.createPresignedPutUrl({
+      storageKey: "tmp/uploads/local/browser-host.txt",
+      mimeType: "text/plain",
+      expiresInSeconds: 60
+    });
+    expect(upload.url).toMatch(/^http:\/\/127\.0\.0\.1:3333\/local-object-storage\/upload\//);
+  });
+
+  it("serves signed local upload and download requests with browser-safe CORS", async () => {
+    const storage = createLocalStorage();
+    app = await createTestApiApp({ localObjectStorage: { objectStorage: storage } });
+    const upload = await storage.createPresignedPutUrl({
+      storageKey: "tmp/uploads/local/figure.svg",
+      mimeType: "image/svg+xml",
+      expiresInSeconds: 60
+    });
+    const uploadPath = new URL(upload.url).pathname + new URL(upload.url).search;
+
+    const preflightResponse = await app.inject({
+      method: "OPTIONS",
+      url: uploadPath,
+      headers: {
+        origin: "http://127.0.0.1:5173",
+        "access-control-request-method": "PUT",
+        "access-control-request-headers": "content-type"
+      }
+    });
+    expect(preflightResponse.statusCode).toBe(204);
+    expect(preflightResponse.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:5173");
+    expect(preflightResponse.headers["access-control-expose-headers"]).toBe("ETag");
+
+    const uploadResponse = await app.inject({
+      method: "PUT",
+      url: uploadPath,
+      headers: {
+        origin: "http://127.0.0.1:5173",
+        "content-type": "image/svg+xml"
+      },
+      payload: Buffer.from("<svg />", "utf8")
+    });
+    expect(uploadResponse.statusCode).toBe(200);
+    expect(uploadResponse.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:5173");
+    expect(uploadResponse.headers.etag).toMatch(/^"[a-f0-9]{64}"$/);
+    await expect(storage.headObject("tmp/uploads/local/figure.svg")).resolves.toMatchObject({
+      sizeBytes: 7,
+      mimeType: "image/svg+xml"
+    });
+
+    const download = await storage.createPresignedGetUrl({
+      storageKey: "tmp/uploads/local/figure.svg",
+      expiresInSeconds: 60
+    });
+    const downloadPath = new URL(download.url).pathname + new URL(download.url).search;
+    const downloadResponse = await app.inject({
+      method: "GET",
+      url: downloadPath,
+      headers: { origin: "http://127.0.0.1:5173" }
+    });
+    expect(downloadResponse.statusCode).toBe(200);
+    expect(downloadResponse.headers["content-type"]).toContain("image/svg+xml");
+    expect(downloadResponse.body).toBe("<svg />");
+  });
+
+  it("rejects credentialed direct uploads and disallowed CORS requests", async () => {
+    const storage = createLocalStorage();
+    app = await createTestApiApp({ localObjectStorage: { objectStorage: storage } });
+    const upload = await storage.createPresignedPutUrl({
+      storageKey: "tmp/uploads/local/secret.png",
+      mimeType: "image/png",
+      expiresInSeconds: 60
+    });
+    const uploadPath = new URL(upload.url).pathname + new URL(upload.url).search;
+
+    const disallowedPreflight = await app.inject({
+      method: "OPTIONS",
+      url: uploadPath,
+      headers: {
+        origin: "http://evil.example.test",
+        "access-control-request-method": "PUT",
+        "access-control-request-headers": "content-type"
+      }
+    });
+    expect(disallowedPreflight.statusCode).toBe(403);
+
+    const credentialedUpload = await app.inject({
+      method: "PUT",
+      url: uploadPath,
+      headers: {
+        origin: "http://127.0.0.1:5173",
+        cookie: "jixia_session=should-not-send",
+        "content-type": "image/png"
+      },
+      payload: Buffer.from("secret")
+    });
+    expect(credentialedUpload.statusCode).toBe(400);
+    await expect(storage.headObject("tmp/uploads/local/secret.png")).resolves.toBeNull();
+
+    const authorizationUpload = await app.inject({
+      method: "PUT",
+      url: uploadPath,
+      headers: {
+        origin: "http://127.0.0.1:5173",
+        authorization: "Bearer should-not-send",
+        "content-type": "image/png"
+      },
+      payload: Buffer.from("secret")
+    });
+    expect(authorizationUpload.statusCode).toBe(400);
+    await expect(storage.headObject("tmp/uploads/local/secret.png")).resolves.toBeNull();
+
+    const credentialHeaderUpload = await app.inject({
+      method: "PUT",
+      url: uploadPath,
+      headers: {
+        origin: "http://127.0.0.1:5173",
+        "content-type": "image/png",
+        "x-amz-signature": "should-not-send"
+      },
+      payload: Buffer.from("secret")
+    });
+    expect(credentialHeaderUpload.statusCode).toBe(400);
+    await expect(storage.headObject("tmp/uploads/local/secret.png")).resolves.toBeNull();
+  });
+
+  it("expires local signed object requests", async () => {
+    const storage = createLocalStorage();
+    const upload = await storage.createPresignedPutUrl({
+      storageKey: "tmp/uploads/local/expired.txt",
+      mimeType: "text/plain",
+      expiresInSeconds: 1,
+      now: baseNow
+    });
+    const url = new URL(upload.url);
+    const storageKeyTokenParts = url.pathname.split("/");
+    const storageKeyToken = storageKeyTokenParts[storageKeyTokenParts.length - 1] ?? "";
+
+    expect(
+      storage.verifySignedRequest({
+        method: "PUT",
+        storageKeyToken,
+        expires: url.searchParams.get("expires") ?? undefined,
+        signature: url.searchParams.get("signature") ?? undefined,
+        now: new Date(baseNow.getTime() + 2_000)
+      })
+    ).toBeNull();
   });
 });
