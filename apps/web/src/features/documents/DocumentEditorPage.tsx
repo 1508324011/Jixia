@@ -28,6 +28,7 @@ import {
 import { JixiaEditor } from "./editor/JixiaEditor";
 
 type DocumentEditorPageProps = {
+  readonly backLabel?: string;
   readonly documentId: string;
   readonly onBack?: () => void;
 };
@@ -40,7 +41,7 @@ type ReadDocumentResponse = {
 
 type AcceptedRevisionResponse = SaveDocumentRevisionResponse | { readonly error: string };
 
-export function DocumentEditorPage({ documentId, onBack }: DocumentEditorPageProps) {
+export function DocumentEditorPage({ backLabel = "Projects", documentId, onBack }: DocumentEditorPageProps) {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [document, setDocument] = useState<DocumentDTO | null>(null);
   const [title, setTitle] = useState("");
@@ -202,7 +203,7 @@ export function DocumentEditorPage({ documentId, onBack }: DocumentEditorPagePro
         ) : null}
         {onBack ? (
           <Button onClick={onBack}>
-            Back to project
+            Back to {backLabel}
           </Button>
         ) : null}
       </WorkbenchSurface>
@@ -228,7 +229,7 @@ export function DocumentEditorPage({ documentId, onBack }: DocumentEditorPagePro
             <>
               {onBack ? (
                 <Button onClick={onBack} variant="link">
-                  Projects
+                  {backLabel}
                 </Button>
               ) : null}
               <span>/</span>

@@ -4,13 +4,13 @@ import type { ReactNode } from "react";
 import { Pill } from "./workbench";
 
 type AppShellProps = {
-  readonly activeSettingsSection?: SettingsContextSection;
+  readonly activeSettingsSection?: SettingsContextSection | undefined;
   readonly activeSurface?: AppSurface;
   readonly children: ReactNode;
-  readonly currentSession?: CurrentSessionView | null;
-  readonly onNavigate?: (surface: AppSurface) => void;
-  readonly onNavigateAIUsage?: () => void;
-  readonly onNavigateSettingsSection?: (section: SettingsDetailSection) => void;
+  readonly currentSession?: CurrentSessionView | null | undefined;
+  readonly onNavigate?: ((surface: AppSurface) => void) | undefined;
+  readonly onNavigateAIUsage?: (() => void) | undefined;
+  readonly onNavigateSettingsSection?: ((section: SettingsDetailSection) => void) | undefined;
 };
 
 export type AppSurface = "home" | "search" | "library" | "projects" | "notebook" | "ai" | "settings";
@@ -123,7 +123,7 @@ export function AppShell({
 type NavigationButtonProps = {
   readonly activeSurface: AppSurface;
   readonly item: NavigationItem;
-  readonly onNavigate?: (surface: AppSurface) => void;
+  readonly onNavigate?: ((surface: AppSurface) => void) | undefined;
 };
 
 function NavigationButton({ activeSurface, item, onNavigate }: NavigationButtonProps) {
@@ -141,9 +141,9 @@ function NavigationButton({ activeSurface, item, onNavigate }: NavigationButtonP
 }
 
 type SurfaceContextProps = {
-  readonly activeSettingsSection?: SettingsContextSection;
-  readonly onNavigateAIUsage?: () => void;
-  readonly onNavigateSettingsSection?: (section: SettingsDetailSection) => void;
+  readonly activeSettingsSection?: SettingsContextSection | undefined;
+  readonly onNavigateAIUsage?: (() => void) | undefined;
+  readonly onNavigateSettingsSection?: ((section: SettingsDetailSection) => void) | undefined;
   readonly surface: AppSurface;
 };
 
@@ -172,7 +172,7 @@ function SurfaceContext({
 type ContextRowProps = {
   readonly label: string;
   readonly meta: string;
-  readonly onOpen?: () => void;
+  readonly onOpen?: (() => void) | undefined;
   readonly selected?: boolean;
   readonly tone?: "neutral" | "accent" | "success" | "warning";
 };
@@ -205,9 +205,9 @@ function ContextRow({ label, meta, onOpen, selected = false, tone = "neutral" }:
 }
 
 type SettingsContextRowsOptions = {
-  readonly activeSettingsSection?: SettingsContextSection;
-  readonly onNavigateAIUsage?: () => void;
-  readonly onNavigateSettingsSection?: (section: SettingsDetailSection) => void;
+  readonly activeSettingsSection?: SettingsContextSection | undefined;
+  readonly onNavigateAIUsage?: (() => void) | undefined;
+  readonly onNavigateSettingsSection?: ((section: SettingsDetailSection) => void) | undefined;
 };
 
 function settingsContextRows({
@@ -265,9 +265,9 @@ const surfaceContextRows: Record<AppSurface, readonly ContextRowProps[]> = {
     { label: "Conflicts", meta: "Manual review only" }
   ],
   notebook: [
-    { label: "Notebook tree", meta: "Future document-backed surface" },
-    { label: "Synthesis", meta: "Not implemented in this task" },
-    { label: "Attachments", meta: "Private API flow required" }
+    { label: "Notebook documents", meta: "Owner-authorized API list", tone: "accent" },
+    { label: "Drafts", meta: "Shared document editor" },
+    { label: "Attachments", meta: "Private document flow" }
   ],
   ai: [
     { label: "Standalone chat", meta: "No automatic document context", tone: "accent" },

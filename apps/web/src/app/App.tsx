@@ -9,6 +9,7 @@ import { LoginPage } from "../features/auth/LoginPage";
 import { DocumentEditorPage } from "../features/documents/DocumentEditorPage";
 import { AppShell, type AppSurface } from "../features/layout/AppShell";
 import { Button, EmptyState, MetaGrid, Notice, Pane, SurfaceHeader, WorkbenchSurface } from "../features/layout/workbench";
+import { NotebookPage } from "../features/notebook/NotebookPage";
 import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { ProjectListPage } from "../features/projects/ProjectListPage";
 
@@ -62,6 +63,11 @@ export function App() {
     setRoute({ name: "document", projectId, documentId });
   }
 
+  function openNotebookDocument(documentId: string): void {
+    window.history.pushState(window.history.state, "", `/notebook/documents/${encodeURIComponent(documentId)}`);
+    setRoute({ name: "notebook-document", documentId });
+  }
+
   if (route.name === "accept-invitation") {
     return <AcceptInvitationPage onAccepted={handleAuthenticated} />;
   }
@@ -89,6 +95,22 @@ export function App() {
           documentId={route.documentId}
           onBack={() => openProject(route.projectId)}
         />
+      </AppShell>
+    );
+  }
+
+  if (route.name === "notebook") {
+    return (
+      <AppShell activeSurface="notebook" currentSession={currentSession} onNavigate={navigateSurface}>
+        <NotebookPage onOpenDocument={openNotebookDocument} />
+      </AppShell>
+    );
+  }
+
+  if (route.name === "notebook-document") {
+    return (
+      <AppShell activeSurface="notebook" currentSession={currentSession} onNavigate={navigateSurface}>
+        <DocumentEditorPage backLabel="Notebook" documentId={route.documentId} onBack={() => navigateSurface("notebook")} />
       </AppShell>
     );
   }
@@ -161,13 +183,14 @@ type AppRoute =
   | { readonly name: "library" }
   | { readonly name: "projects" }
   | { readonly name: "notebook" }
+  | { readonly name: "notebook-document"; readonly documentId: string }
   | { readonly name: "ai" }
   | { readonly name: "settings"; readonly section: SettingsSection }
   | { readonly name: "ai-usage" }
   | { readonly name: "project"; readonly projectId: string }
   | { readonly name: "document"; readonly projectId: string; readonly documentId: string };
 
-type PlaceholderSurface = Extract<AppSurface, "home" | "search" | "library" | "notebook">;
+type PlaceholderSurface = Extract<AppSurface, "home" | "search" | "library">;
 
 function routeFromLocation(location: Location): AppRoute {
   if (location.pathname === "/accept-invitation") {
@@ -188,6 +211,14 @@ function routeFromLocation(location: Location): AppRoute {
 
   if (location.pathname === "/library") {
     return { name: "library" };
+  }
+
+  const notebookDocumentRouteMatch = location.pathname.match(/^\/notebook\/documents\/([^/]+)$/);
+  if (notebookDocumentRouteMatch) {
+    return {
+      name: "notebook-document",
+      documentId: decodeURIComponent(notebookDocumentRouteMatch[1] ?? "")
+    };
   }
 
   if (location.pathname === "/notebook") {
@@ -259,7 +290,7 @@ function surfaceRoute(surface: AppSurface): AppRoute {
 }
 
 function isPlaceholderRoute(route: AppRoute): route is { readonly name: PlaceholderSurface } {
-  return route.name === "home" || route.name === "search" || route.name === "library" || route.name === "notebook";
+  return route.name === "home" || route.name === "search" || route.name === "library";
 }
 
 type DeferredSurfaceProps = {
@@ -286,12 +317,6 @@ const deferredSurfaceCopy: Record<PlaceholderSurface, { readonly description: st
     description:
       "The future Library will manage personal literature assets and local library search, but it should not pretend to exist before storage and metadata APIs exist."
   },
-  notebook: {
-    eyebrow: "Personal synthesis",
-    title: "Notebook is next, but not part of this shell primitive task.",
-    description:
-      "Notebook shares document draft, revision, attachment, and copilot behavior with Project Docs. This task keeps those boundaries intact and defers the new surface."
-  }
 };
 
 function DeferredSurface({ onOpenProjects, surface }: DeferredSurfaceProps) {

@@ -1,7 +1,11 @@
 import type {
   AIProviderConfigListResponse,
   AIProviderConfigView,
+  DocumentDTO,
+  DocumentRevisionDTO,
+  EditorSnapshot,
   AIUsageAggregateResponse,
+  ListDocumentsResponse,
   ListAIConversationsResponse,
   LoginResponse
 } from "@jixia/shared";
@@ -100,6 +104,46 @@ describe("App", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/ai/configs", expect.objectContaining({ credentials: "include" }));
     });
 
+  it("renders /notebook as a real document-backed surface", async () => {
+    window.history.replaceState(null, "", "/notebook");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      jsonResponse({ documents: [notebookDocument] } satisfies ListDocumentsResponse)
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("Notebook documents are returned by the API for the current owner only. Creating a note sends notebook-scoped intent to the same document service used by Project Docs.")).toBeTruthy();
+    expect(screen.getByText("Notebook draft")).toBeTruthy();
+    expect(screen.queryByText("Surface intentionally not opened yet")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/documents/notebook",
+      expect.objectContaining({ credentials: "include" })
+    );
+  });
+
+  it("opens notebook documents with the shared document editor", async () => {
+    window.history.replaceState(null, "", "/notebook/documents/notebook-doc-1");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      jsonResponse({
+        document: notebookDocument,
+        revision: notebookRevision,
+        currentSnapshot: notebookSnapshot
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByDisplayValue("Notebook draft")).toBeTruthy();
+    expect(screen.getByText("Draft autosave ready.")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Notebook" }).length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/documents/notebook-doc-1",
+      expect.objectContaining({ credentials: "include" })
+    );
+  });
+
   it("switches from account settings to AI provider settings", async () => {
       window.history.replaceState(null, "", "/settings/account");
       const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
@@ -160,6 +204,33 @@ const providerConfig: AIProviderConfigView = {
   isDefault: true,
   createdAt: "2026-06-16T10:00:00.000Z",
   updatedAt: "2026-06-16T10:00:00.000Z"
+};
+
+const notebookDocument: DocumentDTO = {
+  id: "notebook-doc-1",
+  type: "notebook",
+  status: "active",
+  title: "Notebook draft",
+  ownerUserId: "user-1",
+  projectId: null,
+  currentRevisionId: "notebook-revision-1",
+  revisionNumber: 1,
+  createdAt: "2026-06-18T09:00:00.000Z",
+  updatedAt: "2026-06-18T09:05:00.000Z"
+};
+
+const notebookSnapshot: EditorSnapshot = {
+  editorSchemaVersion: 1,
+  blocks: [{ id: "paragraph-1", type: "paragraph", text: "Notebook body" }]
+};
+
+const notebookRevision: DocumentRevisionDTO = {
+  id: "notebook-revision-1",
+  documentId: "notebook-doc-1",
+  revisionNumber: 1,
+  contentSnapshot: notebookSnapshot,
+  editorUserId: "user-1",
+  createdAt: "2026-06-18T09:05:00.000Z"
 };
 
 function jsonResponse(payload: unknown): Response {
