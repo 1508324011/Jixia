@@ -12,3 +12,4 @@ This file indexes useful session records for future Trellis starts.
 ## Session Records
 
 - Manual QA notes: `.trellis/workspace/manual-qa-notes.md` records user-observed product gaps from local MVP smoke testing.
+- Notebook / Project document editor implementation plan: `doc/Notebook_Project_Doc_Editor_Implementation_Plan.md` defines Task 19-23 scope, review gates, reusable code, acceptance criteria, and verification commands.
