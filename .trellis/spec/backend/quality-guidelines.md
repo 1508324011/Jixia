@@ -194,3 +194,58 @@ app.post("/documents/:documentId/revisions", async (request, reply) => {
   return documentService.saveRevision({ actor, documentId, baseRevision, contentSnapshot });
 });
 ```
+
+## Scenario: MVP Document Collection Contract
+
+### 1. Scope / Trigger
+- Trigger: `apps/api/src/modules/documents/**`, `packages/shared/src/documents.ts`, and `apps/web/src/features/{documents,notebook,projects}/**` implement document collection list/create/open flows for Notebook and Project Docs.
+- Scope: `ListDocumentsResponse`, `GET /documents/notebook`, `GET /projects/:projectId/documents`, document repository list methods, collection UI, Notebook routing, and Project Detail document rows.
+- Boundary: Collection work must not add browser-side permission helpers, expose editor snapshots/drafts/revisions/attachments in list payloads, fork `DocumentEditorPage`, add notebook trees/search/tags/backlinks, create schema migrations, or introduce AI writeback.
+
+### 2. Signatures
+- Shared list payload: `ListDocumentsResponse = { readonly documents: readonly DocumentDTO[] }` unless a future narrower transport-safe summary is deliberately introduced.
+- Repository methods: `listNotebookDocuments(ownerUserId: string): Promise<readonly DocumentRecord[]>` and `listProjectDocuments(projectId: string): Promise<readonly DocumentRecord[]>`.
+- Service methods: `listNotebookDocuments(actor)` and `listProjectDocuments({ actor, projectId })` return `ListDocumentsResponse` after server-side authorization and context filtering.
+- Routes: `GET /documents/notebook` and `GET /projects/:projectId/documents` require authenticated actors derived from the server-side session.
+- Web collection component: one shared collection UI accepts a `notebook` or `project` scope and opens documents through the shared document editor route.
+
+### 3. Contracts
+- Notebook collection lists only `Document.type = "notebook"` rows owned by the current actor, with `projectId = null` and no project-space context.
+- Project collection lists only `Document.type = "project"` rows for an actor who is an explicit member of that project in the actor's current space; `SpaceAdmin` has no implicit project content bypass.
+- Malformed, cross-space, missing-project, non-member, unreadable, or permission-adapter-error cases fail closed without returning document metadata.
+- List payloads must contain transport-safe document metadata only: IDs, type/status/title, owner/project IDs, revision pointers/numbers, and timestamps. They must not include editor snapshots, draft bodies, revision snapshots, attachment storage keys, signed URLs, object keys, prompts, provider payloads, cookies, auth headers, or raw server errors.
+- Project document creation remains `POST /documents/project`; Notebook creation remains `POST /documents/notebook`; create/edit authorization stays in the API.
+- Notebook and Project Docs must reuse `DocumentEditorPage`, draft autosave, formal revision save, conflict handling, archived read-only state, and attachment behavior.
+- Browser code may show server responses and submit intent, but must not compute authorization from roles or cache document bodies in local/session storage.
+
+### 4. Validation & Error Matrix
+- Missing or invalid session on either list route -> unauthorized response with no session detail.
+- Missing project, cross-space project, non-member actor, or `SpaceAdmin` without explicit project membership -> not-found style response for project lists.
+- Project viewer with read membership -> may list/read project documents, but project document creation remains forbidden by the existing create policy.
+- Notebook document with a project ID, project document with an owner ID, cross-space project document, or list row failing `canReadDocument` -> omit the row or fail closed without leaking metadata.
+- Any list response exposes content snapshots, drafts, storage/object keys, signed URLs, prompts, provider data, cookies, authorization headers, or stack traces -> block PR.
+
+### 5. Good/Base/Bad Cases
+- Good: `GET /documents/notebook` returns `{ documents: [DocumentDTO...] }` for the current owner and omits another user's notebook documents.
+- Good: a project viewer receives project document rows from `GET /projects/:projectId/documents` while a non-member receives a not-found style response.
+- Good: `/notebook` renders a real collection page, posts notebook creation to the API, and opens `/notebook/documents/:documentId` through `DocumentEditorPage`.
+- Base: `ProjectDetailPage` loads project metadata and document rows from separate server endpoints and no longer renders missing-route fallback copy for authorized projects.
+- Bad: frontend code checks `ProjectOwner` or `ProjectEditor` strings to decide whether a create button is allowed.
+- Bad: a list endpoint joins and returns `currentSnapshot`, `draftContent`, attachment object keys, signed URLs, AI prompts, or provider request metadata.
+
+### 6. Tests Required
+- API tests must cover notebook owner-only lists, project member lists, viewer read/list behavior, non-member and `SpaceAdmin` non-bypass failures, notebook/project isolation, malformed/cross-space row hiding, route authentication, and transport-safe list payloads.
+- Web tests must cover `ProjectDetailPage` loading the real project document endpoint, absence of missing-route fallback copy, project document create/open intent, `NotebookPage` list/create/open behavior, and `/notebook` routing as a real surface.
+- Final Task 19 checks should include `pnpm --filter @jixia/api test -- document.service`, `pnpm --filter @jixia/web test -- ProjectDetailPage`, `pnpm --filter @jixia/web test -- NotebookPage`, `pnpm --filter @jixia/web test -- App`, `pnpm --filter @jixia/api lint`, `pnpm --filter @jixia/web lint`, and `pnpm --filter @jixia/web build`.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+const canCreate = currentUser.projectRole === "ProjectOwner" || currentUser.projectRole === "ProjectEditor";
+const response = await apiFetch(`/documents/project?projectId=${projectId}`);
+```
+
+#### Correct
+```typescript
+const response = await apiFetch<ListDocumentsResponse>(`/projects/${encodeURIComponent(projectId)}/documents`);
+```
