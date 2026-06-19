@@ -1,26 +1,39 @@
-import type { CreateDocumentResponse, CreateProjectDocumentRequest, DocumentDTO } from "@jixia/shared";
+import type {
+  CreateDocumentResponse,
+  CreateNotebookDocumentRequest,
+  CreateProjectDocumentRequest,
+  DocumentDTO
+} from "@jixia/shared";
 import type { FormEvent } from "react";
 import { useState } from "react";
 
 import { apiFetch } from "../../lib/api";
 import { Button, EmptyState, Field, ListRow, Notice, Pane, Pill } from "../layout/workbench";
 
+type DocumentScopeProps =
+  | {
+      readonly scope: "notebook";
+    }
+  | {
+      readonly projectId: string;
+      readonly scope: "project";
+    };
+
 type DocumentListProps = {
   readonly documents: readonly DocumentDTO[];
   readonly loadState?: "idle" | "loading" | "error";
   readonly loadMessage?: string | null;
-  readonly projectId: string;
   readonly onDocumentsChanged?: (documents: readonly DocumentDTO[]) => void;
   readonly onOpenDocument: (documentId: string) => void;
-};
+} & DocumentScopeProps;
 
 export function DocumentList({
   documents,
   loadState = "idle",
   loadMessage,
-  projectId,
   onDocumentsChanged,
-  onOpenDocument
+  onOpenDocument,
+  ...scopeProps
 }: DocumentListProps) {
   const [title, setTitle] = useState("");
   const [createState, setCreateState] = useState<"idle" | "submitting" | "error">("idle");
@@ -31,13 +44,11 @@ export function DocumentList({
     setCreateState("submitting");
     setCreateError(null);
 
-    const payload: CreateProjectDocumentRequest = {
-      projectId,
-      title
-    };
+    const payload = createDocumentPayload(scopeProps, title);
+    const path = scopeProps.scope === "project" ? "/documents/project" : "/documents/notebook";
 
     try {
-      const response = await apiFetch<CreateDocumentResponse>("/documents/project", {
+      const response = await apiFetch<CreateDocumentResponse>(path, {
         method: "POST",
         json: payload
       });
@@ -55,16 +66,16 @@ export function DocumentList({
   return (
     <Pane
       actions={<Pill tone="accent">{documents.length} loaded</Pill>}
-      aria-labelledby="project-documents-title"
-      eyebrow="Project Docs"
+      aria-labelledby={`${scopeProps.scope}-documents-title`}
+      eyebrow={scopeProps.scope === "project" ? "Project Docs" : "Notebook"}
       title="Documents"
-      titleId="project-documents-title"
+      titleId={`${scopeProps.scope}-documents-title`}
     >
       <form className="jixia-toolbar" onSubmit={handleCreateDocument}>
-        <Field label="New project document" style={{ flex: "1 1 300px" }}>
+        <Field label={scopeProps.scope === "project" ? "New project document" : "New notebook document"} style={{ flex: "1 1 300px" }}>
           <input
             onChange={(event) => setTitle(event.currentTarget.value)}
-            placeholder="e.g. Shared literature synthesis"
+            placeholder={scopeProps.scope === "project" ? "e.g. Shared literature synthesis" : "e.g. Personal synthesis note"}
             required
             type="text"
             value={title}
@@ -102,12 +113,23 @@ export function DocumentList({
         </div>
       ) : loadState !== "loading" ? (
         <EmptyState
-          description="Document rows render only from API responses; creating one submits project-scoped intent to the server."
-          title="No project documents are available from the API response yet"
+          description={scopeProps.scope === "project" ? "Document rows render only from API responses; creating one submits project-scoped intent to the server." : "Document rows render only from API responses; creating one submits notebook-scoped intent to the server."}
+          title={scopeProps.scope === "project" ? "No project documents returned by the API yet" : "No notebook documents returned by the API yet"}
         />
       ) : null}
     </Pane>
   );
+}
+
+function createDocumentPayload(scopeProps: DocumentScopeProps, title: string): CreateProjectDocumentRequest | CreateNotebookDocumentRequest {
+  if (scopeProps.scope === "project") {
+    return {
+      projectId: scopeProps.projectId,
+      title
+    };
+  }
+
+  return { title };
 }
 
 function formatDate(value: string): string {

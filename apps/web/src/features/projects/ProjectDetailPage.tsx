@@ -1,4 +1,4 @@
-import type { DocumentDTO, ProjectDTO } from "@jixia/shared";
+import type { DocumentDTO, ListDocumentsResponse, ProjectDTO } from "@jixia/shared";
 import { useEffect, useState } from "react";
 
 import { apiFetch } from "../../lib/api";
@@ -13,10 +13,6 @@ type ProjectDetailPageProps = {
 
 type GetProjectResponse = {
   readonly project: ProjectDTO;
-};
-
-type ProjectDocumentsResponse = {
-  readonly documents: readonly DocumentDTO[];
 };
 
 export function ProjectDetailPage({ projectId, onBack, onOpenDocument }: ProjectDetailPageProps) {
@@ -53,7 +49,7 @@ export function ProjectDetailPage({ projectId, onBack, onOpenDocument }: Project
       setDocumentMessage(null);
 
       try {
-        const response = await apiFetch<ProjectDocumentsResponse>(
+        const response = await apiFetch<ListDocumentsResponse>(
           `/projects/${encodeURIComponent(projectId)}/documents`
         );
         if (!isCancelled) {
@@ -64,11 +60,7 @@ export function ProjectDetailPage({ projectId, onBack, onOpenDocument }: Project
         if (!isCancelled) {
           setDocuments([]);
           setDocumentState("error");
-          setDocumentMessage(
-            error instanceof Error
-              ? `${error.message} Project document listing is not available in the current API; create a document here or open one after creation.`
-              : "Project document listing is not available in the current API."
-          );
+          setDocumentMessage(error instanceof Error ? error.message : "Unable to load project documents.");
         }
       }
     }
@@ -133,6 +125,7 @@ export function ProjectDetailPage({ projectId, onBack, onOpenDocument }: Project
         onDocumentsChanged={setDocuments}
         onOpenDocument={onOpenDocument}
         projectId={project.id}
+        scope="project"
       />
     </WorkbenchSurface>
   );
