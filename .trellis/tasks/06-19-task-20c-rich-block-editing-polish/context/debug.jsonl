@@ -1,0 +1,12 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/tasks/06-19-task-20c-rich-block-editing-polish/prd.md", "reason": "Debug against Task20c scope and stop conditions"}
+{"path": "packages/shared/src/documents.ts", "reason": "Debug v1 snapshot and rich attrs issues"}
+{"path": "apps/api/src/modules/documents/editor-schema.ts", "reason": "Debug server normalization and attrs preservation"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Debug rich block adapter behavior"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.test.ts", "reason": "Debug conversion/privacy test failures"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Debug lifecycle shell and save/export failures"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Debug attachment block editing/read-only issues"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Debug upload/download safety issues"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Debug E2E save failures"}
+{"path": "apps/web/package.json", "reason": "Debug dependency or BlockNote/Mantine issues"}

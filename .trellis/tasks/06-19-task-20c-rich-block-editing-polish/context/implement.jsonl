@@ -1,0 +1,26 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/tasks/06-19-task-20b-blocknote-editor-adapter/prd.md", "reason": "Task20b baseline BlockNote adapter scope and repeat Gate B result"}
+{"path": ".trellis/tasks/06-19-task-20r-editor-engine-adapter-decision-spike/decision.md", "reason": "Editor engine adapter decision and BlockNote architecture boundary"}
+{"path": ".trellis/tasks/06-19-task-20a-continuous-editor-prototype/prd.md", "reason": "Failed textarea prototype and Gate B root cause to avoid regressions"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Roadmap and Task20/21 sequencing constraints"}
+{"path": "packages/shared/src/documents.ts", "reason": "EditorSnapshot and EditorBlock v1 transport contract"}
+{"path": "apps/api/src/modules/documents/editor-schema.ts", "reason": "Server snapshot normalizer and attrs preservation behavior"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "BlockNote adapter, custom image/file/callout blocks, import/export helpers"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.test.ts", "reason": "Adapter conversion and privacy regression tests"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Document lifecycle shell and editorRef export boundary"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "Focused document lifecycle tests"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Existing private attachment UI and read-only behavior"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Upload/download helpers and sensitive field guards"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "BlockNote and workbench styling for editor/rich blocks"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Document save E2E behavior after BlockNote adapter"}
+{"path": "apps/web/e2e/helpers.ts", "reason": "E2E helper selectors for BlockNote editor surface"}
+{"path": "apps/web/package.json", "reason": "BlockNote/Mantine dependency baseline"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Document editor runtime boundary spec"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Frontend checklist including editor runtime boundary"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Pre-implementation discipline and stop conditions"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Cross-layer contract guidance"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse guidance"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Frontend component guidance"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "Type-safety guidance"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend quality and testing guidance"}

@@ -1,0 +1,17 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/tasks/06-19-task-20b-blocknote-editor-adapter/prd.md", "reason": "Check against Task20b baseline and no writing feel regression"}
+{"path": ".trellis/tasks/06-19-task-20r-editor-engine-adapter-decision-spike/decision.md", "reason": "Check adapter boundary and BlockNote decision remain intact"}
+{"path": "packages/shared/src/documents.ts", "reason": "Check v1 snapshot compatibility"}
+{"path": "apps/api/src/modules/documents/editor-schema.ts", "reason": "Check server normalizer preserves safe rich block attrs"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Check rich block implementation and import/export behavior"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.test.ts", "reason": "Check adapter conversion and privacy coverage"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Check lifecycle shell and save export boundary"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "Check lifecycle tests"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Check attachment UI/read-only behavior"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Check upload/download safety guards"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Check browser save flow for rich blocks"}
+{"path": "apps/web/e2e/helpers.ts", "reason": "Check E2E editor helpers"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Check runtime boundary spec compliance"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Check quality and verification requirements"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Check no forbidden cross-layer changes"}
