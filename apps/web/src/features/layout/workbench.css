@@ -566,9 +566,7 @@
   padding: 6px 8px;
 }
 
-.jixia-editor-insert-select,
-.jixia-editor-block__type-select,
-.jixia-editor-inline-control {
+.jixia-editor-insert-select {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -577,109 +575,66 @@
   font-weight: 750;
 }
 
-.jixia-editor-insert-select span,
-.jixia-editor-block__type-select span,
-.jixia-editor-inline-control span {
+.jixia-editor-insert-select span {
   white-space: nowrap;
 }
 
-.jixia-editor-inline-control--checkbox {
-  justify-self: start;
-}
-
-.jixia-editor-block-stack {
-  display: grid;
-  gap: 4px;
-}
-
-.jixia-editor-block {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-  border-left: 2px solid transparent;
-  padding: 8px 0 12px;
-}
-
-.jixia-editor-block:focus-within,
-.jixia-editor-block:hover {
-  border-left-color: #b8e4e8;
-}
-
-.jixia-editor-block__handle {
-  display: grid;
-  gap: 6px;
-  justify-items: center;
-  color: #94a3b8;
-  font-size: 11px;
-  font-weight: 800;
-  padding-top: 4px;
-}
-
-.jixia-editor-block__body {
-  display: grid;
-  gap: 7px;
+.jixia-blocknote-shell {
   min-width: 0;
+  color: #10202a;
 }
 
-.jixia-editor-block__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.jixia-editor-block:focus-within .jixia-editor-block__toolbar,
-.jixia-editor-block:hover .jixia-editor-block__toolbar {
-  opacity: 1;
-}
-
-.jixia-editor-block__toolbar select {
-  width: auto;
-  max-width: 180px;
-  padding: 5px 7px;
-}
-
-.jixia-editor-block__type-label {
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.jixia-editor-block__content {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-
-.jixia-editor-textarea {
-  border-color: transparent;
+.jixia-blocknote-shell .bn-container,
+.jixia-blocknote-shell .bn-editor {
   background: transparent;
-  padding: 7px 0;
-  line-height: 1.65;
+  color: inherit;
+  font-family: inherit;
 }
 
-.jixia-editor-textarea:focus {
-  border-color: #b8e4e8;
-  background: #fbfcfd;
-  padding-inline: 8px;
+.jixia-blocknote-shell .bn-editor {
+  padding: 8px 0 80px;
 }
 
-.jixia-editor-textarea--heading {
-  font-size: 24px;
-  font-weight: 850;
-  letter-spacing: -0.04em;
-  line-height: 1.25;
+.jixia-blocknote-shell .bn-block-content {
+  font-size: 15px;
+  line-height: 1.72;
 }
 
-.jixia-editor-textarea--quote,
-.jixia-editor-textarea--callout {
-  border-left: 3px solid #dbe5ed;
-  padding-left: 12px;
+.jixia-blocknote-shell .bn-block-content[data-content-type="heading"] h1,
+.jixia-blocknote-shell .bn-block-content[data-content-type="heading"] h2,
+.jixia-blocknote-shell .bn-block-content[data-content-type="heading"] h3 {
+  color: #10202a;
+  letter-spacing: -0.045em;
+}
+
+.jixia-blocknote-shell .bn-block-content[data-content-type="codeBlock"] {
+  border: 1px solid #dbe5ed;
+  background: #f8fafc;
+}
+
+.jixia-blocknote-shell[data-readonly="true"] .bn-editor {
+  cursor: text;
+}
+
+.jixia-blocknote-callout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border-left: 3px solid #99d8de;
+  background: #f0fdff;
+  color: #334155;
+  padding: 10px 12px;
+}
+
+.jixia-blocknote-callout > span {
+  color: #0f7180;
+  font-size: 11px;
+  line-height: 1.8;
+}
+
+.jixia-blocknote-callout [data-inline-content-type] {
+  min-width: 0;
 }
 
 .jixia-document-title-field {
