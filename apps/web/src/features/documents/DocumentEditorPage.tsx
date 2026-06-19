@@ -9,7 +9,7 @@ import type {
   SaveDocumentRevisionResponse
 } from "@jixia/shared";
 import { currentEditorSchemaVersion, emptyEditorSnapshot } from "@jixia/shared";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../../lib/api";
 import {
@@ -25,7 +25,7 @@ import {
   WorkspaceFrame,
   WorkspaceMainSplit
 } from "../layout/workbench";
-import { JixiaEditor } from "./editor/JixiaEditor";
+import { JixiaEditor, type JixiaEditorHandle } from "./editor/JixiaEditor";
 
 type DocumentEditorPageProps = {
   readonly backLabel?: string;
@@ -42,6 +42,7 @@ type ReadDocumentResponse = {
 type AcceptedRevisionResponse = SaveDocumentRevisionResponse | { readonly error: string };
 
 export function DocumentEditorPage({ backLabel = "Projects", documentId, onBack }: DocumentEditorPageProps) {
+  const editorRef = useRef<JixiaEditorHandle | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [document, setDocument] = useState<DocumentDTO | null>(null);
   const [title, setTitle] = useState("");
@@ -102,10 +103,11 @@ export function DocumentEditorPage({ backLabel = "Projects", documentId, onBack 
 
     setDraftStatus("pending");
     const timeoutId = window.setTimeout(() => {
+      const draftContent = editorRef.current?.exportSnapshot() ?? snapshot;
       const payload: SaveDocumentDraftRequest = {
         documentId: document.id,
         baseRevision,
-        draftContent: snapshot
+        draftContent
       };
 
       setDraftStatus("saving");
@@ -141,11 +143,12 @@ export function DocumentEditorPage({ backLabel = "Projects", documentId, onBack 
     setSaveStatus("saving");
     setErrorMessage(null);
     setConflict(null);
+    const contentSnapshot = editorRef.current?.exportSnapshot() ?? snapshot;
 
     const payload: SaveDocumentRevisionRequest = {
       documentId: document.id,
       baseRevision,
-      contentSnapshot: snapshot,
+      contentSnapshot,
       title
     };
 
@@ -276,7 +279,14 @@ export function DocumentEditorPage({ backLabel = "Projects", documentId, onBack 
 
         <WorkspaceMainSplit className="jixia-editor-workbench" inspectorWidth="minmax(520px, 38vw)">
           <ArtifactCanvas aria-label="Document artifact canvas">
-            <JixiaEditor documentId={document.id} onChange={handleSnapshotChange} readOnly={readOnly} value={snapshot} />
+            <JixiaEditor
+              ref={editorRef}
+              documentId={document.id}
+              documentVersionKey={`${document.id}:${baseRevision}:${document.currentRevisionId ?? "draft"}`}
+              onChange={handleSnapshotChange}
+              readOnly={readOnly}
+              value={snapshot}
+            />
           </ArtifactCanvas>
           <Inspector activeMode="copilot" aria-label="Document inspector">
             <DeferredDocumentAI currentDocumentTitle={document.title} />

@@ -1,14 +1,54 @@
-import type {
-  DocumentDTO,
-  EditorBlockType,
-  EditorSnapshot,
-  SaveDocumentRevisionConflictResponse,
-  SaveDocumentRevisionResponse
-} from "@jixia/shared";
+import type { DocumentDTO, EditorSnapshot, SaveDocumentRevisionConflictResponse, SaveDocumentRevisionResponse } from "@jixia/shared";
 import { cleanup, fireEvent, render, screen, waitFor, act, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DocumentEditorPage } from "./DocumentEditorPage";
+
+const editorHarness = vi.hoisted(() => ({
+  exportedSnapshot: null as EditorSnapshot | null
+}));
+
+const mockedEditorProps = vi.hoisted(() => ({
+  calls: [] as { readonly documentId: string; readonly readOnly: boolean }[]
+}));
+
+vi.mock("./editor/JixiaEditor", async () => {
+  const React = await import("react");
+
+  return {
+    JixiaEditor: React.forwardRef(function MockJixiaEditor(
+    props: {
+      readonly documentId: string;
+      readonly onChange: (nextSnapshot: EditorSnapshot) => void;
+      readonly readOnly?: boolean;
+      readonly value: EditorSnapshot;
+    },
+    ref
+  ) {
+    React.useImperativeHandle(ref, () => ({
+      exportSnapshot: () => editorHarness.exportedSnapshot ?? props.value
+    }), [props.value]);
+
+    mockedEditorProps.calls.push({ documentId: props.documentId, readOnly: props.readOnly ?? false });
+
+    return (
+      <section aria-label="Mock Jixia editor" data-document-id={props.documentId} data-readonly={props.readOnly ? "true" : "false"}>
+        <p>{props.value.blocks[0]?.text ?? ""}</p>
+        <button
+          disabled={props.readOnly}
+          onClick={() => {
+            const nextSnapshot = editorHarness.exportedSnapshot ?? props.value;
+            props.onChange(nextSnapshot);
+          }}
+          type="button"
+        >
+          Simulate editor change
+        </button>
+      </section>
+    );
+  })
+  };
+});
 
 const baseDocument: DocumentDTO = {
   id: "doc-1",
@@ -45,36 +85,23 @@ const currentConflictSnapshot: EditorSnapshot = {
   ]
 };
 
-const supportedBlockButtons: readonly { readonly type: EditorBlockType; readonly label: string }[] = [
-  { type: "paragraph", label: "Paragraph" },
-  { type: "heading", label: "Heading" },
-  { type: "bulletList", label: "Bullet list" },
-  { type: "orderedList", label: "Ordered list" },
-  { type: "todo", label: "Todo" },
-  { type: "quote", label: "Quote" },
-  { type: "callout", label: "Callout" },
-  { type: "codeBlock", label: "Code block" },
-  { type: "divider", label: "Divider" },
-  { type: "table", label: "Table" },
-  { type: "image", label: "Image placeholder" },
-  { type: "file", label: "File placeholder" }
-];
-
 describe("DocumentEditorPage", () => {
   afterEach(() => {
     cleanup();
+    editorHarness.exportedSnapshot = null;
+    mockedEditorProps.calls = [];
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
-  it("loads a document and exposes the locked MVP block set through compact insertion", async () => {
+  it("loads a document and renders the shared editor boundary", async () => {
     const fetchMock = mockFetchSequence(readDocumentResponse());
 
     render(<DocumentEditorPage documentId="doc-1" />);
 
     expect(await screen.findByDisplayValue("Project synthesis")).toBeTruthy();
-    expect(screen.getByDisplayValue("Initial finding")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Insert block" })).toBeTruthy();
+    expect(screen.getByText("Initial finding")).toBeTruthy();
+    expect(screen.getByLabelText("Mock Jixia editor").getAttribute("data-readonly")).toBe("false");
     expect(screen.getByText("Use the standalone AI workspace")).toBeTruthy();
     expect(screen.getByText("No automatic document context")).toBeTruthy();
     expect(
@@ -82,16 +109,37 @@ describe("DocumentEditorPage", () => {
         name: /open copilot|send|apply|insert|rewrite|automerge|stop|cancel/i
       })
     ).toBeNull();
-    for (const block of supportedBlockButtons) {
-      expect(screen.getAllByRole("option", { name: block.label }).length).toBeGreaterThan(0);
-    }
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/documents/doc-1",
       expect.objectContaining({ credentials: "include" })
     );
   });
 
+  it("uses the same editor boundary for project and notebook document records", async () => {
+    const fetchMock = mockFetchSequence(
+      readDocumentResponse({ id: "project-doc-1", type: "project", projectId: "project-1", ownerUserId: null }),
+      readDocumentResponse({ id: "notebook-doc-1", type: "notebook", projectId: null, ownerUserId: "user-1" })
+    );
+    const { rerender } = render(<DocumentEditorPage documentId="project-doc-1" />);
+
+    expect(await screen.findByDisplayValue("Project synthesis")).toBeTruthy();
+    expect(mockedEditorProps.calls.at(-1)).toEqual({ documentId: "project-doc-1", readOnly: false });
+
+    rerender(<DocumentEditorPage backLabel="Notebook" documentId="notebook-doc-1" onBack={vi.fn()} />);
+
+    expect(await screen.findByText("Notebook")).toBeTruthy();
+    expect(mockedEditorProps.calls.at(-1)).toEqual({ documentId: "notebook-doc-1", readOnly: false });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/documents/project-doc-1",
+      "/api/documents/notebook-doc-1"
+    ]);
+  });
+
   it("autosaves drafts with the current body and base revision", async () => {
+    const draftSnapshot: EditorSnapshot = {
+      editorSchemaVersion: 1,
+      blocks: [{ id: "paragraph-1", type: "paragraph", text: "Draft body" }]
+    };
     const fetchMock = mockFetchSequence(
       readDocumentResponse(),
       {
@@ -99,10 +147,7 @@ describe("DocumentEditorPage", () => {
           documentId: "doc-1",
           userId: "user-1",
           baseRevision: 2,
-          draftContent: {
-            editorSchemaVersion: 1,
-            blocks: [{ id: "paragraph-1", type: "paragraph", text: "Draft body" }]
-          },
+          draftContent: draftSnapshot,
           updatedAt: "2026-06-16T10:12:00.000Z"
         }
       }
@@ -110,9 +155,10 @@ describe("DocumentEditorPage", () => {
 
     render(<DocumentEditorPage documentId="doc-1" />);
 
-    const textArea = (await screen.findByLabelText("Block 1 text")) as HTMLTextAreaElement;
+    await screen.findByText("Initial finding");
+    editorHarness.exportedSnapshot = draftSnapshot;
     vi.useFakeTimers();
-    fireEvent.change(textArea, { target: { value: "Draft body" } });
+    fireEvent.click(screen.getByRole("button", { name: "Simulate editor change" }));
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
@@ -129,16 +175,17 @@ describe("DocumentEditorPage", () => {
         body: JSON.stringify({
           documentId: "doc-1",
           baseRevision: 2,
-          draftContent: {
-            editorSchemaVersion: 1,
-            blocks: [{ id: "paragraph-1", type: "paragraph", text: "Draft body" }]
-          }
+          draftContent: draftSnapshot
         })
       })
     );
   });
 
   it("formally saves revisions with baseRevision and updates visible revision state", async () => {
+    const runtimeSnapshot: EditorSnapshot = {
+      editorSchemaVersion: 1,
+      blocks: [{ id: "paragraph-1", type: "paragraph", text: "Runtime save body" }]
+    };
     const savedResponse: SaveDocumentRevisionResponse = {
       outcome: "saved",
       document: {
@@ -151,7 +198,7 @@ describe("DocumentEditorPage", () => {
         id: "revision-3",
         documentId: "doc-1",
         revisionNumber: 3,
-        contentSnapshot: baseSnapshot,
+        contentSnapshot: runtimeSnapshot,
         editorUserId: "user-1",
         createdAt: "2026-06-16T10:15:00.000Z"
       }
@@ -161,6 +208,7 @@ describe("DocumentEditorPage", () => {
     render(<DocumentEditorPage documentId="doc-1" />);
 
     await screen.findByDisplayValue("Project synthesis");
+    editorHarness.exportedSnapshot = runtimeSnapshot;
     fireEvent.click(screen.getByRole("button", { name: "Save revision" }));
 
     await waitFor(() => expect(screen.getByText("Base revision 3")).toBeTruthy());
@@ -174,12 +222,52 @@ describe("DocumentEditorPage", () => {
         body: JSON.stringify({
           documentId: "doc-1",
           baseRevision: 2,
-          contentSnapshot: baseSnapshot,
+          contentSnapshot: runtimeSnapshot,
           title: "Project synthesis"
         })
       })
     );
     expect(screen.getByText("Formal revision saved.")).toBeTruthy();
+  });
+
+  it("exports the runtime snapshot for formal save without scheduling draft autosave", async () => {
+    const runtimeSnapshot: EditorSnapshot = {
+      editorSchemaVersion: 1,
+      blocks: [{ id: "paragraph-1", type: "paragraph", text: "Runtime-only body" }]
+    };
+    const savedResponse: SaveDocumentRevisionResponse = {
+      outcome: "saved",
+      document: {
+        ...baseDocument,
+        currentRevisionId: "revision-3",
+        revisionNumber: 3,
+        updatedAt: "2026-06-16T10:15:00.000Z"
+      },
+      revision: {
+        id: "revision-3",
+        documentId: "doc-1",
+        revisionNumber: 3,
+        contentSnapshot: runtimeSnapshot,
+        editorUserId: "user-1",
+        createdAt: "2026-06-16T10:15:00.000Z"
+      }
+    };
+    const fetchMock = mockFetchSequence(readDocumentResponse(), savedResponse);
+
+    render(<DocumentEditorPage documentId="doc-1" />);
+
+    await screen.findByDisplayValue("Project synthesis");
+    editorHarness.exportedSnapshot = runtimeSnapshot;
+    fireEvent.click(screen.getByRole("button", { name: "Save revision" }));
+
+    await waitFor(() => expect(screen.getByText("Formal revision saved.")).toBeTruthy());
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/draft"))).toBe(true);
   });
 
   it("shows a human-only conflict view without calling AI routes", async () => {
@@ -216,18 +304,21 @@ describe("DocumentEditorPage", () => {
     render(<DocumentEditorPage documentId="doc-1" />);
 
     const titleInput = (await screen.findByLabelText("Document title")) as HTMLInputElement;
-    const textArea = screen.getByLabelText("Block 1 text") as HTMLTextAreaElement;
     const saveButton = screen.getByRole("button", { name: "Save revision" });
-    const insertButton = screen.getByRole("button", { name: "Insert block" });
+    const editorChangeButton = screen.getByRole("button", { name: "Simulate editor change" });
 
     expect(titleInput.disabled).toBe(true);
-    expect(textArea.disabled).toBe(true);
+    expect(editorChangeButton).toHaveProperty("disabled", true);
+    expect(screen.getByLabelText("Mock Jixia editor").getAttribute("data-readonly")).toBe("true");
     expect(saveButton).toHaveProperty("disabled", true);
-    expect(insertButton).toHaveProperty("disabled", true);
     expect(screen.getByText("Archived documents are read-only.")).toBeTruthy();
 
     vi.useFakeTimers();
-    fireEvent.change(textArea, { target: { value: "Should not autosave" } });
+    editorHarness.exportedSnapshot = {
+      editorSchemaVersion: 1,
+      blocks: [{ id: "paragraph-1", type: "paragraph", text: "Should not autosave" }]
+    };
+    fireEvent.click(editorChangeButton);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(700);
