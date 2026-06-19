@@ -123,12 +123,12 @@ describe("DocumentEditorPage", () => {
     const { rerender } = render(<DocumentEditorPage documentId="project-doc-1" />);
 
     expect(await screen.findByDisplayValue("Project synthesis")).toBeTruthy();
-    expect(mockedEditorProps.calls.at(-1)).toEqual({ documentId: "project-doc-1", readOnly: false });
+    expect(mockedEditorProps.calls[mockedEditorProps.calls.length - 1]).toEqual({ documentId: "project-doc-1", readOnly: false });
 
     rerender(<DocumentEditorPage backLabel="Notebook" documentId="notebook-doc-1" onBack={vi.fn()} />);
 
     expect(await screen.findByText("Notebook")).toBeTruthy();
-    expect(mockedEditorProps.calls.at(-1)).toEqual({ documentId: "notebook-doc-1", readOnly: false });
+    expect(mockedEditorProps.calls[mockedEditorProps.calls.length - 1]).toEqual({ documentId: "notebook-doc-1", readOnly: false });
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "/api/documents/project-doc-1",
       "/api/documents/notebook-doc-1"
@@ -228,6 +228,93 @@ describe("DocumentEditorPage", () => {
       })
     );
     expect(screen.getByText("Formal revision saved.")).toBeTruthy();
+  });
+
+  it("formally saves rich code and attachment snapshots through the shared editor boundary", async () => {
+    const runtimeSnapshot: EditorSnapshot = {
+      editorSchemaVersion: 1,
+      blocks: [
+        {
+          id: "code-1",
+          type: "codeBlock",
+          attrs: { language: "python" },
+          text: "print('saved')"
+        },
+        {
+          id: "image-1",
+          type: "image",
+          attachmentId: "attachment-1",
+          attrs: {
+            attachment: {
+              fileName: "figure.png",
+              mimeType: "image/png",
+              sizeBytes: 256,
+              checksum: "sha256:abc",
+              uploadedAt: "2026-06-18T10:00:00.000Z"
+            },
+            caption: "Saved figure",
+            altText: "Saved image alt text",
+            description: "Saved image description",
+            previewWidth: 520,
+            showPreview: true
+          }
+        },
+        {
+          id: "file-1",
+          type: "file",
+          attachmentId: "attachment-2",
+          attrs: {
+            attachment: {
+              fileName: "protocol.pdf",
+              mimeType: "application/pdf",
+              sizeBytes: 1024,
+              checksum: null,
+              uploadedAt: "2026-06-18T10:05:00.000Z"
+            },
+            description: "Saved protocol description",
+            showPreview: false
+          }
+        }
+      ]
+    };
+    const savedResponse: SaveDocumentRevisionResponse = {
+      outcome: "saved",
+      document: {
+        ...baseDocument,
+        currentRevisionId: "revision-3",
+        revisionNumber: 3,
+        updatedAt: "2026-06-16T10:15:00.000Z"
+      },
+      revision: {
+        id: "revision-3",
+        documentId: "doc-1",
+        revisionNumber: 3,
+        contentSnapshot: runtimeSnapshot,
+        editorUserId: "user-1",
+        createdAt: "2026-06-16T10:15:00.000Z"
+      }
+    };
+    const fetchMock = mockFetchSequence(readDocumentResponse(), savedResponse);
+
+    render(<DocumentEditorPage documentId="doc-1" />);
+
+    await screen.findByDisplayValue("Project synthesis");
+    editorHarness.exportedSnapshot = runtimeSnapshot;
+    fireEvent.click(screen.getByRole("button", { name: "Save revision" }));
+
+    await waitFor(() => expect(screen.getByText("Formal revision saved.")).toBeTruthy());
+
+    const [, saveInit] = fetchMock.mock.calls[1] ?? [];
+    expect(saveInit).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({
+          documentId: "doc-1",
+          baseRevision: 2,
+          contentSnapshot: runtimeSnapshot,
+          title: "Project synthesis"
+        })
+      })
+    );
   });
 
   it("exports the runtime snapshot for formal save without scheduling draft autosave", async () => {
