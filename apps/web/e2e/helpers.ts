@@ -176,6 +176,14 @@ export async function waitForDraftSave(page: Page): Promise<void> {
   await expect(page.getByText(/Draft saved/)).toBeVisible();
 }
 
+export async function fillDocumentEditor(page: Page, text: string): Promise<void> {
+  const editor = page.getByLabel("Jixia BlockNote editor");
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
+  await page.keyboard.type(text);
+}
+
 export async function saveFormalRevision(page: Page): Promise<void> {
   const responsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());

@@ -6,6 +6,7 @@ import {
   collectApiRequestsWithAuthorization,
   createProjectDocumentThroughUi,
   createProjectThroughUi,
+  fillDocumentEditor,
   identityFor,
   saveFormalRevision,
   waitForDraftSave
@@ -21,14 +22,14 @@ test("saves project document drafts and formal revisions without AI writeback", 
   const documentId = await createProjectDocumentThroughUi(page, "Draft and revision smoke document");
 
   const draftSavePromise = waitForDraftSave(page);
-  await page.getByLabel("Block 1 text").fill("Draft text saved through the document draft API.");
+  await fillDocumentEditor(page, "Draft text saved through the document draft API.");
   await draftSavePromise;
 
   await saveFormalRevision(page);
   await expect(page.getByText("Base revision 1")).toBeVisible();
 
   const secondDraftPromise = waitForDraftSave(page);
-  await page.getByLabel("Block 1 text").fill("Local edit should conflict after a newer server revision.");
+  await fillDocumentEditor(page, "Local edit should conflict after a newer server revision.");
   await secondDraftPromise;
 
   const externalSaveStatus = await page.evaluate(async (input) => {
