@@ -1,5 +1,6 @@
 import { createApiApp } from "./app.js";
 import { parseApiEnv, type ApiEnv } from "./config/env.js";
+import { createObjectStorageFromEnv } from "./modules/attachments/object-storage.js";
 import type { FastifyServerOptions } from "fastify";
 
 const logger = console;
@@ -25,6 +26,11 @@ function createLoggerOptions(env: ApiEnv): FastifyServerOptions["logger"] {
     "downloadUrl",
     "prompt",
     "documentBody",
+    "storageKey",
+    "objectKey",
+    "bucket",
+    "accessKeyId",
+    "secretAccessKey",
     "storageCredentials",
     "credentials"
   ];
@@ -37,10 +43,14 @@ function createLoggerOptions(env: ApiEnv): FastifyServerOptions["logger"] {
 
 async function main(): Promise<void> {
   const env = parseApiEnv(process.env);
+  const objectStorage = createObjectStorageFromEnv(process.env);
   const app = createApiApp({
     auth: {
       nodeEnv: env.nodeEnv,
       sessionCookieName: env.sessionCookieName
+    },
+    localObjectStorage: {
+      objectStorage
     },
     logger: createLoggerOptions(env)
   });

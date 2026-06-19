@@ -3,6 +3,10 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastif
 import { aiRoutes, type AIRoutesOptions } from "./modules/ai/ai.routes.js";
 import { auditRoutes, type AuditRoutesOptions } from "./modules/audit/audit.routes.js";
 import { attachmentRoutes, type AttachmentRoutesOptions } from "./modules/attachments/attachment.routes.js";
+import {
+  localObjectStorageRoutes,
+  type LocalObjectStorageRoutesOptions
+} from "./modules/attachments/local-object-storage.routes.js";
 import { authRoutes, type AuthRoutesOptions } from "./modules/auth/routes.js";
 import { documentRoutes, type DocumentRoutesOptions } from "./modules/documents/document.routes.js";
 import { projectRoutes, type ProjectRoutesOptions } from "./modules/projects/project.routes.js";
@@ -15,6 +19,7 @@ export type CreateApiAppOptions = {
   readonly attachments?: AttachmentRoutesOptions;
   readonly auth?: AuthRoutesOptions;
   readonly documents?: DocumentRoutesOptions;
+  readonly localObjectStorage?: LocalObjectStorageRoutesOptions;
   readonly logger?: FastifyServerOptions["logger"];
   readonly projects?: ProjectRoutesOptions;
 };
@@ -30,6 +35,7 @@ export function createApiApp(options: CreateApiAppOptions = {}): FastifyInstance
   app.register(projectRoutes, options.projects ?? {});
   app.register(documentRoutes, options.documents ?? {});
   app.register(attachmentRoutes, options.attachments ?? {});
+  app.register(localObjectStorageRoutes, options.localObjectStorage ?? {});
   app.register(aiRoutes, options.ai ?? {});
   app.register(auditRoutes, options.audit ?? {});
   app.register(healthRoutes);
