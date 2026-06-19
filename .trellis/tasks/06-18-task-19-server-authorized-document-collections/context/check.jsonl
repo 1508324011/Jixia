@@ -1,0 +1,44 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": "doc/MVP_rule.md", "reason": "MVP product and security source of truth"}
+{"path": "doc/MVP_implement.md", "reason": "Post-MVP Stage B/C roadmap and verification expectations"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Task 19-23 scope, review gates, and Task 19 acceptance"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Pre-implementation checklist for acceptance and checks"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Cross-layer contract guidance for API/shared/web changes"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse-first guidance for collection UI/service extension"}
+{"path": ".trellis/spec/backend/shared-domain-contracts.md", "reason": "Transport-safe shared DTO boundary"}
+{"path": ".trellis/spec/backend/api-foundation.md", "reason": "Fastify route and handler boundary conventions"}
+{"path": ".trellis/spec/backend/database-guidelines.md", "reason": "Document ownership and no-migration database constraints"}
+{"path": ".trellis/spec/backend/error-handling.md", "reason": "Document conflict and permission failure constraints"}
+{"path": ".trellis/spec/backend/quality-guidelines.md", "reason": "Permission matrix and document service contract requirements"}
+{"path": ".trellis/spec/frontend/directory-structure.md", "reason": "Server-first web API boundary and file placement"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Workbench UI direction and no fake AI/document mutation controls"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Draft/revision/conflict frontend state constraints"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "Shared API payload types and no TS suppression"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Browser tests and server-owned auth/storage boundaries"}
+{"path": "packages/shared/src/documents.ts", "reason": "Document DTOs and new collection list response contract"}
+{"path": "packages/db/prisma/schema.prisma", "reason": "Existing Document owner/project indexes and no schema migration expectation"}
+{"path": "apps/api/src/modules/documents/document.service.ts", "reason": "Main service/repository extension target for document lists"}
+{"path": "apps/api/src/modules/documents/document.routes.ts", "reason": "Authenticated list route target"}
+{"path": "apps/api/src/modules/projects/project.routes.ts", "reason": "Existing project route surface and optional project-scoped list route home"}
+{"path": "apps/api/src/modules/projects/project.service.ts", "reason": "Project membership/readability authorization patterns"}
+{"path": "apps/api/src/modules/permissions/permission.service.ts", "reason": "Server-side document permission matrix"}
+{"path": "apps/api/src/modules/documents/document.service.test.ts", "reason": "Focused backend tests for document service/routes"}
+{"path": "apps/web/src/app/App.tsx", "reason": "Notebook placeholder and routing update target"}
+{"path": "apps/web/src/app/App.test.tsx", "reason": "Routing tests for Notebook surface"}
+{"path": "apps/web/src/features/projects/ProjectDetailPage.tsx", "reason": "Project document list missing-route seam"}
+{"path": "apps/web/src/features/documents/DocumentList.tsx", "reason": "Collection UI generalization target"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Shared editor open/save behavior to preserve"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "Regression tests for draft/revision/conflict/no-writeback"}
+{"path": "apps/web/src/features/layout/workbench.tsx", "reason": "Reusable workbench primitives for Notebook and collection UI"}
+{"path": "apps/api/src/app.ts", "reason": "API route registration sanity check"}
+{"path": "apps/api/src/test-utils/app.ts", "reason": "Fastify route test utility patterns"}
+{"path": "apps/web/src/lib/api.ts", "reason": "Browser API helper with /api prefix and cookie credentials"}
+{"path": "apps/web/src/features/projects/ProjectListPage.tsx", "reason": "Frontend collection load/create/list pattern"}
+{"path": "apps/web/src/features/layout/AppShell.tsx", "reason": "Notebook shell navigation and context copy"}
+{"path": "apps/web/e2e/helpers.ts", "reason": "Browser integration fixture helper patterns"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Project document save smoke behavior to preserve"}
+{"path": ".trellis/tasks/06-14-mvp-document-revision-service/prd.md", "reason": "Historical document service constraints"}
+{"path": ".trellis/tasks/06-14-mvp-project-crud-membership/prd.md", "reason": "Historical project membership constraints"}
+{"path": ".trellis/tasks/06-16-mvp-project-document-ui/prd.md", "reason": "Historical project/document UI constraints"}
