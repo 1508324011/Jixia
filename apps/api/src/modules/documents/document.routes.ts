@@ -27,6 +27,10 @@ const documentParamsSchema = z.object({
   documentId: z.string().trim().min(1).max(256)
 });
 
+const projectParamsSchema = z.object({
+  projectId: z.string().trim().min(1).max(256)
+});
+
 const createNotebookDocumentSchema = z.object({
   title: z.string().trim().min(1).max(200)
 });
@@ -125,6 +129,21 @@ export const documentRoutes: FastifyPluginAsync<DocumentRoutesOptions> = async (
     const payload = parsePayload(createNotebookDocumentSchema, request.body);
 
     return service.createNotebookDocument({ actor, title: payload.title });
+  });
+
+  app.get("/documents/notebook", async (request, reply) => {
+    const actor = await requireActor(request, reply);
+    const service = await resolveDocumentService();
+
+    return service.listNotebookDocuments(actor);
+  });
+
+  app.get("/projects/:projectId/documents", async (request, reply) => {
+    const actor = await requireActor(request, reply);
+    const service = await resolveDocumentService();
+    const params = parsePayload(projectParamsSchema, request.params);
+
+    return service.listProjectDocuments({ actor, projectId: params.projectId });
   });
 
   app.post("/documents/project", async (request, reply) => {

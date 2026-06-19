@@ -7,6 +7,7 @@ import {
   type DocumentStatus,
   type DocumentType,
   type EditorSnapshot,
+  type ListDocumentsResponse,
   type ProjectRole,
   type SpaceRole
 } from "@jixia/shared";
@@ -129,6 +130,8 @@ export type DocumentRepository = {
     readonly projectId: string;
     readonly userId: string;
   }) => Promise<DocumentProjectMembershipRecord | null>;
+  readonly listNotebookDocuments: (ownerUserId: string) => Promise<readonly DocumentRecord[]>;
+  readonly listProjectDocuments: (projectId: string) => Promise<readonly DocumentRecord[]>;
   readonly createDocument: (input: CreateDocumentRepositoryInput) => Promise<DocumentRecord>;
   readonly findDocumentById: (documentId: string) => Promise<DocumentRecord | null>;
   readonly saveDraft: (input: {
@@ -454,6 +457,35 @@ function toDocumentRecord(record: {
   };
 }
 
+function toDocumentListRecord(record: {
+  readonly id: string;
+  readonly type: DocumentType;
+  readonly status: DocumentStatus;
+  readonly title: string;
+  readonly ownerUserId: string | null;
+  readonly projectId: string | null;
+  readonly currentRevisionId: string | null;
+  readonly revisionNumber: number;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+  readonly project: { readonly spaceId: string } | null;
+}): DocumentRecord {
+  return {
+    id: record.id,
+    type: record.type,
+    status: record.status,
+    title: record.title,
+    ownerUserId: record.ownerUserId,
+    projectId: record.projectId,
+    projectSpaceId: record.project?.spaceId ?? null,
+    currentRevisionId: record.currentRevisionId,
+    currentRevision: null,
+    revisionNumber: record.revisionNumber,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  };
+}
+
 function toDraftRecord(record: {
   readonly documentId: string;
   readonly userId: string;
@@ -497,6 +529,24 @@ const documentSelect = {
   },
   currentRevision: {
     select: revisionSelect
+  }
+} satisfies Prisma.DocumentSelect;
+
+const documentListSelect = {
+  id: true,
+  type: true,
+  status: true,
+  title: true,
+  ownerUserId: true,
+  projectId: true,
+  currentRevisionId: true,
+  revisionNumber: true,
+  createdAt: true,
+  updatedAt: true,
+  project: {
+    select: {
+      spaceId: true
+    }
   }
 } satisfies Prisma.DocumentSelect;
 
@@ -573,6 +623,34 @@ export class PrismaDocumentRepository implements DocumentRepository {
 
       return toDocumentRecord(document);
     });
+  }
+
+  async listNotebookDocuments(ownerUserId: string): Promise<readonly DocumentRecord[]> {
+    const documents = await this.prisma.document.findMany({
+      where: {
+        type: "notebook",
+        ownerUserId,
+        projectId: null
+      },
+      orderBy: { updatedAt: "desc" },
+      select: documentListSelect
+    });
+
+    return documents.map(toDocumentListRecord);
+  }
+
+  async listProjectDocuments(projectId: string): Promise<readonly DocumentRecord[]> {
+    const documents = await this.prisma.document.findMany({
+      where: {
+        type: "project",
+        projectId,
+        ownerUserId: null
+      },
+      orderBy: { updatedAt: "desc" },
+      select: documentListSelect
+    });
+
+    return documents.map(toDocumentListRecord);
   }
 
   async findDocumentById(documentId: string): Promise<DocumentRecord | null> {
@@ -919,7 +997,98 @@ export function createDocumentService(
     return document;
   }
 
+  async function canActorReadListedDocument(actor: DocumentActor, document: DocumentRecord): Promise<boolean> {
+    try {
+      return await permissions.canReadDocument(actor.userId, document.id);
+    } catch {
+      return false;
+    }
+  }
+
+  async function listNotebookDocumentsResponse(
+    documents: readonly DocumentRecord[],
+    actor: DocumentActor
+  ): Promise<ListDocumentsResponse> {
+    const readableDocuments: DocumentDTO[] = [];
+
+    for (const document of documents) {
+      if (!isValidDocumentContext(document)) {
+        continue;
+      }
+
+      if (document.type !== "notebook" || document.ownerUserId !== actor.userId) {
+        continue;
+      }
+
+      if (await canActorReadListedDocument(actor, document)) {
+        readableDocuments.push(toDocumentDTO(document));
+      }
+    }
+
+    return {
+      documents: readableDocuments
+    };
+  }
+
+  async function listProjectDocumentsResponse(
+    documents: readonly DocumentRecord[],
+    actor: DocumentActor,
+    projectId: string
+  ): Promise<ListDocumentsResponse> {
+    const readableDocuments: DocumentDTO[] = [];
+
+    for (const document of documents) {
+      if (!isValidDocumentContext(document)) {
+        continue;
+      }
+
+      if (
+        document.type !== "project" ||
+        document.projectId !== projectId ||
+        document.projectSpaceId !== actor.spaceId
+      ) {
+        continue;
+      }
+
+      if (await canActorReadListedDocument(actor, document)) {
+        readableDocuments.push(toDocumentDTO(document));
+      }
+    }
+
+    return {
+      documents: readableDocuments
+    };
+  }
+
   return {
+    async listNotebookDocuments(actor: DocumentActor): Promise<ListDocumentsResponse> {
+      const documents = await failClosedStoredSnapshot(() => repository.listNotebookDocuments(actor.userId));
+      return listNotebookDocumentsResponse(documents, actor);
+    },
+
+    async listProjectDocuments(input: {
+      readonly actor: DocumentActor;
+      readonly projectId: string;
+    }): Promise<ListDocumentsResponse> {
+      const project = await repository.findProjectById(input.projectId);
+
+      if (!project || project.spaceId !== input.actor.spaceId) {
+        throw notFound();
+      }
+
+      const membership = await repository.findProjectMembership({
+        projectId: project.id,
+        userId: input.actor.userId
+      });
+
+      if (!membership) {
+        throw notFound();
+      }
+
+      const documents = await failClosedStoredSnapshot(() => repository.listProjectDocuments(project.id));
+      return listProjectDocumentsResponse(documents, input.actor, project.id);
+    },
+
     async createNotebookDocument(input: {
       readonly actor: DocumentActor;
       readonly title: string;

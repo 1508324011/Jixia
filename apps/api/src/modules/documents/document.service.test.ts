@@ -123,6 +123,18 @@ class InMemoryDocumentRepository implements DocumentRepository {
     return document;
   }
 
+  async listNotebookDocuments(ownerUserId: string): Promise<readonly DocumentRecord[]> {
+    return Array.from(this.documents.values())
+      .filter((document) => document.type === "notebook" && document.ownerUserId === ownerUserId)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+  }
+
+  async listProjectDocuments(projectId: string): Promise<readonly DocumentRecord[]> {
+    return Array.from(this.documents.values())
+      .filter((document) => document.type === "project" && document.projectId === projectId)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+  }
+
   async findDocumentById(documentId: string): Promise<DocumentRecord | null> {
     return this.documents.get(documentId) ?? null;
   }
@@ -594,6 +606,84 @@ describe("document service", () => {
     expectMetadataOnly(expectAuditEvent(repository.auditEvents[0]));
   });
 
+  it("lists only the current actor's valid notebook documents", async () => {
+    const firstNotebook = await service.createNotebookDocument({
+      actor: actor("notebook-owner"),
+      title: "First notebook"
+    });
+    const secondNotebook = await service.createNotebookDocument({
+      actor: actor("notebook-owner"),
+      title: "Second notebook"
+    });
+    await service.createNotebookDocument({ actor: actor("project-owner"), title: "Other notebook" });
+    await service.createProjectDocument({
+      actor: actor("project-owner"),
+      projectId: "project-1",
+      title: "Project document"
+    });
+
+    repository.documents.set("malformed-notebook", {
+      ...repository.documents.get(firstNotebook.document.id)!,
+      id: "malformed-notebook",
+      projectId: "project-1",
+      projectSpaceId: "space-1"
+    });
+
+    const response = await service.listNotebookDocuments(actor("notebook-owner"));
+
+    expect(response.documents.map((document) => document.id)).toEqual([
+      secondNotebook.document.id,
+      firstNotebook.document.id
+    ]);
+    expect(response.documents.every((document) => document.type === "notebook")).toBe(true);
+    expect(response.documents.every((document) => document.ownerUserId === "notebook-owner")).toBe(true);
+    expect(response.documents.every((document) => document.projectId === null)).toBe(true);
+    expect(JSON.stringify(response)).not.toMatch(/contentSnapshot|draftContent|storageKey|signedUrl|prompt|response/i);
+  });
+
+  it("lists project documents for explicit project members without SpaceAdmin bypass", async () => {
+    const projectDocument = await service.createProjectDocument({
+      actor: actor("project-owner"),
+      projectId: "project-1",
+      title: "Visible project doc"
+    });
+    await service.createNotebookDocument({ actor: actor("notebook-owner"), title: "Private notebook" });
+    repository.documents.set("malformed-project", {
+      ...repository.documents.get(projectDocument.document.id)!,
+      id: "malformed-project",
+      ownerUserId: "project-owner"
+    });
+    repository.documents.set("cross-space-project", {
+      ...repository.documents.get(projectDocument.document.id)!,
+      id: "cross-space-project",
+      projectSpaceId: "space-2"
+    });
+
+    const viewerResponse = await service.listProjectDocuments({
+      actor: actor("project-viewer"),
+      projectId: "project-1"
+    });
+
+    expect(viewerResponse.documents).toEqual([expect.objectContaining({ id: projectDocument.document.id })]);
+    expect(viewerResponse.documents[0]).toMatchObject({
+      type: "project",
+      ownerUserId: null,
+      projectId: "project-1"
+    });
+    await expectRejectedWithStatus(
+      service.listProjectDocuments({ actor: actor("non-member"), projectId: "project-1" }),
+      404
+    );
+    await expectRejectedWithStatus(
+      service.listProjectDocuments({ actor: actor("space-admin", "SpaceAdmin"), projectId: "project-1" }),
+      404
+    );
+    await expectRejectedWithStatus(
+      service.listProjectDocuments({ actor: actor("project-viewer", "SpaceMember", "space-2"), projectId: "project-1" }),
+      404
+    );
+  });
+
   it("allows project owner and editor creation while denying viewer non-member and SpaceAdmin bypass", async () => {
     await expect(
       service.createProjectDocument({
@@ -1056,6 +1146,16 @@ describe("document routes", () => {
   beforeEach(() => {
     repository = new InMemoryDocumentRepository();
     repository.seedUser({ id: "route-user" });
+    repository.seedUser({ id: "project-owner" });
+    repository.seedUser({ id: "project-viewer" });
+    repository.seedUser({ id: "project-non-member" });
+    repository.seedProject({
+      id: "project-1",
+      members: [
+        { userId: "project-owner", role: "ProjectOwner" },
+        { userId: "project-viewer", role: "ProjectViewer" }
+      ]
+    });
     service = createDocumentService(repository, createPermissionFacade(repository));
   });
 
@@ -1103,6 +1203,16 @@ describe("document routes", () => {
       currentSnapshot: createEmptyEditorSnapshot()
     });
 
+    const notebookListResponse = await app.inject({
+      method: "GET",
+      url: "/documents/notebook",
+      headers: { cookie: `${cookieName}=route-session` }
+    });
+    expect(notebookListResponse.statusCode).toBe(200);
+    expect(notebookListResponse.json()).toMatchObject({
+      documents: [{ id: "document-1", type: "notebook", title: "Route notebook" }]
+    });
+
     const saveResponse = await app.inject({
       method: "POST",
       url: "/documents/document-1/revisions",
@@ -1127,5 +1237,63 @@ describe("document routes", () => {
       currentRevisionNumber: 1,
       submittedBaseRevision: 0
     });
+  });
+
+  it("serves project document lists only to authenticated project members", async () => {
+    const created = await service.createProjectDocument({
+      actor: actor("project-owner"),
+      projectId: "project-1",
+      title: "Route project document"
+    });
+    const sessions = new Map([
+      [
+        "viewer-session",
+        currentSessionFor({
+          sessionId: "viewer-session",
+          userId: "project-viewer",
+          spaceRole: "SpaceMember"
+        })
+      ],
+      [
+        "non-member-session",
+        currentSessionFor({
+          sessionId: "non-member-session",
+          userId: "project-non-member",
+          spaceRole: "SpaceMember"
+        })
+      ]
+    ]);
+    app = await createTestApiApp({
+      documents: {
+        nodeEnv: "production",
+        sessionCookieName: cookieName,
+        authService: createRouteAuthService(sessions),
+        documentService: service
+      }
+    });
+
+    const viewerResponse = await app.inject({
+      method: "GET",
+      url: "/projects/project-1/documents",
+      headers: { cookie: `${cookieName}=viewer-session` }
+    });
+    expect(viewerResponse.statusCode).toBe(200);
+    expect(viewerResponse.json()).toEqual({
+      documents: [expect.objectContaining({ id: created.document.id, type: "project", projectId: "project-1" })]
+    });
+
+    const nonMemberResponse = await app.inject({
+      method: "GET",
+      url: "/projects/project-1/documents",
+      headers: { cookie: `${cookieName}=non-member-session` }
+    });
+    expect(nonMemberResponse.statusCode).toBe(404);
+    expect(nonMemberResponse.json()).toEqual({ error: "Not found" });
+
+    const unauthenticatedResponse = await app.inject({
+      method: "GET",
+      url: "/projects/project-1/documents"
+    });
+    expect(unauthenticatedResponse.statusCode).toBe(401);
   });
 });
