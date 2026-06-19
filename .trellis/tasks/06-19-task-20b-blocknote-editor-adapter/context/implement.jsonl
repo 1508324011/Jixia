@@ -1,0 +1,22 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/tasks/06-19-task-20r-editor-engine-adapter-decision-spike/decision.md", "reason": "Task20r editor engine decision, BlockNote primary path, adapter boundary, migration guardrails"}
+{"path": ".trellis/tasks/06-19-task-20r-editor-engine-adapter-decision-spike/prd.md", "reason": "Task20r decision-spike requirements and acceptance constraints"}
+{"path": ".trellis/tasks/06-19-task-20a-continuous-editor-prototype/prd.md", "reason": "Gate B failure record and failed textarea-stack root cause"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Roadmap, Gate B, Task20 split, and editor-first strategy"}
+{"path": "packages/shared/src/documents.ts", "reason": "Current EditorSnapshot and EditorBlock v1 transport contract"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Shared document lifecycle shell to preserve around the adapter"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Current failed editor runtime to replace or bypass"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "Focused document editor tests and fixtures"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Existing attachment block behavior and read-only semantics"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Existing attachment upload client flow"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Workbench styling and editor surface styles"}
+{"path": "apps/web/package.json", "reason": "Frontend dependency baseline before adding editor engine"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Document editor runtime boundary and state ownership rules"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Frontend pre-development checklist including editor runtime boundary"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Required pre-implementation discipline and stop conditions"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Cross-layer contract discipline for adapter and API lifecycle"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse existing shell, attachments, and shared contracts"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Frontend component/adapter structure guidance"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "Type-safety guidance for snapshot conversion"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend testing and quality expectations"}

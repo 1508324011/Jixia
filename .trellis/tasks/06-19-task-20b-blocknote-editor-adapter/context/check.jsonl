@@ -1,0 +1,13 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/tasks/06-19-task-20r-editor-engine-adapter-decision-spike/decision.md", "reason": "Check implementation follows Task20r BlockNote adapter decision"}
+{"path": ".trellis/tasks/06-19-task-20a-continuous-editor-prototype/prd.md", "reason": "Check failed textarea-stack architecture is not continued"}
+{"path": "packages/shared/src/documents.ts", "reason": "Check v1 snapshot/block compatibility"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Check lifecycle shell contracts remain intact"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Check editor runtime replacement/bypass is correct"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "Check focused editor tests cover adapter behavior"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Check attachment and read-only behavior preservation"}
+{"path": "apps/web/package.json", "reason": "Check dependency impact and package changes"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Check editor runtime boundary rules"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Check frontend quality and verification"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Check no backend/API/schema contract breakage"}
