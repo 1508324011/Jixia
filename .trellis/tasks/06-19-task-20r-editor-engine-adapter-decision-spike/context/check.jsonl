@@ -1,0 +1,12 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Check decision stays aligned with roadmap and Gate B/T20 split"}
+{"path": ".trellis/tasks/06-19-task-20a-continuous-editor-prototype/prd.md", "reason": "Check Gate B failure is honored and textarea prototype is not continued"}
+{"path": "packages/shared/src/documents.ts", "reason": "Check snapshot/block compatibility or migration plan"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Check adapter keeps document lifecycle shell intact"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Check failed runtime is correctly analyzed and not polished as final path"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Check attachment/read-only behavior preservation plan"}
+{"path": "apps/web/package.json", "reason": "Check dependency recommendation against current package baseline"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Check cross-layer boundaries and API lifecycle preservation"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Check reuse decisions are explicit"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Check quality and verification plan"}

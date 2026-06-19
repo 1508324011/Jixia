@@ -1,0 +1,17 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Roadmap, Task 20 split, Gate B, and editor engine decision timing"}
+{"path": ".trellis/tasks/06-19-task-20a-continuous-editor-prototype/prd.md", "reason": "Failed Task20a prototype, Gate B user feedback, and root-cause record"}
+{"path": "packages/shared/src/documents.ts", "reason": "Current EditorSnapshot and EditorBlock transport contract"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Server lifecycle shell that should wrap the future editor adapter"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Failed textarea/block-stack runtime to replace or bypass"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Existing attachment block behavior to preserve in adapter plan"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Current editor/workbench styling and failed continuous canvas attempt"}
+{"path": "apps/web/package.json", "reason": "Frontend dependency baseline for editor engine decision"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Required pre-implementation discipline and stop conditions"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Cross-layer contract discipline for editor runtime versus API lifecycle"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse guidance for shell, attachment, and shared contracts"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Frontend component and adapter boundary guidance"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Frontend runtime state guidance for editor decision"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "Type-safety guidance for adapter and snapshot migration"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend quality and verification expectations"}

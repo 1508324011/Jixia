@@ -1,0 +1,8 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/tasks/06-19-task-20a-continuous-editor-prototype/prd.md", "reason": "Debug against recorded Gate B failure and root cause"}
+{"path": "packages/shared/src/documents.ts", "reason": "Debug snapshot/block compatibility questions"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Debug lifecycle shell and adapter boundary issues"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Debug failed textarea-stack runtime assumptions"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Debug attachment/read-only integration questions"}
+{"path": "apps/web/package.json", "reason": "Debug dependency baseline questions"}
