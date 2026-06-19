@@ -1,0 +1,28 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/directory-structure.md", "reason": "Frontend structure constraints for editor changes"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Component boundaries and UX state rules"}
+{"path": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Hook and DOM state rules for editor interactions"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Draft/runtime state separation"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend verification and quality bar"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "Type-safe editor and attachment contracts"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Pre-implementation workflow rules"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Cross-layer privacy and local attachment storage contract"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse existing editor/upload contracts before adding abstractions"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Notebook/Project editor roadmap and sequencing"}
+{"path": ".trellis/tasks/06-19-task-20c-rich-block-editing-polish/prd.md", "reason": "Prior rich-block failure and scope"}
+{"path": ".trellis/tasks/06-19-task-20d-local-attachment-storage-upload-e2e/prd.md", "reason": "Manual review result and reusable upload foundation"}
+{"path": ".trellis/tasks/06-19-task-20b-blocknote-editor-adapter/prd.md", "reason": "BlockNote adapter baseline and writing feel constraints"}
+{"path": ".trellis/tasks/06-19-task-20r-editor-engine-adapter-decision-spike/decision.md", "reason": "Editor engine decision and fallback boundaries"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Shared document lifecycle boundary"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "BlockNote adapter, custom blocks, snapshot mapping, paste/drop target"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Media/file block UI and interaction target"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Reusable upload and open/download helpers"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Editor code/media styling target"}
+{"path": "packages/shared/src/documents.ts", "reason": "EditorSnapshot and document block contracts"}
+{"path": "packages/shared/src/attachments.ts", "reason": "Attachment DTOs and limits"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.test.ts", "reason": "Editor component coverage"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.test.tsx", "reason": "Attachment block component coverage"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.test.ts", "reason": "Upload helper privacy/safety coverage"}
+{"path": "apps/web/e2e/attachment-upload.spec.ts", "reason": "Local attachment upload E2E baseline"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Document save/refresh E2E baseline"}
