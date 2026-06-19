@@ -1,0 +1,20 @@
+{
+  "title": "Task 20d Local Attachment Storage and Upload E2E",
+  "slug": "task-20d-local-attachment-storage-upload-e2e",
+  "type": "fullstack",
+  "status": "manual-review-partial",
+  "createdAt": "2026-06-19T10:24:00+00:00",
+  "updatedAt": "2026-06-19T13:19:33+00:00",
+  "manualReview": {
+    "result": "backend upload passed, editor UX failed/partial",
+    "reviewedAt": "2026-06-19T13:19:33+00:00",
+    "notes": [
+      "Local backend upload chain passed after the local object storage bodyBuffer string/Buffer fix.",
+      "Verified path: upload intent -> direct local-object-storage PUT -> confirm -> signed download.",
+      "Health, login, notebook document list, and project document list were reachable in the local stack.",
+      "Editor UX remains failed/partial: code block default colors are unreadable, image/file/attachment block card clicks are inert, and pasted or dropped files/images are not auto-inserted.",
+      "Root cause is the frontend block interaction layer, not the attachment storage contract."
+    ],
+    "nextTask": ".trellis/tasks/06-19-task-20e-block-local-code-media-ux"
+  }
+}

@@ -1,0 +1,34 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/tasks/06-19-task-20c-rich-block-editing-polish/prd.md", "reason": "Manual review failure source and boundary between Task20d and later block-local UI"}
+{"path": ".trellis/tasks/06-19-task-20b-blocknote-editor-adapter/prd.md", "reason": "BlockNote editor baseline and shared editor boundary"}
+{"path": ".trellis/tasks/06-19-task-20r-editor-engine-adapter-decision-spike/decision.md", "reason": "Editor adapter decision and privacy constraints"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Roadmap and gates for Notebook/Project document editor"}
+{"path": "apps/api/src/modules/attachments/object-storage.ts", "reason": "S3-compatible storage env contract and local storage root cause"}
+{"path": "apps/api/src/modules/attachments/attachment.service.ts", "reason": "Upload intent, direct upload confirmation, permission checks, metadata verification"}
+{"path": "apps/api/src/modules/attachments/attachment.routes.ts", "reason": "Attachment API routes for upload intent, confirm, and download"}
+{"path": "apps/api/src/modules/attachments/attachment.service.test.ts", "reason": "Backend attachment tests and in-memory storage patterns"}
+{"path": "apps/api/src/config/env.ts", "reason": "API environment configuration pattern"}
+{"path": "apps/api/package.json", "reason": "API scripts and local startup constraints"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Browser upload-intent/direct-upload/confirm client"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.test.ts", "reason": "Frontend upload safety guard tests"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Attachment block UI and upload entrypoint"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.test.tsx", "reason": "Attachment block component coverage"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "BlockNote attachment block integration and snapshot export"}
+{"path": "apps/web/e2e/attachment-upload.spec.ts", "reason": "Existing attachment upload E2E behavior"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Document save E2E should include persisted attachment behavior"}
+{"path": "apps/web/e2e/helpers.ts", "reason": "E2E auth/editor helper patterns"}
+{"path": "apps/web/e2e/test-api.mjs", "reason": "Current E2E fake storage/upload behavior"}
+{"path": "playwright.config.ts", "reason": "E2E server/env configuration"}
+{"path": "apps/web/package.json", "reason": "Web scripts and dependency baseline"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Required pre-implementation discipline"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Cross-layer API/storage/upload contract discipline"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse attachment service/upload helper/editor boundary"}
+{"path": ".trellis/spec/backend/api-foundation.md", "reason": "Backend route and API foundation guidance"}
+{"path": ".trellis/spec/backend/error-handling.md", "reason": "Backend storage/upload error handling guidance"}
+{"path": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend test and quality expectations"}
+{"path": ".trellis/spec/backend/shared-domain-contracts.md", "reason": "Transport-safe shared contract guidance"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Document editor runtime boundary and upload state guidance"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend testing and E2E expectations"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "Frontend type-safety requirements"}
