@@ -551,6 +551,8 @@ S3_ACCESS_KEY_ID=jixia_minio
 S3_SECRET_ACCESS_KEY=jixia_minio_password
 ```
 
+For local attachment review without public cloud credentials, the API falls back to an isolated local object-storage driver when `NODE_ENV` is not `production` and no `S3_*` settings are present. Partial `S3_*` settings fail loudly as incomplete configuration instead of silently falling back. Set `ATTACHMENT_STORAGE_DRIVER=local` to force local mode, optionally override `LOCAL_OBJECT_STORAGE_ROOT=storage/attachments`, `LOCAL_OBJECT_STORAGE_PUBLIC_BASE_URL=http://127.0.0.1:3000/local-object-storage`, and `LOCAL_OBJECT_STORAGE_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173`. Production still requires the complete S3-compatible settings and rejects the local driver.
+
 - [ ] **Step 3: Verify scaffold commands**
 
 Run:

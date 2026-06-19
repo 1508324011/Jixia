@@ -64,3 +64,51 @@ export type AttachmentDownloadResponse = {
   readonly expiresAt: string;
 };
 ```
+
+## Scenario: Editor V1 Rich Attachment Metadata Boundary
+
+### 1. Scope / Trigger
+- Trigger: Frontend document editor work adds or changes image/file attachment display behavior while continuing to write `EditorSnapshot` schema version 1.
+- Scope: `EditorBlock` values with `type: "image" | "file"`, `attachmentId`, `attrs.attachment`, and safe display metadata carried in `attrs` for draft/revision/conflict snapshots.
+- Boundary: This scenario does not approve an `EditorSnapshotV2` migration, backend schema/API changes, public attachment URLs, Markdown export, CRDT/realtime state, or AI document writeback.
+
+### 2. Signatures
+- Attachment identity: `EditorBlock.attachmentId` stores the server attachment identifier only.
+- Safe attachment metadata: `attrs.attachment` may contain `fileName`, `mimeType`, `sizeBytes`, `checksum`, and `uploadedAt`.
+- Safe display metadata: `attrs.caption`, `attrs.altText`, `attrs.description`, `attrs.previewWidth`, and `attrs.showPreview` may be used by the editor adapter when preserved by v1 normalization.
+
+### 3. Contracts
+- The editor adapter must sanitize image/file blocks on import/export so persisted snapshots contain only `attachmentId`, safe attachment metadata, and safe display metadata.
+- Signed upload URLs, signed download URLs, object-storage keys, buckets, provider prompts, authorization headers, cookies, raw credentials, upload internals, and AI/provider runtime data must never be persisted in `EditorSnapshot` blocks or displayed as Markdown-like document content.
+- Replacing an attachment must keep the existing block `id` stable and preserve user-authored safe display metadata unless the user edits or clears that metadata.
+- Read-only document mode may render captions, descriptions, alt text, previews, and open/download controls through the server-authorized attachment flow, but must disable upload, replace, remove, resize, caption, and metadata mutation controls.
+- Transient preview/download URLs must be resolved at view/open time through the existing attachment API flow and must not be copied back into block `attrs`, browser storage, AI context payloads, or test fixtures.
+
+### 4. Validation & Error Matrix
+- Adapter export includes `signedUrl`, `downloadUrl`, `uploadUrl`, `storageKey`, `objectKey`, `bucket`, `authorization`, `cookie`, `providerPrompt`, raw provider payloads, or credential-like fields -> block PR.
+- Attachment replacement changes the block `id`, drops caption/description/alt/preview metadata unintentionally, or persists direct upload/download internals -> block PR.
+- Read-only mode exposes upload/replace/delete/resize/caption inputs for attachment blocks -> block PR.
+- Server v1 snapshot normalization drops the safe display metadata needed by the editor -> stop and create an explicit `EditorSnapshotV2` migration task rather than silently losing user input.
+
+### 5. Good/Base/Bad Cases
+- Good: an image block stores `attachmentId`, safe file metadata, `caption`, `altText`, `previewWidth`, and `showPreview`, then resolves a transient preview URL only when the user requests preview/open.
+- Good: a file block stores `attachmentId`, safe file metadata, `description`, and `showPreview: false` without a public file URL.
+- Base: legacy v1 image/file blocks without display metadata round-trip unchanged and do not receive default caption/preview attrs just because they were opened.
+- Bad: `attrs.attachment.signedUrl`, `attrs.storageKey`, `attrs.authorization`, `attrs.providerPrompt`, or a public object URL appears in a draft, revision, conflict snapshot, test fixture, or rendered document text.
+
+### 6. Tests Required
+- Adapter conversion tests must round-trip safe attachment display metadata and prove forbidden URL/storage/auth/provider fields do not survive import/export.
+- Attachment component tests must cover metadata editing, replace-with-preserved-block-id, read-only mutation hiding, and transient preview/open resolution.
+- Document lifecycle tests must prove draft/formal save paths export the latest runtime snapshot containing code and attachment metadata.
+- E2E smoke coverage should include document save behavior and private attachment flow when the changed UI path is reachable in browser tests.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+const block = { type: "image", attrs: { signedUrl: upload.url, storageKey: intent.storageKey } };
+```
+
+#### Correct
+```typescript
+const block = { type: "image", attachmentId, attrs: { caption, previewWidth, showPreview } };
+```
