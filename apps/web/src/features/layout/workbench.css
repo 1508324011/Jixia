@@ -580,8 +580,24 @@
 }
 
 .jixia-blocknote-shell {
+  position: relative;
   min-width: 0;
   color: #10202a;
+}
+
+.jixia-blocknote-shell[data-drag-state="ready"] {
+  outline: 2px solid #0f7180;
+  outline-offset: 8px;
+  background: linear-gradient(180deg, rgba(236, 254, 255, 0.5), rgba(255, 255, 255, 0));
+}
+
+.jixia-blocknote-shell__drop-hint {
+  margin: 0 0 6px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .jixia-blocknote-shell .bn-container,
@@ -608,8 +624,127 @@
 }
 
 .jixia-blocknote-shell .bn-block-content[data-content-type="codeBlock"] {
-  border: 1px solid #dbe5ed;
-  background: #f8fafc;
+  border: 1px solid #1e293b;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.jixia-blocknote-shell .bn-block-content[data-content-type="codeBlock"] :where(pre, code),
+.jixia-blocknote-shell .bn-block-content[data-content-type="codeBlock"] :where(span) {
+  background: transparent;
+  color: inherit;
+  caret-color: #67e8f9;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  line-height: 1.65;
+}
+
+.jixia-code-block {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #1e293b;
+  background: #0f172a;
+  color: #e2e8f0;
+  box-shadow: inset 3px 0 0 #0f7180;
+}
+
+.jixia-code-block ::selection,
+.jixia-blocknote-shell .bn-block-content[data-content-type="codeBlock"] ::selection {
+  background: rgba(103, 232, 249, 0.28);
+  color: #ffffff;
+}
+
+.jixia-code-block:focus-within,
+.jixia-code-block:hover {
+  border-color: #0f7180;
+  box-shadow: inset 3px 0 0 #22d3ee, 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+
+.jixia-code-block__toolbar {
+  display: flex;
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  right: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.jixia-code-block:focus-within .jixia-code-block__toolbar,
+.jixia-code-block:hover .jixia-code-block__toolbar {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.jixia-code-block__language,
+.jixia-code-block__control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  background: rgba(15, 23, 42, 0.92);
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+  padding: 6px 7px;
+}
+
+.jixia-code-block__language span {
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.jixia-code-block__language select {
+  border: 0;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+  outline-color: #67e8f9;
+}
+
+.jixia-code-block__language option {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.jixia-code-block__control {
+  cursor: pointer;
+}
+
+.jixia-code-block__control:hover {
+  border-color: #67e8f9;
+  color: #ffffff;
+}
+
+.jixia-code-block__pre {
+  overflow: auto;
+  margin: 0;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1.65;
+  padding: 42px 14px 14px;
+}
+
+.jixia-code-block__content {
+  display: block;
+  min-height: 1.65em;
+  background: transparent;
+  color: inherit;
+  caret-color: #67e8f9;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: pre;
+}
+
+.jixia-code-block[data-wrap="true"] .jixia-code-block__content {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .jixia-blocknote-shell[data-readonly="true"] .bn-editor {
@@ -663,9 +798,35 @@
 .jixia-attachment-inline {
   display: grid;
   gap: 9px;
-  border-block: 1px dashed #cbd5df;
+  border: 1px dashed #cbd5df;
   background: #fbfcfd;
-  padding: 12px 0;
+  cursor: pointer;
+  padding: 12px;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.jixia-attachment-inline:hover,
+.jixia-attachment-inline:focus-visible {
+  border-color: #99d8de;
+  background: #f8ffff;
+  box-shadow: inset 3px 0 0 #0f7180;
+  outline: none;
+}
+
+.jixia-attachment-inline[data-drag-state="ready"],
+.jixia-attachment-inline[data-status="uploading"] {
+  border-color: #38bdf8;
+  background: #f0f9ff;
+}
+
+.jixia-attachment-inline[data-status="success"] {
+  border-color: #a7f3d0;
+  background: #f7fffb;
+}
+
+.jixia-attachment-inline[data-status="error"] {
+  border-color: #fca5a5;
+  background: #fff7f7;
 }
 
 .jixia-attachment-inline__header,
@@ -693,6 +854,27 @@
   background: #e2e8f0;
   color: #475569;
   font-weight: 900;
+}
+
+.jixia-attachment-inline__title small {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.jixia-attachment-inline__dropzone {
+  display: grid;
+  gap: 8px;
+  border: 1px dashed #dbe5ed;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.jixia-attachment-inline__dropzone > strong {
+  color: #10202a;
+  font-size: 13px;
 }
 
 .jixia-attachment-inline__metadata {
@@ -730,6 +912,80 @@
   gap: 10px;
   border-top: 1px solid #edf2f7;
   padding-top: 9px;
+}
+
+.jixia-attachment-inline__upload-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #334e68;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.jixia-attachment-inline__upload-control input:disabled {
+  cursor: not-allowed;
+}
+
+.jixia-attachment-inline__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.jixia-attachment-inline__fields .jixia-field {
+  margin: 0;
+}
+
+.jixia-attachment-inline__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.jixia-attachment-inline__preview {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.jixia-attachment-inline__preview img {
+  width: auto;
+  max-width: 100%;
+  border: 1px solid #dbe5ed;
+  background: #ffffff;
+}
+
+.jixia-attachment-inline__preview figcaption {
+  color: #475569;
+  font-size: 12px;
+}
+
+.jixia-attachment-inline__safe-metadata {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  border-left: 2px solid #dbe5ed;
+  padding-left: 10px;
+}
+
+.jixia-attachment-inline__safe-metadata dt {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.jixia-attachment-inline__safe-metadata dd {
+  margin: 2px 0 0;
+  color: #334155;
+  font-size: 12px;
 }
 
 .jixia-ai-copilot {
