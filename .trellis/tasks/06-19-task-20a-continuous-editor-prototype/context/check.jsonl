@@ -1,0 +1,14 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Verify Task 20a remains prototype-only and stops at Gate B"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Check implementation discipline and stop conditions"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Check no cross-layer contract breakage"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Check shared editor and attachment reuse"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Check frontend quality and testing requirements"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "Check frontend type-safety requirements"}
+{"path": "packages/shared/src/documents.ts", "reason": "Check snapshot/block transport remains unchanged"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Check editor lifecycle contracts are preserved"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Check continuous editor prototype behavior"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "Check focused test coverage"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Check attachments/read-only behavior is not regressed"}
+{"path": ".trellis/tasks/06-18-task-19-server-authorized-document-collections/prd.md", "reason": "Check predecessor Gate A boundary and shared editor constraint"}

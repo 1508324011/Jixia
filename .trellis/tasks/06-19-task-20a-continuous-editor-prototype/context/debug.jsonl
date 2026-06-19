@@ -1,0 +1,8 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Debug against Task 20a plan, Gate B, and non-goals"}
+{"path": "packages/shared/src/documents.ts", "reason": "Debug snapshot/block transport regressions"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Debug document lifecycle and API flow regressions"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Debug continuous editor prototype behavior"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "Debug focused test failures"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Debug attachment/read-only regressions"}

@@ -1,0 +1,17 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Task 20a source plan, split guidance, Gate B, non-goals"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Required pre-implementation discipline"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Cross-layer contract and boundary guidance"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse existing editor and attachment components"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Frontend component structure and behavior guidance"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Frontend local/server state guidance"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "Frontend type-safety requirements"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend test and quality expectations"}
+{"path": "packages/shared/src/documents.ts", "reason": "EditorSnapshot and EditorBlock transport contract"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Shared document editor lifecycle and API flow"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Primary continuous editor prototype target"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "Focused editor page tests and fixtures"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Existing attachment block rendering and read-only behavior"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Workbench visual language for editor surface"}
+{"path": ".trellis/tasks/06-18-task-19-server-authorized-document-collections/prd.md", "reason": "Predecessor Task 19 scope and Gate A boundary"}
