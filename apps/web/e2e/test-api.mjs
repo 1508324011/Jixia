@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
 
 const apiPort = Number(process.env.JIXIA_E2E_API_PORT ?? 4174);
@@ -5,6 +6,7 @@ const webPort = Number(process.env.JIXIA_E2E_WEB_PORT ?? 5173);
 const sessionCookieName = "jixia_e2e_session";
 const space = { id: "space-e2e", name: "Jixia E2E Space" };
 const sessionLifetimeMs = 7 * 24 * 60 * 60 * 1000;
+const localObjectStorageSigningSecret = "jixia-e2e-local-object-storage-secret";
 
 const counters = new Map();
 const usersByEmail = new Map();
@@ -15,6 +17,14 @@ const documents = new Map();
 const uploadIntents = new Map();
 const uploadedObjects = new Map();
 const attachments = new Map();
+const forbiddenDirectUploadHeaderNames = new Set([
+  "authorization",
+  "cookie",
+  "proxy-authorization",
+  "x-amz-credential",
+  "x-amz-security-token",
+  "x-amz-signature"
+]);
 
 const emptyEditorSnapshot = {
   editorSchemaVersion: 1,
@@ -50,6 +60,74 @@ function sendEmpty(response, statusCode, headers = {}) {
     ...headers
   });
   response.end();
+}
+
+function e2eApiOrigin() {
+  return `http://127.0.0.1:${apiPort}`;
+}
+
+function allowedOriginFromRequest(request) {
+  const origin = request.headers.origin;
+  if (!origin) {
+    return null;
+  }
+  return origin === `http://127.0.0.1:${webPort}` || origin === `http://localhost:${webPort}` ? origin : undefined;
+}
+
+function corsHeaders(request, method) {
+  const origin = allowedOriginFromRequest(request);
+  if (origin === undefined) {
+    return null;
+  }
+  return {
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": `${method}, OPTIONS`,
+    "Access-Control-Allow-Headers": "content-type",
+    "Access-Control-Expose-Headers": "ETag",
+    ...(origin ? { "Access-Control-Allow-Origin": origin } : {})
+  };
+}
+
+function signLocalObjectRequest(method, storageKey, expiresAtMilliseconds) {
+  return createHmac("sha256", localObjectStorageSigningSecret)
+    .update(`${method}\n${storageKey}\n${expiresAtMilliseconds}`)
+    .digest("hex");
+}
+
+function encodeStorageKeyToken(storageKey) {
+  return Buffer.from(storageKey, "utf8").toString("base64url");
+}
+
+function decodeStorageKeyToken(token) {
+  try {
+    const decoded = Buffer.from(token, "base64url").toString("utf8");
+    return decoded.trim() ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+function localObjectStorageUrl(method, storageKey, expiresAt) {
+  const expiresAtMilliseconds = new Date(expiresAt).getTime();
+  const pathPrefix = method === "PUT" ? "upload" : "download";
+  const url = new URL(`/local-object-storage/${pathPrefix}/${encodeStorageKeyToken(storageKey)}`, e2eApiOrigin());
+  url.searchParams.set("expires", String(expiresAtMilliseconds));
+  url.searchParams.set("signature", signLocalObjectRequest(method, storageKey, expiresAtMilliseconds));
+  return url.toString();
+}
+
+function verifyLocalObjectStorageUrl(method, url) {
+  const match = url.pathname.match(/^\/local-object-storage\/(?:upload|download)\/([^/]+)$/);
+  if (!match) {
+    return null;
+  }
+  const storageKey = decodeStorageKeyToken(match[1] ?? "");
+  const expiresAtMilliseconds = Number(url.searchParams.get("expires"));
+  const signature = url.searchParams.get("signature");
+  if (!storageKey || !Number.isInteger(expiresAtMilliseconds) || !signature || expiresAtMilliseconds <= Date.now()) {
+    return null;
+  }
+  return signature === signLocalObjectRequest(method, storageKey, expiresAtMilliseconds) ? storageKey : null;
 }
 
 function sendError(response, statusCode, message) {
@@ -550,11 +628,13 @@ async function handleApiRequest(request, response, url) {
     }
 
     const timestamp = nowIso();
+    const intentId = nextId("upload-intent");
     const intent = {
-      id: nextId("upload-intent"),
+      id: intentId,
       documentId,
       uploaderUserId: context.user.id,
       blockType: body.blockType === "file" ? "file" : "image",
+      storageKey: `tmp/uploads/e2e/${intentId}/${String(body.fileName ?? "attachment").replace(/[^a-zA-Z0-9._-]+/g, "-")}`,
       fileName: String(body.fileName ?? "attachment"),
       mimeType: String(body.mimeType ?? "application/octet-stream").toLowerCase(),
       sizeBytes: Number(body.sizeBytes ?? 0),
@@ -573,7 +653,7 @@ async function handleApiRequest(request, response, url) {
       intent: publicIntent(intent),
       upload: {
         method: "PUT",
-        url: `${sameOriginFromRequest(request)}/api/e2e-storage/upload/${encodeURIComponent(intent.id)}`,
+        url: localObjectStorageUrl("PUT", intent.storageKey, intent.expiresAt),
         requiredHeaders: { "content-type": intent.mimeType },
         expiresAt: intent.expiresAt
       }
@@ -581,26 +661,43 @@ async function handleApiRequest(request, response, url) {
     return;
   }
 
-  const directUploadMatch = path.match(/^\/api\/e2e-storage\/upload\/([^/]+)$/);
-  if (request.method === "PUT" && directUploadMatch) {
-    if (request.headers.cookie || request.headers.authorization) {
+  const localObjectUploadMatch = path.match(/^\/local-object-storage\/upload\/([^/]+)$/);
+  if (request.method === "OPTIONS" && localObjectUploadMatch) {
+    const headers = corsHeaders(request, "PUT");
+    if (!headers) {
+      sendError(response, 403, "Origin not allowed");
+      return;
+    }
+    sendEmpty(response, 204, headers);
+    return;
+  }
+
+  if (request.method === "PUT" && localObjectUploadMatch) {
+    const headers = corsHeaders(request, "PUT");
+    if (!headers) {
+      sendError(response, 403, "Origin not allowed");
+      return;
+    }
+    if (Object.keys(request.headers).some((header) => forbiddenDirectUploadHeaderNames.has(header.toLowerCase()))) {
       sendError(response, 400, "Direct upload must not include browser credentials");
       return;
     }
-    const intentId = decodeURIComponent(directUploadMatch[1] ?? "");
-    const intent = uploadIntents.get(intentId);
+    const storageKey = verifyLocalObjectStorageUrl("PUT", url);
+    const intent = storageKey
+      ? Array.from(uploadIntents.values()).find((candidate) => candidate.storageKey === storageKey)
+      : undefined;
     if (!intent || intent.status !== "pending") {
       sendError(response, 404, "Not found");
       return;
     }
     const objectBody = await readBody(request);
-    uploadedObjects.set(intentId, {
+    uploadedObjects.set(storageKey, {
       body: objectBody,
       sizeBytes: objectBody.length,
       mimeType: String(request.headers["content-type"] ?? "application/octet-stream").toLowerCase(),
-      etag: `etag-${intentId}`
+      etag: `"etag-${intent.id}"`
     });
-    sendEmpty(response, 200);
+    sendEmpty(response, 200, { ...headers, ETag: `"etag-${intent.id}"` });
     return;
   }
 
@@ -609,7 +706,7 @@ async function handleApiRequest(request, response, url) {
     const context = requireSession(request, response);
     const intentId = decodeURIComponent(confirmMatch[1] ?? "");
     const intent = uploadIntents.get(intentId);
-    const object = uploadedObjects.get(intentId);
+    const object = intent ? uploadedObjects.get(intent.storageKey) : undefined;
     if (!context) {
       return;
     }
@@ -635,6 +732,7 @@ async function handleApiRequest(request, response, url) {
       documentId: intent.documentId,
       uploadIntentId: intent.id,
       uploadedByUserId: context.user.id,
+      storageKey: intent.storageKey,
       fileName: intent.fileName,
       mimeType: intent.mimeType,
       sizeBytes: intent.sizeBytes,
@@ -665,17 +763,34 @@ async function handleApiRequest(request, response, url) {
     }
     sendJson(response, 200, {
       attachment: publicAttachment(attachment),
-      downloadUrl: `${sameOriginFromRequest(request)}/api/e2e-storage/download/${encodeURIComponent(attachment.id)}`,
+      downloadUrl: localObjectStorageUrl("GET", attachment.storageKey, new Date(Date.now() + 15 * 60 * 1000).toISOString()),
       expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString()
     });
     return;
   }
 
-  const objectDownloadMatch = path.match(/^\/api\/e2e-storage\/download\/([^/]+)$/);
-  if (request.method === "GET" && objectDownloadMatch) {
-    const attachmentId = decodeURIComponent(objectDownloadMatch[1] ?? "");
-    const attachment = attachments.get(attachmentId);
-    const object = attachment ? uploadedObjects.get(attachment.uploadIntentId) : undefined;
+  const localObjectDownloadMatch = path.match(/^\/local-object-storage\/download\/([^/]+)$/);
+  if (request.method === "OPTIONS" && localObjectDownloadMatch) {
+    const headers = corsHeaders(request, "GET");
+    if (!headers) {
+      sendError(response, 403, "Origin not allowed");
+      return;
+    }
+    sendEmpty(response, 204, headers);
+    return;
+  }
+
+  if (request.method === "GET" && localObjectDownloadMatch) {
+    const headers = corsHeaders(request, "GET");
+    if (!headers) {
+      sendError(response, 403, "Origin not allowed");
+      return;
+    }
+    const storageKey = verifyLocalObjectStorageUrl("GET", url);
+    const attachment = storageKey
+      ? Array.from(attachments.values()).find((candidate) => candidate.storageKey === storageKey)
+      : undefined;
+    const object = storageKey ? uploadedObjects.get(storageKey) : undefined;
     if (!attachment || !object) {
       sendError(response, 404, "Not found");
       return;
@@ -683,7 +798,9 @@ async function handleApiRequest(request, response, url) {
     response.writeHead(200, {
       "Content-Type": attachment.mimeType,
       "Content-Length": String(object.body.length),
-      "Cache-Control": "no-store"
+      "Cache-Control": "no-store",
+      ETag: object.etag,
+      ...headers
     });
     response.end(object.body);
     return;

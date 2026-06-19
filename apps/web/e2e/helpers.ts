@@ -55,7 +55,7 @@ export function collectDirectUploadCredentialLeaks(page: Page): readonly string[
 
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (!url.pathname.startsWith("/api/e2e-storage/upload/")) {
+    if (!url.pathname.startsWith("/local-object-storage/upload/")) {
       return;
     }
 
@@ -180,7 +180,8 @@ export async function fillDocumentEditor(page: Page, text: string): Promise<void
   const editor = page.getByLabel("Jixia BlockNote editor");
   await expect(editor).toBeVisible();
   await editor.click();
-  await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
+  const selectAllShortcut = await page.evaluate(() => navigator.platform.toLowerCase().includes("mac") ? "Meta+A" : "Control+A");
+  await page.keyboard.press(selectAllShortcut);
   await page.keyboard.type(text);
 }
 
