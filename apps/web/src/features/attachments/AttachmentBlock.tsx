@@ -147,6 +147,8 @@ export function AttachmentBlock({ documentId, block, index, onChange, onRemove, 
   }
 
   function handleCardClick(event: MouseEvent<HTMLElement>): void {
+    event.stopPropagation();
+
     if (isInteractiveElement(event.target)) {
       return;
     }
@@ -154,10 +156,16 @@ export function AttachmentBlock({ documentId, block, index, onChange, onRemove, 
     activateCard();
   }
 
+  function handleCardMouseDown(event: MouseEvent<HTMLElement>): void {
+    event.stopPropagation();
+  }
+
   function handleCardKeyDown(event: KeyboardEvent<HTMLElement>): void {
     if (event.key !== "Enter" && event.key !== " ") {
       return;
     }
+
+    event.stopPropagation();
 
     if (isInteractiveElement(event.target)) {
       return;
@@ -251,6 +259,7 @@ export function AttachmentBlock({ documentId, block, index, onChange, onRemove, 
     <section
       aria-label={`Block ${index + 1} ${blockLabel} attachment`}
       className="jixia-attachment-inline"
+      contentEditable={false}
       data-drag-state={dragState}
       data-status={effectiveStatus}
       onClick={handleCardClick}
@@ -258,6 +267,7 @@ export function AttachmentBlock({ documentId, block, index, onChange, onRemove, 
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       onKeyDown={handleCardKeyDown}
+      onMouseDown={handleCardMouseDown}
       onPaste={handlePaste}
       role="group"
       tabIndex={0}
@@ -302,6 +312,11 @@ export function AttachmentBlock({ documentId, block, index, onChange, onRemove, 
             Select a {blockLabel} to request a server upload intent, upload to the transient signed URL, and link the
             confirmed attachment ID to this block.
           </p>
+          {!readOnly ? (
+            <Button disabled={effectiveStatus === "uploading"} onClick={openFilePicker} variant="primary">
+              Choose {blockLabel}
+            </Button>
+          ) : null}
           {pendingName ? (
             <dl className="jixia-attachment-inline__metadata" aria-label="Pending upload metadata">
               <div>
