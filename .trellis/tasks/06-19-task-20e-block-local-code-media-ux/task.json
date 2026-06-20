@@ -2,7 +2,37 @@
   "title": "Task 20e Block-local Code and Media UX",
   "slug": "task-20e-block-local-code-media-ux",
   "type": "frontend",
-  "status": "finished",
+  "status": "manual-review-failed",
   "createdAt": "2026-06-19T13:17:08+00:00",
-  "updatedAt": "2026-06-19T14:53:27+00:00"
+  "updatedAt": "2026-06-19T15:28:49+00:00",
+  "manualReview": {
+    "result": "failed",
+    "reviewedAt": "2026-06-19T15:28:49+00:00",
+    "notes": [
+      "Current implementation was committed locally in 12 atomic commits, but manual review did not pass UX acceptance.",
+      "User reported that code block language/copy/wrap controls are not discoverable or usable inside the block.",
+      "User reported image/file/attachment card clicks still appear inert in real manual review.",
+      "User reported pasted images/files show \"Attachment direct upload failed before confirmation.\" and do not auto-insert into the document.",
+      "Root cause is still the browser-observed editor interaction model: hidden code controls, BlockNote/custom block event mismatch, and direct upload browser/CORS/public-base-url path need proof in real browser, not only synthetic unit tests."
+    ],
+    "committedImplementation": {
+      "localCommits": [
+        "753afd5",
+        "736008a",
+        "fe2663e",
+        "bd2b582",
+        "c8a7143",
+        "5c301d6",
+        "52ab4f2",
+        "3c81ee6",
+        "6a0f8f7",
+        "383c15c",
+        "3349542",
+        "7c0f524"
+      ],
+      "pushed": false,
+      "pullRequestCreated": false
+    },
+    "nextTask": ".trellis/tasks/06-19-task-20f-browser-observed-block-interaction-repair"
+  }
 }

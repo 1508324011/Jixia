@@ -166,3 +166,20 @@ Stop and ask before continuing if any of these happen:
 - Notebook and Project document editors start diverging,
 - the work drifts into Markdown/PDF export, realtime collaboration, AI writeback, comments, or unrelated editor features,
 - BlockNote cannot support the required behavior without a larger editor-engine replan.
+
+## Manual Review Result
+
+Reviewed at: 2026-06-19T15:28:49+00:00
+
+Result: `failed`.
+
+The Task 20e implementation was committed locally in 12 atomic commits, but manual review did not pass. The observed failures are the product truth and override automated green checks:
+
+- code block language/copy/wrap controls are not discoverable or usable inside the block during normal editing,
+- image/file/attachment card clicks still appear inert in real manual review,
+- pasted images/files show `Attachment direct upload failed before confirmation.` and do not auto-insert into the document,
+- the editor still feels far from mature Notion/Obsidian-style block behavior.
+
+The root cause is not a lack of more buttons. It is the browser-observed interaction model: Task 20e hid code controls behind hover/focus styling, disabled BlockNote's native file panel path while reimplementing paste/drop manually, and did not prove the direct upload `OPTIONS`/`PUT /local-object-storage/upload/...` path from the real browser origin. Unit and E2E checks are useful, but they were not sufficient to prove the manual path.
+
+Decision: keep Task 20e commits as a useful implementation checkpoint and learning artifact, but mark the task manual-review failed. The next task is `.trellis/tasks/06-19-task-20f-browser-observed-block-interaction-repair`, focused on real-browser interaction repair, BlockNote-native upload/resolve integration where possible, persistent discoverable code controls, and direct-upload network proof.
