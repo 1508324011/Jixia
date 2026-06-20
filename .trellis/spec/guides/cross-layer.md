@@ -127,3 +127,55 @@ await fetch(intent.upload.url, { method: "PUT", body: file, credentials: "includ
 await fetch(intent.upload.url, { method: "PUT", body: file, headers, credentials: "omit" });
 const block = { type: "image", attachmentId: confirmed.attachment.id };
 ```
+
+## Scenario: BlockNote-Native Private Attachment Pipeline
+
+### 1. Scope / Trigger
+- Trigger: frontend document editor work changes BlockNote file/image/media insertion, file panel upload/replace, paste/drop file handling, private attachment preview/open/download resolution, or v1 attachment snapshot conversion in `apps/web/src/features/documents/editor/**` or `apps/web/src/features/attachments/**`.
+- Scope: shared Notebook/Project `JixiaEditor`, BlockNote `uploadFile(file, blockId?)`, `resolveFileUrl(url)`, built-in file/image/video/audio blocks, attachment upload/open helpers, browser E2E fixture coverage, and persisted editor snapshot export/import.
+- Boundary: This contract does not approve custom shell/card event handling as the primary file pipeline, public storage URLs, browser-side authorization, backend storage policy weakening, editor-engine replacement, schema migration, export/collaboration/comment/AI writeback work, or divergent Notebook and Project editors.
+
+### 2. Signatures
+- Upload adapter: BlockNote `uploadFile(file, blockId?)` calls the Jixia attachment intent -> direct `PUT` -> confirm helper and returns either the canonical private file URL plus safe props or a `PartialBlock` prop update that contains only `attachmentId`, `jixia-attachment:<id>`, and safe display/file metadata.
+- URL resolver: BlockNote `resolveFileUrl(url)` recognizes canonical `jixia-attachment:<attachmentId>` URLs and resolves them through `POST /attachments/:attachmentId/download` only at render/open time.
+- Native blocks: v1 `image` and `file` snapshots import to BlockNote native `image`/`file` blocks with extended safe props; legacy `jixiaImage`/`jixiaFile` may remain only as compatibility/export adapters.
+- Read-only mode: BlockNote view/editor mutation affordances, file panel upload/replace, slash/insert controls, and metadata inputs are disabled while preview/open/download still use the resolver-time API flow.
+
+### 3. Contracts
+- BlockNote's file panel and built-in paste/drop insertion must be the primary upload, replace, paste, and drop path whenever BlockNote supports the payload; fallback handlers must delegate to or deliberately consume the default handler to avoid duplicate blocks.
+- Drop insertion must rely on BlockNote/ProseMirror location semantics rather than appending at the last cursor block, and paste/drop must create exactly one file/media block per accepted file payload.
+- The API remains the authority for document edit/read authorization, upload intent creation, direct upload target signing, confirmation, and signed download creation.
+- Persisted snapshots, shared DTOs, browser storage, AI context, logs, and E2E fixture assertions must contain only app-owned attachment identity plus safe file/display metadata; transient signed upload/download URLs and storage internals stay out of exported document content.
+- Notebook and Project document routes must share the same editor component and adapter behavior; do not fork editor implementations to satisfy one document type.
+
+### 4. Validation & Error Matrix
+- File panel upload/replace is unavailable while editing, or paste/drop relies on shell-level capture handlers as the main path -> block PR until the BlockNote-native path is restored.
+- `uploadFile` or snapshot export persists `uploadUrl`, `downloadUrl`, signed/public URLs, storage keys, buckets, upload headers, authorization headers, cookies, credentials, or local object-storage paths -> block PR.
+- Missing, unauthorized, deleted, expired, or failed downloads render as broken image/file UI without controlled error feedback -> block PR.
+- Read-only documents show upload, replace, remove, resize, caption, or metadata mutation controls -> block PR.
+- Notebook and Project documents use divergent editor code paths for attachment insertion, preview, or persistence -> block PR.
+
+### 5. Good/Base/Bad Cases
+- Good: the BlockNote file panel uploads an image through `uploadAttachment`, sets `url: "jixia-attachment:<id>"` and safe metadata on the native image block, saves a v1 snapshot with only `attachmentId` and `attrs.attachment`, then resolves a transient signed URL through `resolveFileUrl` after reload.
+- Good: a dropped text file inserts at the visual drop location as one native file block and follows the same intent/direct-upload/confirm/save/reload/download path as file panel upload.
+- Base: legacy `jixiaImage`/`jixiaFile` blocks from old snapshots render/export safely but are not the discoverable primary upload mechanism for new edits.
+- Bad: an empty custom attachment card with hidden input, paste, and drop handlers is the main way to upload files in a new document.
+- Bad: a saved native file block contains `https://...signature=...`, `storageKey`, `bucket`, `requiredHeaders`, or any browser credential field.
+
+### 6. Tests Required
+- Adapter/unit tests must prove v1 attachment snapshots import to native BlockNote file blocks, exported snapshots strip forbidden URL/storage/auth/provider fields, and legacy custom blocks remain safe compatibility adapters.
+- Upload helper tests must cover intent request, direct upload with `credentials: "omit"`, confirm, forbidden storage/header rejection, phase-specific redacted error messages, and resolver-time private download opening.
+- Browser E2E must cover project and notebook documents, BlockNote file panel upload/replace where reachable, paste image, paste/drop non-image file, direct local object-storage CORS/preflight/ETag evidence, save/reload persistence, signed download resolution, read-only mutation hiding, and absence of persisted storage secrets.
+- Final verification for editor attachment changes should include focused `JixiaEditor`, `AttachmentBlock`, `uploadAttachment`, attachment-upload/document-save Playwright specs, web lint/typecheck, and web build when feasible.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+editor.insertBlocks([{ type: "jixiaFile", props: { uploadUrl: intent.upload.url, storageKey } }], cursorBlock, "after");
+```
+
+#### Correct
+```typescript
+const attachmentId = confirmed.attachment.id;
+editor.updateBlock(blockId, { props: { attachmentId, url: `jixia-attachment:${attachmentId}` } });
+```
