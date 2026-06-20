@@ -72,3 +72,26 @@ test("saves project document drafts and formal revisions without AI writeback", 
   expect(aiRequests).toEqual([]);
   expect(authorizationHeaderRequests).toEqual([]);
 });
+
+test("shows code block controls without hover and persists safe code metadata", async ({ page }, testInfo) => {
+  const identity = identityFor(testInfo, "code-controls");
+
+  await acceptInvitationThroughUi(page, identity);
+  await createProjectThroughUi(page, "Code controls smoke project");
+  await createProjectDocumentThroughUi(page, "Code controls smoke document");
+
+  await page.getByLabel("Insert block type").selectOption("codeBlock");
+  await page.getByRole("button", { name: "Insert block" }).click();
+  await expect(page.getByLabel("Code block language")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy code block" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enable code wrapping" })).toBeVisible();
+
+  await page.getByLabel("Code block language").selectOption("python");
+  await page.getByRole("button", { name: "Enable code wrapping" }).click();
+  await expect(page.getByRole("button", { name: "Disable code wrapping" })).toBeVisible();
+  await waitForDraftSave(page);
+  await saveFormalRevision(page);
+  await page.reload();
+  await expect(page.getByLabel("Code block language")).toHaveValue("python");
+  await expect(page.getByRole("button", { name: "Disable code wrapping" })).toBeVisible();
+});

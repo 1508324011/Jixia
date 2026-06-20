@@ -17,6 +17,7 @@ const documents = new Map();
 const uploadIntents = new Map();
 const uploadedObjects = new Map();
 const attachments = new Map();
+const preflightedUploadTokens = new Set();
 const forbiddenDirectUploadHeaderNames = new Set([
   "authorization",
   "cookie",
@@ -83,7 +84,7 @@ function corsHeaders(request, method) {
     "Vary": "Origin",
     "Access-Control-Allow-Methods": `${method}, OPTIONS`,
     "Access-Control-Allow-Headers": "content-type",
-    "Access-Control-Expose-Headers": "ETag",
+    "Access-Control-Expose-Headers": "ETag, X-Jixia-E2E-Preflight-Seen",
     ...(origin ? { "Access-Control-Allow-Origin": origin } : {})
   };
 }
@@ -231,11 +232,15 @@ function isProjectMember(userId, projectId) {
   return projects.get(projectId)?.members.some((member) => member.userId === userId) ?? false;
 }
 
-function canEditDocument(userId, document) {
+function canReadDocument(userId, document) {
   if (document.type === "notebook") {
     return document.ownerUserId === userId;
   }
   return Boolean(document.projectId && isProjectMember(userId, document.projectId));
+}
+
+function canEditDocument(userId, document) {
+  return canReadDocument(userId, document) && document.status === "active";
 }
 
 function documentResponse(document) {
@@ -520,6 +525,52 @@ async function handleApiRequest(request, response, url) {
     return;
   }
 
+  if (request.method === "GET" && path === "/api/documents/notebook") {
+    const context = requireSession(request, response);
+    if (!context) {
+      return;
+    }
+    sendJson(response, 200, {
+      documents: Array.from(documents.values())
+        .filter((document) => document.type === "notebook" && document.ownerUserId === context.user.id)
+        .map(publicDocument)
+    });
+    return;
+  }
+
+  if (request.method === "POST" && path === "/api/documents/notebook") {
+    const context = requireSession(request, response);
+    if (!context) {
+      return;
+    }
+    const body = await readJson(request);
+    const title = String(body.title ?? "").trim();
+    if (!title) {
+      sendError(response, 400, "Invalid request");
+      return;
+    }
+
+    const timestamp = nowIso();
+    const document = {
+      id: nextId("document"),
+      type: "notebook",
+      status: "active",
+      title,
+      ownerUserId: context.user.id,
+      projectId: null,
+      currentRevisionId: null,
+      revisionNumber: 0,
+      currentSnapshot: clone(emptyEditorSnapshot),
+      currentRevision: null,
+      drafts: new Map(),
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    documents.set(document.id, document);
+    sendJson(response, 200, { document: publicDocument(document), revision: null });
+    return;
+  }
+
   const readDocumentMatch = path.match(/^\/api\/documents\/([^/]+)$/);
   if (request.method === "GET" && readDocumentMatch) {
     const context = requireSession(request, response);
@@ -528,7 +579,7 @@ async function handleApiRequest(request, response, url) {
     if (!context) {
       return;
     }
-    if (!document || !canEditDocument(context.user.id, document)) {
+    if (!document || !canReadDocument(context.user.id, document)) {
       sendError(response, 404, "Not found");
       return;
     }
@@ -614,6 +665,44 @@ async function handleApiRequest(request, response, url) {
     return;
   }
 
+  const archiveMatch = path.match(/^\/api\/documents\/([^/]+)\/archive$/);
+  if (request.method === "POST" && archiveMatch) {
+    const context = requireSession(request, response);
+    const documentId = decodeURIComponent(archiveMatch[1] ?? "");
+    const document = documents.get(documentId);
+    if (!context) {
+      return;
+    }
+    if (!document || !canReadDocument(context.user.id, document)) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+
+    document.status = "archived";
+    document.updatedAt = nowIso();
+    sendJson(response, 200, { document: publicDocument(document) });
+    return;
+  }
+
+  const restoreMatch = path.match(/^\/api\/documents\/([^/]+)\/restore$/);
+  if (request.method === "POST" && restoreMatch) {
+    const context = requireSession(request, response);
+    const documentId = decodeURIComponent(restoreMatch[1] ?? "");
+    const document = documents.get(documentId);
+    if (!context) {
+      return;
+    }
+    if (!document || !canReadDocument(context.user.id, document)) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+
+    document.status = "active";
+    document.updatedAt = nowIso();
+    sendJson(response, 200, { document: publicDocument(document) });
+    return;
+  }
+
   if (request.method === "POST" && path === "/api/attachments/upload-intents") {
     const context = requireSession(request, response);
     if (!context) {
@@ -668,6 +757,7 @@ async function handleApiRequest(request, response, url) {
       sendError(response, 403, "Origin not allowed");
       return;
     }
+    preflightedUploadTokens.add(localObjectUploadMatch[1] ?? "");
     sendEmpty(response, 204, headers);
     return;
   }
@@ -697,7 +787,11 @@ async function handleApiRequest(request, response, url) {
       mimeType: String(request.headers["content-type"] ?? "application/octet-stream").toLowerCase(),
       etag: `"etag-${intent.id}"`
     });
-    sendEmpty(response, 200, { ...headers, ETag: `"etag-${intent.id}"` });
+    sendEmpty(response, 200, {
+      ...headers,
+      ETag: `"etag-${intent.id}"`,
+      "X-Jixia-E2E-Preflight-Seen": preflightedUploadTokens.has(localObjectUploadMatch[1] ?? "") ? "true" : "false"
+    });
     return;
   }
 
@@ -757,7 +851,7 @@ async function handleApiRequest(request, response, url) {
     if (!context) {
       return;
     }
-    if (!attachment || !document || !canEditDocument(context.user.id, document)) {
+    if (!attachment || !document || !canReadDocument(context.user.id, document)) {
       sendError(response, 404, "Not found");
       return;
     }

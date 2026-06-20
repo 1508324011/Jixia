@@ -167,6 +167,29 @@ export async function createProjectDocumentThroughUi(page: Page, documentTitle: 
   return documentId;
 }
 
+export async function createNotebookDocumentThroughUi(page: Page, documentTitle: string): Promise<string> {
+  await page.getByRole("button", { name: "Notebook" }).click();
+  await expect(page.locator("#notebook-title")).toBeVisible();
+  await page.getByLabel("New notebook document").fill(documentTitle);
+
+  const responsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/documents/notebook" && response.request().method() === "POST";
+  });
+
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  const response = await responsePromise;
+  expect(response.status()).toBe(200);
+  const body = (await response.json()) as { readonly document?: { readonly id?: string } };
+  const documentId = body.document?.id;
+  if (!documentId) {
+    throw new Error("Notebook document create response did not include an id.");
+  }
+
+  await expect(page.getByLabel("Document title")).toHaveValue(documentTitle);
+  return documentId;
+}
+
 export async function waitForDraftSave(page: Page): Promise<void> {
   const response = await page.waitForResponse((candidate) => {
     const url = new URL(candidate.url());
