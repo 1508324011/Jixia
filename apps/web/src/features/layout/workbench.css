@@ -661,24 +661,13 @@
 
 .jixia-code-block__toolbar {
   display: flex;
-  position: absolute;
-  z-index: 1;
-  top: 8px;
-  right: 8px;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-3px);
-  transition: opacity 0.16s ease, transform 0.16s ease;
-}
-
-.jixia-code-block:focus-within .jixia-code-block__toolbar,
-.jixia-code-block:hover .jixia-code-block__toolbar {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.98);
+  padding: 8px;
 }
 
 .jixia-code-block__language,
@@ -729,7 +718,7 @@
   color: #e2e8f0;
   font-size: 13px;
   line-height: 1.65;
-  padding: 42px 14px 14px;
+  padding: 14px;
 }
 
 .jixia-code-block__content {
@@ -749,6 +738,10 @@
 
 .jixia-blocknote-shell[data-readonly="true"] .bn-editor {
   cursor: text;
+}
+
+.jixia-attachment-block-island {
+  min-width: 0;
 }
 
 .jixia-blocknote-callout {
