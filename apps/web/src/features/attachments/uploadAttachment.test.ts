@@ -194,6 +194,26 @@ describe("uploadAttachment", () => {
     expect((error as Error).message).not.toMatch(/storage\.example|signature=secret|bearer secret-token/i);
   });
 
+  it("surfaces safe direct-upload diagnostics without leaking the signed URL", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(intentResponse))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch https://storage.example.test/private-upload?signature=secret"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const upload = uploadAttachment({
+      documentId: "document-1",
+      blockType: "image",
+      file: new File(["hello world"], "figure.png", { type: "image/png" })
+    });
+    const error = await upload.catch((caughtError: unknown) => caughtError);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/no HTTP response/i);
+    expect((error as Error).message).toMatch(/page origin|request headers|cors\/preflight|public base URL/i);
+    expect((error as Error).message).toContain("https://storage.example.test");
+    expect((error as Error).message).not.toMatch(/private-upload|signature=secret/i);
+  });
+
   it("requests a private download URL before opening without persisting the URL", async () => {
     const fetchMock = mockFetchSequence(downloadResponse);
     const opener = vi.fn();

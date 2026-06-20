@@ -139,11 +139,41 @@ async function uploadBlobToSignedUrl(input: {
       credentials: "omit"
     });
   } catch {
-    throw new Error("Attachment direct upload failed before confirmation.");
+    throw new Error(directUploadFailureMessage(input.upload, headers));
   }
 
   if (!response.ok) {
-    throw new Error(`Attachment direct upload failed with status ${response.status}.`);
+    throw new Error(directUploadFailureMessage(input.upload, headers, response));
+  }
+}
+
+function directUploadFailureMessage(
+  upload: CreateUploadIntentResponse["upload"],
+  requestHeaders: Headers,
+  response?: Response
+): string {
+  const target = directUploadTargetSummary(upload.url);
+  const pageOrigin = typeof window === "undefined" ? "unknown" : window.location.origin;
+  const headerNames = Array.from(requestHeaders.keys()).sort().join(", ") || "none";
+  const responseHeaders = response ? Array.from(response.headers.keys()).sort().join(", ") || "none" : "none";
+  const status = response ? `status ${response.status}` : "no HTTP response";
+
+  return [
+    `Attachment direct upload failed before confirmation (${status}).`,
+    `Target: ${target}; page origin: ${pageOrigin}; request headers: ${headerNames}; response headers: ${responseHeaders}.`,
+    "Check local object-storage service reachability, public base URL, and CORS/preflight configuration."
+  ].join(" ");
+}
+
+function directUploadTargetSummary(url: string): string {
+  try {
+    const parsedUrl = new URL(url, typeof window === "undefined" ? "http://localhost" : window.location.href);
+    const endpoint = parsedUrl.pathname.includes("/local-object-storage/upload/")
+      ? "local object-storage upload endpoint"
+      : "signed upload endpoint";
+    return `${endpoint} at ${parsedUrl.origin}`;
+  } catch {
+    return "invalid signed upload endpoint";
   }
 }
 
