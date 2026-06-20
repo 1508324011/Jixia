@@ -1,0 +1,19 @@
+{
+  "title": "Task 20g BlockNote-native File Pipeline",
+  "slug": "task-20g-blocknote-native-file-pipeline",
+  "type": "frontend",
+  "status": "manual-review-partial",
+  "createdAt": "2026-06-20T01:33:20+00:00",
+  "updatedAt": "2026-06-20T05:33:26+00:00",
+  "manualReview": {
+    "result": "architecture improved, manual UX/upload partial/failed",
+    "reviewedAt": "2026-06-20T05:33:26+00:00",
+    "notes": [
+      "Task20g moved the implementation toward BlockNote-native uploadFile, resolveFileUrl, File Panel, and native file insertion semantics, and automated unit/E2E checks passed.",
+      "Manual review still failed/partial: code block language/copy/wrap controls remain hard to discover/use; paste/drop did not behave reliably in real review; attachment card click exposes upload controls but upload still reports an error.",
+      "The likely remaining gap is manual-browser hardening: local origin/public-base/CORS/reachability for direct upload, real clipboard/OS drag payloads beyond synthetic File tests, legacy AttachmentBlock entry points, and stronger code-block control affordances.",
+      "Do not treat Task20g as UX-passed. Keep it as an architecture checkpoint and route the next task to manual review hardening."
+    ],
+    "nextTaskRecommendation": "Task 20h Manual Review Hardening"
+  }
+}

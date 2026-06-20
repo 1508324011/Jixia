@@ -1,0 +1,38 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/directory-structure.md", "reason": "Frontend directory conventions for shared editor work"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Component boundaries for BlockNote adapters"}
+{"path": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Hook rules for editor upload adapter"}
+{"path": ".trellis/spec/frontend/state-management.md", "reason": "Editor state and runtime state guidance"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Browser-first verification expectations"}
+{"path": ".trellis/spec/frontend/type-safety.md", "reason": "Type safety for editor adapters"}
+{"path": ".trellis/spec/guides/pre-implementation.md", "reason": "Pre-implementation discipline"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Attachment upload cross-layer contract"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse uploadAttachment and BlockNote adapter"}
+{"path": ".trellis/spec/backend/shared-domain-contracts.md", "reason": "Safe attachment metadata and no secret persistence"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": ".trellis/tasks/06-19-task-20f-browser-observed-block-interaction-repair/prd.md", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": ".trellis/tasks/06-19-task-20f-browser-observed-block-interaction-repair/info.md", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": ".trellis/tasks/06-19-task-20f-browser-observed-block-interaction-repair/task.json", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": ".trellis/tasks/06-19-task-20e-block-local-code-media-ux/prd.md", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": ".trellis/tasks/06-19-task-20e-block-local-code-media-ux/task.json", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": ".trellis/tasks/06-19-task-20d-local-attachment-storage-upload-e2e/prd.md", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": ".trellis/tasks/06-19-task-20b-blocknote-editor-adapter/prd.md", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": ".trellis/tasks/06-19-task-20r-editor-engine-adapter-decision-spike/decision.md", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/api/src/modules/attachments/local-object-storage.routes.ts", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/api/src/modules/attachments/object-storage.ts", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "packages/shared/src/documents.ts", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "packages/shared/src/attachments.ts", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.test.ts", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.test.tsx", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.test.ts", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/e2e/attachment-upload.spec.ts", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/e2e/helpers.ts", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/e2e/test-api.mjs", "reason": "Task20g BlockNote-native file pipeline context"}
+{"path": "apps/web/package.json", "reason": "Task20g BlockNote-native file pipeline context"}
