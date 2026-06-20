@@ -1,0 +1,20 @@
+{
+  "title": "Task 20f Browser-observed Block Interaction Repair",
+  "slug": "task-20f-browser-observed-block-interaction-repair",
+  "type": "frontend",
+  "status": "manual-review-failed",
+  "createdAt": "2026-06-19T15:27:13+00:00",
+  "updatedAt": "2026-06-20T02:05:00+00:00",
+  "manualReview": {
+    "result": "manual review failed; stop patching custom block interactions",
+    "reviewedAt": "2026-06-20T02:05:00+00:00",
+    "notes": [
+      "Task20f implemented more browser-observed repairs and passed automated checks, but manual review still reported the same user-facing failures.",
+      "Code block language/copy/wrap controls remain insufficiently discoverable or usable for real users despite custom jixiaCodeBlock controls.",
+      "Image/file/attachment cards still feel inert in manual review; custom card click and hidden-input activation remain a fragile BlockNote/contentEditable integration.",
+      "Paste/drop still fails in realistic use; the current shell/card handlers only handle File-like DataTransfer payloads and do not use BlockNote native file insertion.",
+      "The correct next step is to stop adding patches to jixiaImage/jixiaFile/AttachmentBlock event plumbing and build a BlockNote-native file pipeline using uploadFile, resolveFileUrl, file panel, and native file insertion semantics."
+    ],
+    "nextTask": ".trellis/tasks/06-20-task-20g-blocknote-native-file-pipeline"
+  }
+}
