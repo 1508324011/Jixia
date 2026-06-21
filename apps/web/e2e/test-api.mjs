@@ -3,6 +3,23 @@ import { createServer } from "node:http";
 
 const apiPort = Number(process.env.JIXIA_E2E_API_PORT ?? 4174);
 const webPort = Number(process.env.JIXIA_E2E_WEB_PORT ?? 5173);
+const apiListenHost = process.env.JIXIA_E2E_API_HOST?.trim() || "127.0.0.1";
+const apiPublicOrigin = normalizedOrigin(
+  process.env.JIXIA_E2E_API_PUBLIC_ORIGIN,
+  `http://127.0.0.1:${apiPort}`
+);
+const localObjectStoragePublicBaseUrl = normalizedObjectStorageBaseUrl(
+  process.env.JIXIA_E2E_OBJECT_STORAGE_PUBLIC_BASE_URL,
+  `${apiPublicOrigin}/local-object-storage`
+);
+const allowedOrigins = allowedOriginsFromEnv(
+  process.env.JIXIA_E2E_ALLOWED_ORIGINS,
+  [
+    `http://127.0.0.1:${webPort}`,
+    `http://localhost:${webPort}`,
+    originFromUrl(process.env.PLAYWRIGHT_BASE_URL)
+  ]
+);
 const sessionCookieName = "jixia_e2e_session";
 const space = { id: "space-e2e", name: "Jixia E2E Space" };
 const sessionLifetimeMs = 7 * 24 * 60 * 60 * 1000;
@@ -63,8 +80,57 @@ function sendEmpty(response, statusCode, headers = {}) {
   response.end();
 }
 
-function e2eApiOrigin() {
-  return `http://127.0.0.1:${apiPort}`;
+function normalizedOrigin(value, fallback) {
+  const url = new URL(value?.trim() || fallback);
+  return url.origin;
+}
+
+function normalizedObjectStorageBaseUrl(value, fallback) {
+  const url = new URL(value?.trim() || fallback);
+  url.hash = "";
+  url.search = "";
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  if (!url.pathname) {
+    url.pathname = "/local-object-storage";
+  }
+  return url.toString().replace(/\/+$/, "");
+}
+
+function originFromUrl(value) {
+  if (!value?.trim()) {
+    return null;
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function allowedOriginsFromEnv(value, defaults) {
+  const rawOrigins = value?.trim()
+    ? value.split(",")
+    : defaults;
+  return new Set(rawOrigins.map(normalizedAllowedOrigin).filter(Boolean));
+}
+
+function normalizedAllowedOrigin(value) {
+  const origin = value?.trim().replace(/\/+$/, "");
+  if (!origin) {
+    return null;
+  }
+
+  if (origin === "*") {
+    throw new Error("Jixia E2E allowed origin must not be wildcard");
+  }
+
+  const url = new URL(origin);
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.origin !== origin) {
+    throw new Error("Jixia E2E allowed origin must be an HTTP origin");
+  }
+
+  return url.origin;
 }
 
 function allowedOriginFromRequest(request) {
@@ -72,7 +138,7 @@ function allowedOriginFromRequest(request) {
   if (!origin) {
     return null;
   }
-  return origin === `http://127.0.0.1:${webPort}` || origin === `http://localhost:${webPort}` ? origin : undefined;
+  return allowedOrigins.has(origin) ? origin : undefined;
 }
 
 function corsHeaders(request, method) {
@@ -111,7 +177,7 @@ function decodeStorageKeyToken(token) {
 function localObjectStorageUrl(method, storageKey, expiresAt) {
   const expiresAtMilliseconds = new Date(expiresAt).getTime();
   const pathPrefix = method === "PUT" ? "upload" : "download";
-  const url = new URL(`/local-object-storage/${pathPrefix}/${encodeStorageKeyToken(storageKey)}`, e2eApiOrigin());
+  const url = new URL(`${localObjectStoragePublicBaseUrl}/${pathPrefix}/${encodeStorageKeyToken(storageKey)}`);
   url.searchParams.set("expires", String(expiresAtMilliseconds));
   url.searchParams.set("signature", signLocalObjectRequest(method, storageKey, expiresAtMilliseconds));
   return url.toString();
@@ -312,8 +378,20 @@ function publicIntent(intent) {
   };
 }
 
+function normalizedApiPath(pathname) {
+  if (pathname === "/api" || pathname.startsWith("/api/")) {
+    return pathname;
+  }
+
+  if (pathname === "/health" || pathname.startsWith("/local-object-storage/")) {
+    return pathname;
+  }
+
+  return `/api${pathname.startsWith("/") ? pathname : `/${pathname}`}`;
+}
+
 async function handleApiRequest(request, response, url) {
-  const path = url.pathname;
+  const path = normalizedApiPath(url.pathname);
 
   if (request.method === "GET" && path === "/health") {
     sendJson(response, 200, { ok: true });
@@ -914,8 +992,11 @@ const server = createServer((request, response) => {
   });
 });
 
-server.listen(apiPort, "127.0.0.1", () => {
-  process.stdout.write(`Jixia E2E API fixture listening on 127.0.0.1:${apiPort}\n`);
+server.listen(apiPort, apiListenHost, () => {
+  process.stdout.write(`Jixia E2E API fixture listening on ${apiListenHost}:${apiPort}\n`);
+  process.stdout.write(`Jixia E2E API public origin ${apiPublicOrigin}\n`);
+  process.stdout.write(`Jixia E2E object-storage public base ${localObjectStoragePublicBaseUrl}\n`);
+  process.stdout.write(`Jixia E2E allowed origins ${Array.from(allowedOrigins).join(", ")}\n`);
 });
 
 function closeServer() {

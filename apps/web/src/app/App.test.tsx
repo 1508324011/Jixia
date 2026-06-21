@@ -10,11 +10,28 @@ import type {
   LoginResponse
 } from "@jixia/shared";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
 describe("App", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn()
+      })),
+      writable: true
+    });
+  });
+
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -114,7 +131,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Notebook documents are returned by the API for the current owner only. Creating a note sends notebook-scoped intent to the same document service used by Project Docs.")).toBeTruthy();
-    expect(screen.getByText("Notebook draft")).toBeTruthy();
+    expect(await screen.findByText("Notebook draft")).toBeTruthy();
     expect(screen.queryByText("Surface intentionally not opened yet")).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/documents/notebook",

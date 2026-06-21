@@ -42,15 +42,17 @@ test("uploads an image block and resolves it after document reload", async ({ pa
   await uploadThroughNativeFilePanel(page, "image", figureFixturePath);
 
   expect((await intentResponse).status()).toBe(200);
-  expectSuccessfulDirectUpload(await objectUploadResponse);
+  expectSuccessfulDirectUpload(await objectUploadResponse, page);
   expect((await confirmResponse).status()).toBe(200);
   await expect(page.getByRole("img", { name: "figure.svg" })).toBeVisible();
+  await expectReadyImageIsContentFirst(page, "figure.svg");
   expect(directUploadCredentialLeaks).toEqual([]);
 
   await waitForDraftSave(page);
   await saveFormalRevision(page);
   await page.reload();
   await expect(page.getByRole("img", { name: "figure.svg" })).toBeVisible();
+  await expectReadyImageIsContentFirst(page, "figure.svg");
   await expect(page.getByText(/storageKey|objectKey|x-amz|signature/i)).toHaveCount(0);
 
   const downloadResponse = page.waitForResponse((response) => {
@@ -87,14 +89,16 @@ test("uploads through native file panel and persists safe metadata", async ({ pa
   ]);
 
   expect(intentResponse.status()).toBe(200);
-  expectSuccessfulDirectUpload(objectUploadResponse);
+  expectSuccessfulDirectUpload(objectUploadResponse, page);
   expect(confirmResponse.status()).toBe(200);
-  await expect(page.getByText("figure.svg")).toBeVisible();
+  await expect(nativeFileName(page, "figure.svg")).toBeVisible();
+  await expectReadyFileIsCompact(page, "figure.svg");
   expect(directUploadCredentialLeaks).toEqual([]);
 
   await saveFormalRevision(page);
   await page.reload();
-  await expect(page.getByText("figure.svg")).toBeVisible();
+  await expect(nativeFileName(page, "figure.svg")).toBeVisible();
+  await expectReadyFileIsCompact(page, "figure.svg");
   await expectNoPersistedStorageSecrets(page);
   expect(authorizationHeaderRequests).toEqual([]);
 });
@@ -115,12 +119,14 @@ test("uses the same upload path from notebook documents", async ({ page }, testI
   ]);
 
   expect(intentResponse.status()).toBe(200);
-  expectSuccessfulDirectUpload(objectUploadResponse);
+  expectSuccessfulDirectUpload(objectUploadResponse, page);
   expect(confirmResponse.status()).toBe(200);
   await expect(page.getByRole("img", { name: "figure.svg" })).toBeVisible();
+  await expectReadyImageIsContentFirst(page, "figure.svg");
   await saveFormalRevision(page);
   await page.reload();
   await expect(page.getByRole("img", { name: "figure.svg" })).toBeVisible();
+  await expectReadyImageIsContentFirst(page, "figure.svg");
   await expectNoPersistedStorageSecrets(page);
   expect(directUploadCredentialLeaks).toEqual([]);
   expect(authorizationHeaderRequests).toEqual([]);
@@ -147,7 +153,7 @@ test("pastes an image into the editor as a private attachment block", async ({ p
   ]);
 
   expect(intentResponse.status()).toBe(200);
-  expectSuccessfulDirectUpload(objectUploadResponse);
+  expectSuccessfulDirectUpload(objectUploadResponse, page);
   expect(confirmResponse.status()).toBe(200);
   await expect(page.getByRole("img", { name: "pasted-figure.svg" })).toBeVisible();
   await saveFormalRevision(page);
@@ -179,12 +185,12 @@ test("drops a file into the editor as a private attachment block", async ({ page
   ]);
 
   expect(intentResponse.status()).toBe(200);
-  expectSuccessfulDirectUpload(objectUploadResponse);
+  expectSuccessfulDirectUpload(objectUploadResponse, page);
   expect(confirmResponse.status()).toBe(200);
-  await expect(page.getByText("dropped-notes.txt")).toBeVisible();
+  await expect(nativeFileName(page, "dropped-notes.txt")).toBeVisible();
   await saveFormalRevision(page);
   await page.reload();
-  await expect(page.getByText("dropped-notes.txt")).toBeVisible();
+  await expect(nativeFileName(page, "dropped-notes.txt")).toBeVisible();
   await expectNoPersistedStorageSecrets(page);
   expect(directUploadCredentialLeaks).toEqual([]);
   expect(authorizationHeaderRequests).toEqual([]);
@@ -203,7 +209,7 @@ test("hides attachment mutations in archived documents", async ({ page }, testIn
   ]);
 
   expect(intentResponse.status()).toBe(200);
-  expectSuccessfulDirectUpload(objectUploadResponse);
+  expectSuccessfulDirectUpload(objectUploadResponse, page);
   expect(confirmResponse.status()).toBe(200);
   await saveFormalRevision(page);
 
@@ -221,11 +227,12 @@ test("hides attachment mutations in archived documents", async ({ page }, testIn
   await page.reload();
   await expect(page.getByText("Archived documents are read-only.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Save revision" })).toBeDisabled();
-  await expect(page.getByLabel("Insert block type")).toBeDisabled();
+  await expect(page.getByLabel("Attachment shortcut type")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Insert attachment block" })).toHaveCount(0);
   await expect(page.getByText("Add file")).toHaveCount(0);
   await expect(page.getByPlaceholder("Upload file")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Remove block" })).toHaveCount(0);
-  await expect(page.getByText("figure.svg")).toBeVisible();
+  await expect(nativeFileName(page, "figure.svg")).toBeVisible();
   expect(authorizationHeaderRequests).toEqual([]);
 });
 
@@ -233,14 +240,46 @@ function blockNoteEditable(page: Page): Locator {
   return page.locator('.jixia-blocknote-shell .ProseMirror[contenteditable="true"]').first();
 }
 
+function nativeFileName(page: Page, fileName: string): Locator {
+  return page.locator(".jixia-native-attachment-frame", { hasText: fileName }).first();
+}
+
+async function expectReadyImageIsContentFirst(page: Page, fileName: string): Promise<void> {
+  const frame = page.getByTestId("jixia-native-image-attachment-frame").filter({ has: page.getByRole("img", { name: fileName }) }).first();
+  await expect(frame).toBeVisible();
+  await expect(frame.locator(".jixia-native-attachment-frame__chrome")).toHaveCount(0);
+  await expect(frame.locator(".jixia-native-attachment-frame__contextual-controls")).toHaveCount(0);
+  await expect(frame.locator(".jixia-native-attachment-frame__dropzone")).toHaveCount(0);
+  await expect(frame.locator(".jixia-native-attachment-frame__metadata")).toHaveCount(0);
+  await expect(frame.locator(".jixia-native-attachment-frame__message")).toHaveCount(0);
+  await expect(frame.getByRole("button", { name: /open|replace|remove/i })).toHaveCount(0);
+}
+
+async function expectReadyFileIsCompact(page: Page, fileName: string): Promise<void> {
+  const frame = page.getByTestId("jixia-native-file-attachment-frame").filter({ hasText: fileName }).first();
+  await expect(frame).toBeVisible();
+  await expect(frame.locator(".jixia-native-attachment-frame__file-chip")).toBeVisible();
+  await expect(frame.locator(".jixia-native-attachment-frame__chrome")).toHaveCount(0);
+  await expect(frame.locator(".jixia-native-attachment-frame__contextual-controls")).toHaveCount(0);
+  await expect(frame.locator(".jixia-native-attachment-frame__dropzone")).toHaveCount(0);
+  await expect(frame.locator(".jixia-native-attachment-frame__metadata")).toHaveCount(0);
+  await expect(frame.locator(".jixia-native-attachment-frame__message")).toHaveCount(0);
+  await expect(frame.getByRole("button", { name: /open|replace|remove/i })).toHaveCount(0);
+}
+
 async function insertNativeFileBlock(page: Page, type: "image" | "file"): Promise<void> {
-  await page.getByLabel("Insert block type").selectOption(type);
-  await page.getByRole("button", { name: "Insert block" }).click();
+  const editor = page.getByLabel("Jixia BlockNote editor");
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await page.keyboard.type("/");
+  const menuItemName = type === "image" ? /^Image$/i : /^File$/i;
+  const menuItem = page.getByText(menuItemName).last();
+  await expect(menuItem).toBeVisible();
+  await menuItem.click();
 }
 
 async function uploadThroughNativeFilePanel(page: Page, type: "image" | "file", fixturePath: string): Promise<void> {
-  await page.getByText(type === "image" ? "Add image" : "Add file").last().click();
-  await page.locator(".bn-tab-panel input[type='file']").setInputFiles(fixturePath);
+  await page.locator(`input[type='file'][aria-label='Upload private ${type} attachment']`).last().setInputFiles(fixturePath);
 }
 
 async function openNewProjectDocument(
@@ -268,14 +307,16 @@ function waitForObjectUpload(page: Page) {
   });
 }
 
-function expectSuccessfulDirectUpload(response: Awaited<ReturnType<typeof waitForObjectUpload>>): void {
+function expectSuccessfulDirectUpload(response: Awaited<ReturnType<typeof waitForObjectUpload>>, page: Page): void {
   expect(response.status()).toBe(200);
   const requestHeaders = response.request().headers();
   const headers = response.headers();
+  const expectedOrigin = requestHeaders.origin ?? new URL(page.url()).origin;
   expect(response.request().method()).toBe("PUT");
   expect(requestHeaders.authorization).toBeUndefined();
   expect(requestHeaders.cookie).toBeUndefined();
-  expect(headers["access-control-allow-origin"]).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+  expect(headers["access-control-allow-origin"]).toBe(expectedOrigin);
+  expect(headers["access-control-allow-origin"]).not.toBe("*");
   expect(headers["access-control-allow-methods"]).toContain("PUT");
   expect(headers["access-control-expose-headers"]).toContain("ETag");
   expect(headers["access-control-expose-headers"]).toContain("X-Jixia-E2E-Preflight-Seen");

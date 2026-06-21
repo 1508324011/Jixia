@@ -73,25 +73,52 @@ test("saves project document drafts and formal revisions without AI writeback", 
   expect(authorizationHeaderRequests).toEqual([]);
 });
 
-test("shows code block controls without hover and persists safe code metadata", async ({ page }, testInfo) => {
-  const identity = identityFor(testInfo, "code-controls");
+test("creates default BlockNote code blocks and persists safe code metadata", async ({ page }, testInfo) => {
+  const identity = identityFor(testInfo, "default-code-block");
 
   await acceptInvitationThroughUi(page, identity);
-  await createProjectThroughUi(page, "Code controls smoke project");
-  await createProjectDocumentThroughUi(page, "Code controls smoke document");
+  await createProjectThroughUi(page, "Default code block smoke project");
+  const documentId = await createProjectDocumentThroughUi(page, "Default code block smoke document");
 
-  await page.getByLabel("Insert block type").selectOption("codeBlock");
-  await page.getByRole("button", { name: "Insert block" }).click();
-  await expect(page.getByLabel("Code block language")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Copy code block" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Enable code wrapping" })).toBeVisible();
+  await expect(page.getByLabel("Insert block type")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Insert block" })).toHaveCount(0);
 
-  await page.getByLabel("Code block language").selectOption("python");
-  await page.getByRole("button", { name: "Enable code wrapping" }).click();
-  await expect(page.getByRole("button", { name: "Disable code wrapping" })).toBeVisible();
+  await insertDefaultCodeBlock(page, "print('saved through BlockNote')");
   await waitForDraftSave(page);
   await saveFormalRevision(page);
+
+  await expectSavedCodeBlock(page, documentId, "print('saved through BlockNote')");
   await page.reload();
-  await expect(page.getByLabel("Code block language")).toHaveValue("python");
-  await expect(page.getByRole("button", { name: "Disable code wrapping" })).toBeVisible();
+  await expect(page.getByText("print('saved through BlockNote')")).toBeVisible();
 });
+
+async function insertDefaultCodeBlock(page: Parameters<typeof fillDocumentEditor>[0], code: string): Promise<void> {
+  const editor = page.getByLabel("Jixia BlockNote editor");
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await page.keyboard.type("```");
+  await page.keyboard.press("Space");
+  await page.keyboard.type(code);
+}
+
+async function expectSavedCodeBlock(
+  page: Parameters<typeof fillDocumentEditor>[0],
+  documentId: string,
+  code: string
+): Promise<void> {
+  const snapshot = await page.evaluate(async (input) => {
+    const response = await fetch(`/api/documents/${encodeURIComponent(input.documentId)}`, { credentials: "include" });
+    const body = await response.json();
+    return body.currentSnapshot;
+  }, { documentId });
+
+  expect(snapshot).toEqual(expect.objectContaining({
+    blocks: expect.arrayContaining([
+      expect.objectContaining({
+        type: "codeBlock",
+        text: code
+      })
+    ])
+  }));
+  expect(JSON.stringify(snapshot)).not.toMatch(/jixiaCodeBlock|storageKey|signature|authorization|Bearer/i);
+}
