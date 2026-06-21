@@ -97,7 +97,7 @@ export async function openAttachmentDownload({
   const payload: AttachmentDownloadRequest = { attachmentId };
   const response = await requestDownloadUrl(payload);
   assertNoForbiddenStorageKeys(response);
-  opener(response.downloadUrl);
+  opener(browserReachableSignedObjectUrl(response.downloadUrl, "download"));
   return response.attachment;
 }
 
@@ -129,30 +129,31 @@ async function uploadBlobToSignedUrl(input: {
   readonly upload: CreateUploadIntentResponse["upload"];
 }): Promise<void> {
   const headers = directUploadHeaders(input.upload.requiredHeaders, input.mimeType);
+  const uploadUrl = browserReachableSignedObjectUrl(input.upload.url, "upload");
 
   let response: Response;
   try {
-    response = await fetch(input.upload.url, {
+    response = await fetch(uploadUrl, {
       method: "PUT",
       body: input.file,
       headers,
       credentials: "omit"
     });
   } catch {
-    throw new Error(directUploadFailureMessage(input.upload, headers));
+    throw new Error(directUploadFailureMessage(uploadUrl, headers));
   }
 
   if (!response.ok) {
-    throw new Error(directUploadFailureMessage(input.upload, headers, response));
+    throw new Error(directUploadFailureMessage(uploadUrl, headers, response));
   }
 }
 
 function directUploadFailureMessage(
-  upload: CreateUploadIntentResponse["upload"],
+  uploadUrl: string,
   requestHeaders: Headers,
   response?: Response
 ): string {
-  const target = directUploadTargetSummary(upload.url);
+  const target = directUploadTargetSummary(uploadUrl);
   const pageOrigin = typeof window === "undefined" ? "unknown" : window.location.origin;
   const headerNames = Array.from(requestHeaders.keys()).sort().join(", ") || "none";
   const responseHeaders = response ? Array.from(response.headers.keys()).sort().join(", ") || "none" : "none";
@@ -175,6 +176,63 @@ function directUploadTargetSummary(url: string): string {
   } catch {
     return "invalid signed upload endpoint";
   }
+}
+
+function browserReachableSignedObjectUrl(url: string, pathPrefix: "download" | "upload"): string {
+  if (typeof window === "undefined") {
+    return url;
+  }
+
+  try {
+    const targetUrl = new URL(url, window.location.href);
+    const pageUrl = new URL(window.location.href);
+
+    if (!isLocalObjectStoragePath(targetUrl.pathname, pathPrefix)) {
+      return url;
+    }
+
+    if (targetUrl.protocol !== "http:" || pageUrl.protocol !== "http:") {
+      return url;
+    }
+
+    if (!isLoopbackHostname(targetUrl.hostname) || !isPrivateManualReviewHostname(pageUrl.hostname)) {
+      return url;
+    }
+
+    targetUrl.hostname = pageUrl.hostname;
+    return targetUrl.toString();
+  } catch {
+    return url;
+  }
+}
+
+function isLocalObjectStoragePath(pathname: string, pathPrefix: "download" | "upload"): boolean {
+  return pathname.startsWith(`/local-object-storage/${pathPrefix}/`);
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalizedHostname = hostname.toLowerCase();
+  return normalizedHostname === "localhost" ||
+    normalizedHostname === "::1" ||
+    normalizedHostname === "[::1]" ||
+    normalizedHostname.startsWith("127.");
+}
+
+function isPrivateManualReviewHostname(hostname: string): boolean {
+  if (isLoopbackHostname(hostname)) {
+    return false;
+  }
+
+  const parts = hostname.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return hostname.endsWith(".local");
+  }
+
+  const [first = 0, second = 0] = parts;
+  return first === 10 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    (first === 169 && second === 254);
 }
 
 async function confirmUploadIntent(uploadIntentId: string): Promise<ConfirmUploadIntentResponse> {

@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { openAttachmentDownload, uploadAttachment } from "./uploadAttachment";
 
+const originalWindow = window;
+
 const intentResponse: CreateUploadIntentResponse = {
   intent: {
     id: "intent-1",
@@ -63,6 +65,7 @@ const downloadResponse: AttachmentDownloadResponse = {
 describe("uploadAttachment", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("requests an intent uploads to the signed URL confirms and returns safe metadata", async () => {
@@ -123,6 +126,35 @@ describe("uploadAttachment", () => {
       createdAt: "2026-06-16T10:01:00.000Z"
     });
     expect(JSON.stringify(result)).not.toMatch(/storage|object|credential|signed|signature|uploadUrl|downloadUrl/i);
+  });
+
+  it("rewrites loopback local object-storage uploads to the private browser host without credentials", async () => {
+    stubWindowLocation("http://10.128.253.195:5173/documents/document-1");
+    const localIntentResponse: CreateUploadIntentResponse = {
+      ...intentResponse,
+      upload: {
+        ...intentResponse.upload,
+        url: "http://127.0.0.1:3000/local-object-storage/upload/intent-1?signature=transient"
+      }
+    };
+    const fetchMock = mockFetchSequence(localIntentResponse, undefined, confirmResponse);
+    const file = new File(["hello world"], "figure.png", { type: "image/png" });
+
+    await uploadAttachment({
+      documentId: "document-1",
+      blockType: "image",
+      file
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://10.128.253.195:3000/local-object-storage/upload/intent-1?signature=transient",
+      expect.objectContaining({
+        method: "PUT",
+        body: file,
+        credentials: "omit"
+      })
+    );
   });
 
   it("rejects API responses that expose object storage credentials or keys", async () => {
@@ -232,6 +264,25 @@ describe("uploadAttachment", () => {
     expect(attachment).toEqual(downloadResponse.attachment);
     expect(JSON.stringify(attachment)).not.toMatch(/storage|object|credential|signed|signature|downloadUrl/i);
   });
+
+  it("rewrites loopback local object-storage downloads only for transient opener use", async () => {
+    stubWindowLocation("http://10.128.253.195:5173/documents/document-1");
+    const localDownloadResponse: AttachmentDownloadResponse = {
+      ...downloadResponse,
+      downloadUrl: "http://localhost:3000/local-object-storage/download/attachment-1?signature=transient"
+    };
+    const fetchMock = mockFetchSequence(localDownloadResponse);
+    const opener = vi.fn();
+
+    const attachment = await openAttachmentDownload({ attachmentId: "attachment-1", opener });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(opener).toHaveBeenCalledWith(
+      "http://10.128.253.195:3000/local-object-storage/download/attachment-1?signature=transient"
+    );
+    expect(attachment).toEqual(downloadResponse.attachment);
+    expect(JSON.stringify(attachment)).not.toMatch(/storage|object|credential|signed|signature|downloadUrl/i);
+  });
 });
 
 type MockPayload = unknown | undefined;
@@ -256,4 +307,15 @@ function jsonResponse(payload: unknown): Response {
 
 function emptyResponse(): Response {
   return new Response(null, { status: 200 });
+}
+
+function stubWindowLocation(href: string): void {
+  vi.stubGlobal(
+    "window",
+    Object.create(originalWindow, {
+      location: {
+        value: new URL(href)
+      }
+    })
+  );
 }
