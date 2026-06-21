@@ -1,0 +1,22 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Editor/UI implementation guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Fullstack safety and upload contract guidance"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Server-first upload and cross-layer attachment contract"}
+{"path": "doc/MVP_implement.md", "reason": "Current MVP implementation notes and server-first attachment docs"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Notebook/Project document editor roadmap"}
+{"path": ".trellis/tasks/06-21-task-20k-attachment-content-first-visual-cleanup/prd.md", "reason": "Task20k product requirements"}
+{"path": ".trellis/tasks/06-21-task-20k-attachment-content-first-visual-cleanup/info.md", "reason": "Task20k technical notes"}
+{"path": ".trellis/tasks/06-21-task-20k-attachment-content-first-visual-cleanup/manual-review.md", "reason": "Task20k human visual review checklist"}
+{"path": ".trellis/tasks/06-21-task-20j-blocknote-default-codeblock-server-first-upload/task.json", "reason": "Task20j machine success but visual manual failure source"}
+{"path": ".trellis/tasks/06-21-task-20j-blocknote-default-codeblock-server-first-upload/manual-review.md", "reason": "Known working server-first manual review stack"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Active BlockNote editor and JixiaNativeAttachmentFrame implementation"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Attachment frame visual styling to simplify"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Existing upload helper; must not regress upload pipeline"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.test.ts", "reason": "Upload helper tests"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.test.ts", "reason": "Editor import/export and rendering behavior tests"}
+{"path": "apps/web/e2e/attachment-upload.spec.ts", "reason": "Active browser attachment upload/render E2E"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Save/reopen editor E2E"}
+{"path": "apps/web/e2e/test-api.mjs", "reason": "Server-first E2E fixture; keep Task20j behavior working"}
+{"path": "packages/shared/src/documents.ts", "reason": "Shared document block contract"}
+{"path": "packages/shared/src/attachments.ts", "reason": "Shared attachment contract"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Legacy attachment UI; compare only if active path confusion appears"}

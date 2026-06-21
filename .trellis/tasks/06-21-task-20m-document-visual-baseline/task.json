@@ -1,0 +1,81 @@
+{
+  "title": "Task 20m Document Visual Baseline",
+  "slug": "task-20m-document-visual-baseline",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-21T12:49:44+00:00",
+  "updatedAt": "2026-06-21T14:54:22+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "manualReviewRequired": true,
+  "preparation": {
+    "preparedAt": "2026-06-21T12:51:13+00:00",
+    "fromTasks": [
+      ".trellis/tasks/06-21-task-20l-blocknote-native-attachment-chrome-removal",
+      ".trellis/tasks/06-21-task-20k-attachment-content-first-visual-cleanup",
+      ".trellis/tasks/06-21-task-20j-blocknote-default-codeblock-server-first-upload",
+      ".trellis/tasks/06-19-task-20b-blocknote-editor-adapter"
+    ],
+    "bindingDecisions": [
+      "BlockNote owns editor interaction and default block visuals; Jixia should align with them instead of inventing visible editor chrome.",
+      "Task20m is a visual baseline task, not a feature task: page width, typography, block rhythm, spacing, focus/hover/selection states, and empty document affordance.",
+      "Do not regress Task20j server-first upload/default codeBlock or Task20l BlockNote-native attachment chrome removal.",
+      "Document body stays clean; server semantics remain hidden or outside the content surface."
+    ],
+    "rootProblem": "After Task20l, individual attachment chrome is fixed, but the document surface still lacks a cohesive mature visual baseline: typography, spacing, block rhythm, focus/hover/selection polish, and empty-state/page structure are inconsistent.",
+    "firstImplementationPriority": "Establish a cohesive BlockNote-aligned document body visual baseline before adding more knowledge-base features."
+  },
+  "failureContract": {
+    "noSuccessWithout": [
+      "Notebook and Project document bodies share one cohesive visual baseline",
+      "Page width, typography scale, paragraph/list/heading/quote/code/image/file spacing, and empty document placeholder are visibly improved and documented by manual review",
+      "Hover, focus, selection, and drag/drop states are subtle and BlockNote-native-aligned, not Jixia custom chrome",
+      "Ready image/file states remain clean after Task20l with no top Attach and no ready-state Jixia hover toolbar regression",
+      "Default BlockNote codeBlock path remains authoritative",
+      "Server-first upload/save/refresh/reopen flows still pass for Notebook and Project",
+      "Human visual review records before/after evidence or detailed observations"
+    ],
+    "forbiddenCompletionClaims": [
+      "One CSS tweak made it prettier, therefore visual baseline is done",
+      "Attachment chrome is gone, therefore the document visual system is mature",
+      "Tests pass, therefore visual review is unnecessary",
+      "Copying Notion/Obsidian visuals blindly is acceptable"
+    ]
+  },
+  "completedAt": "2026-06-21T14:54:22+00:00",
+  "manualReview": {
+    "result": "passed",
+    "reviewedAt": "2026-06-21T14:54:22+00:00",
+    "reviewer": "user manual review",
+    "environment": {
+      "webOrigin": "http://10.128.253.195:5173",
+      "apiOrigin": "http://10.128.253.195:4174",
+      "objectStoragePublicBase": "http://10.128.253.195:4174/local-object-storage",
+      "browserDevice": "remote browser via server-first LAN review stack"
+    },
+    "summary": "User confirmed the Task20m document visual baseline is fully usable after manual review.",
+    "passedChecks": [
+      "Notebook and Project document bodies use a cohesive visual baseline",
+      "Empty document, typography, block rhythm, and spacing feel usable",
+      "Hover, focus, selection, and drag/drop states remain subtle and BlockNote-aligned",
+      "No top custom Attach control returned",
+      "Ready image/file states remain clean with no Jixia ready-state hover toolbar regression",
+      "Default BlockNote codeBlock path remains authoritative",
+      "Server-first upload/save/refresh/reopen flows remained usable in manual review"
+    ],
+    "remainingFollowUp": "Future polish should continue with mature knowledge-layer UX, not new editor chrome."
+  }
+}

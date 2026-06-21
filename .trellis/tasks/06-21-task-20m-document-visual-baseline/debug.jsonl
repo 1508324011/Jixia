@@ -1,0 +1,25 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Frontend/editor visual implementation guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Fullstack safety boundaries for upload regressions"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Server-first upload and editor/attachment cross-layer contract"}
+{"path": "doc/MVP_implement.md", "reason": "Current MVP implementation and server-first review notes"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Notebook/Project document editor roadmap"}
+{"path": ".trellis/tasks/06-21-task-20m-document-visual-baseline/prd.md", "reason": "Task20m product requirements"}
+{"path": ".trellis/tasks/06-21-task-20m-document-visual-baseline/info.md", "reason": "Task20m technical notes"}
+{"path": ".trellis/tasks/06-21-task-20m-document-visual-baseline/manual-review.md", "reason": "Task20m human visual review checklist"}
+{"path": ".trellis/tasks/06-21-task-20l-blocknote-native-attachment-chrome-removal/task.json", "reason": "Task20l successful manual review and no-chrome baseline"}
+{"path": ".trellis/tasks/06-21-task-20l-blocknote-native-attachment-chrome-removal/prd.md", "reason": "Task20l attachment chrome removal requirements to avoid regression"}
+{"path": ".trellis/tasks/06-21-task-20k-attachment-content-first-visual-cleanup/prd.md", "reason": "Task20k content-first attachment visual baseline to avoid regression"}
+{"path": ".trellis/tasks/06-21-task-20j-blocknote-default-codeblock-server-first-upload/prd.md", "reason": "Task20j default codeBlock and server-first upload invariants"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Active BlockNote editor and document rendering implementation"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Workbench/editor visual system and document body styling"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Upload path must not regress"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.test.ts", "reason": "Editor behavior tests"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.test.ts", "reason": "Upload helper tests"}
+{"path": "apps/web/src/app/App.test.tsx", "reason": "App shell/workbench regression tests"}
+{"path": "apps/web/e2e/attachment-upload.spec.ts", "reason": "Attachment visual/upload/browser E2E"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Document save/reopen/codeBlock browser E2E"}
+{"path": "apps/web/e2e/test-api.mjs", "reason": "Server-first E2E fixture"}
+{"path": "packages/shared/src/documents.ts", "reason": "Shared document block contract"}
+{"path": "packages/shared/src/attachments.ts", "reason": "Shared attachment contract"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Legacy attachment UI; inspect only if active-path confusion appears"}

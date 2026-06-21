@@ -1,0 +1,74 @@
+{
+  "title": "Task 20k Attachment content-first visual cleanup",
+  "slug": "task-20k-attachment-content-first-visual-cleanup",
+  "type": "fullstack",
+  "status": "manual-review-partial",
+  "createdAt": "2026-06-21T08:51:08+00:00",
+  "updatedAt": "2026-06-21T10:19:41+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "manualReviewRequired": true,
+  "preparation": {
+    "preparedAt": "2026-06-21T08:53:14+00:00",
+    "fromTasks": [
+      ".trellis/tasks/06-21-task-20j-blocknote-default-codeblock-server-first-upload",
+      ".trellis/tasks/06-20-task-20i-complete-document-editor-ux",
+      ".trellis/tasks/06-20-task-20g-blocknote-native-file-pipeline",
+      ".trellis/tasks/06-19-task-20d-local-attachment-storage-upload-e2e"
+    ],
+    "bindingDecisions": [
+      "Ready uploaded image is document content first: render the image inline with no permanent management boxes above or below it.",
+      "Attachment controls are delayed/contextual: hover, selection, right-click, menu, inspector, or explicit replacement affordance only when useful.",
+      "Keep Task20j server-first upload and BlockNote default codeBlock decisions intact; do not regress upload/security while cleaning visuals."
+    ],
+    "rootProblem": "The active JixiaNativeAttachmentFrame always renders chrome/actions/dropzone/metadata/status around native content, so ready attachments look like a debug/control panel instead of mature document content.",
+    "firstImplementationPriority": "Split attachment frame rendering by state. Ready image should render as native BlockNote image content with minimal contextual controls; uploading/error/empty states keep visible affordances."
+  },
+  "failureContract": {
+    "noSuccessWithout": [
+      "Ready uploaded image displays as the image itself, integrated with surrounding document content",
+      "No permanent function boxes, metadata panels, status explanations, or replacement dropzone above/below a ready image",
+      "Image operations remain reachable through hover, selected state, right-click/context menu, or inspector/debug surface",
+      "Ready non-image file renders as a compact file chip/card, not a full management panel",
+      "Uploading, empty, dragging, and error states remain understandable and actionable",
+      "Save, refresh, reopen, Notebook, and Project document flows preserve safe attachment metadata only",
+      "Manual review records visual evidence from the real browser, not only unit assertions"
+    ],
+    "forbiddenCompletionClaims": [
+      "Upload works, therefore attachment UX is done",
+      "Metadata is useful, therefore it belongs permanently inline",
+      "Controls exist somewhere, therefore the ready state is mature",
+      "Synthetic tests passed, therefore visual review passed"
+    ]
+  },
+  "manualReview": {
+    "result": "partial",
+    "reviewedAt": "2026-06-21T10:19:41+00:00",
+    "whatPassed": [
+      "Manual reviewer reported Task20k upload/review path succeeded",
+      "Ready attachment rendering improved from permanent management panel to content-first direction",
+      "Machine implement/check/finish verification passed for Task20k"
+    ],
+    "whatFailedOrChanged": [
+      "Ready image/file hover controls Open, Replace, Remove are still unnecessary custom Jixia chrome",
+      "Top Attach shortcut UI is unnecessary because BlockNote default slash/file/paste/drop flows should own attachment insertion",
+      "Jixia should trust BlockNote default editor interactions and keep only hidden server semantics"
+    ],
+    "rootCause": "Task20k still kept product-visible custom attachment controls. The next simplification is to remove Jixia editor chrome and rely on BlockNote-native interaction surfaces.",
+    "supersededBy": ".trellis/tasks/06-21-task-20l-blocknote-native-attachment-chrome-removal"
+  },
+  "supersededBy": ".trellis/tasks/06-21-task-20l-blocknote-native-attachment-chrome-removal"
+}

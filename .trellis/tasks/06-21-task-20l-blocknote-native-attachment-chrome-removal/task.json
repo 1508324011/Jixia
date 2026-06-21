@@ -1,0 +1,71 @@
+{
+  "title": "Task 20l BlockNote-native attachment chrome removal",
+  "slug": "task-20l-blocknote-native-attachment-chrome-removal",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-21T10:18:07+00:00",
+  "updatedAt": "2026-06-21T12:51:13+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "manualReviewRequired": true,
+  "preparation": {
+    "preparedAt": "2026-06-21T10:19:41+00:00",
+    "fromTasks": [
+      ".trellis/tasks/06-21-task-20k-attachment-content-first-visual-cleanup",
+      ".trellis/tasks/06-21-task-20j-blocknote-default-codeblock-server-first-upload",
+      ".trellis/tasks/06-20-task-20i-complete-document-editor-ux",
+      ".trellis/tasks/06-20-task-20g-blocknote-native-file-pipeline"
+    ],
+    "bindingDecisions": [
+      "Trust BlockNote default editor surfaces for attachment insertion and manipulation.",
+      "Remove Jixia top Attach shortcut UI from the primary editor surface.",
+      "Remove ready-state Jixia hover controls such as Open, Replace, and Remove for images/files.",
+      "Jixia owns hidden server semantics only: private attachment ids, upload confirmation, authorization, safe metadata, signed download resolution.",
+      "Do not regress Task20j default codeBlock behavior or server-first upload behavior, and do not regress Task20k content-first ready rendering."
+    ],
+    "rootProblem": "Task20k removed the permanent management panel but still added custom visible Jixia chrome. Mature editors keep document content clean and put operations into native block/editor surfaces.",
+    "firstImplementationPriority": "Delete/demote product-visible Attach and ready-state attachment hover controls; preserve native BlockNote image/file display and uploadFile/server semantics."
+  },
+  "failureContract": {
+    "noSuccessWithout": [
+      "No top-level Jixia Attach shortcut/control is required or visible as the primary attachment insertion path",
+      "Ready images render as BlockNote-native image content with no Jixia Open/Replace/Remove hover toolbar",
+      "Ready files render as compact BlockNote-like/default file content with no Jixia Open/Replace/Remove hover toolbar",
+      "Attachment insertion still works through BlockNote-native slash/menu/file/paste/drop paths where supported",
+      "Uploading, empty, dragging, and error placeholders retain necessary affordances without leaking into ready state",
+      "Notebook and Project save, refresh, reopen, signed download/render, and safe persistence remain working",
+      "Manual visual review confirms the document body has no Jixia custom attachment chrome in ready states"
+    ],
+    "forbiddenCompletionClaims": [
+      "Hover controls are less ugly, therefore they are acceptable",
+      "Top Attach is convenient for developers, therefore it should stay in the editor body",
+      "Upload still works, therefore BlockNote-native UX is complete",
+      "Tests pass, therefore human visual review is unnecessary"
+    ]
+  },
+  "completedAt": "2026-06-21T12:51:13+00:00",
+  "manualReview": {
+    "result": "passed",
+    "reviewedAt": "2026-06-21T12:51:13+00:00",
+    "whatPassed": [
+      "Manual reviewer reported Task20l review success after restarting the server-first LAN fixture stack",
+      "Ready image/file states no longer expose Jixia top Attach chrome or ready-state Open/Replace/Remove hover toolbar",
+      "Task20l machine implement/check/finish phases passed and stopped at the human visual gate before this review result"
+    ],
+    "remainingProductGap": "The document body is now cleaner, but the whole document visual system still lacks mature typography, spacing, block rhythm, selection/hover/focus polish, and page baseline compared with Notion/Obsidian/mature editors.",
+    "nextTask": ".trellis/tasks/06-21-task-20m-document-visual-baseline"
+  }
+}
