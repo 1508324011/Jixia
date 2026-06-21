@@ -1,0 +1,77 @@
+{
+  "title": "Task 20j BlockNote default code block and server-first upload",
+  "slug": "task-20j-blocknote-default-codeblock-server-first-upload",
+  "type": "fullstack",
+  "status": "manual-review-failed",
+  "createdAt": "2026-06-21T05:40:49+00:00",
+  "updatedAt": "2026-06-21T08:53:14+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "manualReviewRequired": true,
+  "preparation": {
+    "preparedAt": "2026-06-21T05:43:06+00:00",
+    "fromTasks": [
+      ".trellis/tasks/06-20-task-20i-complete-document-editor-ux",
+      ".trellis/tasks/06-20-task-20h-manual-review-hardening",
+      ".trellis/tasks/06-20-task-20g-blocknote-native-file-pipeline",
+      ".trellis/tasks/06-19-task-20d-local-attachment-storage-upload-e2e"
+    ],
+    "bindingDecisions": [
+      "Use BlockNote default codeBlock and normal slash/default insertion. Do not keep a separate ugly jixiaCodeBlock product path.",
+      "Jixia is server-first and remote-browser-first. Upload public base URLs, listen hosts, and CORS must match the browser origin."
+    ],
+    "rootProblem": "Task 20i tried to make custom editor chrome more visible. The correct fix is simpler: remove the special code-block path and make the server-first upload boundary real.",
+    "doNotRepeat": [
+      "Do not use Insert block as the primary code-block insertion path.",
+      "Do not add hover-only or visually foreign custom code-block controls.",
+      "Do not treat localhost-only upload URLs as valid for remote browser review.",
+      "Do not claim paste/drop success from synthetic tests alone."
+    ],
+    "firstImplementationPriority": "Collapse app-level codeBlock to BlockNote type codeBlock, then make direct upload reachable from a remote browser origin before polishing secondary UX."
+  },
+  "failureContract": {
+    "noSuccessWithout": [
+      "slash /code creates the same authoritative BlockNote default codeBlock path used by saved app codeBlock data",
+      "custom jixiaCodeBlock and Insert block dependency are removed, disabled, or explicitly demoted from the primary UX",
+      "remote-browser upload intent, preflight/direct PUT, confirm, signed download, save, refresh, and reopen work from the recorded origin",
+      "fixture or real local API documents server-first host/public-base/CORS settings",
+      "Notebook and Project document flows are checked against the same editor path"
+    ],
+    "forbiddenCompletionClaims": [
+      "controls exist in source, therefore code block UX is fixed",
+      "localhost upload works, therefore server-first upload works",
+      "legacy attachment card upload works, therefore editor ingestion is unified",
+      "unit tests passed, therefore real OS paste/drop works"
+    ]
+  },
+  "manualReview": {
+    "result": "failed",
+    "reviewedAt": "2026-06-21T08:53:14+00:00",
+    "whatPassed": [
+      "Server-first LAN fixture started and was reachable from http://10.128.253.195:5173",
+      "Manual reviewer reported image/file upload path succeeded",
+      "Task20j implementation/check/finish machine verification passed"
+    ],
+    "whatFailed": [
+      "Uploaded image rendering still shows permanent function boxes/chrome above and below the image",
+      "Ready attachments are rendered as management/debug panels instead of document content",
+      "Controls are inline and always visible instead of delayed to hover, selection, right-click, or inspector surfaces"
+    ],
+    "rootCause": "The upload pipeline was fixed, but the active attachment render state is wrong: ready content still uses a chrome-heavy attachment frame instead of a content-first image/file presentation.",
+    "supersededBy": ".trellis/tasks/06-21-task-20k-attachment-content-first-visual-cleanup"
+  },
+  "supersededBy": ".trellis/tasks/06-21-task-20k-attachment-content-first-visual-cleanup"
+}

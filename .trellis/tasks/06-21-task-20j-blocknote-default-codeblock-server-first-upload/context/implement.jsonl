@@ -1,0 +1,26 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Backend implementation standards for server-first upload boundary"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Frontend implementation standards for BlockNote editor UX"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Preserve cross-layer API authority and private attachment boundary"}
+{"path": ".trellis/spec/backend/shared-domain-contracts.md", "reason": "Avoid leaking storage implementation details into shared DTOs"}
+{"path": "doc/Notebook_Project_Doc_Editor_Implementation_Plan.md", "reason": "Notebook/Project editor roadmap and scope"}
+{"path": ".trellis/tasks/06-20-task-20i-complete-document-editor-ux/task.json", "reason": "Superseded Task20i state and manual-review failure record"}
+{"path": ".trellis/tasks/06-20-task-20i-complete-document-editor-ux/prd.md", "reason": "Previous PRD to avoid repeating custom code-block direction"}
+{"path": ".trellis/tasks/06-20-task-20h-manual-review-hardening/task.json", "reason": "Failed predecessor and manual-review state correction"}
+{"path": ".trellis/tasks/06-20-task-20g-blocknote-native-file-pipeline/prd.md", "reason": "BlockNote-native file/image pipeline context"}
+{"path": ".trellis/tasks/06-19-task-20d-local-attachment-storage-upload-e2e/prd.md", "reason": "Local object-storage direct-upload safety contract"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Shared BlockNote adapter, code-block mapping, native image/file entrypoints"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.test.ts", "reason": "Editor mapping and serialization tests"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Browser upload adapter and direct-upload diagnostics"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.test.ts", "reason": "Upload adapter unit coverage"}
+{"path": "apps/web/e2e/attachment-upload.spec.ts", "reason": "Browser upload and attachment E2E coverage"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Save/refresh/reopen and code-block E2E coverage"}
+{"path": "apps/web/e2e/test-api.mjs", "reason": "Manual/mock API fixture for server-first upload review"}
+{"path": "apps/web/vite.config.ts", "reason": "Dev proxy and remote browser behavior"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Editor chrome and block styling"}
+{"path": "apps/api/src/modules/attachments/object-storage.ts", "reason": "Local object-storage public base URL and CORS configuration"}
+{"path": "apps/api/src/modules/attachments/local-object-storage.routes.ts", "reason": "Local direct-upload CORS/preflight/no-credentials enforcement"}
+{"path": "apps/api/src/modules/attachments/attachment.service.ts", "reason": "Intent/confirm/signed download API boundary"}
+{"path": "apps/api/src/config/env.ts", "reason": "Server-first env parsing for local object storage"}
+{"path": "packages/shared/src/documents.ts", "reason": "Shared document block model"}
+{"path": "packages/shared/src/attachments.ts", "reason": "Shared attachment metadata contract"}
