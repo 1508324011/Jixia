@@ -1,0 +1,46 @@
+{
+  "title": "Task 20h Manual Review Hardening",
+  "slug": "task-20h-manual-review-hardening",
+  "type": "frontend",
+  "status": "manual-review-failed",
+  "createdAt": "2026-06-20T07:57:11+00:00",
+  "updatedAt": "2026-06-20T14:42:52+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "preparation": {
+    "preparedAt": "2026-06-20T07:59:18+00:00",
+    "fromTask": ".trellis/tasks/06-20-task-20g-blocknote-native-file-pipeline",
+    "reason": "Manual review hardening for code block discoverability, paste/drop, attachment upload, and LAN local object-storage review.",
+    "doNotStartByPatching": [
+      "hidden-input attachment card event propagation",
+      "hover-only code block cosmetics",
+      "localhost-only synthetic paste/drop tests"
+    ],
+    "firstImplementationPriority": "Fix local object-storage public base URL and allowed origins for the exact manual-review browser origin."
+  },
+  "current_phase": 3,
+  "manualReview": {
+    "result": "failed",
+    "reason": "User reported no visible improvement after Task20h; code block controls, paste/drop, and attachment direct upload remain unacceptable in manual review.",
+    "rootCauses": [
+      "Trellis accepted architecture/synthetic-test progress as finished despite failed user-observed UX.",
+      "Direct upload URL/CORS/reachability is still wrong for LAN browser origin review.",
+      "The editor still exposes mixed product models: BlockNote-native file flow plus legacy attachment-card upload path.",
+      "Code block controls are not sufficiently visible or usable.",
+      "Paste/drop validation did not cover real browser clipboard and OS drag payloads."
+    ]
+  },
+  "supersededBy": ".trellis/tasks/06-20-task-20i-complete-document-editor-ux"
+}

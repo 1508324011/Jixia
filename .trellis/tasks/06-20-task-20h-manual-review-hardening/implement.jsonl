@@ -1,0 +1,14 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Preserve API-authorized private attachment boundary"}
+{"path": ".trellis/spec/backend/shared-domain-contracts.md", "reason": "Avoid leaking storage secrets into shared contracts"}
+{"path": ".trellis/tasks/06-20-task-20g-blocknote-native-file-pipeline/task.json", "reason": "Previous manual-review partial failure and next-task recommendation"}
+{"path": ".trellis/tasks/06-20-task-20g-blocknote-native-file-pipeline/prd.md", "reason": "Task20g architecture checkpoint and preserved user complaint"}
+{"path": ".trellis/tasks/06-19-task-20f-browser-observed-block-interaction-repair/prd.md", "reason": "Earlier manual failure and stop-patching-custom-blocks decision"}
+{"path": ".trellis/tasks/06-19-task-20d-local-attachment-storage-upload-e2e/prd.md", "reason": "Local object-storage safety contract and upload foundation"}
+{"path": "apps/web/src/features/documents/editor/JixiaEditor.tsx", "reason": "Shared BlockNote adapter, code block, native and legacy attachment entrypoints"}
+{"path": "apps/web/src/features/attachments/AttachmentBlock.tsx", "reason": "Legacy attachment card path to demote or preserve read-compatible"}
+{"path": "apps/web/src/features/attachments/uploadAttachment.ts", "reason": "Browser upload adapter and direct-upload diagnostics"}
+{"path": "apps/web/e2e/attachment-upload.spec.ts", "reason": "Existing synthetic paste/drop and localhost direct-upload coverage"}
+{"path": "apps/api/src/modules/attachments/object-storage.ts", "reason": "Local public base URL and allowed origin configuration"}
+{"path": "apps/api/src/modules/attachments/local-object-storage.routes.ts", "reason": "Local direct-upload CORS, preflight, and no-credentials enforcement"}

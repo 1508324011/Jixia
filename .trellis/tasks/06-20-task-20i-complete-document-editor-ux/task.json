@@ -1,0 +1,68 @@
+{
+  "title": "Task 20i Complete Document Editor UX",
+  "slug": "task-20i-complete-document-editor-ux",
+  "type": "frontend",
+  "status": "manual-review-failed",
+  "createdAt": "2026-06-20T14:46:41Z",
+  "updatedAt": "2026-06-21T05:43:06+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "preparation": {
+    "preparedAt": "2026-06-20T14:46:41Z",
+    "fromTasks": [
+      ".trellis/tasks/06-20-task-20h-manual-review-hardening",
+      ".trellis/tasks/06-20-task-20g-blocknote-native-file-pipeline",
+      ".trellis/tasks/06-19-task-20f-browser-observed-block-interaction-repair",
+      ".trellis/tasks/06-19-task-20d-local-attachment-storage-upload-e2e"
+    ],
+    "rootProblem": "The pipeline accepted architecture and synthetic-test progress as finished while the manual editor/upload flow still failed for the reviewer.",
+    "doNotRepeat": [
+      "Do not mark architecture readiness as UX completion.",
+      "Do not use localhost-only synthetic paste/drop tests as proof of real browser clipboard or OS drag behavior.",
+      "Do not patch the legacy attachment-card upload button as the primary editor ingestion path.",
+      "Do not ship hover-only code-block controls that users cannot discover.",
+      "Do not return direct-upload URLs that are unreachable from the actual browser origin."
+    ],
+    "firstImplementationPriority": "Close the real browser upload boundary from the exact manual-review origin: intent -> OPTIONS/PUT direct upload -> confirm -> signed download -> save/reopen."
+  },
+  "manualReviewRequired": true,
+  "failureContract": {
+    "noSuccessWithout": [
+      "recorded manual-review origin and reachable public base host",
+      "browser-observed intent, direct PUT, confirm, signed download, save, refresh, and reopen",
+      "visible code-block language/copy/wrap controls with feedback",
+      "real clipboard paste and OS file drag checklist results",
+      "Notebook and Project parity evidence"
+    ],
+    "forbiddenCompletionClaims": [
+      "unit tests passed, therefore paste/drop works",
+      "mock intent returned 200, therefore upload works",
+      "controls exist in source code, therefore users can find them",
+      "legacy attachment card can upload, therefore editor ingestion is unified"
+    ]
+  },
+  "manualReview": {
+    "result": "failed",
+    "reviewedAt": "2026-06-21T05:43:06+00:00",
+    "reason": "Task 20i automated phases were green, but the human/product decision changed: the custom Jixia code block chrome and Insert block dependency are rejected, and the local upload fixture remains wrong for server-first remote-browser review.",
+    "rootCauses": [
+      "The task state claimed readiness despite missing reviewer-origin manual evidence.",
+      "The PRD optimized for visible custom code-block language/copy/wrap controls, but the accepted UX direction is BlockNote default codeBlock and slash/default insertion.",
+      "The upload review stack still mixed same-machine localhost assumptions with server-first remote browser requirements."
+    ]
+  },
+  "supersededBy": ".trellis/tasks/06-21-task-20j-blocknote-default-codeblock-server-first-upload"
+}
