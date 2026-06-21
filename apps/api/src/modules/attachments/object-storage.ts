@@ -145,13 +145,68 @@ function localPublicBaseUrlFromEnv(env: NodeJS.ProcessEnv): string {
   return `http://${apiHost}:${apiPort}/local-object-storage`;
 }
 
+function addOrigin(origins: Set<string>, value: string | undefined): void {
+  const trimmed = value?.trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    return;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      origins.add(parsed.origin);
+    }
+  } catch {
+    // Ignore malformed optional development hints. Explicit LOCAL_OBJECT_STORAGE_ALLOWED_ORIGINS remains authoritative.
+  }
+}
+
+function derivedManualReviewOrigins(env: NodeJS.ProcessEnv): readonly string[] {
+  const origins = new Set<string>(["http://127.0.0.1:5173", "http://localhost:5173"]);
+
+  addOrigin(origins, env.JIXIA_WEB_PUBLIC_ORIGIN);
+  addOrigin(origins, env.WEB_PUBLIC_ORIGIN);
+  addOrigin(origins, env.VITE_PUBLIC_ORIGIN);
+  addOrigin(origins, env.PLAYWRIGHT_BASE_URL);
+
+  const publicBaseUrl = env.LOCAL_OBJECT_STORAGE_PUBLIC_BASE_URL?.trim();
+  if (publicBaseUrl) {
+    try {
+      const parsedPublicBaseUrl = new URL(publicBaseUrl);
+      const webPort = env.WEB_PORT?.trim() || env.VITE_PORT?.trim() || "5173";
+      origins.add(`${parsedPublicBaseUrl.protocol}//${parsedPublicBaseUrl.hostname}:${webPort}`);
+    } catch {
+      // The base URL is validated when signed URLs are created; origin derivation is best-effort only.
+    }
+  }
+
+  return Array.from(origins);
+}
+
 function localAllowedOriginsFromEnv(env: NodeJS.ProcessEnv): readonly string[] {
   const configured = env.LOCAL_OBJECT_STORAGE_ALLOWED_ORIGINS?.trim();
   const origins = configured
-    ? configured.split(",").map((origin) => origin.trim()).filter(Boolean)
-    : ["http://127.0.0.1:5173", "http://localhost:5173"];
+    ? configured.split(",").map((origin) => normalizeAllowedOrigin(origin.trim()))
+    : derivedManualReviewOrigins(env);
 
   return Array.from(new Set(origins));
+}
+
+function normalizeAllowedOrigin(origin: string): string {
+  if (!origin || origin === "*") {
+    throw new ObjectStorageError("Local object storage allowed origin is invalid");
+  }
+
+  try {
+    const parsed = new URL(origin);
+    if ((parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.origin === origin.replace(/\/+$/, "")) {
+      return parsed.origin;
+    }
+  } catch {
+    // Fall through to the sanitized configuration error below.
+  }
+
+  throw new ObjectStorageError("Local object storage allowed origin is invalid");
 }
 
 function localConfigFromEnv(env: NodeJS.ProcessEnv = process.env): LocalObjectStorageConfig {

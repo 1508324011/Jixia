@@ -774,6 +774,59 @@ describe("local object storage", () => {
     expect(upload.url).toMatch(/^http:\/\/127\.0\.0\.1:3333\/local-object-storage\/upload\//);
   });
 
+  it("derives explicit same-host manual review origins without wildcard CORS", async () => {
+    const localStorage = createObjectStorageFromEnv({
+      NODE_ENV: "development",
+      ATTACHMENT_STORAGE_DRIVER: "local",
+      LOCAL_OBJECT_STORAGE_ROOT: rootDirectory,
+      LOCAL_OBJECT_STORAGE_PUBLIC_BASE_URL: "http://10.128.253.195:3000/local-object-storage"
+    });
+
+    expect(localStorage).toBeInstanceOf(LocalObjectStorage);
+    const config = (localStorage as LocalObjectStorage).config;
+    expect(config.publicBaseUrl).toBe("http://10.128.253.195:3000/local-object-storage");
+    expect(config.allowedOrigins).toContain("http://10.128.253.195:5173");
+    expect(config.allowedOrigins).toContain("http://127.0.0.1:5173");
+    expect(config.allowedOrigins).not.toContain("*");
+    expect((localStorage as LocalObjectStorage).isAllowedOrigin("http://10.128.253.195:5173")).toBe(true);
+    expect((localStorage as LocalObjectStorage).isAllowedOrigin("http://evil.example.test")).toBe(false);
+  });
+
+  it("uses configured manual review origins as the authoritative allow-list", async () => {
+    const localStorage = createObjectStorageFromEnv({
+      NODE_ENV: "development",
+      ATTACHMENT_STORAGE_DRIVER: "local",
+      LOCAL_OBJECT_STORAGE_ROOT: rootDirectory,
+      LOCAL_OBJECT_STORAGE_PUBLIC_BASE_URL: "http://10.128.253.195:3000/local-object-storage",
+      LOCAL_OBJECT_STORAGE_ALLOWED_ORIGINS: "http://10.128.253.195:5173"
+    });
+
+    expect(localStorage).toBeInstanceOf(LocalObjectStorage);
+    const config = (localStorage as LocalObjectStorage).config;
+    expect(config.allowedOrigins).toEqual(["http://10.128.253.195:5173"]);
+    expect((localStorage as LocalObjectStorage).isAllowedOrigin("http://127.0.0.1:5173")).toBe(false);
+  });
+
+  it("rejects wildcard or malformed configured local object-storage origins", async () => {
+    expect(() =>
+      createObjectStorageFromEnv({
+        NODE_ENV: "development",
+        ATTACHMENT_STORAGE_DRIVER: "local",
+        LOCAL_OBJECT_STORAGE_ROOT: rootDirectory,
+        LOCAL_OBJECT_STORAGE_ALLOWED_ORIGINS: "*"
+      })
+    ).toThrow(/allowed origin is invalid/i);
+
+    expect(() =>
+      createObjectStorageFromEnv({
+        NODE_ENV: "development",
+        ATTACHMENT_STORAGE_DRIVER: "local",
+        LOCAL_OBJECT_STORAGE_ROOT: rootDirectory,
+        LOCAL_OBJECT_STORAGE_ALLOWED_ORIGINS: "not-a-web-origin"
+      })
+    ).toThrow(/allowed origin is invalid/i);
+  });
+
   it("serves signed local upload and download requests with browser-safe CORS", async () => {
     const storage = createLocalStorage();
     app = await createTestApiApp({ localObjectStorage: { objectStorage: storage } });
