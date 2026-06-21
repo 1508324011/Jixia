@@ -15,7 +15,7 @@ describe("JixiaEditor adapter conversion", () => {
         { id: "todo-1", type: "todo", attrs: { checked: true }, text: "Verify citations" },
         { id: "quote-1", type: "quote", text: "Important participant quote" },
         { id: "callout-1", type: "callout", attrs: { tone: "warning" }, text: "Human review required" },
-        { id: "code-1", type: "codeBlock", attrs: { language: "ts", wrap: true }, text: "const checked = true;" },
+        { id: "code-1", type: "codeBlock", attrs: { language: "ts" }, text: "const checked = true;" },
         { id: "divider-1", type: "divider" },
         { id: "table-1", type: "table", text: "| Column | Value |\n| --- | --- |\n| Source | Paper |" },
         {
@@ -334,6 +334,151 @@ describe("JixiaEditor adapter conversion", () => {
     expect(JSON.stringify(exported)).not.toMatch(/downloadUrl|uploadUrl|storageKey|signature|https?:\/\//i);
   });
 
+  it("exports native failed upload placeholders as retryable safe empty attachment blocks", () => {
+    const exported = blockNoteBlocksToSnapshot([
+      {
+        id: "failed-native-file-1",
+        type: "file",
+        props: {
+          attachmentId: "",
+          url: "",
+          name: "failed-notes.txt",
+          fileName: "failed-notes.txt",
+          mimeType: "text/plain",
+          sizeBytes: 12,
+          checksum: "",
+          uploadedAt: "",
+          uploadStatus: "error",
+          uploadMessage: "Attachment direct upload failed at https://storage.example.test/private?signature=secret",
+          pendingFileName: "failed-notes.txt",
+          pendingMimeType: "text/plain",
+          pendingSizeBytes: 12,
+          description: "Keep safe description",
+          hasDescription: true,
+          showPreview: false,
+          hasShowPreview: true
+        },
+        children: []
+      }
+    ]);
+
+    expect(exported).toEqual({
+      editorSchemaVersion: 1,
+      blocks: [
+        {
+          id: "failed-native-file-1",
+          type: "file",
+          attrs: {
+            description: "Keep safe description",
+            showPreview: false
+          }
+        }
+      ]
+    });
+    expect(JSON.stringify(exported)).not.toMatch(/uploadStatus|uploadMessage|pending|storage|signature|https?:\/\//i);
+  });
+
+  it("imports app code blocks as BlockNote default code blocks", () => {
+    const snapshot: EditorSnapshot = {
+      editorSchemaVersion: 1,
+      blocks: [{ id: "code-1", type: "codeBlock", attrs: { language: "python", wrap: true }, text: "print('hello')" }]
+    };
+
+    expect(snapshotToBlockNoteBlocks(snapshot)).toEqual([
+      {
+        id: "code-1",
+        type: "codeBlock",
+        props: { language: "python" },
+        content: "print('hello')",
+        children: []
+      }
+    ]);
+  });
+
+  it("exports BlockNote default code blocks with safe language metadata", () => {
+    const exported = blockNoteBlocksToSnapshot([
+      {
+        id: "code-1",
+        type: "codeBlock",
+        props: {
+          language: "python",
+          storageKey: "tenant/private/object"
+        },
+        content: [
+          { type: "text", text: "print('hello')" },
+          { type: "hardBreak" },
+          { type: "text", text: "print('world')" }
+        ],
+        children: []
+      }
+    ]);
+
+    expect(exported).toEqual({
+      editorSchemaVersion: 1,
+      blocks: [
+        {
+          id: "code-1",
+          type: "codeBlock",
+          attrs: { language: "python" },
+          text: "print('hello')\nprint('world')"
+        }
+      ]
+    });
+    expect(JSON.stringify(exported)).not.toContain("storageKey");
+  });
+
+  it("preserves authored native attachment display metadata during replacement export", () => {
+    const exported = blockNoteBlocksToSnapshot([
+      {
+        id: "native-image-replaced",
+        type: "image",
+        props: {
+          attachmentId: "attachment-2",
+          url: "jixia-attachment:attachment-2",
+          name: "replacement.png",
+          fileName: "replacement.png",
+          mimeType: "image/png",
+          sizeBytes: 512,
+          checksum: "sha256:def",
+          uploadedAt: "2026-06-18T12:00:00.000Z",
+          caption: "Existing caption",
+          altText: "Existing alt",
+          previewWidth: 500,
+          showPreview: false,
+          hasCaption: true,
+          hasAltText: true,
+          hasPreviewWidth: true,
+          hasShowPreview: true
+        },
+        children: []
+      }
+    ]);
+
+    expect(exported).toEqual({
+      editorSchemaVersion: 1,
+      blocks: [
+        {
+          id: "native-image-replaced",
+          type: "image",
+          attachmentId: "attachment-2",
+          attrs: {
+            attachment: {
+              fileName: "replacement.png",
+              mimeType: "image/png",
+              sizeBytes: 512,
+              checksum: "sha256:def",
+              uploadedAt: "2026-06-18T12:00:00.000Z"
+            },
+            caption: "Existing caption",
+            altText: "Existing alt",
+            previewWidth: 500,
+            showPreview: false
+          }
+        }
+      ]
+    });
+  });
+
   it("drops unsupported embedded file URLs instead of persisting external storage references", () => {
     const exported = blockNoteBlocksToSnapshot([
       {
@@ -358,7 +503,7 @@ describe("JixiaEditor adapter conversion", () => {
     expect(JSON.stringify(exported)).not.toMatch(/storage|signature|https?:\/\//i);
   });
 
-  it("exports code blocks from block-local controls with safe language and wrap metadata", () => {
+  it("exports legacy custom code blocks as read-compatible safe metadata", () => {
     const exported = blockNoteBlocksToSnapshot([
       {
         id: "code-1",

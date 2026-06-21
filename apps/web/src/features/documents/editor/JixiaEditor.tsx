@@ -22,13 +22,15 @@ import {
 import {
   type AttachmentBlockType,
   currentEditorSchemaVersion,
-  editorBlockTypes,
   type EditorBlock,
   type EditorBlockAttributes,
   type EditorBlockType,
   type EditorSnapshot
 } from "@jixia/shared";
 import {
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
   type MouseEvent,
   forwardRef,
   type ReactElement,
@@ -38,7 +40,6 @@ import {
   useState
 } from "react";
 
-import { AttachmentBlock } from "../../attachments/AttachmentBlock";
 import { openAttachmentDownload, uploadAttachment, type UploadedAttachmentResult } from "../../attachments/uploadAttachment";
 import { Button } from "../../layout/workbench";
 
@@ -54,10 +55,7 @@ type JixiaEditorProps = {
   readonly readOnly?: boolean;
 };
 
-const jixiaImageBlock = createJixiaAttachmentBlockSpec("image");
-const jixiaFileBlock = createJixiaAttachmentBlockSpec("file");
 const jixiaCalloutBlock = createJixiaCalloutBlockSpec();
-const jixiaCodeBlock = createJixiaCodeBlockSpec();
 
 const jixiaNativeAttachmentPropSchema = {
   attachmentId: { default: "" },
@@ -74,7 +72,12 @@ const jixiaNativeAttachmentPropSchema = {
   hasAltText: { default: false },
   hasDescription: { default: false },
   hasPreviewWidth: { default: false },
-  hasShowPreview: { default: false }
+  hasShowPreview: { default: false },
+  uploadStatus: { default: "" },
+  uploadMessage: { default: "" },
+  pendingFileName: { default: "" },
+  pendingMimeType: { default: "" },
+  pendingSizeBytes: { default: 0 }
 } as const;
 
 const createLooseReactBlockSpec = createReactBlockSpec as unknown as (
@@ -113,7 +116,11 @@ const jixiaNativeImageBlock = createLooseReactBlockSpec(
     meta: {
       fileBlockAccept: ["image/*"]
     },
-    render: (props: Parameters<typeof ImageBlock>[0]) => <ImageBlock {...props} />,
+    render: (props: Parameters<typeof ImageBlock>[0]) => (
+      <JixiaNativeAttachmentFrame blockType="image" block={props.block} editor={props.editor as unknown as JixiaBlockNoteEditor}>
+        <ImageBlock {...props} />
+      </JixiaNativeAttachmentFrame>
+    ),
     parse: imageParse(options) as unknown,
     toExternalHTML: (props: Parameters<typeof ImageToExternalHTML>[0]) => <ImageToExternalHTML {...props} />,
     runsBefore: ["file"]
@@ -121,7 +128,11 @@ const jixiaNativeImageBlock = createLooseReactBlockSpec(
 );
 
 const jixiaNativeFileBlock = createLooseReactBlockSpec(createJixiaFileBlockConfig, {
-  render: (props: Parameters<typeof FileBlockWrapper>[0]) => <FileBlockWrapper {...props} />,
+  render: (props: Parameters<typeof FileBlockWrapper>[0]) => (
+    <JixiaNativeAttachmentFrame blockType="file" block={props.block} editor={props.editor as unknown as JixiaBlockNoteEditor}>
+      <FileBlockWrapper {...props} />
+    </JixiaNativeAttachmentFrame>
+  ),
   parse: fileParse() as unknown,
   toExternalHTML: (props: Parameters<typeof FileBlockWrapper>[0]) => {
     if (!props.block.props.url) {
@@ -136,10 +147,7 @@ const jixiaBlockSpecs = {
   ...defaultBlockSpecs,
   image: jixiaNativeImageBlock(),
   file: jixiaNativeFileBlock(),
-  jixiaCallout: jixiaCalloutBlock(),
-  jixiaCodeBlock: jixiaCodeBlock(),
-  jixiaImage: jixiaImageBlock(),
-  jixiaFile: jixiaFileBlock()
+  jixiaCallout: jixiaCalloutBlock()
 };
 
 const jixiaBlockNoteSchema = BlockNoteSchema.create({
@@ -177,6 +185,11 @@ type JixiaUploadFileResult = {
 
 type AttachmentUploadStatus = "uploading" | "success" | "error";
 
+type FileInsertionReference = {
+  readonly block: { readonly id: string; readonly type?: string; readonly content?: unknown };
+  readonly placement: "after" | "before";
+};
+
 type JixiaBlockNoteViewProps = {
   readonly "data-testid": string;
   readonly emojiPicker: false;
@@ -186,7 +199,7 @@ type JixiaBlockNoteViewProps = {
   readonly formattingToolbar: boolean;
   readonly linkToolbar: false;
   readonly onChange: () => void;
-  readonly sideMenu: false;
+  readonly sideMenu: boolean;
   readonly slashMenu: boolean;
   readonly tableHandles: boolean;
   readonly theme: "light";
@@ -215,21 +228,6 @@ const textBlockTypes = new Set<EditorBlockType>([
   "table"
 ]);
 
-const blockLabels: Record<EditorBlockType, string> = {
-  paragraph: "Paragraph",
-  heading: "Heading",
-  bulletList: "Bullet list",
-  orderedList: "Numbered list",
-  todo: "Checklist item",
-  quote: "Quote",
-  callout: "Callout",
-  codeBlock: "Code block",
-  divider: "Divider",
-  table: "Simple table",
-  image: "Image attachment",
-  file: "File attachment"
-};
-
 const codeLanguageOptions = [
   "text",
   "bash",
@@ -250,10 +248,6 @@ type CodeLanguageOption = (typeof codeLanguageOptions)[number];
 const codeLanguageOptionSet = new Set<string>(codeLanguageOptions);
 let generatedBlockSequence = 0;
 
-type AttachmentEditorBlock = EditorBlock & {
-  readonly type: AttachmentBlockType;
-};
-
 const jixiaAttachmentUrlPrefix = "jixia-attachment:";
 const nativeFileBlockTypes = new Set<string>(["image", "file", "video", "audio"]);
 
@@ -261,16 +255,18 @@ export const JixiaEditor = forwardRef<JixiaEditorHandle, JixiaEditorProps>(funct
   { documentId, documentVersionKey = documentId, value, onChange, readOnly = false },
   ref
 ) {
-  const [insertType, setInsertType] = useState<EditorBlockType>("paragraph");
   const [attachmentMessage, setAttachmentMessage] = useState<string | null>(null);
+  const [shellDragState, setShellDragState] = useState<"idle" | "ready">("idle");
   const lastSnapshotRef = useRef<EditorSnapshot>(ensureSnapshotHasBlocks(value));
   const skipNextChangeRef = useRef(false);
   const initialDocumentVersionKeyRef = useRef(documentVersionKey);
   const initialContentRef = useRef(snapshotToBlockNoteBlocks(value));
+  const editorRef = useRef<JixiaBlockNoteEditor | null>(null);
 
   if (initialDocumentVersionKeyRef.current !== documentVersionKey) {
     initialDocumentVersionKeyRef.current = documentVersionKey;
     initialContentRef.current = snapshotToBlockNoteBlocks(value);
+    lastSnapshotRef.current = ensureSnapshotHasBlocks(value);
   }
 
   const blockNoteEditor = useCreateBlockNote(
@@ -280,7 +276,13 @@ export const JixiaEditor = forwardRef<JixiaEditorHandle, JixiaEditorProps>(funct
       defaultStyles: true,
       setIdAttribute: true,
       tabBehavior: "prefer-indent",
-      uploadFile: (file: File) => uploadFileForEditor({ documentId, readOnly, file }),
+      uploadFile: (file: File, blockId?: string) => uploadFileForEditor({
+        documentId,
+        editor: editorRef.current,
+        readOnly,
+        file,
+        ...(blockId ? { blockId } : {})
+      }),
       resolveFileUrl: resolveJixiaAttachmentUrl,
       tables: {
         headers: true,
@@ -299,6 +301,8 @@ export const JixiaEditor = forwardRef<JixiaEditorHandle, JixiaEditorProps>(funct
   const editor = blockNoteEditor as unknown as JixiaBlockNoteEditor;
   editor.documentId = documentId;
   editor.isEditable = !readOnly;
+  editorRef.current = editor;
+  const isEmptyDocument = isEmptyEditorSnapshot(lastSnapshotRef.current);
 
   useImperativeHandle(ref, () => ({
     exportSnapshot: () => exportEditorSnapshot(editor)
@@ -321,35 +325,6 @@ export const JixiaEditor = forwardRef<JixiaEditorHandle, JixiaEditorProps>(funct
     const nextSnapshot = exportEditorSnapshot(editor);
     lastSnapshotRef.current = nextSnapshot;
     onChange(nextSnapshot);
-  }
-
-  function insertBlock(type: EditorBlockType): void {
-    if (readOnly) {
-      return;
-    }
-
-    const currentBlocks = editor.document;
-    const nextBlock = createBlock(type, currentBlocks.length + 1);
-    const nextBlockNoteBlock = blockNoteInsertBlockForNewBlock(nextBlock);
-    const referenceBlock = currentBlocks[currentBlocks.length - 1];
-
-    try {
-      if (!referenceBlock) {
-        skipNextChangeRef.current = true;
-        editor.replaceBlocks(editor.document, [nextBlockNoteBlock]);
-        publishRuntimeSnapshot();
-        return;
-      }
-
-      if (isNativeAttachmentBlockType(type) && currentBlocks.length === 1 && referenceBlock.type === "paragraph") {
-        editor.replaceBlocks([referenceBlock], [nextBlockNoteBlock]);
-        return;
-      }
-
-      editor.insertBlocks([nextBlockNoteBlock], referenceBlock, "after");
-    } catch (error: unknown) {
-      setAttachmentMessage(error instanceof Error ? error.message : "Unable to insert block.");
-    }
   }
 
   function handleNativeAttachmentClick(event: MouseEvent<HTMLDivElement>): void {
@@ -377,42 +352,116 @@ export const JixiaEditor = forwardRef<JixiaEditorHandle, JixiaEditorProps>(funct
       });
   }
 
-  return (
-    <section aria-label="Jixia document editor" className="jixia-writing-canvas">
-      <div className="jixia-writing-canvas__chrome">
-        <span>
-          BlockNote adapter · {lastSnapshotRef.current.blocks.length} {lastSnapshotRef.current.blocks.length === 1 ? "block" : "blocks"}
-        </span>
-        <div className="jixia-writing-canvas__insert" aria-label="Insert block controls">
-          <label className="jixia-editor-insert-select">
-            <span>Insert</span>
-            <select
-              aria-label="Insert block type"
-              disabled={readOnly}
-              onChange={(event) => setInsertType(event.currentTarget.value as EditorBlockType)}
-              value={insertType}
-            >
-              {editorBlockTypes.map((type) => (
-                <option key={type} value={type}>
-                  {blockLabels[type]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button disabled={readOnly} onClick={() => insertBlock(insertType)}>
-            Insert block
-          </Button>
-        </div>
-      </div>
+  function handleEditorPaste(event: ClipboardEvent<HTMLDivElement>): void {
+    if (readOnly || event.defaultPrevented) {
+      return;
+    }
 
+    const files = attachmentFilesFromClipboardData(event.clipboardData);
+    if (files.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    insertFilesWithUploadPlaceholders(files, referenceFromCurrentCursor(editor));
+  }
+
+  function handleEditorDragOver(event: DragEvent<HTMLDivElement>): void {
+    if (readOnly || !dataTransferHasFiles(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    setShellDragState("ready");
+  }
+
+  function handleEditorDragLeave(event: DragEvent<HTMLDivElement>): void {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setShellDragState("idle");
+    }
+  }
+
+  function handleEditorDrop(event: DragEvent<HTMLDivElement>): void {
+    if (readOnly || event.defaultPrevented) {
+      return;
+    }
+
+    const files = attachmentFilesFromDataTransfer(event.dataTransfer);
+    if (files.length === 0) {
+      setShellDragState("idle");
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setShellDragState("idle");
+    insertFilesWithUploadPlaceholders(files, referenceFromDropEvent(editor, event));
+  }
+
+  function insertFilesWithUploadPlaceholders(
+    files: readonly File[],
+    initialReference: FileInsertionReference | undefined
+  ): void {
+    if (files.length === 0) {
+      return;
+    }
+
+    let reference = initialReference ?? referenceFromCurrentCursor(editor);
+    const insertedBlocks: JixiaBlockNotePartialBlock[] = [];
+
+    try {
+      for (const file of files) {
+        const block = uploadingNativeAttachmentBlock(file);
+        const currentBlocks = editor.document;
+        const effectiveReference = reference ?? referenceFromLastBlock(editor);
+
+        if (!effectiveReference) {
+          editor.replaceBlocks(currentBlocks, [block as unknown as PartialBlock]);
+        } else if (shouldReplaceInitialEmptyParagraph(currentBlocks, effectiveReference.block, insertedBlocks.length)) {
+          editor.replaceBlocks([effectiveReference.block], [block as unknown as PartialBlock]);
+        } else {
+          editor.insertBlocks([block as unknown as PartialBlock], effectiveReference.block, effectiveReference.placement);
+        }
+
+        insertedBlocks.push(block);
+        reference = referenceFromInsertedBlock(editor, block) ?? reference;
+        void uploadPlaceholderAttachment(editor, documentId, block, file);
+      }
+
+      setAttachmentMessage(
+        files.length === 1
+          ? `Uploading ${displayFileName(files[0] ?? new File([], "attachment"))} through Jixia private storage…`
+          : `Uploading ${files.length} files through Jixia private storage…`
+      );
+    } catch (error: unknown) {
+      setAttachmentMessage(error instanceof Error ? error.message : "Unable to insert attachment upload placeholder.");
+    }
+  }
+
+  return (
+    <section aria-label="Jixia document editor" className="jixia-writing-canvas" data-empty={isEmptyDocument ? "true" : "false"}>
       <div
         className="jixia-blocknote-shell"
+        data-drag-state={shellDragState}
+        data-empty={isEmptyDocument ? "true" : "false"}
         data-readonly={readOnly ? "true" : "false"}
         onClick={handleNativeAttachmentClick}
+        onDragLeave={handleEditorDragLeave}
+        onDragOver={handleEditorDragOver}
+        onDrop={handleEditorDrop}
+        onPaste={handleEditorPaste}
       >
-        {!readOnly ? (
+        {!readOnly && isEmptyDocument ? (
+          <p className="jixia-blocknote-shell__empty-affordance">
+            Start writing. Type / for blocks, or paste and drop files when needed.
+          </p>
+        ) : null}
+        {shellDragState === "ready" ? (
           <p className="jixia-blocknote-shell__drop-hint" role="status">
-            Use BlockNote file blocks, paste, or drop to upload private attachments.
+            Drop to insert a private attachment at this location.
           </p>
         ) : null}
         {attachmentMessage ? (
@@ -429,7 +478,7 @@ export const JixiaEditor = forwardRef<JixiaEditorHandle, JixiaEditorProps>(funct
           formattingToolbar={!readOnly}
           linkToolbar={false}
           onChange={commitRuntimeSnapshot}
-          sideMenu={false}
+          sideMenu={!readOnly}
           slashMenu={!readOnly}
           tableHandles={!readOnly}
           theme="light"
@@ -460,20 +509,41 @@ function exportEditorSnapshot(editor: JixiaBlockNoteEditor): EditorSnapshot {
 
 async function uploadFileForEditor(input: {
   readonly documentId: string;
+  readonly editor: JixiaBlockNoteEditor | null;
   readonly readOnly: boolean;
   readonly file: File;
+  readonly blockId?: string;
 }): Promise<JixiaUploadFileResult> {
   if (input.readOnly) {
     throw new Error("Read-only documents cannot upload attachments.");
   }
 
-  const uploadedAttachment = await uploadAttachment({
-    documentId: input.documentId,
-    blockType: attachmentBlockTypeForFile(input.file),
-    file: input.file
-  });
+  if (input.blockId && input.editor) {
+    markBlockUploadState(input.editor, input.blockId, uploadingAttachmentProps(input.file));
+  }
 
-  return { props: uploadedAttachmentProps(uploadedAttachment, input.file) };
+  try {
+    const blockType = input.blockId && input.editor
+      ? uploadBlockTypeForNativeBlock(input.editor, input.blockId, input.file)
+      : attachmentBlockTypeForFile(input.file);
+    const uploadedAttachment = await uploadAttachment({
+      documentId: input.documentId,
+      blockType,
+      file: input.file
+    });
+    const props = uploadedAttachmentProps(uploadedAttachment, input.file);
+
+    if (input.blockId && input.editor) {
+      markBlockUploadState(input.editor, input.blockId, props);
+    }
+
+    return { props };
+  } catch (error: unknown) {
+    if (input.blockId && input.editor) {
+      markBlockUploadState(input.editor, input.blockId, failedAttachmentProps(input.file, error));
+    }
+    throw error;
+  }
 }
 
 async function resolveJixiaAttachmentUrl(url: string): Promise<string> {
@@ -497,22 +567,244 @@ async function resolveJixiaAttachmentUrl(url: string): Promise<string> {
   return resolvedUrl;
 }
 
-function isNativeAttachmentBlockType(type: EditorBlockType): type is AttachmentBlockType {
-  return type === "image" || type === "file";
+function uploadingNativeAttachmentBlock(file: File): JixiaBlockNotePartialBlock {
+  const type = attachmentBlockTypeForFile(file);
+
+  return {
+    id: generatedBlockId(type),
+    type,
+    props: uploadingAttachmentProps(file),
+    children: []
+  };
 }
 
-function blockNoteInsertBlockForNewBlock(block: EditorBlock): PartialBlock {
-  if (isNativeAttachmentBlockType(block.type)) {
-    return {
-      id: block.id,
-      type: block.type,
-      props: {
-        name: ""
-      }
-    } as PartialBlock;
+function uploadingAttachmentProps(file: File): Record<string, boolean | number | string> {
+  return {
+    attachmentId: "",
+    url: "",
+    name: displayFileName(file),
+    fileName: displayFileName(file),
+    mimeType: displayMimeType(file),
+    sizeBytes: file.size,
+    checksum: "",
+    uploadedAt: "",
+    uploadStatus: "uploading",
+    uploadMessage: "Uploading through server-issued private attachment intent…",
+    pendingFileName: displayFileName(file),
+    pendingMimeType: displayMimeType(file),
+    pendingSizeBytes: file.size
+  };
+}
+
+function failedAttachmentProps(file: File, error: unknown): Record<string, boolean | number | string> {
+  return {
+    ...uploadingAttachmentProps(file),
+    uploadStatus: "error",
+    uploadMessage: safeAttachmentUploadMessage(error),
+    attachmentId: "",
+    url: "",
+    uploadedAt: ""
+  };
+}
+
+function markBlockUploadState(
+  editor: JixiaBlockNoteEditor,
+  blockId: string,
+  props: Record<string, boolean | number | string>
+): void {
+  const block = editor.document.find((candidate) => candidate.id === blockId);
+
+  if (!block || !nativeFileBlockTypes.has(block.type)) {
+    return;
   }
 
-  return editorBlockToBlockNoteBlock(block) as unknown as PartialBlock;
+  const type = block.type === "image" ? "image" : "file";
+
+  editor.updateBlock(blockId, {
+    props: {
+      ...props,
+      ...authoredAttachmentDisplayProps(block.props, type)
+    }
+  });
+}
+
+function authoredAttachmentDisplayProps(
+  props: Record<string, unknown>,
+  type: AttachmentBlockType
+): Record<string, boolean | number | string> {
+  const attrs = attachmentDisplayMetadataAttrs(props, type);
+  const nextProps: Record<string, boolean | number | string> = {};
+
+  if (typeof attrs.caption === "string") {
+    nextProps.caption = attrs.caption;
+    nextProps.hasCaption = true;
+  }
+  if (type === "image" && typeof attrs.altText === "string") {
+    nextProps.altText = attrs.altText;
+    nextProps.hasAltText = true;
+  }
+  if (typeof attrs.description === "string") {
+    nextProps.description = attrs.description;
+    nextProps.hasDescription = true;
+  }
+  if (typeof attrs.previewWidth === "number") {
+    nextProps.previewWidth = attrs.previewWidth;
+    nextProps.hasPreviewWidth = true;
+  }
+  if (typeof attrs.showPreview === "boolean") {
+    nextProps.showPreview = attrs.showPreview;
+    nextProps.hasShowPreview = true;
+  }
+
+  return nextProps;
+}
+
+async function uploadPlaceholderAttachment(
+  editor: JixiaBlockNoteEditor,
+  documentId: string,
+  block: JixiaBlockNotePartialBlock,
+  file: File
+): Promise<void> {
+  const blockId = block.id;
+  if (!blockId) {
+    return;
+  }
+
+  try {
+    const blockType = uploadBlockTypeForPlaceholder(block, file);
+    const uploadedAttachment = await uploadAttachment({
+      documentId,
+      blockType,
+      file
+    });
+
+    markBlockUploadState(editor, blockId, uploadedAttachmentProps(uploadedAttachment, file));
+  } catch (error: unknown) {
+    markBlockUploadState(editor, blockId, failedAttachmentProps(file, error));
+  }
+}
+
+async function uploadNativeAttachmentIntoBlock(input: {
+  readonly editor: JixiaBlockNoteEditor;
+  readonly documentId: string;
+  readonly blockId: string;
+  readonly blockType: AttachmentBlockType;
+  readonly file: File;
+}): Promise<void> {
+  markBlockUploadState(input.editor, input.blockId, uploadingAttachmentProps(input.file));
+
+  try {
+    const uploadedAttachment = await uploadAttachment({
+      documentId: input.documentId,
+      blockType: input.blockType,
+      file: input.file
+    });
+
+    markBlockUploadState(input.editor, input.blockId, uploadedAttachmentProps(uploadedAttachment, input.file));
+  } catch (error: unknown) {
+    markBlockUploadState(input.editor, input.blockId, failedAttachmentProps(input.file, error));
+  }
+}
+
+function uploadBlockTypeForNativeBlock(
+  editor: JixiaBlockNoteEditor,
+  blockId: string,
+  file: File
+): AttachmentBlockType {
+  const blockType = editor.document.find((candidate) => candidate.id === blockId)?.type;
+  return blockType === "image" || blockType === "file" ? blockType : attachmentBlockTypeForFile(file);
+}
+
+function uploadBlockTypeForPlaceholder(block: JixiaBlockNotePartialBlock, file: File): AttachmentBlockType {
+  return block.type === "image" || block.type === "file" ? block.type : attachmentBlockTypeForFile(file);
+}
+
+function referenceFromCurrentCursor(editor: JixiaBlockNoteEditor): FileInsertionReference | undefined {
+  const cursorBlock = editor.getTextCursorPosition?.().block;
+  if (cursorBlock?.id) {
+    const block = editor.document.find((candidate) => candidate.id === cursorBlock.id) ?? cursorBlock;
+    return { block, placement: isEmptyParagraphBlock(block) ? "before" : "after" };
+  }
+
+  return referenceFromLastBlock(editor);
+}
+
+function referenceFromInsertedBlock(
+  editor: JixiaBlockNoteEditor,
+  block: JixiaBlockNotePartialBlock
+): FileInsertionReference | undefined {
+  if (!block.id) {
+    return undefined;
+  }
+
+  const insertedBlock = editor.document.find((candidate) => candidate.id === block.id);
+  return insertedBlock ? { block: insertedBlock, placement: "after" } : undefined;
+}
+
+function referenceFromDropEvent(
+  editor: JixiaBlockNoteEditor,
+  event: DragEvent<HTMLDivElement>
+): FileInsertionReference | undefined {
+  const targetReference = referenceFromEventTarget(editor, event.target);
+  if (targetReference) {
+    return targetReference;
+  }
+
+  return referenceFromPoint(editor, event.clientY) ?? referenceFromCurrentCursor(editor);
+}
+
+function referenceFromEventTarget(
+  editor: JixiaBlockNoteEditor,
+  target: EventTarget | null
+): FileInsertionReference | undefined {
+  if (!(target instanceof Element)) {
+    return undefined;
+  }
+
+  const blockElement = target.closest<HTMLElement>("[data-id]");
+  const blockId = blockElement?.dataset.id;
+  const block = blockId ? editor.document.find((candidate) => candidate.id === blockId) : undefined;
+
+  return block ? { block, placement: isEmptyParagraphBlock(block) ? "before" : "after" } : undefined;
+}
+
+function referenceFromPoint(editor: JixiaBlockNoteEditor, clientY: number): FileInsertionReference | undefined {
+  if (typeof document === "undefined") {
+    return undefined;
+  }
+
+  const blockElements = Array.from(document.querySelectorAll<HTMLElement>(".jixia-blocknote-shell [data-id]"));
+  for (const blockElement of blockElements) {
+    const blockId = blockElement.dataset.id;
+    const block = blockId ? editor.document.find((candidate) => candidate.id === blockId) : undefined;
+    if (!block) {
+      continue;
+    }
+
+    const box = blockElement.getBoundingClientRect();
+    if (clientY >= box.top && clientY <= box.bottom) {
+      return { block, placement: clientY < box.top + box.height / 2 ? "before" : "after" };
+    }
+  }
+
+  return undefined;
+}
+
+function referenceFromLastBlock(editor: JixiaBlockNoteEditor): FileInsertionReference | undefined {
+  const lastBlock = editor.document[editor.document.length - 1];
+  return lastBlock ? { block: lastBlock, placement: isEmptyParagraphBlock(lastBlock) ? "before" : "after" } : undefined;
+}
+
+function shouldReplaceInitialEmptyParagraph(
+  blocks: readonly JixiaBlockNoteBlock[],
+  referenceBlock: { readonly id: string; readonly type?: string; readonly content?: unknown },
+  insertedIndex: number
+): boolean {
+  return insertedIndex === 0 && blocks.length === 1 && blocks[0]?.id === referenceBlock.id && isEmptyParagraphBlock(referenceBlock);
+}
+
+function isEmptyParagraphBlock(block: { readonly id: string; readonly type?: string; readonly content?: unknown }): boolean {
+  return (block.type ?? "paragraph") === "paragraph" && blockContentText(block.content).trim().length === 0;
 }
 
 function editorBlockToBlockNoteBlock(block: EditorBlock): JixiaBlockNotePartialBlock {
@@ -567,7 +859,7 @@ function editorBlockToBlockNoteBlock(block: EditorBlock): JixiaBlockNotePartialB
     case "codeBlock":
       return {
         id: block.id,
-        type: "jixiaCodeBlock",
+        type: "codeBlock",
         props: codeBlockProps(block),
         content: block.text ?? "",
         children
@@ -642,7 +934,7 @@ function blockNoteBlockToEditorBlock(block: JixiaBlockNotePartialBlock): readonl
     case "jixiaCodeBlock":
       return [compactBlock({ id: blockId, type: "codeBlock", attrs: codeBlockAttrs(blockProps), text: inlineText(block.content), content })];
     case "codeBlock":
-      return [compactBlock({ id: blockId, type: "codeBlock", attrs: { language: readStringProp(blockProps, "language") ?? "text" }, text: inlineText(block.content), content })];
+      return [compactBlock({ id: blockId, type: "codeBlock", attrs: codeBlockAttrs(blockProps), text: inlineText(block.content), content })];
     case "divider":
       return [compactBlock({ id: blockId, type: "divider", content })];
     case "table":
@@ -851,170 +1143,311 @@ function inlineEntryText(entry: unknown): string {
   return "";
 }
 
-function createJixiaCodeBlockSpec() {
-  return createReactBlockSpec(
-    {
-      type: "jixiaCodeBlock",
-      propSchema: {
-        language: { default: "text" },
-        wrap: { default: false },
-        hasWrap: { default: false }
-      },
-      content: "inline"
-    },
-    {
-      meta: {
-        selectable: true
-      },
-      render: ({ block, contentRef, editor }) => {
-        const language = typeof block.props.language === "string" ? block.props.language : "text";
-        const wrap = Boolean(block.props.wrap);
-        const hasWrap = Boolean(block.props.hasWrap);
-        const isEditable = (editor as unknown as { readonly isEditable?: boolean }).isEditable !== false;
-
-        return (
-          <section className="jixia-code-block" data-wrap={wrap ? "true" : "false"}>
-            <div className="jixia-code-block__toolbar" contentEditable={false}>
-              {isEditable ? (
-                <label className="jixia-code-block__language">
-                  <span>Language</span>
-                  <select
-                    aria-label="Code block language"
-                    onMouseDown={(event) => event.stopPropagation()}
-                    onChange={(event) => {
-                      event.stopPropagation();
-                      editor.updateBlock(block.id, {
-                        props: {
-                          language: event.currentTarget.value,
-                          wrap,
-                          hasWrap
-                        }
-                      });
-                    }}
-                    value={language}
-                  >
-                    {codeLanguageOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <span aria-label="Code block language" className="jixia-code-block__language">
-                  <span>Language</span>
-                  {language}
-                </span>
-              )}
-              <button
-                aria-label="Copy code block"
-                className="jixia-code-block__control"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  const codeBlock = event.currentTarget.closest(".jixia-code-block");
-                  const codeText = codeBlock?.querySelector(".jixia-code-block__content")?.textContent ?? "";
-                  void navigator.clipboard?.writeText(codeText);
-                }}
-                onMouseDown={(event) => event.stopPropagation()}
-                type="button"
-              >
-                Copy
-              </button>
-              {isEditable ? (
-                <button
-                  aria-label={wrap ? "Disable code wrapping" : "Enable code wrapping"}
-                  aria-pressed={wrap}
-                  className="jixia-code-block__control"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    editor.updateBlock(block.id, {
-                      props: {
-                        language,
-                        wrap: !wrap,
-                        hasWrap: true
-                      }
-                    });
-                  }}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  type="button"
-                >
-                  {wrap ? "Unwrap" : "Wrap"}
-                </button>
-              ) : null}
-            </div>
-            <pre className="jixia-code-block__pre">
-              <code className="jixia-code-block__content" ref={contentRef} spellCheck={false} />
-            </pre>
-          </section>
-        );
-      },
-      toExternalHTML: ({ contentRef }) => <pre><code ref={contentRef} /></pre>
-    }
+function JixiaNativeAttachmentFrame({
+  blockType,
+  block,
+  editor,
+  children
+}: {
+  readonly blockType: AttachmentBlockType;
+  readonly block: { readonly id: string; readonly props: Record<string, unknown> };
+  readonly editor: JixiaBlockNoteEditor;
+  readonly children: ReactElement;
+}) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [frameMessage, setFrameMessage] = useState<string | null>(null);
+  const [dragState, setDragState] = useState<"idle" | "ready">("idle");
+  const props = block.props;
+  const attachmentId = attachmentIdFromBlockProps(props);
+  const uploadStatus = readAttachmentUploadStatus(props.uploadStatus);
+  const fileName = readStringProp(props, "pendingFileName") || readStringProp(props, "fileName") || readStringProp(props, "name");
+  const mimeType = readStringProp(props, "pendingMimeType") || readStringProp(props, "mimeType");
+  const pendingSizeBytes = readNumberProp(props, "pendingSizeBytes");
+  const storedSizeBytes = readNumberProp(props, "sizeBytes");
+  const sizeBytes = uploadStatus === "uploading" || uploadStatus === "error"
+    ? pendingSizeBytes ?? storedSizeBytes
+    : storedSizeBytes;
+  const isEditable = editor.isEditable !== false;
+  const hasAttachment = Boolean(attachmentId);
+  const statusLabel = uploadStatus === "error"
+    ? "Upload failed"
+    : uploadStatus === "uploading"
+      ? "Uploading…"
+      : hasAttachment
+        ? "Private attachment linked"
+        : `Add ${blockType}`;
+  const frameStatus = uploadStatus ?? (hasAttachment ? "success" : "idle");
+  const isReadyAttachment = hasAttachment && frameStatus === "success";
+  const fileSizeLabel = sizeBytes !== undefined ? formatBytes(sizeBytes) : undefined;
+  const detail = readStringProp(props, "uploadMessage") || frameMessage || (
+    hasAttachment
+      ? "Preview and open use server-authorized signed access at render time."
+      : `Drop or paste a ${blockType} here, or choose a private file from your computer.`
   );
-}
+  const inputLabel = `Upload private ${blockType} attachment`;
+  const actionLabel = uploadStatus === "uploading"
+    ? "Uploading…"
+    : uploadStatus === "error"
+      ? "Retry upload"
+      : hasAttachment
+        ? `Replace ${blockType}`
+        : `Upload private ${blockType}`;
 
-function createJixiaAttachmentBlockSpec(type: AttachmentBlockType) {
-  const blockType = type === "image" ? "jixiaImage" : "jixiaFile";
-  const label = type === "image" ? "image" : "file";
-  const meta = { selectable: true, isolating: true };
+  async function handleRetryInput(event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = event.currentTarget.files?.item?.(0) ?? event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
 
-  return createReactBlockSpec(
-    {
-      type: blockType,
-      propSchema: {
-        attachmentId: { default: "" },
-        url: { default: "" },
-        name: { default: "" },
-        fileName: { default: "" },
-        mimeType: { default: "" },
-        sizeBytes: { default: 0 },
-        checksum: { default: "" },
-        uploadedAt: { default: "" },
-        caption: { default: "" },
-        altText: { default: "" },
-        description: { default: "" },
-        previewWidth: { default: 420 },
-        showPreview: { default: type === "image" },
-        hasCaption: { default: false },
-        hasAltText: { default: false },
-        hasDescription: { default: false },
-        hasPreviewWidth: { default: false },
-        hasShowPreview: { default: false },
-        uploadStatus: { default: "" },
-        uploadMessage: { default: "" },
-        pendingFileName: { default: "" },
-        pendingMimeType: { default: "" },
-        pendingSizeBytes: { default: 0 }
-      },
-      content: "none"
-    },
-    {
-      meta,
-      render: ({ block, editor }) => (
-        <div className="jixia-attachment-block-island" contentEditable={false}>
-          <AttachmentBlock
-            block={attachmentPropsToEditorBlock(block.id, type, block.props)}
-            documentId={editor.documentId ?? ""}
-            index={blockIndex(editor, block.id)}
-            onChange={(nextBlock) => {
-              editor.updateBlock(block.id, {
-                props: editorBlockAttachmentProps(nextBlock)
-              });
-            }}
-            onRemove={() => {
-              editor.removeBlocks([block.id]);
-            }}
-            readOnly={!editor.isEditable}
-            runtimeUpload={attachmentRuntimeUploadProps(block.props)}
-          />
-        </div>
-      ),
-      toExternalHTML: ({ block }) => (
-        <section data-jixia-attachment-id={block.props.attachmentId} data-jixia-block-type={label}>
-          {block.props.fileName || `${label} attachment`}
-        </section>
-      )
+    if (!file || !isEditable) {
+      return;
     }
+
+    await uploadFileIntoFrame(file);
+  }
+
+  async function uploadFileIntoFrame(file: File): Promise<void> {
+    if (!isEditable || uploadStatus === "uploading") {
+      return;
+    }
+
+    if (blockType === "image" && !file.type.toLowerCase().startsWith("image/")) {
+      markBlockUploadState(editor, block.id, failedAttachmentProps(file, new Error("Image blocks only accept image files.")));
+      return;
+    }
+
+    setFrameMessage(`Uploading ${displayFileName(file)} through Jixia private storage…`);
+    await uploadNativeAttachmentIntoBlock({
+      editor,
+      documentId: editor.documentId ?? "",
+      blockId: block.id,
+      blockType,
+      file
+    });
+    setFrameMessage(null);
+  }
+
+  function handleFramePaste(event: ClipboardEvent<HTMLElement>): void {
+    if (!isEditable || event.defaultPrevented || uploadStatus === "uploading") {
+      return;
+    }
+
+    const file = attachmentFilesFromClipboardData(event.clipboardData)[0];
+    if (!file) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    void uploadFileIntoFrame(file);
+  }
+
+  function handleFrameDragOver(event: DragEvent<HTMLElement>): void {
+    if (!isEditable || uploadStatus === "uploading" || !dataTransferHasFiles(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    setDragState("ready");
+  }
+
+  function handleFrameDragLeave(event: DragEvent<HTMLElement>): void {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setDragState("idle");
+    }
+  }
+
+  function handleFrameDrop(event: DragEvent<HTMLElement>): void {
+    if (!isEditable || event.defaultPrevented || uploadStatus === "uploading") {
+      return;
+    }
+
+    const file = attachmentFilesFromDataTransfer(event.dataTransfer)[0];
+    if (!file) {
+      setDragState("idle");
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setDragState("idle");
+    void uploadFileIntoFrame(file);
+  }
+
+  function openFilePicker(): void {
+    if (isEditable && uploadStatus !== "uploading") {
+      fileInputRef.current?.click();
+    }
+  }
+
+  function removeBlock(): void {
+    if (isEditable) {
+      editor.removeBlocks([block.id]);
+    }
+  }
+
+  function openAttachment(): void {
+    if (!attachmentId) {
+      openFilePicker();
+      return;
+    }
+
+    setFrameMessage("Resolving private attachment download…");
+    void openAttachmentDownload({ attachmentId })
+      .then(() => setFrameMessage(null))
+      .catch((error: unknown) => setFrameMessage(safeAttachmentUploadMessage(error)));
+  }
+
+  const fileInput = (
+    <input
+      ref={fileInputRef}
+      accept={blockType === "image" ? "image/*" : undefined}
+      aria-label={inputLabel}
+      disabled={!isEditable || uploadStatus === "uploading"}
+      onChange={handleRetryInput}
+      style={{ display: "none" }}
+      type="file"
+    />
+  );
+
+  if (isReadyAttachment && blockType === "image") {
+    return (
+      <section
+        aria-label="Private image attachment"
+        className="jixia-native-attachment-frame jixia-native-attachment-frame--ready jixia-native-attachment-frame--ready-image"
+        contentEditable={false}
+        data-drag-state={dragState}
+        data-has-attachment="true"
+        data-status="success"
+        data-testid="jixia-native-image-attachment-frame"
+        onDragLeave={handleFrameDragLeave}
+        onDragOver={handleFrameDragOver}
+        onDrop={handleFrameDrop}
+        onPaste={handleFramePaste}
+      >
+        <figure className="jixia-native-attachment-frame__image-content">
+          {children}
+        </figure>
+      </section>
+    );
+  }
+
+  if (isReadyAttachment) {
+    return (
+      <section
+        aria-label="Private file attachment"
+        className="jixia-native-attachment-frame jixia-native-attachment-frame--ready jixia-native-attachment-frame--ready-file"
+        contentEditable={false}
+        data-drag-state={dragState}
+        data-has-attachment="true"
+        data-status="success"
+        data-testid="jixia-native-file-attachment-frame"
+        onDragLeave={handleFrameDragLeave}
+        onDragOver={handleFrameDragOver}
+        onDrop={handleFrameDrop}
+        onPaste={handleFramePaste}
+      >
+        <button
+          aria-label={fileName ? `Private file attachment ${fileName}` : "Private file attachment"}
+          className="jixia-native-attachment-frame__file-chip"
+          onClick={openAttachment}
+          type="button"
+        >
+          <span className="jixia-native-attachment-frame__file-icon" aria-hidden="true">
+            {mimeType?.includes("pdf") ? "PDF" : "FILE"}
+          </span>
+          <span className="jixia-native-attachment-frame__file-main">
+            <strong>{fileName || "Private file"}</strong>
+            <small>{[mimeType, fileSizeLabel].filter(Boolean).join(" · ") || "Server-authorized private file"}</small>
+          </span>
+        </button>
+      </section>
+    );
+  }
+
+  return (
+    <section
+      aria-label={`Private ${blockType} attachment block`}
+      className="jixia-native-attachment-frame"
+      contentEditable={false}
+      data-drag-state={dragState}
+      data-has-attachment={hasAttachment ? "true" : "false"}
+      data-status={frameStatus}
+      data-testid={`jixia-native-${blockType}-attachment-frame`}
+      onDragLeave={handleFrameDragLeave}
+      onDragOver={handleFrameDragOver}
+      onDrop={handleFrameDrop}
+      onPaste={handleFramePaste}
+    >
+      <div className="jixia-native-attachment-frame__chrome">
+        <div>
+          <p className="jixia-eyebrow">Private {blockType} attachment</p>
+          <strong>{statusLabel}</strong>
+          {fileName ? <small className="jixia-native-attachment-frame__filename">{fileName}</small> : null}
+        </div>
+        <div className="jixia-native-attachment-frame__actions">
+          {hasAttachment ? (
+            <Button disabled={uploadStatus === "uploading"} onClick={openAttachment} variant="ghost">
+              Open attachment
+            </Button>
+          ) : null}
+          {isEditable ? (
+            <Button disabled={uploadStatus === "uploading"} onClick={openFilePicker} variant={hasAttachment ? "secondary" : "primary"}>
+              {actionLabel}
+            </Button>
+          ) : null}
+          {isEditable && uploadStatus === "error" ? (
+            <Button onClick={removeBlock} variant="danger">
+              Remove failed block
+            </Button>
+          ) : null}
+          {isEditable ? fileInput : null}
+        </div>
+      </div>
+      {isEditable && uploadStatus !== "uploading" ? (
+        <button
+          aria-label={hasAttachment ? `Drop paste or replace ${blockType} attachment` : inputLabel}
+          className="jixia-native-attachment-frame__dropzone"
+          onClick={openFilePicker}
+          type="button"
+        >
+          <strong>{hasAttachment ? `Drop or paste a replacement ${blockType}` : `Drop or paste a ${blockType}`}</strong>
+          <span>{blockType === "image" ? "Images only" : "Any file type"} · upload stays private through the API.</span>
+        </button>
+      ) : null}
+      {hasAttachment ? (
+        <div className="jixia-native-attachment-frame__native">
+          {children}
+        </div>
+      ) : null}
+      {fileName || mimeType || sizeBytes !== undefined ? (
+        <dl className="jixia-native-attachment-frame__metadata" aria-label={`${blockType} attachment metadata`}>
+          {fileName ? (
+            <div>
+              <dt>Name</dt>
+              <dd>{fileName}</dd>
+            </div>
+          ) : null}
+          {mimeType ? (
+            <div>
+              <dt>Type</dt>
+              <dd>{mimeType}</dd>
+            </div>
+          ) : null}
+          {sizeBytes !== undefined ? (
+            <div>
+              <dt>Size</dt>
+              <dd>{formatBytes(sizeBytes)}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
+      {detail ? (
+        <p className="jixia-native-attachment-frame__message" role={uploadStatus === "error" ? "alert" : "status"}>
+          {detail}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -1037,60 +1470,6 @@ function createJixiaCalloutBlockSpec() {
       toExternalHTML: ({ contentRef }) => <aside ref={contentRef} />
     }
   );
-}
-
-function attachmentPropsToEditorBlock(
-  id: string,
-  type: AttachmentBlockType,
-  props: Record<string, boolean | number | string>
-): AttachmentEditorBlock {
-  const attachmentId = attachmentIdFromBlockProps(props);
-  const fileName = readStringProp(props, "fileName") || readStringProp(props, "name");
-  const mimeType = readStringProp(props, "mimeType");
-  const sizeBytes = readNumberProp(props, "sizeBytes");
-  const checksum = readStringProp(props, "checksum");
-  const uploadedAt = readStringProp(props, "uploadedAt");
-  const attachmentMetadata = fileName && mimeType && sizeBytes !== undefined && uploadedAt
-    ? {
-        attachment: {
-          fileName,
-          mimeType,
-          sizeBytes,
-          checksum: checksum || null,
-          uploadedAt
-        }
-      }
-    : {};
-
-  return compactBlock({
-    id,
-    type,
-    attachmentId,
-    attrs: compactAttrs({
-      ...attachmentMetadata,
-      ...attachmentDisplayMetadataAttrs(props, type)
-    })
-  }) as AttachmentEditorBlock;
-}
-
-function editorBlockAttachmentProps(block: EditorBlock): Record<string, boolean | number | string> {
-  const metadata = readAttachmentMetadata(block.attrs?.attachment);
-
-  return {
-    attachmentId: block.attachmentId ?? "",
-    url: block.attachmentId ? attachmentUrl(block.attachmentId) : "",
-    name: metadata?.fileName ?? "",
-    fileName: metadata?.fileName ?? "",
-    mimeType: metadata?.mimeType ?? "",
-    sizeBytes: metadata?.sizeBytes ?? 0,
-    checksum: metadata?.checksum ?? "",
-    uploadedAt: metadata?.uploadedAt ?? "",
-    ...attachmentDisplayMetadataProps(block.attrs, block.type as AttachmentBlockType)
-  };
-}
-
-function blockIndex(editor: { readonly document: readonly { readonly id: string }[] }, blockId: string): number {
-  return Math.max(0, editor.document.findIndex((block) => block.id === blockId));
 }
 
 function attachmentDisplayMetadataProps(
@@ -1216,6 +1595,24 @@ function ensureSnapshotHasBlocks(snapshot: EditorSnapshot): EditorSnapshot {
   };
 }
 
+function isEmptyEditorSnapshot(snapshot: EditorSnapshot): boolean {
+  const blocks = snapshot.blocks.length > 0 ? snapshot.blocks : [];
+  return blocks.length === 0 || blocks.every(isEmptyEditorBlock);
+}
+
+function isEmptyEditorBlock(block: EditorBlock): boolean {
+  if (block.attachmentId || block.type === "divider") {
+    return false;
+  }
+
+  const hasText = typeof block.text === "string" && block.text.trim().length > 0;
+  if (hasText) {
+    return false;
+  }
+
+  return (block.content ?? []).every(isEmptyEditorBlock);
+}
+
 function compactBlock(block: EditorBlockDraft): EditorBlock {
   return {
     id: block.id,
@@ -1255,11 +1652,6 @@ function readStringAttr(blockAttrs: EditorBlock["attrs"], key: string): string |
   return typeof value === "string" ? value : undefined;
 }
 
-function readBooleanAttr(blockAttrs: EditorBlock["attrs"], key: string): boolean | undefined {
-  const value = blockAttrs?.[key];
-  return typeof value === "boolean" ? value : undefined;
-}
-
 function readStringProp(props: Record<string, unknown>, key: string): string | undefined {
   const value = props[key];
   return typeof value === "string" ? value : undefined;
@@ -1276,12 +1668,8 @@ function readBooleanProp(props: Record<string, unknown>, key: string): boolean |
 }
 
 function codeBlockProps(block: EditorBlock): Record<string, boolean | number | string> {
-  const wrap = readBooleanAttr(block.attrs, "wrap");
-
   return {
-    language: safeCodeLanguage(readStringAttr(block.attrs, "language")),
-    wrap: wrap ?? false,
-    hasWrap: typeof wrap === "boolean"
+    language: safeCodeLanguage(readStringAttr(block.attrs, "language"))
   };
 }
 
@@ -1297,33 +1685,6 @@ function safeCodeLanguage(value: string | undefined): CodeLanguageOption {
   return normalizedLanguage && codeLanguageOptionSet.has(normalizedLanguage)
     ? (normalizedLanguage as CodeLanguageOption)
     : "text";
-}
-
-function attachmentRuntimeUploadProps(props: Record<string, unknown>): {
-  readonly status?: AttachmentUploadStatus;
-  readonly message?: string;
-  readonly fileName?: string;
-  readonly mimeType?: string;
-  readonly sizeBytes?: number;
-} | undefined {
-  const status = readAttachmentUploadStatus(props.uploadStatus);
-  if (!status) {
-    return undefined;
-  }
-
-  return compactAttrs({
-    status,
-    message: readStringProp(props, "uploadMessage"),
-    fileName: readStringProp(props, "pendingFileName") || readStringProp(props, "fileName"),
-    mimeType: readStringProp(props, "pendingMimeType") || readStringProp(props, "mimeType"),
-    sizeBytes: readNumberProp(props, "pendingSizeBytes") ?? readNumberProp(props, "sizeBytes")
-  }) as {
-    readonly status?: AttachmentUploadStatus;
-    readonly message?: string;
-    readonly fileName?: string;
-    readonly mimeType?: string;
-    readonly sizeBytes?: number;
-  };
 }
 
 function readAttachmentUploadStatus(value: unknown): AttachmentUploadStatus | undefined {
@@ -1349,13 +1710,78 @@ function uploadedAttachmentProps(
     uploadedAt: uploadedAttachment.createdAt,
     caption: "",
     previewWidth: 420,
-    showPreview: shouldShowNativePreview(file)
+    showPreview: shouldShowNativePreview(file),
+    uploadStatus: "success",
+    uploadMessage: "Attachment uploaded and linked to this block.",
+    pendingFileName: "",
+    pendingMimeType: "",
+    pendingSizeBytes: 0
   };
 }
 
 function shouldShowNativePreview(file: File): boolean {
   const mimeType = file.type.toLowerCase();
   return mimeType.startsWith("image/") || mimeType.startsWith("audio/") || mimeType.startsWith("video/");
+}
+
+function attachmentFilesFromClipboardData(data: DataTransfer): readonly File[] {
+  const files = Array.from(data.items ?? [])
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter(isNonNullAttachmentFile);
+
+  return files.length > 0 ? files : attachmentFilesFromDataTransfer(data);
+}
+
+function attachmentFilesFromDataTransfer(data: DataTransfer): readonly File[] {
+  return Array.from(data.files ?? []).filter(isAttachmentFile);
+}
+
+function dataTransferHasFiles(data: DataTransfer): boolean {
+  return Array.from(data.types ?? []).includes("Files") || data.files.length > 0;
+}
+
+function isAttachmentFile(file: File): boolean {
+  return file.size > 0 || displayFileName(file).length > 0;
+}
+
+function isNonNullAttachmentFile(file: File | null): file is File {
+  return file !== null && isAttachmentFile(file);
+}
+
+function displayFileName(file: File): string {
+  return file.name.trim() || "attachment";
+}
+
+function displayMimeType(file: File): string {
+  return file.type.trim().toLowerCase() || "application/octet-stream";
+}
+
+function formatBytes(sizeBytes: number): string {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"] as const;
+  let value = sizeBytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const precision = unitIndex === 0 || value >= 10 ? 0 : 1;
+  return `${value.toFixed(precision)} ${units[unitIndex]}`;
+}
+
+function safeAttachmentUploadMessage(error: unknown): string {
+  const message = error instanceof Error && error.message ? error.message : "Attachment upload failed.";
+
+  return message
+    .replace(/https?:\/\/\S+/gi, "[redacted attachment url]")
+    .replace(/\b(?:authorization|bearer|credential|credentials|secret|signature|token|storageKey|objectKey)\b\S*/gi, "[redacted]")
+    .slice(0, 700);
 }
 
 function attachmentUrl(attachmentId: string): string {
