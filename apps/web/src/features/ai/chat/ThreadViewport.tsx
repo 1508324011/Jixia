@@ -1,4 +1,4 @@
-import { Notice, Pane, Pill } from "../../layout/workbench";
+import { Notice, Pill } from "../../layout/workbench";
 import { MessageStream } from "./MessageStream";
 import type { ChatMessage, ChatProviderConfig, ChatRunStatus, ChatThread } from "./chatTypes";
 
@@ -31,26 +31,27 @@ export function ThreadViewport({
   selectedProvider,
   thread
 }: ThreadViewportProps) {
-  const hasContext = Boolean(thread?.contextAttachments.length);
+  const contextCount = thread?.contextAttachments.length ?? 0;
+  const hasContext = contextCount > 0;
   return (
-    <Pane
-      actions={
-        <div className="jixia-chat-thread__pills">
-          <Pill tone="accent">{hasContext ? `${thread?.contextAttachments.length ?? 0} explicit context` : "No document attached"}</Pill>
-          <Pill>{selectedProvider ? compactProviderLabel(selectedProvider) : "No model selected"}</Pill>
-          {activeRunStatus ? <Pill tone={activeRunStatus === "failed" ? "danger" : activeRunStatus === "cancelled" ? "warning" : "success"}>{activeRunStatus}</Pill> : null}
+    <section aria-label="Standalone AI conversation" className="jixia-chat-thread">
+      <header className="jixia-chat-thread__header">
+        <div className="jixia-chat-thread__title-block">
+          <h2>{thread?.title ?? "Fresh standalone chat"}</h2>
+          <span>{thread ? `${thread.messageCount} messages` : "Ready for first prompt"}</span>
         </div>
-      }
-      aria-label="Standalone AI conversation"
-      className="jixia-chat-thread"
-      eyebrow="Server-run thread"
-      title={thread?.title ?? "Fresh standalone chat"}
-    >
-      <div className="jixia-chat-thread__runline">
-        <span>{thread ? `${thread.messageCount} messages` : "Ready for first prompt"}</span>
-        <strong>{runlineStatus(sendStatus)}</strong>
-        <span>Context is explicit-only; no current document is auto-attached.</span>
-      </div>
+        <details className="jixia-chat-thread__runtime">
+          <summary>
+            <span>{runlineStatus(sendStatus)}</span>
+            <Pill tone="accent">{hasContext ? `${contextCount} explicit context` : "No document attached"}</Pill>
+          </summary>
+          <div className="jixia-chat-thread__pills">
+            <Pill>{selectedProvider ? compactProviderLabel(selectedProvider) : "No model selected"}</Pill>
+            {activeRunStatus ? <Pill tone={activeRunStatus === "failed" ? "danger" : activeRunStatus === "cancelled" ? "warning" : "success"}>{activeRunStatus}</Pill> : null}
+            <span>Server-owned provider execution · no browser keys</span>
+          </div>
+        </details>
+      </header>
 
       {errorMessage ? <Notice role="alert" tone="danger">{errorMessage}</Notice> : null}
 
@@ -65,7 +66,7 @@ export function ThreadViewport({
         onToggleSources={onToggleSources}
         sendStatus={sendStatus}
       />
-    </Pane>
+    </section>
   );
 }
 

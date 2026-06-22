@@ -11,7 +11,7 @@ import type {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch, apiStream } from "../../../lib/api";
-import { Button, Notice, Pill, SurfaceHeader, WorkbenchSurface } from "../../layout/workbench";
+import { Button, Notice, SurfaceHeader, WorkbenchSurface } from "../../layout/workbench";
 import { ChatShell } from "./ChatShell";
 import { readChatStream } from "./chatStream";
 import type { ChatMessage, ChatProviderConfig, ChatRunStatus, ChatThread } from "./chatTypes";
@@ -435,23 +435,24 @@ export function AIChatDialog({ onOpenSettings }: AIChatDialogProps) {
   return (
     <WorkbenchSurface aria-labelledby="ai-chat-title" className="jixia-chat-surface" width="full">
       <SurfaceHeader
+        className="jixia-chat-surface__header"
         actions={
           <>
             {onOpenSettings ? <Button onClick={onOpenSettings}>Configure providers</Button> : null}
             <Button disabled={loadState === "loading"} onClick={() => void loadChatRuntime()} variant="primary">Refresh chat</Button>
           </>
         }
-        description="Standalone AI starts with an empty explicit context set. The browser uses only Jixia API routes, never provider APIs, provider keys, or browser prompt storage."
-        eyebrow="Standalone AI"
+        description="Private AI workspace. No document context is attached unless you explicitly add it."
+        eyebrow="AI workspace"
         meta={
-          <div className="jixia-chat-surface__meta">
-            <Pill tone="accent">Thread</Pill>
-            <Pill>Messages</Pill>
-            <Pill>Composer</Pill>
-            <Pill>Optional attachments later</Pill>
-          </div>
+          <details className="jixia-chat-surface__meta">
+            <summary>Private runtime</summary>
+            <span>Jixia API routes only</span>
+            <span>No provider keys in browser</span>
+            <span>No document context by default</span>
+          </details>
         }
-        title="Chat with Jixia AI without automatic document context."
+        title="Chat with Jixia AI"
         titleId="ai-chat-title"
       />
 

@@ -38,8 +38,8 @@ export function ThreadSidebar({
 
       {threads.length === 0 ? (
         <EmptyState
-          description="Start with a clean AI thread. Future attachment flows must be explicit and server-authorized."
-          title={isLoading ? "Loading chats" : "No standalone chats yet"}
+          description="Start a focused private conversation. Context stays explicit and server-authorized."
+          title={isLoading ? "Loading chats" : "No chats yet"}
         />
       ) : (
         <div className="jixia-list" role="list">
