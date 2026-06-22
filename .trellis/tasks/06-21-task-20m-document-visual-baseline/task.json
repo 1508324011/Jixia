@@ -4,7 +4,7 @@
   "type": "fullstack",
   "status": "finished",
   "createdAt": "2026-06-21T12:49:44+00:00",
-  "updatedAt": "2026-06-21T14:54:22+00:00",
+  "updatedAt": "2026-06-21T15:26:39+00:00",
   "next_action": [
     {
       "phase": 1,
@@ -77,5 +77,6 @@
       "Server-first upload/save/refresh/reopen flows remained usable in manual review"
     ],
     "remainingFollowUp": "Future polish should continue with mature knowledge-layer UX, not new editor chrome."
-  }
+  },
+  "nextTask": ".trellis/tasks/06-21-task-21a-document-copilot-baseline"
 }
