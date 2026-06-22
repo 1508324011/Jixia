@@ -1,0 +1,82 @@
+{
+  "title": "Task 21b AI Chat Visual Refactor",
+  "slug": "task-21b-ai-chat-visual-refactor",
+  "type": "frontend",
+  "status": "finished",
+  "createdAt": "2026-06-22T02:20:55+00:00",
+  "updatedAt": "2026-06-22T05:45:55+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "manualReviewRequired": true,
+  "preparation": {
+    "preparedAt": "2026-06-22T02:23:06+00:00",
+    "fromTasks": [
+      ".trellis/tasks/06-21-task-21a-document-copilot-baseline",
+      ".trellis/tasks/06-21-task-20m-document-visual-baseline",
+      ".trellis/tasks/06-18-task-18-8-mature-streaming-ai-chat-provider-settings",
+      ".trellis/tasks/06-18-task-18-7-standalone-ai-chat-dialog-foundation"
+    ],
+    "externalDesignReferences": [
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/components/chat/UnifiedChatModal.tsx",
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/MessageStream.tsx",
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/TextMessage.tsx",
+      "/home/zhurui/github_project/ResearchClaw/tailwind.config.ts",
+      "LobeChat floating chat panel and reusable input pattern",
+      "Open WebUI / Dify / AnythingLLM full-height workspace chat pattern",
+      "LibreChat / Chatbot UI autosizing composer pattern"
+    ],
+    "bindingDecisions": [
+      "Task21b is a frontend visual/interaction refactor only; do not change AI backend, provider key ownership, conversation DTO contracts, or document save semantics.",
+      "The document copilot and standalone/full workspace AI chat must share one mature chat visual language instead of separate control-panel UIs.",
+      "Safety/context/provider metadata stays visible and auditable but must be visually subordinate to the conversation; use collapsible/context-chip patterns instead of dominant meta grids.",
+      "Do not add Tailwind, Framer Motion, or icon libraries just to copy ResearchClaw; reuse concepts in Jixia CSS/React unless a dependency is explicitly justified.",
+      "Preserve Task21a no-writeback: AI output remains advisory/copyable only and never mutates the editor automatically."
+    ],
+    "rootProblem": "Task21a made document AI functional, but the UI feels like an operations console: hard borders, status pills, model bars, meta grids, and context cards dominate over the actual conversation in both the inspector side panel and full AI work surface.",
+    "firstImplementationPriority": "Establish a shared mature chat surface: conversation-first transcript, rounded message bubbles/assistant prose, low-noise composer, subdued context chips/drawer, and consistent visual tokens reused by document copilot and standalone AI chat."
+  },
+  "failureContract": {
+    "noSuccessWithout": [
+      "Document copilot inspector reads as a chat-first side panel, not a metadata/control panel.",
+      "Standalone/full AI chat reads as a mature workspace chat with clear transcript, sidebar/history, and bottom composer hierarchy.",
+      "Shared chat primitives or shared CSS patterns reduce duplicate visual logic across DocumentCopilotPanel and AIChatDialog/ChatShell.",
+      "Provider/model/context/safety state remains discoverable and accessible but no longer dominates the first screen.",
+      "Message rendering supports user bubbles, assistant prose, markdown/code/tables/sources, streaming state, copy/retry actions, and error states without regressing functionality.",
+      "Composer supports autosizing text, send/stop, provider/model visibility, disabled reasons, keyboard submit, and compact side-panel behavior.",
+      "No backend/API/provider-key/document writeback contracts are changed.",
+      "Focused tests for existing AI chat and document copilot still pass; visual manual review records side-panel and full-page observations."
+    ],
+    "forbiddenCompletionClaims": [
+      "Changing colors alone is enough.",
+      "Adding more pills or more status labels makes the chat clearer.",
+      "The visual refactor may hide provider/key safety state completely.",
+      "It is acceptable to add Tailwind/Framer/Lucide just to copy another project without a clear dependency decision.",
+      "Only document copilot was polished, therefore the full AI workspace is done, or vice versa.",
+      "AI output can be auto-applied to the document as part of this visual task."
+    ]
+  },
+  "completedAt": "2026-06-22T05:45:55+00:00",
+  "manualReview": {
+    "result": "passed-with-follow-up",
+    "reviewedAt": "2026-06-22T05:45:55+00:00",
+    "reviewer": "Human manual review after local provider-backed conversation",
+    "summary": "Provider configuration and AI conversation worked locally, but the user judged the AI chat surfaces still visually immature/ugly enough to require a dedicated follow-up task.",
+    "agentGateResult": "Finish agent passed Task21b acceptance with Playwright/manual evidence",
+    "followUpRequired": true,
+    "followUpTask": ".trellis/tasks/06-22-task-21c-ai-chat-visual-maturity-pass"
+  },
+  "nextTask": ".trellis/tasks/06-22-task-21c-ai-chat-visual-maturity-pass"
+}
