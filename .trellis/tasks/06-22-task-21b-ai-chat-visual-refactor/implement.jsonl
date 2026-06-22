@@ -1,0 +1,30 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Frontend/workbench implementation guidance"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Cross-layer document/AI safety contract"}
+{"path": ".trellis/tasks/06-22-task-21b-ai-chat-visual-refactor/prd.md", "reason": "Task21b product requirements"}
+{"path": ".trellis/tasks/06-22-task-21b-ai-chat-visual-refactor/info.md", "reason": "Task21b technical design notes"}
+{"path": ".trellis/tasks/06-22-task-21b-ai-chat-visual-refactor/manual-review.md", "reason": "Task21b manual review checklist"}
+{"path": ".trellis/tasks/06-21-task-21a-document-copilot-baseline/task.json", "reason": "Finished Task21a document copilot baseline state"}
+{"path": ".trellis/tasks/06-21-task-21a-document-copilot-baseline/prd.md", "reason": "Task21a safety/no-writeback requirements"}
+{"path": ".trellis/tasks/06-21-task-21a-document-copilot-baseline/info.md", "reason": "Task21a technical contract"}
+{"path": ".trellis/tasks/06-21-task-21a-document-copilot-baseline/manual-review.md", "reason": "Task21a manual review and visual follow-up"}
+{"path": ".trellis/tasks/06-21-task-20m-document-visual-baseline/task.json", "reason": "Prior document visual baseline state"}
+{"path": "apps/web/package.json", "reason": "Current web dependencies; avoid unnecessary Tailwind/Framer/Lucide churn"}
+{"path": "apps/web/src/features/ai/chat/AIChatDialog.tsx", "reason": "Standalone AI chat runtime and state handling"}
+{"path": "apps/web/src/features/ai/chat/ChatShell.tsx", "reason": "Current full chat shell layout"}
+{"path": "apps/web/src/features/ai/chat/ThreadSidebar.tsx", "reason": "Current chat history/sidebar"}
+{"path": "apps/web/src/features/ai/chat/ThreadViewport.tsx", "reason": "Current full chat transcript wrapper"}
+{"path": "apps/web/src/features/ai/chat/ChatComposer.tsx", "reason": "Current composer behavior"}
+{"path": "apps/web/src/features/ai/chat/ChatMessage.tsx", "reason": "Current message rendering"}
+{"path": "apps/web/src/features/ai/chat/MessageStream.tsx", "reason": "Current message stream rendering"}
+{"path": "apps/web/src/features/ai/chat/MarkdownMessage.tsx", "reason": "Markdown/code/table rendering"}
+{"path": "apps/web/src/features/ai/chat/ToolRunCard.tsx", "reason": "Tool/run status display"}
+{"path": "apps/web/src/features/ai/chat/chat.css", "reason": "Current chat visual system"}
+{"path": "apps/web/src/features/documents/DocumentCopilotPanel.tsx", "reason": "Document copilot side-panel implementation"}
+{"path": "apps/web/src/features/documents/documentCopilotContext.ts", "reason": "Document context display/safety model"}
+{"path": "apps/web/src/features/layout/workbench.tsx", "reason": "Shared workbench primitives"}
+{"path": "apps/web/src/features/layout/workbench.css", "reason": "Workbench, inspector, and copilot CSS"}
+{"path": "apps/web/src/features/ai/chat/AIChatDialog.test.tsx", "reason": "Standalone chat tests"}
+{"path": "apps/web/src/features/documents/DocumentCopilotPanel.test.tsx", "reason": "Document copilot tests"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "Document editor/copilot integration tests"}
+{"path": "apps/web/src/app/App.test.tsx", "reason": "App routing/navigation tests"}
