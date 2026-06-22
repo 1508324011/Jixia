@@ -93,6 +93,7 @@ export function App() {
       <AppShell activeSurface="projects" currentSession={currentSession} onNavigate={navigateSurface}>
         <DocumentEditorPage
           documentId={route.documentId}
+          onOpenAISettings={navigateAISettings}
           onBack={() => openProject(route.projectId)}
         />
       </AppShell>
@@ -110,7 +111,12 @@ export function App() {
   if (route.name === "notebook-document") {
     return (
       <AppShell activeSurface="notebook" currentSession={currentSession} onNavigate={navigateSurface}>
-        <DocumentEditorPage backLabel="Notebook" documentId={route.documentId} onBack={() => navigateSurface("notebook")} />
+        <DocumentEditorPage
+          backLabel="Notebook"
+          documentId={route.documentId}
+          onBack={() => navigateSurface("notebook")}
+          onOpenAISettings={navigateAISettings}
+        />
       </AppShell>
     );
   }

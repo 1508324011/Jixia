@@ -12,6 +12,15 @@ const mockedEditorProps = vi.hoisted(() => ({
   calls: [] as { readonly documentId: string; readonly readOnly: boolean }[]
 }));
 
+const mockedCopilotProps = vi.hoisted(() => ({
+  calls: [] as {
+    readonly baseRevision: number;
+    readonly documentId: string;
+    readonly readOnly: boolean;
+    readonly title: string;
+  }[]
+}));
+
 vi.mock("./editor/JixiaEditor", async () => {
   const React = await import("react");
 
@@ -47,6 +56,31 @@ vi.mock("./editor/JixiaEditor", async () => {
       </section>
     );
   })
+  };
+});
+
+vi.mock("./DocumentCopilotPanel", async () => {
+  return {
+    DocumentCopilotPanel: (props: {
+      readonly baseRevision: number;
+      readonly document: DocumentDTO;
+      readonly readOnly: boolean;
+      readonly title: string;
+    }) => {
+      mockedCopilotProps.calls.push({
+        baseRevision: props.baseRevision,
+        documentId: props.document.id,
+        readOnly: props.readOnly,
+        title: props.title
+      });
+
+      return (
+        <section aria-label="Mock document copilot panel">
+          <h2>Document copilot panel</h2>
+          <p>{props.document.id}</p>
+        </section>
+      );
+    }
   };
 });
 
@@ -90,6 +124,7 @@ describe("DocumentEditorPage", () => {
     cleanup();
     editorHarness.exportedSnapshot = null;
     mockedEditorProps.calls = [];
+    mockedCopilotProps.calls = [];
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
@@ -102,11 +137,16 @@ describe("DocumentEditorPage", () => {
     expect(await screen.findByDisplayValue("Project synthesis")).toBeTruthy();
     expect(screen.getByText("Initial finding")).toBeTruthy();
     expect(screen.getByLabelText("Mock Jixia editor").getAttribute("data-readonly")).toBe("false");
-    expect(screen.getByText("Use the standalone AI workspace")).toBeTruthy();
-    expect(screen.getByText("No automatic document context")).toBeTruthy();
+    expect(screen.getByText("Document copilot panel")).toBeTruthy();
+    expect(mockedCopilotProps.calls[mockedCopilotProps.calls.length - 1]).toEqual({
+      baseRevision: 2,
+      documentId: "doc-1",
+      readOnly: false,
+      title: "Project synthesis"
+    });
     expect(
       within(screen.getByLabelText("Document inspector")).queryByRole("button", {
-        name: /open copilot|send|apply|insert|rewrite|automerge|stop|cancel/i
+        name: /apply|insert|rewrite|automerge/i
       })
     ).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(

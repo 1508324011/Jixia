@@ -14,6 +14,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
+vi.mock("../features/documents/DocumentCopilotPanel", () => ({
+  DocumentCopilotPanel: () => <section aria-label="Mock document copilot panel">Document copilot panel</section>
+}));
+
 describe("App", () => {
   beforeEach(() => {
     Object.defineProperty(window, "matchMedia", {

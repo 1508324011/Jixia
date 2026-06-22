@@ -25,12 +25,14 @@ import {
   WorkspaceFrame,
   WorkspaceMainSplit
 } from "../layout/workbench";
+import { DocumentCopilotPanel } from "./DocumentCopilotPanel";
 import { JixiaEditor, type JixiaEditorHandle } from "./editor/JixiaEditor";
 
 type DocumentEditorPageProps = {
   readonly backLabel?: string;
   readonly documentId: string;
   readonly onBack?: () => void;
+  readonly onOpenAISettings?: () => void;
 };
 
 type ReadDocumentResponse = {
@@ -41,7 +43,7 @@ type ReadDocumentResponse = {
 
 type AcceptedRevisionResponse = SaveDocumentRevisionResponse | { readonly error: string };
 
-export function DocumentEditorPage({ backLabel = "Projects", documentId, onBack }: DocumentEditorPageProps) {
+export function DocumentEditorPage({ backLabel = "Projects", documentId, onBack, onOpenAISettings }: DocumentEditorPageProps) {
   const editorRef = useRef<JixiaEditorHandle | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [document, setDocument] = useState<DocumentDTO | null>(null);
@@ -289,26 +291,19 @@ export function DocumentEditorPage({ backLabel = "Projects", documentId, onBack 
             />
           </ArtifactCanvas>
           <Inspector activeMode="copilot" aria-label="Document inspector">
-            <DeferredDocumentAI currentDocumentTitle={document.title} />
+            <DocumentCopilotPanel
+              baseRevision={baseRevision}
+              document={document}
+              exportSnapshot={() => editorRef.current?.exportSnapshot() ?? snapshot}
+              readOnly={readOnly}
+              snapshot={snapshot}
+              title={title}
+              {...(onOpenAISettings ? { onOpenSettings: onOpenAISettings } : {})}
+            />
           </Inspector>
         </WorkspaceMainSplit>
       </WorkspaceFrame>
     </WorkbenchSurface>
-  );
-}
-
-function DeferredDocumentAI({ currentDocumentTitle }: { readonly currentDocumentTitle: string }) {
-  return (
-    <Panel aria-labelledby="deferred-document-ai-title" eyebrow="AI chat" muted title="Use the standalone AI workspace" titleId="deferred-document-ai-title">
-      <p className="jixia-description" style={{ margin: 0 }}>
-        Jixia chat keeps conversations independent from the current document. Open the AI workspace for a clean thread;
-        document attachments will return later through an explicit server-authorized attachment flow.
-      </p>
-      <div className="jixia-list-row__actions">
-        <Pill tone="accent">No automatic document context</Pill>
-        <Pill>{currentDocumentTitle}</Pill>
-      </div>
-    </Panel>
   );
 }
 
