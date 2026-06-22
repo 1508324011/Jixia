@@ -1,0 +1,114 @@
+{
+  "title": "Task 21c AI Chat Visual Maturity Pass",
+  "slug": "task-21c-ai-chat-visual-maturity-pass",
+  "type": "frontend",
+  "status": "finished",
+  "createdAt": "2026-06-22T05:42:52+00:00",
+  "updatedAt": "2026-06-22T15:31:00+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "manualReviewRequired": true,
+  "preparation": {
+    "preparedAt": "2026-06-22T05:45:55+00:00",
+    "fromTasks": [
+      ".trellis/tasks/06-22-task-21b-ai-chat-visual-refactor",
+      ".trellis/tasks/06-21-task-21a-document-copilot-baseline",
+      ".trellis/tasks/06-18-task-18-8-mature-streaming-ai-chat-provider-settings",
+      ".trellis/tasks/06-18-task-18-7-standalone-ai-chat-dialog-foundation"
+    ],
+    "humanReviewSignal": "User successfully configured a provider and completed a local AI conversation, then reported that the AI dialog is still too ugly after Task21b.",
+    "localReviewEnvironment": {
+      "webOrigin": "http://10.128.253.195:5173",
+      "apiOrigin": "http://10.128.253.195:4174",
+      "invitationEmail": "manual-review@example.com",
+      "note": "LAN fixture stack was restarted in tmux sessions jixia-api and jixia-web for manual review."
+    },
+    "externalDesignReferences": [
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/components/chat/UnifiedChatModal.tsx",
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/MessageStream.tsx",
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/TextMessage.tsx",
+      "/home/zhurui/github_project/ResearchClaw/tailwind.config.ts",
+      "LobeChat composer and assistant/user message hierarchy",
+      "Open WebUI grouped history/sidebar and rounded composer shell",
+      "Dify compact composer/citation progressive disclosure",
+      "AnythingLLM centered transcript and source sidebar/card patterns",
+      "LibreChat hover/focus message actions and subrow controls",
+      "Chatbot UI centered transcript plus restrained bottom composer"
+    ],
+    "bindingDecisions": [
+      "Task21c is a stricter frontend visual maturity pass; preserve all Task21b runtime, provider-key, conversation DTO, document-save, and no-writeback contracts.",
+      "Do not keep adding labels, pills, boxed panels, or visible system chrome. Remove or demote chrome until the first impression is a chat product, not an admin console.",
+      "Translate ResearchClaw and mature OSS design concepts into existing React/CSS; do not add Tailwind, Framer Motion, Lucide, or a heavy rich-text editor stack just for aesthetics.",
+      "Standalone AI chat and document copilot must share the same visual grammar: centered transcript, compact user bubbles, open assistant prose, quiet actions, one rounded composer surface, and progressive disclosure for context/sources/status.",
+      "Safety/provider/context state remains accessible and auditable, but it belongs in subdued chips, details, drawers, tooltips, or secondary rows rather than dominating the default screen."
+    ],
+    "visualDebtEvidence": [
+      "`ThreadViewport.tsx` and `chat.css` still show thread title/message count/send status/meta hierarchy too prominently.",
+      "Message rows still expose headers/actions/status chrome before the content reads as conversation.",
+      "Run/action/source cards remain border-heavy and compete with assistant answers.",
+      "Composer still feels like a configuration form because model/help/metadata rows are too visible.",
+      "Document copilot still has too much grid/context/status structure for an inspector-width chat panel."
+    ],
+    "firstImplementationPriority": "Delete visual noise before adding decoration: reduce borders and status bars, make transcript and composer the dominant structure, then reintroduce metadata only as progressive disclosure."
+  },
+  "failureContract": {
+    "noSuccessWithout": [
+      "Human first impression of both standalone AI and document copilot is a mature chat product, not a control panel or settings form.",
+      "Full AI workspace uses a calm three-zone hierarchy: restrained history sidebar, centered/max-width transcript, sticky rounded composer.",
+      "Document copilot side panel uses the same chat grammar in compact form without five-row grid/control-panel feel.",
+      "User messages are compact right-aligned bubbles; assistant responses are spacious prose with strong markdown/code/table readability.",
+      "Message actions, run state, copy/retry/cancel, model/provider, context, and sources are available through hover/focus/subrows/chips/details/drawers rather than primary chrome.",
+      "Composer behaves like one polished rounded control surface with autosizing input, keyboard submit, send/stop affordance, disabled reasons, and compact side-panel layout.",
+      "Long answers, code blocks, tables, sources, errors, missing-provider state, streaming/cancelled state, and copied state are visually reviewed, not just unit-tested.",
+      "No backend/API/provider-key/document writeback contracts are changed.",
+      "Focused existing tests still pass and manual-review.md records real visual observations for both surfaces."
+    ],
+    "forbiddenCompletionClaims": [
+      "Changing colors or border radii alone is enough.",
+      "More status pills, labels, banners, or cards improve the visual maturity.",
+      "It is acceptable to hide provider/key/safety state completely instead of demoting it accessibly.",
+      "Only the standalone chat or only the document copilot was polished.",
+      "Task21c may introduce Tailwind/Framer/Lucide or copy a mature OSS stack wholesale without an explicit dependency decision.",
+      "Screenshots from mocked empty states are enough without a real or representative conversation, long answer, code/source/error cases.",
+      "AI output may auto-apply to documents as part of visual polish."
+    ]
+  },
+  "completedAt": "2026-06-22T15:31:00+00:00",
+  "manualReview": {
+    "result": "passed",
+    "reviewedAt": "2026-06-22T15:31:00+00:00",
+    "reviewer": "GPT-5.5 finish pass with Playwright Chromium visual review",
+    "environment": {
+      "webOrigin": "http://127.0.0.1:56174",
+      "browserDevice": "Playwright Chromium, 1366x900 viewport",
+      "providerConfig": "mocked safe AIProviderConfigView with hasKey true"
+    },
+    "summary": "Standalone AI and document copilot were reviewed with representative mocked stream conversations containing user bubbles, assistant markdown prose, code, tables, source chips, and run-step metadata. Both surfaces now read as mature chat layouts rather than metadata/control panels, while provider/context/no-writeback state stays discoverable and subordinate.",
+    "evidence": [
+      "/tmp/opencode/task21c-standalone-ai.png",
+      "/tmp/opencode/task21c-document-copilot.png",
+      "/tmp/opencode/task21c-visual-observations.json"
+    ],
+    "passedChecks": [
+      "Standalone AI showed a restrained three-zone shell with history/sidebar, centered transcript, and rounded composer.",
+      "Document copilot showed a compact inspector-width chat panel with subordinate bounded context metadata.",
+      "User messages rendered as compact right-aligned bubbles; assistant messages rendered as open prose with markdown, table, and code readability.",
+      "Source and run details appeared as quiet chips/cards instead of dominating the answer.",
+      "No apply, insert, rewrite, or automerge document mutation actions were visible in the copilot review."
+    ],
+    "remainingFollowUp": "Human product taste review may still tune details, but Task21c acceptance now has automated verification plus browser-observed representative conversations for both AI surfaces."
+  }
+}
