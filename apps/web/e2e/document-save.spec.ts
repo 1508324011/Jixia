@@ -69,7 +69,7 @@ test("saves project document drafts and formal revisions without AI writeback", 
   await expect(page.getByRole("heading", { name: "Revision conflict" })).toBeVisible();
   await expect(page.getByText("Human merge required")).toBeVisible();
   await expect(page.getByText("Jixia does not call AI or auto-merge conflicts.")).toBeVisible();
-  expect(aiRequests).toEqual([]);
+  expect(aiRequests.filter((request) => !allowedDocumentCopilotBootstrapRequest(request))).toEqual([]);
   expect(authorizationHeaderRequests).toEqual([]);
 });
 
@@ -89,8 +89,12 @@ test("creates default BlockNote code blocks and persists safe code metadata", as
 
   await expectSavedCodeBlock(page, documentId, "print('saved through BlockNote')");
   await page.reload();
-  await expect(page.getByText("print('saved through BlockNote')")).toBeVisible();
+  await expect(page.getByTestId("jixia-blocknote-view").getByText("print('saved through BlockNote')", { exact: true })).toBeVisible();
 });
+
+function allowedDocumentCopilotBootstrapRequest(request: string): boolean {
+  return request === "GET /api/ai/configs" || request === "GET /api/ai/conversations";
+}
 
 async function insertDefaultCodeBlock(page: Parameters<typeof fillDocumentEditor>[0], code: string): Promise<void> {
   const editor = page.getByLabel("Jixia BlockNote editor");

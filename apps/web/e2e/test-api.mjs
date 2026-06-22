@@ -34,6 +34,9 @@ const documents = new Map();
 const uploadIntents = new Map();
 const uploadedObjects = new Map();
 const attachments = new Map();
+const aiProviderConfigs = new Map();
+const aiConversations = new Map();
+const aiRuns = new Map();
 const preflightedUploadTokens = new Set();
 const forbiddenDirectUploadHeaderNames = new Set([
   "authorization",
@@ -378,6 +381,197 @@ function publicIntent(intent) {
   };
 }
 
+
+function publicAIProviderConfig(config) {
+  return {
+    id: config.id,
+    ownerUserId: config.ownerUserId,
+    name: config.name,
+    provider: config.provider,
+    baseURL: config.baseURL,
+    model: config.model,
+    temperature: config.temperature,
+    maxTokens: config.maxTokens,
+    hasKey: config.hasKey,
+    isDefault: config.isDefault,
+    createdAt: config.createdAt,
+    updatedAt: config.updatedAt
+  };
+}
+
+function aiProviderConfigsForUser(userId) {
+  return Array.from(aiProviderConfigs.values())
+    .filter((config) => config.ownerUserId === userId)
+    .sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.createdAt.localeCompare(right.createdAt));
+}
+
+function setDefaultAIProviderConfig(userId, configId) {
+  for (const config of aiProviderConfigs.values()) {
+    if (config.ownerUserId === userId) {
+      config.isDefault = config.id === configId;
+      config.updatedAt = nowIso();
+    }
+  }
+}
+
+function readAIProviderConfigPayload(body, fallback = {}) {
+  const name = String(body.name ?? fallback.name ?? "").trim();
+  const provider = String(body.provider ?? fallback.provider ?? "").trim();
+  const baseURL = String(body.baseURL ?? fallback.baseURL ?? "").trim();
+  const model = String(body.model ?? fallback.model ?? "").trim();
+  const temperature = Number(body.temperature ?? fallback.temperature ?? 0.2);
+  const maxTokens = Number(body.maxTokens ?? fallback.maxTokens ?? 4096);
+
+  if (!name || !provider || !baseURL || !model || !Number.isFinite(temperature) || !Number.isInteger(maxTokens) || maxTokens <= 0) {
+    return null;
+  }
+
+  return { name, provider, baseURL, model, temperature, maxTokens };
+}
+
+function aiProviderHealthCheck(payload) {
+  const checkedAt = nowIso();
+  return {
+    ok: true,
+    category: null,
+    message: "Manual review fixture accepted this provider shape without contacting the upstream model.",
+    latencyMs: 12,
+    provider: String(payload.provider ?? "manual-review"),
+    model: String(payload.model ?? "manual-review-model"),
+    baseURL: String(payload.baseURL ?? "https://manual-review.local/v1"),
+    checkedAt
+  };
+}
+
+function contextAttachmentsFromSnapshot(snapshot) {
+  const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+  return items.map((item, index) => {
+    const selectedBlockIds = Array.isArray(item.selectedBlockIds) ? item.selectedBlockIds.map(String) : [];
+    return {
+      id: `context-${index + 1}`,
+      sourceType: item.sourceType === "current_document" || item.sourceType === "selected_document" || item.sourceType === "selected_block" ? item.sourceType : "manual",
+      title: String(item.title ?? `Context ${index + 1}`),
+      documentId: item.documentId ?? null,
+      documentType: item.documentType ?? null,
+      projectId: item.projectId ?? null,
+      revisionNumber: Number.isInteger(item.revisionNumber) ? item.revisionNumber : null,
+      selectedBlockIds,
+      selectedBlockCount: Number.isInteger(item.selectedBlockCount) ? item.selectedBlockCount : selectedBlockIds.length,
+      capturedAt: typeof item.capturedAt === "string" ? item.capturedAt : nowIso()
+    };
+  });
+}
+
+function publicAIConversation(conversation) {
+  return {
+    id: conversation.id,
+    ownerUserId: conversation.ownerUserId,
+    title: conversation.title,
+    currentDocumentId: conversation.currentDocumentId,
+    selectedContextSnapshot: clone(conversation.selectedContextSnapshot),
+    contextAttachments: clone(conversation.contextAttachments),
+    messages: clone(conversation.messages),
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt
+  };
+}
+
+function createAIConversation(userId, body) {
+  const timestamp = nowIso();
+  const selectedContextSnapshot = body.selectedContextSnapshot && typeof body.selectedContextSnapshot === "object"
+    ? clone(body.selectedContextSnapshot)
+    : { currentDocumentId: body.currentDocumentId ?? null, items: [], capturedAt: timestamp };
+  const conversation = {
+    id: nextId("ai-conversation"),
+    ownerUserId: userId,
+    title: String(body.title ?? "Manual review chat").trim() || "Manual review chat",
+    currentDocumentId: body.currentDocumentId ?? selectedContextSnapshot.currentDocumentId ?? null,
+    selectedContextSnapshot,
+    contextAttachments: contextAttachmentsFromSnapshot(selectedContextSnapshot),
+    messages: [],
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  aiConversations.set(conversation.id, conversation);
+  return conversation;
+}
+
+function sourceListForConversation(conversation) {
+  const firstAttachment = conversation.contextAttachments[0];
+  if (!firstAttachment) {
+    return [
+      {
+        id: `${conversation.id}-manual-source`,
+        sourceType: "manual",
+        title: "Manual review fixture",
+        documentId: null,
+        documentType: null,
+        projectId: null,
+        revisionNumber: null,
+        selectedBlockIds: [],
+        selectedBlockCount: 0,
+        capturedAt: nowIso(),
+        label: "Manual review fixture"
+      }
+    ];
+  }
+
+  return [{ ...firstAttachment, label: firstAttachment.title }];
+}
+
+function fixtureAssistantContent(userContent, conversation) {
+  const contextLine = conversation.currentDocumentId
+    ? "I used the bounded current-document context that Jixia sent to the server."
+    : "No document context was attached to this standalone chat.";
+  return [
+    `Here is a manual-review fixture response for: ${userContent}`,
+    "",
+    contextLine,
+    "",
+    "| Check | Result |",
+    "| --- | --- |",
+    "| Chat hierarchy | User bubble and assistant prose rendered |",
+    "| Sources | Quiet disclosure available |",
+    "",
+    "```ts",
+    "const review = 'Jixia AI fixture stream is working';",
+    "```"
+  ].join("\n");
+}
+
+function createAIRun(providerConfigId) {
+  const timestamp = nowIso();
+  const run = {
+    id: nextId("ai-run"),
+    status: "running",
+    providerConfigId,
+    errorMessage: null,
+    errorCategory: null,
+    usage: null,
+    createdAt: timestamp,
+    startedAt: timestamp,
+    completedAt: null
+  };
+  aiRuns.set(run.id, run);
+  return run;
+}
+
+function completeAIRun(run) {
+  run.status = "succeeded";
+  run.completedAt = nowIso();
+  run.usage = {
+    promptTokens: 320,
+    completionTokens: 928,
+    totalTokens: 1248,
+    estimatedCostMicros: 42
+  };
+  return run;
+}
+
+function writeSse(response, event) {
+  response.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
 function normalizedApiPath(pathname) {
   if (pathname === "/api" || pathname.startsWith("/api/")) {
     return pathname;
@@ -646,6 +840,269 @@ async function handleApiRequest(request, response, url) {
     };
     documents.set(document.id, document);
     sendJson(response, 200, { document: publicDocument(document), revision: null });
+    return;
+  }
+
+
+  if (request.method === "GET" && path === "/api/ai/configs") {
+    const context = requireSession(request, response);
+    if (!context) {
+      return;
+    }
+
+    sendJson(response, 200, { configs: aiProviderConfigsForUser(context.user.id).map(publicAIProviderConfig) });
+    return;
+  }
+
+  if (request.method === "POST" && path === "/api/ai/configs") {
+    const context = requireSession(request, response);
+    if (!context) {
+      return;
+    }
+
+    const body = await readJson(request);
+    const payload = readAIProviderConfigPayload(body);
+    if (!payload) {
+      sendError(response, 400, "Invalid request");
+      return;
+    }
+
+    const timestamp = nowIso();
+    const config = {
+      id: nextId("ai-config"),
+      ownerUserId: context.user.id,
+      ...payload,
+      hasKey: typeof body.apiKey === "string" && body.apiKey.trim().length > 0,
+      isDefault: Boolean(body.isDefault) || aiProviderConfigsForUser(context.user.id).length === 0,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    aiProviderConfigs.set(config.id, config);
+    if (config.isDefault) {
+      setDefaultAIProviderConfig(context.user.id, config.id);
+    }
+    sendJson(response, 200, { config: publicAIProviderConfig(config) });
+    return;
+  }
+
+  if (request.method === "POST" && path === "/api/ai/configs/test") {
+    const context = requireSession(request, response);
+    if (!context) {
+      return;
+    }
+    const body = await readJson(request);
+    sendJson(response, 200, { healthCheck: aiProviderHealthCheck(body) });
+    return;
+  }
+
+  const aiConfigMatch = path.match(/^\/api\/ai\/configs\/([^/]+)$/);
+  if ((request.method === "GET" || request.method === "PATCH" || request.method === "DELETE") && aiConfigMatch) {
+    const context = requireSession(request, response);
+    const configId = decodeURIComponent(aiConfigMatch[1] ?? "");
+    const config = aiProviderConfigs.get(configId);
+    if (!context) {
+      return;
+    }
+    if (!config || config.ownerUserId !== context.user.id) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+
+    if (request.method === "GET") {
+      sendJson(response, 200, { config: publicAIProviderConfig(config) });
+      return;
+    }
+
+    if (request.method === "DELETE") {
+      aiProviderConfigs.delete(config.id);
+      sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    const body = await readJson(request);
+    const payload = readAIProviderConfigPayload(body, config);
+    if (!payload) {
+      sendError(response, 400, "Invalid request");
+      return;
+    }
+    Object.assign(config, payload, {
+      ...(body.apiKey === undefined ? {} : { hasKey: typeof body.apiKey === "string" && body.apiKey.trim().length > 0 }),
+      ...(body.isDefault === undefined ? {} : { isDefault: Boolean(body.isDefault) }),
+      updatedAt: nowIso()
+    });
+    if (config.isDefault) {
+      setDefaultAIProviderConfig(context.user.id, config.id);
+    }
+    sendJson(response, 200, { config: publicAIProviderConfig(config) });
+    return;
+  }
+
+  const aiConfigTestMatch = path.match(/^\/api\/ai\/configs\/([^/]+)\/test$/);
+  if (request.method === "POST" && aiConfigTestMatch) {
+    const context = requireSession(request, response);
+    const configId = decodeURIComponent(aiConfigTestMatch[1] ?? "");
+    const config = aiProviderConfigs.get(configId);
+    if (!context) {
+      return;
+    }
+    if (!config || config.ownerUserId !== context.user.id) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+    const body = await readJson(request);
+    sendJson(response, 200, { healthCheck: aiProviderHealthCheck({ ...config, ...body }) });
+    return;
+  }
+
+  const aiConfigDefaultMatch = path.match(/^\/api\/ai\/configs\/([^/]+)\/default$/);
+  if (request.method === "POST" && aiConfigDefaultMatch) {
+    const context = requireSession(request, response);
+    const configId = decodeURIComponent(aiConfigDefaultMatch[1] ?? "");
+    const config = aiProviderConfigs.get(configId);
+    if (!context) {
+      return;
+    }
+    if (!config || config.ownerUserId !== context.user.id) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+    setDefaultAIProviderConfig(context.user.id, config.id);
+    sendJson(response, 200, { config: publicAIProviderConfig(config) });
+    return;
+  }
+
+  if (request.method === "GET" && path === "/api/ai/conversations") {
+    const context = requireSession(request, response);
+    if (!context) {
+      return;
+    }
+    const currentDocumentId = url.searchParams.get("currentDocumentId");
+    const conversations = Array.from(aiConversations.values())
+      .filter((conversation) => conversation.ownerUserId === context.user.id)
+      .filter((conversation) => currentDocumentId === null || conversation.currentDocumentId === currentDocumentId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .map(publicAIConversation);
+    sendJson(response, 200, { conversations });
+    return;
+  }
+
+  if (request.method === "POST" && path === "/api/ai/conversations") {
+    const context = requireSession(request, response);
+    if (!context) {
+      return;
+    }
+    const body = await readJson(request);
+    const conversation = createAIConversation(context.user.id, body);
+    sendJson(response, 200, { conversation: publicAIConversation(conversation) });
+    return;
+  }
+
+  const streamMatch = path.match(/^\/api\/ai\/conversations\/([^/]+)\/messages\/stream$/);
+  if (request.method === "POST" && streamMatch) {
+    const context = requireSession(request, response);
+    const conversationId = decodeURIComponent(streamMatch[1] ?? "");
+    const conversation = aiConversations.get(conversationId);
+    if (!context) {
+      return;
+    }
+    if (!conversation || conversation.ownerUserId !== context.user.id) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+
+    const body = await readJson(request);
+    const providerConfigId = String(body.providerConfigId ?? "");
+    const providerConfig = aiProviderConfigs.get(providerConfigId);
+    if (!providerConfig || providerConfig.ownerUserId !== context.user.id) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+
+    const timestamp = nowIso();
+    const userContent = String(body.message?.content ?? "").trim();
+    const run = createAIRun(providerConfig.id);
+    const userMessage = {
+      id: nextId("ai-message"),
+      role: "user",
+      content: userContent,
+      createdAt: timestamp
+    };
+    const assistantContent = fixtureAssistantContent(userContent, conversation);
+    const sources = sourceListForConversation(conversation);
+    const assistantMessage = {
+      id: nextId("ai-message"),
+      role: "assistant",
+      content: assistantContent,
+      createdAt: nowIso(),
+      runId: run.id,
+      runStatus: "succeeded",
+      errorCategory: null,
+      errorMessage: null,
+      parts: [
+        { type: "markdown", content: assistantContent },
+        { type: "source_list", sources },
+        {
+          type: "run_step",
+          step: {
+            id: `${run.id}-fixture-step`,
+            status: "succeeded",
+            title: "Manual review fixture generated a representative response",
+            timestamp: nowIso(),
+            errorMessage: null
+          }
+        }
+      ],
+      sources,
+      runSteps: [
+        {
+          id: `${run.id}-fixture-step`,
+          status: "succeeded",
+          title: "Manual review fixture generated a representative response",
+          timestamp: nowIso(),
+          errorMessage: null
+        }
+      ],
+      actions: [
+        { id: `${run.id}-copy`, kind: "copy", label: "Copy", enabled: true, reason: null },
+        { id: `${run.id}-sources`, kind: "show_sources", label: "Show sources", enabled: true, reason: null }
+      ]
+    };
+    conversation.messages.push(userMessage, assistantMessage);
+    conversation.updatedAt = nowIso();
+    completeAIRun(run);
+
+    response.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-store",
+      Connection: "keep-alive"
+    });
+    writeSse(response, { type: "run", run: { ...run, status: "running", completedAt: null, usage: null } });
+    writeSse(response, { type: "user_message", message: userMessage });
+    writeSse(response, { type: "assistant_delta", runId: run.id, messageId: assistantMessage.id, delta: assistantContent.slice(0, 80) });
+    writeSse(response, { type: "assistant_message", message: assistantMessage });
+    writeSse(response, { type: "usage", runId: run.id, usage: run.usage });
+    writeSse(response, { type: "done", run, conversation: publicAIConversation(conversation) });
+    response.end();
+    return;
+  }
+
+  const cancelRunMatch = path.match(/^\/api\/ai\/runs\/([^/]+)\/cancel$/);
+  if (request.method === "POST" && cancelRunMatch) {
+    const context = requireSession(request, response);
+    const runId = decodeURIComponent(cancelRunMatch[1] ?? "");
+    const run = aiRuns.get(runId);
+    if (!context) {
+      return;
+    }
+    if (!run) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+    run.status = "cancelled";
+    run.errorCategory = "cancelled";
+    run.errorMessage = "The AI run was cancelled by the manual review fixture.";
+    run.completedAt = nowIso();
+    sendJson(response, 200, { run });
     return;
   }
 
