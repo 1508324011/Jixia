@@ -5,7 +5,10 @@ import { ChatMessage } from "./ChatMessage";
 import type { ChatMessage as ChatMessageModel, ChatRunStatus } from "./chatTypes";
 
 type MessageStreamProps = {
+  readonly className?: string;
   readonly copiedMessageId: string | null;
+  readonly emptyDescription?: string;
+  readonly emptyTitle?: string;
   readonly hiddenSourceMessageIds: ReadonlySet<string>;
   readonly isSending: boolean;
   readonly messages: readonly ChatMessageModel[];
@@ -17,7 +20,10 @@ type MessageStreamProps = {
 };
 
 export function MessageStream({
+  className,
   copiedMessageId,
+  emptyDescription = "Ask a question from the composer. Jixia starts without document context by default.",
+  emptyTitle = "Start a private chat thread",
   hiddenSourceMessageIds,
   isSending,
   messages,
@@ -52,8 +58,9 @@ export function MessageStream({
   if (!messages.length && !isSending) {
     return (
       <EmptyState
-        description="Send a question from the composer. Jixia will only use explicit attachments you add later, not the current document by default."
-        title="Start a private chat thread"
+        className={className}
+        description={emptyDescription}
+        title={emptyTitle}
       />
     );
   }
@@ -62,7 +69,7 @@ export function MessageStream({
     <div
       aria-label="Conversation messages"
       aria-live="polite"
-      className="jixia-chat-message-stream"
+      className={["jixia-chat-message-stream", className].filter(Boolean).join(" ")}
       onScroll={(event) => {
         const element = event.currentTarget;
         stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96;
@@ -92,8 +99,9 @@ function RunProgress({ status }: { readonly status: ChatRunStatus | "idle" }) {
 
   return (
     <div className={`jixia-chat-run-card jixia-chat-run-card--${status === "idle" ? "queued" : status}`} role="status">
+      <span className="jixia-chat-run-card__dot" aria-hidden="true" />
       <strong>{copy.title}</strong>
-      <span>{copy.description}</span>
+      <small>{copy.description}</small>
     </div>
   );
 }
@@ -103,19 +111,19 @@ function runProgressCopy(status: ChatRunStatus | "idle"): { readonly title: stri
     case "queued":
     case "idle":
       return {
-        title: "Queued on the Jixia server",
-        description: "Stop appears only after the API returns a cancellable run id."
+        title: "Queued",
+        description: "Waiting for a cancellable server run."
       };
     case "running":
       return {
-        title: "Streaming server-owned provider response",
-        description: "Assistant deltas arrive through the Jixia SSE stream and persist when the run completes."
+        title: "Streaming",
+        description: "Receiving the server-owned response."
       };
     case "cancelled":
-      return { title: "Run cancelled", description: "The server acknowledged cancellation for this run." };
+      return { title: "Cancelled", description: "The server acknowledged the stop request." };
     case "failed":
-      return { title: "Run failed", description: "The provider adapter returned a safe error for this run." };
+      return { title: "Failed", description: "A safe provider error was returned." };
     case "succeeded":
-      return { title: "Run complete", description: "Final assistant content was persisted by the API." };
+      return { title: "Complete", description: "The final answer was saved by the API." };
   }
 }

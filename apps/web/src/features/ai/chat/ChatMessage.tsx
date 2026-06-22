@@ -20,16 +20,13 @@ export function ChatMessage({ copyState, hiddenSources, message, onCopy, onCopyT
   const isAssistant = message.role === "assistant";
   const isStreaming = message.runStatus === "running" || message.runStatus === "queued";
   const isErrored = message.runStatus === "failed" || message.runStatus === "cancelled";
+  const visibleRunStatus = message.runStatus && message.runStatus !== "succeeded" ? message.runStatus : null;
 
   return (
     <article
       aria-label={`${isAssistant ? "Assistant message" : "User message"}, ${formatTimestamp(message.createdAt)}`}
       className={`jixia-chat-message jixia-chat-message--${message.role}`}
     >
-      <div className="jixia-chat-message__header">
-        <span>{isAssistant ? "Jixia AI" : "You"} · {formatTimestamp(message.createdAt)}</span>
-        {message.runStatus ? <Pill tone={message.runStatus === "failed" ? "danger" : "success"}>{message.runStatus}</Pill> : null}
-      </div>
       <div className="jixia-chat-message__content">
         {parts.map((part, index) => (
           <ChatMessagePart hiddenSources={hiddenSources} key={`${message.id}-${part.type}-${index}`} onCopyText={onCopyText} part={part} />
@@ -37,13 +34,32 @@ export function ChatMessage({ copyState, hiddenSources, message, onCopy, onCopyT
         {isStreaming ? <span aria-label="Assistant response is streaming" className="jixia-chat-message__cursor" /> : null}
         {isErrored && message.errorMessage ? <p className="jixia-chat-message__error">{message.errorMessage}</p> : null}
       </div>
-      <div aria-label="Message actions" className="jixia-chat-message__actions">
-        <Button onClick={onCopy} variant="link">{copyState === "copied" ? "Copied" : "Copy"}</Button>
-        {hasSources ? <Button onClick={onToggleSources} variant="link">{hiddenSources ? "Show sources" : "Hide sources"}</Button> : null}
-        {message.runStatus === "failed" ? <Button onClick={onRetry} variant="link">Retry this prompt</Button> : null}
-      </div>
+      <footer className="jixia-chat-message__subrow">
+        <div className="jixia-chat-message__header">
+          <span>{isAssistant ? "Jixia AI" : "You"}</span>
+          <time dateTime={message.createdAt}>{formatTimestamp(message.createdAt)}</time>
+          {visibleRunStatus ? <Pill tone={runStatusTone(visibleRunStatus)}>{visibleRunStatus}</Pill> : null}
+        </div>
+        <div aria-label="Message actions" className="jixia-chat-message__actions">
+          <Button onClick={onCopy} variant="link">{copyState === "copied" ? "Copied" : "Copy"}</Button>
+          {hasSources ? <Button onClick={onToggleSources} variant="link">{hiddenSources ? "Show sources" : "Hide sources"}</Button> : null}
+          {message.runStatus === "failed" ? <Button onClick={onRetry} variant="link">Retry this prompt</Button> : null}
+        </div>
+      </footer>
     </article>
   );
+}
+
+function runStatusTone(status: NonNullable<ChatMessageModel["runStatus"]>): "accent" | "warning" | "danger" {
+  if (status === "failed") {
+    return "danger";
+  }
+
+  if (status === "cancelled") {
+    return "warning";
+  }
+
+  return "accent";
 }
 
 function ChatMessagePart({
@@ -74,13 +90,18 @@ function SourceCards({ sources }: { readonly sources: readonly ChatSource[] }) {
 
   return (
     <div aria-label="Sources used" className="jixia-chat-source-list">
-      {sources.map((source) => (
-        <article className="jixia-chat-source-card" key={source.id}>
-          <span>{source.label}</span>
-          <strong>{source.title}</strong>
-          <small>{source.revisionNumber === null ? "Snapshot" : `Revision ${source.revisionNumber}`} · {source.selectedBlockCount} blocks</small>
-        </article>
-      ))}
+      <details>
+        <summary>{sources.length === 1 ? "1 source" : `${sources.length} sources`}</summary>
+        <div className="jixia-chat-source-list__items">
+          {sources.map((source) => (
+            <article className="jixia-chat-source-card" key={source.id}>
+              <span>{source.label}</span>
+              <strong>{source.title}</strong>
+              <small>{source.revisionNumber === null ? "Snapshot" : `Revision ${source.revisionNumber}`} · {source.selectedBlockCount} blocks</small>
+            </article>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }

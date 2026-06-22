@@ -1,6 +1,6 @@
 import type { KeyboardEvent } from "react";
 
-import { Button, Pill } from "../../layout/workbench";
+import { Button } from "../../layout/workbench";
 import type { ChatProviderConfig } from "./chatTypes";
 
 type ChatComposerProps = {
@@ -57,17 +57,7 @@ export function ChatComposer({
         }
       }}
     >
-      <div className="jixia-chat-composer__input-shell">
-        <div className="jixia-chat-composer__modelbar">
-          <label>
-            <span>Model</span>
-            <select aria-label="AI provider model" onChange={(event) => onSelectProvider(event.currentTarget.value)} value={selectedProviderConfigId}>
-              <option value="">Select provider</option>
-              {configs.map((config) => <option key={config.id} value={config.id}>{providerLabel(config)}</option>)}
-            </select>
-          </label>
-          <span>{selectedConfig ? `${selectedConfig.provider} · ${selectedConfig.hasKey ? "key saved" : "missing key"}` : "Configure a provider to begin"}</span>
-        </div>
+      <div className="jixia-chat-composer__surface">
         <textarea
           aria-label="Message Jixia AI"
           disabled={isSending}
@@ -78,27 +68,34 @@ export function ChatComposer({
           style={{ height: textareaHeight(text) }}
           value={text}
         />
-        <div className="jixia-chat-composer__footer">
-          <details className="jixia-chat-composer__help">
-            <summary>Help</summary>
-            <div aria-label="Command hints" className="jixia-chat-composer__hints">
-              {commandHints.map((hint) => <span key={hint}>{hint}</span>)}
-              <span>Enter sends</span>
-              <span>Shift+Enter newline</span>
-            </div>
-          </details>
-          {canStop ? (
-            <Button onClick={onStop} title={`Stop server run ${activeRunId}`} type="button" variant="danger">Stop</Button>
-          ) : (
-            <Button disabled={Boolean(disabledReason)} type="submit" variant="primary">Send</Button>
-          )}
-        </div>
-      </div>
-      <div className="jixia-chat-composer__meta">
-        <div className="jixia-chat-composer__chips">
-          <Pill tone="accent">Standalone thread</Pill>
-          <Pill>No automatic document context</Pill>
-          {disabledReason ? <Pill tone="warning">{disabledReason}</Pill> : null}
+        <div className="jixia-chat-composer__toolbar">
+          <div className="jixia-chat-composer__modelbar">
+            <label>
+              <span>Model</span>
+              <select aria-label="AI provider model" onChange={(event) => onSelectProvider(event.currentTarget.value)} value={selectedProviderConfigId}>
+                <option value="">Select provider</option>
+                {configs.map((config) => <option key={config.id} value={config.id}>{providerLabel(config)}</option>)}
+              </select>
+            </label>
+            <span>{selectedConfig ? `${selectedConfig.provider} · ${selectedConfig.hasKey ? "key saved" : "missing key"}` : "Configure a provider to begin"}</span>
+          </div>
+          <div className="jixia-chat-composer__actions">
+            <details className="jixia-chat-composer__help">
+              <summary>Help</summary>
+              <div aria-label="Command hints" className="jixia-chat-composer__hints">
+                {commandHints.map((hint) => <span key={hint}>{hint}</span>)}
+                <span>Enter sends</span>
+                <span>Shift+Enter newline</span>
+              </div>
+            </details>
+            <span className="jixia-chat-composer__scope">No automatic document context</span>
+            {disabledReason ? <span className="jixia-chat-composer__disabled-reason">{disabledReason}</span> : null}
+            {canStop ? (
+              <Button onClick={onStop} title={`Stop server run ${activeRunId}`} type="button" variant="danger">Stop</Button>
+            ) : (
+              <Button disabled={Boolean(disabledReason)} type="submit" variant="primary">Send</Button>
+            )}
+          </div>
         </div>
       </div>
     </form>

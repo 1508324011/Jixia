@@ -7,14 +7,17 @@ type ToolRunCardProps = {
 };
 
 export function ToolRunCard({ errorMessage, status, title }: ToolRunCardProps) {
+  const statusLabel = runStatusLabel(status);
+
   return (
     <div
-      aria-label={`${title}: ${runStatusLabel(status)}`}
+      aria-label={`${title}: ${statusLabel}${errorMessage ? ` — ${errorMessage}` : ""}`}
       className={`jixia-chat-run-card jixia-chat-run-card--${status}`}
       role={status === "failed" ? "alert" : "status"}
     >
+      <span className="jixia-chat-run-card__dot" aria-hidden="true" />
       <strong>{title}</strong>
-      <span>{runStatusLabel(status)}</span>
+      <span>{statusLabel}</span>
       {errorMessage ? <small>{errorMessage}</small> : null}
     </div>
   );
