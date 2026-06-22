@@ -15,4 +15,5 @@ Read these files before frontend work:
 - Confirm document editor behavior follows draft/revision separation.
 - Confirm document editor runtimes keep DOM editing state behind the shared editor boundary.
 - Confirm AI UI cannot write into documents in MVP.
+- Confirm document copilots show visible, bounded current-document context and stay advisory/no-writeback.
 - Confirm UI direction stays IDE-like and ResearchClaw-adjacent, not generic SaaS dashboard/card UI.

@@ -75,6 +75,67 @@ for await (const event of readChatStream(response)) {
 }
 ```
 
+## Scenario: Document-Scoped AI Copilot Context
+
+### 1. Scope / Trigger
+- Trigger: A change adds or modifies document-grounded AI UI, context capture, selected-block context, source chips/cards, or document-copilot stream wiring in `apps/web/src/features/documents/**`, `apps/web/src/features/ai/**`, `packages/shared/src/ai.ts`, or `apps/api/src/modules/ai/**`.
+- Scope: Notebook and Project document editor pages, document inspector copilots, `AIConversationContextSnapshot` construction, existing AI conversation/run routes, provider config views, chat stream parsing, and tests proving no document writeback.
+- Boundary: This contract does not approve auto-apply, inline rewrite, silent document mutation, client-owned provider execution, vector retrieval, cross-document search, comments/tasks/citation provenance, or a second AI backend.
+
+### 2. Signatures
+- Context snapshot: document copilots use `AIConversationContextSnapshot` with `currentDocumentId`, `capturedAt`, and explicit `current_document` item metadata.
+- Required current-document metadata: document id, title, document type, project id when available, base/current revision, read-only/active status, selected block ids/count when implemented, and bounded text content.
+- Provider setup: browser code loads `/ai/configs` and may use `AIProviderConfigView.hasKey` plus safe provider/model metadata only.
+- Stream routes: message send uses `POST /ai/conversations/:conversationId/messages/stream`; cancellation uses `POST /ai/runs/:runId/cancel` only after a server run id is received.
+
+### 3. Contracts
+- The document page owns the editor state and context capture boundary. The copilot may call the shared editor export boundary for a send-time snapshot, but AI output must not call editor mutation APIs or update draft/revision payloads.
+- The context shown in the UI before send must match the shape and constraints of the context submitted to the AI run closely enough for reviewers to understand what will be sent.
+- Context text must be bounded and readable. Do not send unbounded raw editor JSON, hidden attachment internals, browser storage, provider settings, or whole application state.
+- Selected-block context must be explicit. If selected blocks are unavailable, the UI and context content must say current-document context only and send empty selected-block ids.
+- Provider keys, encrypted keys, authorization headers, signed attachment URLs, upload/download URLs, object keys, buckets, local object-storage paths, cookies, and storage/provider secrets must not leave the server or appear in selected context, source cards, browser storage, persisted document snapshots, test fixtures, or logs.
+- Notebook and Project documents must share the same copilot implementation unless a later product decision creates a documented divergence.
+- Standalone AI chat must continue to start without current-document context and must not inherit document-copilot state, source chips, or drafts by accident.
+
+### 4. Validation & Error Matrix
+- Opening a document shows a placeholder directing users to standalone chat instead of a real document copilot -> block PR for document-copilot tasks.
+- Sending a prompt calls document draft or revision endpoints, changes `EditorSnapshot`, sets dirty state, or injects assistant text into the editor -> block PR.
+- Context contains raw block JSON beyond the bounded readable representation, attachment IDs without need, signed/storage/provider secrets, or provider key material -> block PR.
+- Missing provider setup leaves the composer enabled without an actionable setup state -> block PR.
+- Stop/cancel appears before a real server run id exists or without using the cancel endpoint -> block PR.
+- A notebook document and project document render divergent copilot behavior from separate implementations -> block PR unless specs and PRD explicitly require it.
+
+### 5. Good/Base/Bad Cases
+- Good: The inspector shows a context card with title/id/type/revisions/status/size, sends one bounded `current_document` context item through the existing stream route, and renders a copyable advisory answer without touching the editor.
+- Good: A no-provider state explains that saved server-owned keys are required and routes users to AI settings without exposing raw or encrypted keys.
+- Base: Selected-block context is not implemented yet; the UI displays that limitation and sends current-document context with an empty selected-block list.
+- Base: The component reuses chat stream parsing/message rendering where it fits the inspector, but does not mount the full standalone workspace with thread-sidebar assumptions.
+- Bad: A hidden prompt serializes the full editor snapshot and silently replaces document text after the assistant responds.
+- Bad: The browser stores prompt drafts, responses, selected context, provider ids, or source payloads in localStorage/sessionStorage.
+
+### 6. Tests Required
+- Context tests must cover deterministic text extraction, bounded/truncated content, visible summary fields, selected-block-unavailable copy, and redaction of signed/storage/provider secrets.
+- Component tests must cover provider-missing state, stream happy path through mocked existing AI endpoints, visible source/context chips, copy/retry behavior when present, and no `/documents/:id/draft` or `/documents/:id/revisions` calls during AI send/stream.
+- Page/routing tests must cover Notebook and Project documents using the same copilot boundary and standalone AI chat remaining context-free.
+- Browser/manual review must record browser/device, document type, provider state, sent context summary, stream result, and explicit no-writeback/save/refresh/reopen verification before completion.
+- Final verification for document-copilot changes must include lint/typecheck plus focused web tests for document context, document editor no-writeback, app routing, and standalone chat regression when feasible.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+editor.replaceDocument(await aiRewrite(editor.exportSnapshot()));
+localStorage.setItem("providerApiKey", key);
+```
+
+#### Correct
+```typescript
+const context = createDocumentCopilotContext({ document, snapshot: editor.exportSnapshot(), baseRevision });
+await apiStream(`/ai/conversations/${conversationId}/messages/stream`, {
+  method: "POST",
+  json: { providerConfigId, message: { role: "user", content }, selectedContextSnapshot: context.snapshot }
+});
+```
+
 ## Scenario: Local Attachment Object Storage Contract
 
 ### 1. Scope / Trigger
