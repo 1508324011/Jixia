@@ -1,0 +1,84 @@
+{
+  "title": "Task 21a Document Copilot Baseline",
+  "slug": "task-21a-document-copilot-baseline",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-06-21T15:21:46+00:00",
+  "updatedAt": "2026-06-22T02:20:36+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "manualReviewRequired": true,
+  "preparation": {
+    "preparedAt": "2026-06-21T15:26:39+00:00",
+    "fromTasks": [
+      ".trellis/tasks/06-21-task-20m-document-visual-baseline",
+      ".trellis/tasks/06-18-task-18-8-mature-streaming-ai-chat-provider-settings",
+      ".trellis/tasks/06-18-task-18-7-standalone-ai-chat-dialog-foundation",
+      ".trellis/tasks/06-15-mvp-private-ai-services"
+    ],
+    "bindingDecisions": [
+      "Document copilot is a document-scoped side inspector, not a standalone chat pasted beside the editor.",
+      "AI context must be explicit and server-authorized: current document id, title, revision, selected blocks if available, and a bounded text snapshot.",
+      "Provider keys remain server-owned; the browser only sees provider config views and conversation/run DTOs.",
+      "Task21a must not auto-apply, rewrite, insert, or mutate the document. Answers are advisory/copyable only.",
+      "Reuse the existing AI conversation/run streaming stack instead of building a second provider pipeline.",
+      "Respect Task20m: document body stays clean; copilot UI lives in the inspector and uses mature side-panel visual rhythm."
+    ],
+    "rootProblem": "After Task20m the document editor is usable, but the AI area is still a placeholder that sends users to standalone chat and has no trustworthy document-scoped context contract.",
+    "firstImplementationPriority": "Replace DeferredDocumentAI with a real document copilot baseline that captures explicit current-document context, streams via the existing AI conversation API, and never writes back automatically."
+  },
+  "failureContract": {
+    "noSuccessWithout": [
+      "Notebook and Project document editors show the same document-scoped copilot panel in the inspector",
+      "Copilot panel displays the exact current document context being sent: document title, id/type, revision/base revision, and bounded content summary or selected-block summary",
+      "Sending a message uses existing server-owned AI provider configuration and existing conversation streaming endpoints",
+      "The browser never receives provider API keys, encrypted keys, raw provider payload secrets, signed attachment URLs, object keys, or storage secrets",
+      "AI responses are advisory only; there is no auto apply, auto insert, auto rewrite, or silent document mutation in Task21a",
+      "Draft autosave/formal save/revision conflict behavior from the document editor remains unchanged",
+      "Provider-missing, stream error, abort/cancel, empty document, and read-only document states are visible and tested",
+      "Standalone AI chat remains usable or is deliberately not touched",
+      "Human manual review verifies document-context display, send/stream behavior, no writeback, and Notebook/Project parity"
+    ],
+    "forbiddenCompletionClaims": [
+      "A chat box appears, therefore document copilot is done",
+      "The model probably knows the document without showing context to the user",
+      "Auto-inserting AI output is acceptable in the first copilot baseline",
+      "Leaking provider keys or signed attachment URLs to the browser is acceptable for convenience",
+      "Only Notebook was checked, therefore Project parity is assumed"
+    ]
+  },
+  "completedAt": "2026-06-22T02:20:36+00:00",
+  "manualReview": {
+    "result": "passed-with-follow-up",
+    "reviewedAt": "2026-06-22T02:20:36+00:00",
+    "reviewer": "user manual review",
+    "environment": {
+      "webOrigin": "http://10.128.253.195:5173",
+      "apiOrigin": "http://10.128.253.195:4174",
+      "browserDevice": "remote browser via LAN review stack",
+      "providerConfig": "user-configured server-owned provider"
+    },
+    "summary": "User confirmed provider configuration and successful AI conversation in the document copilot. The remaining concern is visual quality: current side-panel and workspace AI chat feel like control panels rather than mature chat surfaces, so that work is split into Task21b.",
+    "passedChecks": [
+      "Provider configuration succeeded with server-owned keys.",
+      "Document copilot could send a prompt and receive an AI response.",
+      "Task21a automated and finish checks covered provider-key safety, document no-writeback, and focused regression coverage.",
+      "Manual review identified visual/chat-surface quality as the next product problem rather than a Task21a functional blocker."
+    ],
+    "remainingFollowUp": "Task21b must refactor AI chat side panel and full workspace chat into mature conversation surfaces, preserving Task21a safety and no-writeback contracts."
+  },
+  "nextTask": ".trellis/tasks/06-22-task-21b-ai-chat-visual-refactor"
+}
