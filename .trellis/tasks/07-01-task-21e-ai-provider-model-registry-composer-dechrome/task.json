@@ -1,0 +1,81 @@
+{
+  "title": "Task 21e AI Provider Model Registry + Composer Dechrome",
+  "slug": "task-21e-ai-provider-model-registry-composer-dechrome",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-07-01T05:14:00+00:00",
+  "updatedAt": "2026-07-01T08:18:03+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "manualReviewRequired": true,
+  "preparation": {
+    "preparedAt": "2026-07-01T05:24:00+00:00",
+    "fromTasks": [
+      ".trellis/tasks/06-22-task-21d-ai-chat-context-control-visual-dechrome-pass",
+      ".trellis/tasks/06-22-task-21c-ai-chat-visual-maturity-pass",
+      ".trellis/tasks/06-18-task-18-8-mature-streaming-ai-chat-provider-settings",
+      ".trellis/tasks/06-18-task-18-7-standalone-ai-chat-dialog-foundation"
+    ],
+    "humanReviewSignal": "User says the AI dialog is still too ugly and provider configuration allowing only one model is unreasonable; one provider account should support multiple selectable models.",
+    "architectureFinding": "Jixia currently conflates provider credential/base URL/account configuration with model selection. AIProviderConfig has a single scalar model field across shared DTOs, API validation/service/repository, Prisma, settings UI, and chat composer selection.",
+    "visualMaturityScore": "After Task21d, context semantics are correct but model/provider UX remains about 4/10 in data model/settings and about 6/10 in composer visual maturity because the composer selector is a providerConfig selector mislabeled as model.",
+    "externalDesignReferences": [
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/pages/settings/page.tsx",
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/components/model-combobox.tsx",
+      "/home/zhurui/github_project/ResearchClaw/src/main/services/models.service.ts",
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/components/chat/UnifiedChatModal.tsx",
+      "LobeChat provider/model switch and provider model settings patterns",
+      "Open WebUI model selector and admin model visibility patterns",
+      "Dify provider card nested model list and selector patterns",
+      "AnythingLLM provider-organized discovered model dropdown patterns",
+      "LibreChat endpoint/model/key separation patterns",
+      "Chatbot UI provider-grouped lightweight model selector patterns"
+    ],
+    "bindingDecisions": [
+      "Split provider account/credential configuration from model profile selection.",
+      "One provider credential/base URL may own multiple model profiles without duplicating provider keys.",
+      "Existing AIProviderConfig.model data must migrate or backfill into a default model profile for backward compatibility.",
+      "Composer must select a model profile or equivalent server-resolved provider+model reference, not a provider config pretending to be a model.",
+      "Provider keys remain server-owned; browser must never receive raw/encrypted keys or call upstream providers directly.",
+      "Usage aggregation by provider+model remains valid after model-profile resolution.",
+      "Continue dechroming default chat surfaces: model choice should be a compact first-class chip/popover, not a visible provider status wall.",
+      "Use existing React/Mantine/CSS/Prisma/shared DTO patterns; do not add heavy UI frameworks or copy mature OSS stacks wholesale."
+    ],
+    "firstImplementationPriority": "Introduce the provider/model registry contract and migration path first, then update settings and composer UX around model-profile selection while preserving existing AI run semantics."
+  },
+  "failureContract": {
+    "noSuccessWithout": [
+      "A provider/account can have multiple selectable model profiles without duplicating its provider key.",
+      "Existing single-model provider configs are migrated/backfilled into a default model profile.",
+      "Settings UI separates provider credential/base URL status from nested model profile management.",
+      "Composer selects a model profile or server-resolved provider+model reference and labels it honestly as a model selection.",
+      "Chat create/stream/run paths resolve provider credentials server-side and execute the selected model id.",
+      "Browser never receives raw/encrypted provider keys and never calls upstream AI providers directly.",
+      "Tests prove switching between two models under one provider changes the model sent to the provider path.",
+      "Document copilot context toggle/no-writeback guarantees from Task21d remain intact.",
+      "Manual/browser review records provider settings, composer picker, standalone chat, document copilot, and provider-key secrecy observations."
+    ],
+    "forbiddenCompletionClaims": [
+      "Renaming providerConfigId to model is enough without splitting the data model.",
+      "Duplicating provider configs per model is acceptable mature UX.",
+      "The browser may store or inspect provider keys to support model switching.",
+      "A settings form with one free-text model field still satisfies multi-model provider support.",
+      "Model discovery/plugin marketplace is required for the first implementation.",
+      "Visual polish may add Tailwind, Framer Motion, Lucide, or upstream UI stacks just for aesthetics.",
+      "Task21e may regress document context off semantics or AI no-writeback behavior."
+    ]
+  }
+}
