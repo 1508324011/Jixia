@@ -14,7 +14,7 @@ import { apiFetch, apiStream } from "../../../lib/api";
 import { Button, Notice, SurfaceHeader, WorkbenchSurface } from "../../layout/workbench";
 import { ChatShell } from "./ChatShell";
 import { readChatStream } from "./chatStream";
-import type { ChatMessage, ChatProviderConfig, ChatRunStatus, ChatThread } from "./chatTypes";
+import type { ChatMessage, ChatModelOption, ChatProviderConfig, ChatRunStatus, ChatThread } from "./chatTypes";
 
 type AIChatDialogProps = {
   readonly onOpenSettings?: () => void;
@@ -28,7 +28,7 @@ export function AIChatDialog({ onOpenSettings }: AIChatDialogProps) {
   const [providers, setProviders] = useState<readonly ChatProviderConfig[]>([]);
   const [threads, setThreads] = useState<readonly ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [selectedProviderConfigId, setSelectedProviderConfigId] = useState("");
+  const [selectedModelProfileId, setSelectedModelProfileId] = useState("");
   const [messageText, setMessageText] = useState("");
   const [loadState, setLoadState] = useState<ChatLoadState>("idle");
   const [sendState, setSendState] = useState<SendState>("idle");
@@ -49,7 +49,7 @@ export function AIChatDialog({ onOpenSettings }: AIChatDialogProps) {
     () => activeThreadId === null ? null : threads.find((thread) => thread.id === activeThreadId) ?? null,
     [activeThreadId, threads]
   );
-  const disabledReason = sendDisabledReason(messageText, selectedProviderConfigId, providers, sendState);
+  const disabledReason = sendDisabledReason(messageText, selectedModelProfileId, providers, sendState);
 
   async function loadChatRuntime(): Promise<void> {
     setLoadState("loading");
@@ -61,10 +61,10 @@ export function AIChatDialog({ onOpenSettings }: AIChatDialogProps) {
         apiFetch<ListAIConversationsResponse>("/ai/conversations")
       ]);
       const standaloneThreads = conversationResponse.conversations.map(toChatThread);
-      const nextProviderId = providerSelection(selectedProviderConfigId, configResponse.configs);
+      const nextModelProfileId = modelSelection(selectedModelProfileId, configResponse.configs);
 
       setProviders(configResponse.configs);
-      setSelectedProviderConfigId(nextProviderId);
+      setSelectedModelProfileId(nextModelProfileId);
       setThreads(standaloneThreads);
       setActiveThreadId((current) => activeThreadSelection(current, standaloneThreads));
       setLoadState("ready");
@@ -77,7 +77,7 @@ export function AIChatDialog({ onOpenSettings }: AIChatDialogProps) {
   async function sendMessage(overrideText?: string): Promise<void> {
     const content = (overrideText ?? messageText).trim();
 
-    if (!content || !selectedProviderConfigId || sendState === "queued" || sendState === "running") {
+    if (!content || !selectedModelProfileId || sendState === "queued" || sendState === "running") {
       return;
     }
 
@@ -102,7 +102,7 @@ export function AIChatDialog({ onOpenSettings }: AIChatDialogProps) {
         method: "POST",
         signal: streamController.signal,
         json: {
-          providerConfigId: selectedProviderConfigId,
+          modelProfileId: selectedModelProfileId,
           message: { role: "user", content },
           selectedContextSnapshot: standaloneContextSnapshot()
         }
@@ -471,13 +471,13 @@ export function AIChatDialog({ onOpenSettings }: AIChatDialogProps) {
         onNewThread={handleNewThread}
         onRefresh={() => void loadChatRuntime()}
         onRetryMessage={handleRetryMessage}
-        onSelectProvider={setSelectedProviderConfigId}
+        onSelectModelProfile={setSelectedModelProfileId}
         onSelectThread={setActiveThreadId}
         onSend={() => void sendMessage()}
         onStopRun={() => void handleStopRun()}
         onToggleSources={handleToggleSources}
         providers={providers}
-        selectedProviderConfigId={selectedProviderConfigId}
+        selectedModelProfileId={selectedModelProfileId}
         sendStatus={sendState}
         statusMessage={loadState === "error" ? null : statusMessage}
         threads={threads}
@@ -528,12 +528,21 @@ function titleFromPrompt(content: string): string {
   return firstLine.length > 72 ? `${firstLine.slice(0, 69)}...` : firstLine;
 }
 
-function providerSelection(currentProviderId: string, configs: readonly ChatProviderConfig[]): string {
-  if (configs.some((config) => config.id === currentProviderId)) {
-    return currentProviderId;
+function modelSelection(currentModelProfileId: string, configs: readonly ChatProviderConfig[]): string {
+  const options = modelProfileOptions(configs).filter((option) => option.provider.hasKey && option.profile.enabled);
+
+  if (options.some((option) => option.profile.id === currentModelProfileId)) {
+    return currentModelProfileId;
   }
 
-  return configs.find((config) => config.isDefault)?.id ?? configs[0]?.id ?? "";
+  return options.find((option) => option.provider.isDefault && option.profile.isDefault)?.profile.id
+    ?? options.find((option) => option.profile.isDefault)?.profile.id
+    ?? options[0]?.profile.id
+    ?? "";
+}
+
+function modelProfileOptions(configs: readonly ChatProviderConfig[]): readonly ChatModelOption[] {
+  return configs.flatMap((provider) => provider.modelProfiles.map((profile) => ({ provider, profile })));
 }
 
 function activeThreadSelection(currentThreadId: string | null, threads: readonly ChatThread[]): string | null {
@@ -643,7 +652,7 @@ function applyUsageToRun(
 
 function sendDisabledReason(
   text: string,
-  providerConfigId: string,
+  modelProfileId: string,
   providers: readonly ChatProviderConfig[],
   sendState: SendState
 ): string | null {
@@ -651,12 +660,18 @@ function sendDisabledReason(
     return "Server run in progress";
   }
 
+  const options = modelProfileOptions(providers).filter((option) => option.provider.hasKey && option.profile.enabled);
+
   if (providers.length === 0) {
     return "Configure a provider first";
   }
 
-  if (!providerConfigId) {
-    return "Select a provider";
+  if (options.length === 0) {
+    return "Add an enabled model with a saved key";
+  }
+
+  if (!modelProfileId) {
+    return "Select a model";
   }
 
   if (!text.trim()) {

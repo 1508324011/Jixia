@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from "react";
 
 import { Button } from "../../layout/workbench";
-import type { ChatProviderConfig } from "./chatTypes";
+import type { ChatModelOption, ChatProviderConfig } from "./chatTypes";
 
 type ChatComposerProps = {
   readonly activeRunId: string | null;
@@ -9,10 +9,10 @@ type ChatComposerProps = {
   readonly disabledReason: string | null;
   readonly isSending: boolean;
   readonly onChange: (text: string) => void;
-  readonly onSelectProvider: (providerConfigId: string) => void;
+  readonly onSelectModelProfile: (modelProfileId: string) => void;
   readonly onSubmit: () => void;
   readonly onStop: () => void;
-  readonly selectedProviderConfigId: string;
+  readonly selectedModelProfileId: string;
   readonly text: string;
 };
 
@@ -24,13 +24,14 @@ export function ChatComposer({
   disabledReason,
   isSending,
   onChange,
-  onSelectProvider,
+  onSelectModelProfile,
   onSubmit,
   onStop,
-  selectedProviderConfigId,
+  selectedModelProfileId,
   text
 }: ChatComposerProps) {
-  const selectedConfig = configs.find((config) => config.id === selectedProviderConfigId) ?? null;
+  const modelOptions = modelProfileOptions(configs);
+  const selectedModel = modelOptions.find((option) => option.profile.id === selectedModelProfileId) ?? null;
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
@@ -72,9 +73,17 @@ export function ChatComposer({
           <div className="jixia-chat-composer__chips">
             <label>
               <span>Model</span>
-              <select aria-label="AI provider model" onChange={(event) => onSelectProvider(event.currentTarget.value)} value={selectedProviderConfigId}>
-                <option value="">Select provider</option>
-                {configs.map((config) => <option key={config.id} value={config.id}>{providerLabel(config)}</option>)}
+              <select aria-label="AI model profile" onChange={(event) => onSelectModelProfile(event.currentTarget.value)} value={selectedModelProfileId}>
+                <option value="">Select model</option>
+                {configs.map((config) => (
+                  <optgroup key={config.id} label={providerGroupLabel(config)}>
+                    {config.modelProfiles.map((profile) => (
+                      <option disabled={!profile.enabled || !config.hasKey} key={profile.id} value={profile.id}>
+                        {modelOptionLabel(config, profile)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
             </label>
             <details className="jixia-chat-composer__help">
@@ -89,7 +98,7 @@ export function ChatComposer({
               <summary>Context</summary>
               <div>
                 <span>No automatic document context</span>
-                <span>{selectedConfig ? `${selectedConfig.provider} · ${selectedConfig.hasKey ? "key saved" : "missing key"}` : "Configure a provider to begin"}</span>
+                <span>{selectedModel ? `${selectedModel.provider.provider} · ${selectedModel.provider.hasKey ? "key saved" : "missing key"}` : "Configure a provider and model to begin"}</span>
               </div>
             </details>
           </div>
@@ -112,6 +121,20 @@ function textareaHeight(text: string): string {
   return `${Math.max(48, lineCount * 24 + 24)}px`;
 }
 
-function providerLabel(config: ChatProviderConfig): string {
-  return `${config.name} · ${config.model}${config.isDefault ? " · default" : ""}`;
+function modelProfileOptions(configs: readonly ChatProviderConfig[]): readonly ChatModelOption[] {
+  return configs.flatMap((provider) => provider.modelProfiles.map((profile) => ({ provider, profile })));
+}
+
+function providerGroupLabel(config: ChatProviderConfig): string {
+  return `${config.name} · ${config.provider}${config.hasKey ? "" : " · missing key"}`;
+}
+
+function modelOptionLabel(
+  config: ChatProviderConfig,
+  profile: ChatProviderConfig["modelProfiles"][number]
+): string {
+  const markers = [profile.isDefault ? "default" : null, profile.enabled ? null : "disabled", config.hasKey ? null : "missing key"]
+    .filter(Boolean)
+    .join(" · ");
+  return `${profile.displayName} · ${profile.model}${markers ? ` · ${markers}` : ""}`;
 }

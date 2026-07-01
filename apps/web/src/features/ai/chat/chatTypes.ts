@@ -6,6 +6,7 @@ import type {
   AIConversationRunDTO,
   AIConversationRunStatus,
   AIConversationSourceDTO,
+  AIModelProfileView,
   AIProviderConfigView
 } from "@jixia/shared";
 
@@ -27,6 +28,12 @@ export type ChatRun = AIConversationRunDTO;
 export type ChatRunStatus = AIConversationRunStatus;
 export type ChatSource = AIConversationSourceDTO;
 export type ChatProviderConfig = AIProviderConfigView;
+export type ChatModelProfile = AIModelProfileView;
+
+export type ChatModelOption = {
+  readonly provider: ChatProviderConfig;
+  readonly profile: ChatModelProfile;
+};
 
 export type ComposerState = {
   readonly text: string;

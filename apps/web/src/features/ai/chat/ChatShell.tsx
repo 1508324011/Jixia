@@ -1,7 +1,7 @@
 import { ChatComposer } from "./ChatComposer";
 import { ThreadSidebar } from "./ThreadSidebar";
 import { ThreadViewport } from "./ThreadViewport";
-import type { ChatMessage, ChatProviderConfig, ChatRunStatus, ChatThread } from "./chatTypes";
+import type { ChatMessage, ChatModelOption, ChatProviderConfig, ChatRunStatus, ChatThread } from "./chatTypes";
 
 type ChatShellProps = {
   readonly activeThread: ChatThread | null;
@@ -19,13 +19,13 @@ type ChatShellProps = {
   readonly onNewThread: () => void;
   readonly onRefresh: () => void;
   readonly onRetryMessage: (message: ChatMessage) => void;
-  readonly onSelectProvider: (providerConfigId: string) => void;
+  readonly onSelectModelProfile: (modelProfileId: string) => void;
   readonly onSelectThread: (threadId: string) => void;
   readonly onSend: () => void;
   readonly onStopRun: () => void;
   readonly onToggleSources: (messageId: string) => void;
   readonly providers: readonly ChatProviderConfig[];
-  readonly selectedProviderConfigId: string;
+  readonly selectedModelProfileId: string;
   readonly sendStatus: ChatRunStatus | "idle";
   readonly statusMessage: string | null;
   readonly threads: readonly ChatThread[];
@@ -47,18 +47,18 @@ export function ChatShell({
   onNewThread,
   onRefresh,
   onRetryMessage,
-  onSelectProvider,
+  onSelectModelProfile,
   onSelectThread,
   onSend,
   onStopRun,
   onToggleSources,
   providers,
-  selectedProviderConfigId,
+  selectedModelProfileId,
   sendStatus,
   statusMessage,
   threads
 }: ChatShellProps) {
-  const selectedProvider = providers.find((provider) => provider.id === selectedProviderConfigId) ?? null;
+  const selectedModel = modelProfileOptions(providers).find((option) => option.profile.id === selectedModelProfileId) ?? null;
   return (
     <div className="jixia-chat-shell">
       <ThreadSidebar
@@ -81,7 +81,7 @@ export function ChatShell({
           onRetryMessage={onRetryMessage}
           onToggleSources={onToggleSources}
           sendStatus={sendStatus}
-          selectedProvider={selectedProvider}
+          selectedModel={selectedModel}
           thread={activeThread}
         />
         <ChatComposer
@@ -89,14 +89,18 @@ export function ChatShell({
           disabledReason={disabledReason}
           isSending={isSending}
           onChange={onChangeMessage}
-          onSelectProvider={onSelectProvider}
+          onSelectModelProfile={onSelectModelProfile}
           onSubmit={onSend}
           onStop={onStopRun}
-          selectedProviderConfigId={selectedProviderConfigId}
+          selectedModelProfileId={selectedModelProfileId}
           activeRunId={activeRunId}
           text={messageText}
         />
       </div>
     </div>
   );
+}
+
+function modelProfileOptions(providers: readonly ChatProviderConfig[]): readonly ChatModelOption[] {
+  return providers.flatMap((provider) => provider.modelProfiles.map((profile) => ({ provider, profile })));
 }

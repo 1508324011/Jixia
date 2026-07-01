@@ -1,6 +1,6 @@
 import { Notice, Pill } from "../../layout/workbench";
 import { MessageStream } from "./MessageStream";
-import type { ChatMessage, ChatProviderConfig, ChatRunStatus, ChatThread } from "./chatTypes";
+import type { ChatMessage, ChatModelOption, ChatRunStatus, ChatThread } from "./chatTypes";
 
 type ThreadViewportProps = {
   readonly activeRunStatus: ChatRunStatus | null;
@@ -13,7 +13,7 @@ type ThreadViewportProps = {
   readonly onRetryMessage: (message: ChatMessage) => void;
   readonly onToggleSources: (messageId: string) => void;
   readonly sendStatus: ChatRunStatus | "idle";
-  readonly selectedProvider: ChatProviderConfig | null;
+  readonly selectedModel: ChatModelOption | null;
   readonly thread: ChatThread | null;
 };
 
@@ -28,7 +28,7 @@ export function ThreadViewport({
   onRetryMessage,
   onToggleSources,
   sendStatus,
-  selectedProvider,
+  selectedModel,
   thread
 }: ThreadViewportProps) {
   const contextCount = thread?.contextAttachments.length ?? 0;
@@ -45,7 +45,7 @@ export function ThreadViewport({
             <span>{sendStatus === "idle" ? "Details" : runlineStatus(sendStatus)}</span>
           </summary>
           <div className="jixia-chat-thread__pills">
-            <Pill>{selectedProvider ? compactProviderLabel(selectedProvider) : "No model selected"}</Pill>
+            <Pill>{selectedModel ? compactModelLabel(selectedModel) : "No model selected"}</Pill>
             <Pill tone="accent">{hasContext ? `${contextCount} explicit context` : "No document attached"}</Pill>
             {activeRunStatus ? <Pill tone={activeRunStatus === "failed" ? "danger" : activeRunStatus === "cancelled" ? "warning" : "success"}>{activeRunStatus}</Pill> : null}
             <span>Server-owned provider execution · no browser keys</span>
@@ -70,8 +70,8 @@ export function ThreadViewport({
   );
 }
 
-function compactProviderLabel(provider: ChatProviderConfig): string {
-  return `${provider.name} · ${provider.model}`;
+function compactModelLabel(option: ChatModelOption): string {
+  return `${option.provider.name} · ${option.profile.displayName}`;
 }
 
 function runlineStatus(status: ChatRunStatus | "idle"): string {

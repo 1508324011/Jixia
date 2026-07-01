@@ -18,11 +18,22 @@ const providerConfig: AIProviderConfigView = {
   name: "Lab OpenAI",
   provider: "openai",
   baseURL: "https://api.openai.com/v1",
-  model: "gpt-4o-mini",
-  temperature: 0.2,
-  maxTokens: 4096,
   hasKey: true,
   isDefault: true,
+  modelProfiles: [
+    {
+      id: "model-profile-1",
+      providerConfigId: "config-1",
+      model: "gpt-4o-mini",
+      displayName: "GPT-4o mini",
+      temperature: 0.2,
+      maxTokens: 4096,
+      enabled: true,
+      isDefault: true,
+      createdAt: "2026-06-16T10:00:00.000Z",
+      updatedAt: "2026-06-16T10:00:00.000Z"
+    }
+  ],
   createdAt: "2026-06-16T10:00:00.000Z",
   updatedAt: "2026-06-16T10:00:00.000Z"
 };
@@ -104,6 +115,8 @@ const streamedAssistantMessage = appendedConversation.messages[1]!;
 const succeededRun = {
   id: "run-1",
   status: "succeeded" as const,
+  providerConfigId: "config-1",
+  modelProfileId: "model-profile-1",
   errorMessage: null,
   createdAt: "2026-06-16T10:02:00.000Z",
   startedAt: "2026-06-16T10:02:01.000Z",
@@ -202,11 +215,11 @@ describe("AIChatDialog", () => {
 
     const [, sendInit] = fetchMock.mock.calls[3] ?? [];
     const sendBody = JSON.parse(String(sendInit?.body)) as {
-      readonly providerConfigId: string;
+      readonly modelProfileId: string;
       readonly message: { readonly role: string; readonly content: string };
       readonly selectedContextSnapshot: { readonly currentDocumentId: string | null; readonly items: readonly unknown[] };
     };
-    expect(sendBody.providerConfigId).toBe("config-1");
+    expect(sendBody.modelProfileId).toBe("model-profile-1");
     expect(sendBody.message).toEqual({ role: "user", content: "Compare methods" });
     expect(sendBody.selectedContextSnapshot.currentDocumentId).toBeNull();
     expect(sendBody.selectedContextSnapshot.items).toEqual([]);
