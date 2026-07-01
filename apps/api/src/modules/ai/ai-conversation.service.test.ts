@@ -12,6 +12,7 @@ import {
   type AIConversationRecord,
   type AIConversationRepository,
   type AIConversationService,
+  type AIModelProfileExecutionRecord,
   type AIProviderConfigExecutionRecord
 } from "./ai-conversation.service.js";
 import { AIProviderExecutionError } from "./ai-provider-adapter.js";
@@ -25,6 +26,7 @@ const appendedAt = new Date("2026-06-15T12:05:00.000Z");
 class InMemoryAIConversationRepository implements AIConversationRepository {
   readonly conversations = new Map<string, AIConversationRecord>();
   readonly providerConfigs = new Map<string, AIProviderConfigExecutionRecord>();
+  readonly modelProfiles = new Map<string, AIModelProfileExecutionRecord>();
   private nextId = 1;
 
   async listConversations(input: {
@@ -42,8 +44,8 @@ class InMemoryAIConversationRepository implements AIConversationRepository {
     return this.conversations.get(conversationId) ?? null;
   }
 
-  async findProviderConfigById(configId: string): Promise<AIProviderConfigExecutionRecord | null> {
-    return this.providerConfigs.get(configId) ?? null;
+  async findModelProfileById(modelProfileId: string): Promise<AIModelProfileExecutionRecord | null> {
+    return this.modelProfiles.get(modelProfileId) ?? null;
   }
 
   async createConversation(input: {
@@ -147,10 +149,23 @@ function providerConfig(ownerUserId = "owner-user"): AIProviderConfigExecutionRe
     ownerUserId,
     provider: "openai",
     baseURL: "https://provider.example/v1",
-    model: "gpt-test",
-    temperature: 0.2,
-    maxTokens: 4096,
     encryptedApiKey: "encrypted:sk-server-key"
+  };
+}
+
+function modelProfile(
+  providerConfigRecord: AIProviderConfigExecutionRecord = providerConfig(),
+  overrides: Partial<Omit<AIModelProfileExecutionRecord, "providerConfig">> = {}
+): AIModelProfileExecutionRecord {
+  return {
+    id: overrides.id ?? "model-profile-1",
+    providerConfigId: overrides.providerConfigId ?? providerConfigRecord.id,
+    model: overrides.model ?? "gpt-test",
+    displayName: overrides.displayName ?? "GPT test",
+    temperature: overrides.temperature ?? 0.2,
+    maxTokens: overrides.maxTokens ?? 4096,
+    enabled: overrides.enabled ?? true,
+    providerConfig: providerConfigRecord
   };
 }
 
@@ -271,7 +286,9 @@ describe("AI conversation service", () => {
         usageService
       }
     );
-    repository.providerConfigs.set("config-1", providerConfig());
+    const defaultProviderConfig = providerConfig();
+    repository.providerConfigs.set("config-1", defaultProviderConfig);
+    repository.modelProfiles.set("model-profile-1", modelProfile(defaultProviderConfig));
   });
 
   it("creates private conversations only after every selected context document is readable", async () => {
@@ -343,7 +360,7 @@ describe("AI conversation service", () => {
     const appended = await service.appendMessage({
       actor: actor("owner-user"),
       conversationId: created.conversation.id,
-      providerConfigId: "config-1",
+      modelProfileId: "model-profile-1",
       message: { role: "user", content: "  compare methods  " },
       selectedContextSnapshot: standaloneSnapshot()
     });
@@ -400,7 +417,7 @@ describe("AI conversation service", () => {
       service.appendMessage({
         actor: actor("owner-user"),
         conversationId: created.conversation.id,
-        providerConfigId: "config-1",
+        modelProfileId: "model-profile-1",
         message: { role: "user", content: "try context" },
         selectedContextSnapshot: {
           ...snapshot("doc-1"),
@@ -425,7 +442,7 @@ describe("AI conversation service", () => {
       service.appendMessage({
         actor: actor("other-user"),
         conversationId: created.conversation.id,
-        providerConfigId: "config-1",
+        modelProfileId: "model-profile-1",
         message: { role: "user", content: "try to append" },
         selectedContextSnapshot: snapshot()
       }),
@@ -504,13 +521,18 @@ describe("AI conversation service", () => {
       currentDocumentId: "doc-1",
       selectedContextSnapshot: snapshot()
     });
-    repository.providerConfigs.set("other-config", { ...providerConfig("other-user"), id: "other-config" });
+    const otherProviderConfig = { ...providerConfig("other-user"), id: "other-config" };
+    repository.providerConfigs.set("other-config", otherProviderConfig);
+    repository.modelProfiles.set(
+      "other-model-profile",
+      modelProfile(otherProviderConfig, { id: "other-model-profile", providerConfigId: "other-config" })
+    );
 
     await expectAIConversationError(
       service.appendMessage({
         actor: actor("owner-user"),
         conversationId: created.conversation.id,
-        providerConfigId: "other-config",
+        modelProfileId: "other-model-profile",
         message: { role: "user", content: "question" },
         selectedContextSnapshot: snapshot()
       }),
@@ -529,7 +551,7 @@ describe("AI conversation service", () => {
     const appended = await service.appendMessage({
       actor: actor("owner-user"),
       conversationId: created.conversation.id,
-      providerConfigId: "config-1",
+      modelProfileId: "model-profile-1",
       message: { role: "user", content: "  summarize this  " },
       selectedContextSnapshot: snapshot("doc-1", "doc-2")
     });
@@ -570,6 +592,7 @@ describe("AI conversation service", () => {
       id: "generated-1",
       status: "succeeded",
       providerConfigId: "config-1",
+      modelProfileId: "model-profile-1",
       errorMessage: null,
       createdAt: "2026-06-15T12:05:00.000Z",
       startedAt: "2026-06-15T12:05:01.000Z",
@@ -603,7 +626,7 @@ describe("AI conversation service", () => {
       service.appendMessage({
         actor: actor("owner-user"),
         conversationId: created.conversation.id,
-        providerConfigId: "config-1",
+        modelProfileId: "model-profile-1",
         message: { role: "user", content: "summarize again" },
         selectedContextSnapshot: snapshot("doc-1", "doc-2")
       }),
@@ -623,7 +646,7 @@ describe("AI conversation service", () => {
     for await (const event of service.streamMessage({
       actor: actor("owner-user"),
       conversationId: created.conversation.id,
-      providerConfigId: "config-1",
+      modelProfileId: "model-profile-1",
       message: { role: "user", content: "stream this" },
       selectedContextSnapshot: standaloneSnapshot()
     })) {
@@ -631,7 +654,7 @@ describe("AI conversation service", () => {
     }
 
     expect(events).toMatchObject([
-      { type: "run", run: { id: "generated-1", status: "running", providerConfigId: "config-1" } },
+      { type: "run", run: { id: "generated-1", status: "running", providerConfigId: "config-1", modelProfileId: "model-profile-1" } },
       { type: "user_message", message: { id: "generated-2", role: "user", runStatus: "running" } },
       { type: "assistant_delta", runId: "generated-1", messageId: "generated-3", delta: "Provider generated " },
       { type: "assistant_delta", runId: "generated-1", messageId: "generated-3", delta: "assistant response" },
@@ -643,7 +666,7 @@ describe("AI conversation service", () => {
       { type: "assistant_message", message: { id: "generated-3", role: "assistant", runStatus: "succeeded" } },
       { type: "done", run: { id: "generated-1", status: "succeeded" } }
     ]);
-    expect(events.at(-1)).toMatchObject({
+    expect(events[events.length - 1]).toMatchObject({
       type: "done",
       conversation: {
         messages: [
@@ -666,7 +689,7 @@ describe("AI conversation service", () => {
     const iterator = service.streamMessage({
       actor: actor("owner-user"),
       conversationId: created.conversation.id,
-      providerConfigId: "config-1",
+      modelProfileId: "model-profile-1",
       message: { role: "user", content: "cancel this" },
       selectedContextSnapshot: standaloneSnapshot()
     })[Symbol.asyncIterator]();
@@ -686,7 +709,7 @@ describe("AI conversation service", () => {
       expect.objectContaining({ type: "error", category: "cancelled", run: expect.objectContaining({ status: "cancelled" }) }),
       expect.objectContaining({ type: "done", run: expect.objectContaining({ status: "cancelled" }) })
     ]);
-    expect(remainingEvents.at(-1)).toMatchObject({
+    expect(remainingEvents[remainingEvents.length - 1]).toMatchObject({
       conversation: {
         messages: [expect.objectContaining({ role: "user", runStatus: "cancelled", errorCategory: "cancelled" })]
       }
@@ -704,7 +727,7 @@ describe("AI conversation service", () => {
     await service.appendMessage({
       actor: actor("owner-user"),
       conversationId: created.conversation.id,
-      providerConfigId: "config-1",
+      modelProfileId: "model-profile-1",
       message: { role: "user", content: "finish this" },
       selectedContextSnapshot: standaloneSnapshot()
     });
@@ -726,7 +749,7 @@ describe("AI conversation service", () => {
     const failed = await service.appendMessage({
       actor: actor("owner-user"),
       conversationId: created.conversation.id,
-      providerConfigId: "config-1",
+      modelProfileId: "model-profile-1",
       message: { role: "user", content: "will fail" },
       selectedContextSnapshot: snapshot()
     });
@@ -735,6 +758,7 @@ describe("AI conversation service", () => {
       id: "generated-1",
       status: "failed",
       providerConfigId: "config-1",
+      modelProfileId: "model-profile-1",
       errorCategory: "provider_unavailable",
       errorMessage: "The provider endpoint is unavailable. Check the base URL or provider status.",
       createdAt: "2026-06-15T12:05:00.000Z",

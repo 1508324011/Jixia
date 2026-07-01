@@ -55,10 +55,18 @@ export type AIProviderConfigExecutionRecord = {
   readonly ownerUserId: string;
   readonly provider: string;
   readonly baseURL: string;
+  readonly encryptedApiKey: string | null;
+};
+
+export type AIModelProfileExecutionRecord = {
+  readonly id: string;
+  readonly providerConfigId: string;
   readonly model: string;
+  readonly displayName: string;
   readonly temperature: number;
   readonly maxTokens: number;
-  readonly encryptedApiKey: string | null;
+  readonly enabled: boolean;
+  readonly providerConfig: AIProviderConfigExecutionRecord;
 };
 
 export type AIConversationRecord = {
@@ -94,7 +102,7 @@ export type AIConversationRepository = {
     readonly currentDocumentId?: string | null;
   }) => Promise<readonly AIConversationRecord[]>;
   readonly findConversationById: (conversationId: string) => Promise<AIConversationRecord | null>;
-  readonly findProviderConfigById: (configId: string) => Promise<AIProviderConfigExecutionRecord | null>;
+  readonly findModelProfileById: (modelProfileId: string) => Promise<AIModelProfileExecutionRecord | null>;
   readonly createConversation: (input: {
     readonly ownerUserId: string;
     readonly title: string;
@@ -510,6 +518,7 @@ function createRunSnapshot(input: {
   readonly id: string;
   readonly status: AIConversationRunStatus;
   readonly providerConfigId?: string;
+  readonly modelProfileId?: string;
   readonly createdAt: Date;
   readonly startedAt?: Date;
     readonly completedAt?: Date;
@@ -521,6 +530,7 @@ function createRunSnapshot(input: {
     id: input.id,
     status: input.status,
     ...(input.providerConfigId === undefined ? {} : { providerConfigId: input.providerConfigId }),
+    ...(input.modelProfileId === undefined ? {} : { modelProfileId: input.modelProfileId }),
     errorMessage: input.errorMessage ?? null,
     errorCategory: input.errorCategory ?? null,
     ...(input.usage === undefined ? {} : { usage: input.usage }),
@@ -533,6 +543,7 @@ function createRunSnapshot(input: {
 function safeProviderFailureRun(input: {
   readonly runId: string;
   readonly providerConfigId: string;
+  readonly modelProfileId: string;
   readonly category: AIProviderErrorCategory;
   readonly createdAt: Date;
   readonly startedAt: Date;
@@ -542,6 +553,7 @@ function safeProviderFailureRun(input: {
     id: input.runId,
     status: input.category === "cancelled" ? "cancelled" : "failed",
     providerConfigId: input.providerConfigId,
+    modelProfileId: input.modelProfileId,
     createdAt: input.createdAt,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
@@ -638,6 +650,7 @@ async function recordAggregateUsage(input: {
   readonly usageService: Pick<AIUsageService, "recordUsage">;
   readonly actor: AIConversationActor;
   readonly providerConfig: AIProviderConfigExecutionRecord;
+  readonly modelProfile: AIModelProfileExecutionRecord;
   readonly usage?: AIProviderUsageMetadata;
   readonly completedAt: Date;
 }): Promise<void> {
@@ -646,7 +659,7 @@ async function recordAggregateUsage(input: {
   await input.usageService.recordUsage({
     actor: input.actor,
     provider: input.providerConfig.provider,
-    model: input.providerConfig.model,
+    model: input.modelProfile.model,
     promptTokens: nonNegativeUsageValue(input.usage?.promptTokens),
     completionTokens: nonNegativeUsageValue(input.usage?.completionTokens),
     estimatedCostMicros: nonNegativeUsageValue(input.usage?.estimatedCostMicros),
@@ -771,22 +784,30 @@ export class PrismaAIConversationRepository implements AIConversationRepository 
     return conversation ? toConversationRecord(conversation) : null;
   }
 
-  async findProviderConfigById(configId: string): Promise<AIProviderConfigExecutionRecord | null> {
-    const config = await this.prisma.aIProviderConfig.findUnique({
-      where: { id: configId },
+  async findModelProfileById(modelProfileId: string): Promise<AIModelProfileExecutionRecord | null> {
+    const modelProfile = await this.prisma.aIModelProfile.findUnique({
+      where: { id: modelProfileId },
       select: {
         id: true,
-        ownerUserId: true,
-        provider: true,
-        baseURL: true,
+        providerConfigId: true,
         model: true,
+        displayName: true,
         temperature: true,
         maxTokens: true,
-        encryptedApiKey: true
+        enabled: true,
+        providerConfig: {
+          select: {
+            id: true,
+            ownerUserId: true,
+            provider: true,
+            baseURL: true,
+            encryptedApiKey: true
+          }
+        }
       }
     });
 
-    return config;
+    return modelProfile;
   }
 
   async createConversation(input: {
@@ -909,12 +930,13 @@ export function createAIConversationService(
   async function prepareRun(input: {
     readonly actor: AIConversationActor;
     readonly conversationId: string;
-    readonly providerConfigId: string;
+    readonly modelProfileId: string;
     readonly message: { readonly role: "user"; readonly content: string };
     readonly selectedContextSnapshot: unknown;
   }): Promise<{
     readonly conversation: AIConversationRecord;
     readonly providerConfig: AIProviderConfigExecutionRecord;
+    readonly modelProfile: AIModelProfileExecutionRecord;
     readonly snapshot: AIConversationContextSnapshot;
     readonly runId: string;
     readonly queuedAt: Date;
@@ -929,9 +951,10 @@ export function createAIConversationService(
       input.actor.userId
     );
 
-    const providerConfig = await repository.findProviderConfigById(input.providerConfigId);
+    const modelProfile = await repository.findModelProfileById(input.modelProfileId);
+    const providerConfig = modelProfile?.providerConfig ?? null;
 
-    if (!providerConfig || providerConfig.ownerUserId !== input.actor.userId) {
+    if (!modelProfile || !providerConfig || providerConfig.ownerUserId !== input.actor.userId || !modelProfile.enabled) {
       throw notFound();
     }
 
@@ -945,6 +968,7 @@ export function createAIConversationService(
       id: runId,
       status: "running",
       providerConfigId: providerConfig.id,
+      modelProfileId: modelProfile.id,
       createdAt: queuedAt,
       startedAt
     });
@@ -969,6 +993,7 @@ export function createAIConversationService(
     return {
       conversation,
       providerConfig,
+      modelProfile,
       snapshot,
       runId,
       queuedAt,
@@ -1008,6 +1033,7 @@ export function createAIConversationService(
     readonly actor: AIConversationActor;
     readonly conversation: AIConversationRecord;
     readonly providerConfig: AIProviderConfigExecutionRecord;
+    readonly modelProfile: AIModelProfileExecutionRecord;
     readonly snapshot: AIConversationContextSnapshot;
     readonly userMessage: AIConversationMessageDTO;
     readonly assistantContent: string;
@@ -1035,6 +1061,7 @@ export function createAIConversationService(
       usageService: await resolveUsageService(),
       actor: input.actor,
       providerConfig: input.providerConfig,
+      modelProfile: input.modelProfile,
       completedAt: input.completedAt,
       ...(input.usage === undefined ? {} : { usage: input.usage })
     });
@@ -1043,6 +1070,7 @@ export function createAIConversationService(
       id: input.userMessage.runId ?? "",
       status: "succeeded",
       providerConfigId: input.providerConfig.id,
+      modelProfileId: input.modelProfile.id,
       createdAt: new Date(input.userMessage.createdAt),
       startedAt: new Date(input.userMessage.createdAt),
       completedAt: input.completedAt
@@ -1058,7 +1086,7 @@ export function createAIConversationService(
   async function* runStreaming(input: {
     readonly actor: AIConversationActor;
     readonly conversationId: string;
-    readonly providerConfigId: string;
+    readonly modelProfileId: string;
     readonly message: { readonly role: "user"; readonly content: string };
     readonly selectedContextSnapshot: unknown;
   }): AsyncIterable<AIConversationRunStreamEvent> {
@@ -1079,9 +1107,9 @@ export function createAIConversationService(
           ownerUserId: prepared.providerConfig.ownerUserId,
           provider: prepared.providerConfig.provider,
           baseURL: prepared.providerConfig.baseURL,
-          model: prepared.providerConfig.model,
-          temperature: prepared.providerConfig.temperature,
-          maxTokens: prepared.providerConfig.maxTokens,
+          model: prepared.modelProfile.model,
+          temperature: prepared.modelProfile.temperature,
+          maxTokens: prepared.modelProfile.maxTokens,
           apiKey: prepared.apiKey
         },
         messages: prepared.conversation.messages,
@@ -1112,6 +1140,7 @@ export function createAIConversationService(
         actor: input.actor,
         conversation: prepared.conversation,
         providerConfig: prepared.providerConfig,
+        modelProfile: prepared.modelProfile,
         snapshot: prepared.snapshot,
         userMessage: prepared.userMessage,
         assistantContent: finalAssistantText,
@@ -1123,6 +1152,7 @@ export function createAIConversationService(
         id: prepared.runId,
         status: "succeeded",
         providerConfigId: prepared.providerConfig.id,
+        modelProfileId: prepared.modelProfile.id,
         createdAt: prepared.queuedAt,
         startedAt: prepared.startedAt,
         completedAt,
@@ -1141,6 +1171,7 @@ export function createAIConversationService(
       const run = safeProviderFailureRun({
         runId: prepared.runId,
         providerConfigId: prepared.providerConfig.id,
+        modelProfileId: prepared.modelProfile.id,
         category: providerError.category,
         createdAt: prepared.queuedAt,
         startedAt: prepared.startedAt,
@@ -1168,7 +1199,7 @@ export function createAIConversationService(
   async function runBlocking(input: {
     readonly actor: AIConversationActor;
     readonly conversationId: string;
-    readonly providerConfigId: string;
+    readonly modelProfileId: string;
     readonly message: { readonly role: "user"; readonly content: string };
     readonly selectedContextSnapshot: unknown;
   }): Promise<{ readonly conversation: AIConversationDTO; readonly run: AIConversationRunDTO }> {
@@ -1181,9 +1212,9 @@ export function createAIConversationService(
           ownerUserId: prepared.providerConfig.ownerUserId,
           provider: prepared.providerConfig.provider,
           baseURL: prepared.providerConfig.baseURL,
-          model: prepared.providerConfig.model,
-          temperature: prepared.providerConfig.temperature,
-          maxTokens: prepared.providerConfig.maxTokens,
+          model: prepared.modelProfile.model,
+          temperature: prepared.modelProfile.temperature,
+          maxTokens: prepared.modelProfile.maxTokens,
           apiKey: prepared.apiKey
         },
         messages: prepared.conversation.messages,
@@ -1201,6 +1232,7 @@ export function createAIConversationService(
         actor: input.actor,
         conversation: prepared.conversation,
         providerConfig: prepared.providerConfig,
+        modelProfile: prepared.modelProfile,
         snapshot: prepared.snapshot,
         userMessage: prepared.userMessage,
         assistantContent: providerResult.assistantText,
@@ -1211,6 +1243,7 @@ export function createAIConversationService(
         id: prepared.runId,
         status: "succeeded",
         providerConfigId: prepared.providerConfig.id,
+        modelProfileId: prepared.modelProfile.id,
         createdAt: prepared.queuedAt,
         startedAt: prepared.startedAt,
         completedAt,
@@ -1225,6 +1258,7 @@ export function createAIConversationService(
       const run = safeProviderFailureRun({
         runId: prepared.runId,
         providerConfigId: prepared.providerConfig.id,
+        modelProfileId: prepared.modelProfile.id,
         category: providerError.category,
         createdAt: prepared.queuedAt,
         startedAt: prepared.startedAt,
@@ -1297,7 +1331,7 @@ export function createAIConversationService(
     async appendMessage(input: {
       readonly actor: AIConversationActor;
       readonly conversationId: string;
-      readonly providerConfigId: string;
+      readonly modelProfileId: string;
       readonly message: { readonly role: "user"; readonly content: string };
       readonly selectedContextSnapshot: unknown;
     }): Promise<{ readonly conversation: AIConversationDTO; readonly run: AIConversationRunDTO }> {
@@ -1307,7 +1341,7 @@ export function createAIConversationService(
     streamMessage(input: {
       readonly actor: AIConversationActor;
       readonly conversationId: string;
-      readonly providerConfigId: string;
+      readonly modelProfileId: string;
       readonly message: { readonly role: "user"; readonly content: string };
       readonly selectedContextSnapshot: unknown;
     }): AsyncIterable<AIConversationRunStreamEvent> {
