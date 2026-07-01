@@ -15,14 +15,16 @@ For changes crossing API, database, worker, or frontend:
 - Boundary: Browser code must never call AI providers directly, store prompts/responses/provider keys in browser storage, decide AI permissions, or synthesize fake run/stream/cancel state without a server-owned contract.
 
 ### 2. Signatures
-- Provider metadata view: `AIProviderConfigView` exposes provider/model/baseURL/default/key status only; raw and encrypted keys remain server-private.
+- Provider metadata view: `AIProviderConfigView` represents the provider account/credential/baseURL/default/key status and exposes nested safe `AIModelProfileView[]`; raw and encrypted keys remain server-private.
+- Model profile view: `AIModelProfileView` exposes provider-owned model selection metadata only, including raw provider model id, display name, temperature, max tokens, enabled state, and default marker.
 - Health test result: `ProviderHealthCheck` returns `ok`, safe `category`, safe `message`, `latencyMs`, provider/model/baseURL, and timestamp.
 - Run lifecycle: `AIConversationRunDTO` uses `queued | running | succeeded | failed | cancelled` plus timestamps, provider config id, usage, and safe error fields.
 - Stream event union: `AIConversationRunStreamEvent` carries ordered `run`, `user_message`, `assistant_delta`, `assistant_message`, `usage`, `error`, and `done` events.
-- Routes: provider tests use `POST /ai/configs/test` for drafts and `POST /ai/configs/:configId/test` for saved configs; streaming uses `POST /ai/conversations/:conversationId/messages/stream`; cancellation uses `POST /ai/runs/:runId/cancel`.
+- Routes: provider tests use `POST /ai/configs/test` for drafts and `POST /ai/configs/:configId/test` for saved configs; model profiles use nested `/ai/configs/:configId/model-profiles` create/update/delete/default routes; streaming uses `POST /ai/conversations/:conversationId/messages/stream`; cancellation uses `POST /ai/runs/:runId/cancel`.
 
 ### 3. Contracts
 - The API owns provider execution, encrypted key reads, authorization, context validation, run lifecycle, final message persistence, usage recording, and cancellation controllers.
+- Browser chat requests must select a provider-owned model profile by `modelProfileId`; the API resolves model profile -> provider account -> decrypted key/server adapter config before calling upstream providers.
 - SSE stream responses must contain only shared stream events serialized as `data: <json>\n\n`; provider request JSON, response JSON, headers, raw errors, raw keys, encrypted keys, and stack traces are forbidden.
 - Stop buttons may be rendered only when the frontend has a current server run id from a stream event and a real cancel endpoint path.
 - Provider health tests must use the same server adapter path as chat, accept unsaved draft keys without persistence, and test saved configs with the server-side encrypted key unless a write-only replacement key is supplied.
@@ -42,16 +44,20 @@ For changes crossing API, database, worker, or frontend:
 - Good: The API streams `assistant_delta` events and persists one final assistant message server-side before sending `done` with the updated conversation.
 - Good: Settings tests a draft provider with a typed key, receives safe health metadata, and the config repository remains unchanged.
 - Good: Editing a saved provider with a blank key field omits `apiKey` from PATCH and preserves the encrypted server-side key.
+- Good: One saved provider account owns multiple enabled model profiles, the composer switches between their `modelProfileId`s, and provider execution records usage against the selected raw model id.
 - Base: The frontend accumulates deltas by `messageId` and replaces the streaming placeholder with the final `assistant_message`/`done` conversation.
 - Bad: The UI shows Stop because a fetch is pending but has no server run id or cancel endpoint.
 - Bad: A provider health endpoint returns raw provider error text, request bodies, response bodies, authorization headers, or key previews.
 - Bad: Chat stores prompt drafts, responses, provider ids, auth shortcuts, or provider keys in localStorage/sessionStorage.
+- Bad: The browser duplicates provider credentials per model, receives raw/encrypted key material, or sends provider/baseURL/model/key data directly to upstream provider URLs.
 
 ### 6. Tests Required
 - Shared/API tests must cover new AI DTOs or route contracts that cross the API/frontend boundary.
 - Provider adapter tests must cover base URL normalization/blocking, status-to-category mapping, response parsing, streaming chunk accumulation, timeout, and cancellation behavior when changed.
 - Conversation service tests must cover stream event ordering, final persistence, safe error projection, usage recording, cancel-before-completion, and cancel-after-completion.
 - Config service/route tests must cover draft and saved provider health checks, safe error taxonomy, blank-key preservation, and key redaction.
+- Config service/route tests must cover provider-owned model profile create/update/delete/default flows, migration/backfill compatibility, enabled/default rules, and multi-model key reuse.
+- Conversation service tests must cover selecting two model profiles under one provider account and recording/executing the selected raw model id.
 - Web chat/settings tests must cover SSE parsing, progressive rendering, real stop endpoint use, rich Markdown/code/table layout hooks, provider cards, health result display, and absence of forbidden browser storage.
 - Final verification for AI cross-layer changes must include lint/typecheck plus focused API and web tests before broader workspace checks.
 
@@ -67,7 +73,7 @@ setIsRunning(true);
 ```typescript
 const response = await apiStream(`/ai/conversations/${conversationId}/messages/stream`, {
   method: "POST",
-  json: { providerConfigId, message, selectedContextSnapshot }
+  json: { modelProfileId, message, selectedContextSnapshot }
 });
 
 for await (const event of readChatStream(response)) {
@@ -85,7 +91,7 @@ for await (const event of readChatStream(response)) {
 ### 2. Signatures
 - Context snapshot: document copilots use `AIConversationContextSnapshot` with `currentDocumentId`, `capturedAt`, and explicit context intent on every send.
 - Enabled current-document context includes `current_document` item metadata: document id, title, document type, project id when available, base/current revision, read-only/active status, selected block ids/count when implemented, and bounded text content. Disabled current-document context must send an explicit empty snapshot with `items: []` for both conversation creation and message streaming.
-- Provider setup: browser code loads `/ai/configs` and may use `AIProviderConfigView.hasKey` plus safe provider/model metadata only.
+- Provider setup: browser code loads `/ai/configs` and may use `AIProviderConfigView.hasKey` plus safe provider account and nested model profile metadata only.
 - Stream routes: message send uses `POST /ai/conversations/:conversationId/messages/stream`; cancellation uses `POST /ai/runs/:runId/cancel` only after a server run id is received.
 
 ### 3. Contracts
@@ -132,7 +138,7 @@ localStorage.setItem("providerApiKey", key);
 const context = createDocumentCopilotContext({ document, snapshot: editor.exportSnapshot(), baseRevision });
 await apiStream(`/ai/conversations/${conversationId}/messages/stream`, {
   method: "POST",
-  json: { providerConfigId, message: { role: "user", content }, selectedContextSnapshot: context.snapshot }
+  json: { modelProfileId, message: { role: "user", content }, selectedContextSnapshot: context.snapshot }
 });
 ```
 
