@@ -1,0 +1,62 @@
+{
+  "title": "Task 21f Server-Owned AI Model Discovery",
+  "slug": "task-21f-server-owned-ai-model-discovery",
+  "type": "fullstack",
+  "status": "active",
+  "createdAt": "2026-07-01T13:15:16+00:00",
+  "updatedAt": "2026-07-01T13:19:21+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 0,
+  "manualReviewRequired": true,
+  "preparation": {
+    "preparedAt": "2026-07-01T13:19:21+00:00",
+    "fromTasks": [
+      ".trellis/tasks/07-01-task-21e-ai-provider-model-registry-composer-dechrome",
+      ".trellis/tasks/06-22-task-21d-ai-chat-context-control-visual-dechrome-pass",
+      ".trellis/tasks/06-18-task-18-8-mature-streaming-ai-chat-provider-settings"
+    ],
+    "humanReviewSignal": "After Task21e, the user rejected manual model-profile management as the wrong product direction. The accepted direction is provider connection -> automatic model discovery -> normalized model registry -> composer model picker.",
+    "architectureFinding": "Task21e separated provider credentials from model profiles, but the happy path still asks users to type model ids manually. Mature providers should connect once, let the server discover available upstream models with stored credentials, normalize that model list, and expose only server-authorized model choices to browser UI.",
+    "bindingDecisions": [
+      "Provider key material remains server-owned; the browser may only call Jixia APIs, never upstream provider /models endpoints.",
+      "Discovery runs from saved provider account/config records and uses server-side decrypted credentials plus validated baseURL/provider host rules.",
+      "Discovered model ids are normalized into the existing model-profile/registry contract so composer and document copilot select server-owned modelProfileId values.",
+      "Manual model entry may exist only as an advanced fallback for non-discoverable providers; it is not the primary product flow.",
+      "Discovery refresh must preserve user intent where possible: enabled/default choices should not be silently destroyed by a provider refresh.",
+      "Composer remains compact and model-first: provider connection details belong in settings, not chat chrome."
+    ],
+    "firstImplementationPriority": "Add backend discovery and registry upsert first, then update settings and composer fixtures/UI to consume discovered normalized models."
+  },
+  "failureContract": {
+    "noSuccessWithout": [
+      "A saved provider account can trigger server-side model discovery without exposing provider keys to the browser.",
+      "The server calls provider-compatible model-list endpoints, normalizes results, and persists or updates model profiles/registry rows.",
+      "The settings page presents connection/test/discover as the primary provider flow instead of manual model typing.",
+      "The composer and document copilot model pickers consume enabled server-authorized discovered profiles by modelProfileId.",
+      "Browser tests or fixtures prove the browser never calls upstream provider /models URLs and never receives raw/encrypted key material.",
+      "Refresh/error/empty-list states are understandable and do not regress Task21d no-writeback/context semantics.",
+      "Existing manual Task21e profiles remain compatible or are safely migrated into the normalized registry model."
+    ],
+    "forbiddenCompletionClaims": [
+      "A user typing model ids manually is sufficient for the primary flow.",
+      "The browser may call provider /models with a user API key to populate the picker.",
+      "Discovery can return raw upstream payloads or headers directly to the browser.",
+      "A provider refresh may silently delete or disable a user default without a clear rule.",
+      "Composer model selection may fall back to providerConfigId or provider-account selection.",
+      "Task21f may reintroduce AI document writeback or hide document context off semantics."
+    ]
+  }
+}
