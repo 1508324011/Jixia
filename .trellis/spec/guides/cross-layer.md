@@ -83,14 +83,14 @@ for await (const event of readChatStream(response)) {
 - Boundary: This contract does not approve auto-apply, inline rewrite, silent document mutation, client-owned provider execution, vector retrieval, cross-document search, comments/tasks/citation provenance, or a second AI backend.
 
 ### 2. Signatures
-- Context snapshot: document copilots use `AIConversationContextSnapshot` with `currentDocumentId`, `capturedAt`, and explicit `current_document` item metadata.
-- Required current-document metadata: document id, title, document type, project id when available, base/current revision, read-only/active status, selected block ids/count when implemented, and bounded text content.
+- Context snapshot: document copilots use `AIConversationContextSnapshot` with `currentDocumentId`, `capturedAt`, and explicit context intent on every send.
+- Enabled current-document context includes `current_document` item metadata: document id, title, document type, project id when available, base/current revision, read-only/active status, selected block ids/count when implemented, and bounded text content. Disabled current-document context must send an explicit empty snapshot with `items: []` for both conversation creation and message streaming.
 - Provider setup: browser code loads `/ai/configs` and may use `AIProviderConfigView.hasKey` plus safe provider/model metadata only.
 - Stream routes: message send uses `POST /ai/conversations/:conversationId/messages/stream`; cancellation uses `POST /ai/runs/:runId/cancel` only after a server run id is received.
 
 ### 3. Contracts
-- The document page owns the editor state and context capture boundary. The copilot may call the shared editor export boundary for a send-time snapshot, but AI output must not call editor mutation APIs or update draft/revision payloads.
-- The context shown in the UI before send must match the shape and constraints of the context submitted to the AI run closely enough for reviewers to understand what will be sent.
+- The document page owns the editor state and context capture boundary. The copilot may call the shared editor export boundary for a send-time snapshot only when current-document context is enabled, but AI output must not call editor mutation APIs or update draft/revision payloads.
+- The context control shown in the UI before send must match the shape and constraints of the context submitted to the AI run closely enough for reviewers to understand what will be sent, including whether document text is included per message or explicitly omitted.
 - Context text must be bounded and readable. Do not send unbounded raw editor JSON, hidden attachment internals, browser storage, provider settings, or whole application state.
 - Selected-block context must be explicit. If selected blocks are unavailable, the UI and context content must say current-document context only and send empty selected-block ids.
 - Provider keys, encrypted keys, authorization headers, signed attachment URLs, upload/download URLs, object keys, buckets, local object-storage paths, cookies, and storage/provider secrets must not leave the server or appear in selected context, source cards, browser storage, persisted document snapshots, test fixtures, or logs.
@@ -106,7 +106,7 @@ for await (const event of readChatStream(response)) {
 - A notebook document and project document render divergent copilot behavior from separate implementations -> block PR unless specs and PRD explicitly require it.
 
 ### 5. Good/Base/Bad Cases
-- Good: The inspector shows a context card with title/id/type/revisions/status/size, sends one bounded `current_document` context item through the existing stream route, and renders a copyable advisory answer without touching the editor.
+- Good: The inspector shows an `Include current document` control plus compact context summary/details, sends either one bounded `current_document` context item or an explicit empty `items: []` snapshot through the existing AI routes, and renders a copyable advisory answer without touching the editor.
 - Good: A no-provider state explains that saved server-owned keys are required and routes users to AI settings without exposing raw or encrypted keys.
 - Base: Selected-block context is not implemented yet; the UI displays that limitation and sends current-document context with an empty selected-block list.
 - Base: The component reuses chat stream parsing/message rendering where it fits the inspector, but does not mount the full standalone workspace with thread-sidebar assumptions.
@@ -114,8 +114,8 @@ for await (const event of readChatStream(response)) {
 - Bad: The browser stores prompt drafts, responses, selected context, provider ids, or source payloads in localStorage/sessionStorage.
 
 ### 6. Tests Required
-- Context tests must cover deterministic text extraction, bounded/truncated content, visible summary fields, selected-block-unavailable copy, and redaction of signed/storage/provider secrets.
-- Component tests must cover provider-missing state, stream happy path through mocked existing AI endpoints, visible source/context chips, copy/retry behavior when present, and no `/documents/:id/draft` or `/documents/:id/revisions` calls during AI send/stream.
+- Context tests must cover deterministic text extraction, bounded/truncated content, explicit empty snapshots, visible summary fields, selected-block-unavailable copy, and redaction of signed/storage/provider secrets.
+- Component tests must cover provider-missing state, context on/off request bodies for create and stream routes, stream happy path through mocked existing AI endpoints, visible source/context chips, copy/retry behavior when present, and no `/documents/:id/draft` or `/documents/:id/revisions` calls during AI send/stream.
 - Page/routing tests must cover Notebook and Project documents using the same copilot boundary and standalone AI chat remaining context-free.
 - Browser/manual review must record browser/device, document type, provider state, sent context summary, stream result, and explicit no-writeback/save/refresh/reopen verification before completion.
 - Final verification for document-copilot changes must include lint/typecheck plus focused web tests for document context, document editor no-writeback, app routing, and standalone chat regression when feasible.
