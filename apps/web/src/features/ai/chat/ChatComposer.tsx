@@ -69,7 +69,7 @@ export function ChatComposer({
           value={text}
         />
         <div className="jixia-chat-composer__toolbar">
-          <div className="jixia-chat-composer__modelbar">
+          <div className="jixia-chat-composer__chips">
             <label>
               <span>Model</span>
               <select aria-label="AI provider model" onChange={(event) => onSelectProvider(event.currentTarget.value)} value={selectedProviderConfigId}>
@@ -77,9 +77,6 @@ export function ChatComposer({
                 {configs.map((config) => <option key={config.id} value={config.id}>{providerLabel(config)}</option>)}
               </select>
             </label>
-            <span>{selectedConfig ? `${selectedConfig.provider} · ${selectedConfig.hasKey ? "key saved" : "missing key"}` : "Configure a provider to begin"}</span>
-          </div>
-          <div className="jixia-chat-composer__actions">
             <details className="jixia-chat-composer__help">
               <summary>Help</summary>
               <div aria-label="Command hints" className="jixia-chat-composer__hints">
@@ -88,7 +85,15 @@ export function ChatComposer({
                 <span>Shift+Enter newline</span>
               </div>
             </details>
-            <span className="jixia-chat-composer__scope">No automatic document context</span>
+            <details className="jixia-chat-composer__scope">
+              <summary>Context</summary>
+              <div>
+                <span>No automatic document context</span>
+                <span>{selectedConfig ? `${selectedConfig.provider} · ${selectedConfig.hasKey ? "key saved" : "missing key"}` : "Configure a provider to begin"}</span>
+              </div>
+            </details>
+          </div>
+          <div className="jixia-chat-composer__actions">
             {disabledReason ? <span className="jixia-chat-composer__disabled-reason">{disabledReason}</span> : null}
             {canStop ? (
               <Button onClick={onStop} title={`Stop server run ${activeRunId}`} type="button" variant="danger">Stop</Button>

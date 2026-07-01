@@ -22,7 +22,7 @@ type MessageStreamProps = {
 export function MessageStream({
   className,
   copiedMessageId,
-  emptyDescription = "Ask a question from the composer. Jixia starts without document context by default.",
+  emptyDescription = "Write a prompt or open a previous thread.",
   emptyTitle = "Start a private chat thread",
   hiddenSourceMessageIds,
   isSending,
