@@ -42,11 +42,11 @@ export function ThreadViewport({
         </div>
         <details className="jixia-chat-thread__runtime">
           <summary>
-            <span>{runlineStatus(sendStatus)}</span>
-            <Pill tone="accent">{hasContext ? `${contextCount} explicit context` : "No document attached"}</Pill>
+            <span>{sendStatus === "idle" ? "Details" : runlineStatus(sendStatus)}</span>
           </summary>
           <div className="jixia-chat-thread__pills">
             <Pill>{selectedProvider ? compactProviderLabel(selectedProvider) : "No model selected"}</Pill>
+            <Pill tone="accent">{hasContext ? `${contextCount} explicit context` : "No document attached"}</Pill>
             {activeRunStatus ? <Pill tone={activeRunStatus === "failed" ? "danger" : activeRunStatus === "cancelled" ? "warning" : "success"}>{activeRunStatus}</Pill> : null}
             <span>Server-owned provider execution · no browser keys</span>
           </div>

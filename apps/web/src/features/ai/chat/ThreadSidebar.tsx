@@ -1,4 +1,4 @@
-import { Button, EmptyState, ListRow, Pane, Pill } from "../../layout/workbench";
+import { Button, EmptyState, ListRow, Pane } from "../../layout/workbench";
 import type { ChatThread } from "./chatTypes";
 
 type ThreadSidebarProps = {
@@ -21,24 +21,22 @@ export function ThreadSidebar({
   return (
     <Pane
       actions={
-        <>
-          <Button disabled={isLoading} onClick={onRefresh}>Refresh</Button>
-          <Button onClick={onNewThread} variant="primary">New chat</Button>
-        </>
+        <Button onClick={onNewThread} variant="primary">New chat</Button>
       }
       aria-label="Standalone chat threads"
       className="jixia-chat-sidebar"
       eyebrow="Private threads"
       title="Chat history"
     >
-      <div className="jixia-chat-sidebar__rail-note">
-        <Pill tone="accent">Standalone</Pill>
-        <span>No current document is attached by default.</span>
-      </div>
+      <details className="jixia-chat-sidebar__rail-note">
+        <summary>History tools</summary>
+        <span>Document context stays explicit and server-authorized.</span>
+        <Button disabled={isLoading} onClick={onRefresh} variant="link">Refresh history</Button>
+      </details>
 
       {threads.length === 0 ? (
         <EmptyState
-          description="Start a focused private conversation. Context stays explicit and server-authorized."
+          description="Start a focused private conversation."
           title={isLoading ? "Loading chats" : "No chats yet"}
         />
       ) : (

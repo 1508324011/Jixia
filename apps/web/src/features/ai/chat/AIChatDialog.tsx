@@ -437,22 +437,19 @@ export function AIChatDialog({ onOpenSettings }: AIChatDialogProps) {
       <SurfaceHeader
         className="jixia-chat-surface__header"
         actions={
-          <>
-            {onOpenSettings ? <Button onClick={onOpenSettings}>Configure providers</Button> : null}
-            <Button disabled={loadState === "loading"} onClick={() => void loadChatRuntime()} variant="primary">Refresh chat</Button>
-          </>
-        }
-        description="Private AI workspace. No document context is attached unless you explicitly add it."
-        eyebrow="AI workspace"
-        meta={
-          <details className="jixia-chat-surface__meta">
-            <summary>Private runtime</summary>
-            <span>Jixia API routes only</span>
-            <span>No provider keys in browser</span>
-            <span>No document context by default</span>
+          <details className="jixia-chat-surface__controls">
+            <summary aria-label="AI workspace controls">Controls</summary>
+            <div>
+              {onOpenSettings ? <Button onClick={onOpenSettings}>Configure providers</Button> : null}
+              <Button disabled={loadState === "loading"} onClick={() => void loadChatRuntime()} variant="primary">Refresh chat</Button>
+              <span>Private runtime</span>
+              <span>Standalone chats start without document context</span>
+              <span>No provider keys in browser</span>
+            </div>
           </details>
         }
-        title="Chat with Jixia AI"
+        eyebrow="AI workspace"
+        title="Jixia AI"
         titleId="ai-chat-title"
       />
 
