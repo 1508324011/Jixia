@@ -43,10 +43,21 @@ export type AIProviderConfigView = {
   readonly name: string;
   readonly provider: string;
   readonly baseURL: string;
+  readonly hasKey: boolean;
+  readonly isDefault: boolean;
+  readonly modelProfiles: readonly AIModelProfileView[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+export type AIModelProfileView = {
+  readonly id: string;
+  readonly providerConfigId: string;
   readonly model: string;
+  readonly displayName: string;
   readonly temperature: number;
   readonly maxTokens: number;
-  readonly hasKey: boolean;
+  readonly enabled: boolean;
   readonly isDefault: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -65,9 +76,7 @@ export type CreateAIProviderConfigRequest = {
   readonly name: string;
   readonly provider: string;
   readonly baseURL: string;
-  readonly model: string;
-  readonly temperature: number;
-  readonly maxTokens: number;
+  readonly defaultModelProfile?: CreateAIModelProfileRequest;
   readonly isDefault?: boolean;
   readonly apiKey?: string;
 };
@@ -76,9 +85,6 @@ export type UpdateAIProviderConfigRequest = {
   readonly name?: string;
   readonly provider?: string;
   readonly baseURL?: string;
-  readonly model?: string;
-  readonly temperature?: number;
-  readonly maxTokens?: number;
   readonly isDefault?: boolean;
   readonly apiKey?: string;
 };
@@ -89,6 +95,34 @@ export type AIProviderConfigResponse = {
 
 export type AIProviderConfigListResponse = {
   readonly configs: readonly AIProviderConfigView[];
+};
+
+export type CreateAIModelProfileRequest = {
+  readonly model: string;
+  readonly displayName: string;
+  readonly temperature: number;
+  readonly maxTokens: number;
+  readonly enabled?: boolean;
+  readonly isDefault?: boolean;
+};
+
+export type UpdateAIModelProfileRequest = {
+  readonly model?: string;
+  readonly displayName?: string;
+  readonly temperature?: number;
+  readonly maxTokens?: number;
+  readonly enabled?: boolean;
+  readonly isDefault?: boolean;
+};
+
+export type AIModelProfileResponse = {
+  readonly config: AIProviderConfigView;
+  readonly modelProfile: AIModelProfileView;
+};
+
+export type DeleteAIModelProfileResponse = {
+  readonly ok: true;
+  readonly config: AIProviderConfigView;
 };
 
 export type ProviderHealthCheck = {
@@ -113,6 +147,7 @@ export type TestAIProviderDraftRequest = {
 };
 
 export type TestAIProviderSavedRequest = {
+  readonly modelProfileId?: string;
   readonly provider?: string;
   readonly baseURL?: string;
   readonly model?: string;
@@ -139,9 +174,7 @@ export type UpsertAIProviderConfigRequest = {
   readonly name: string;
   readonly provider: string;
   readonly baseURL: string;
-  readonly model: string;
-  readonly temperature: number;
-  readonly maxTokens: number;
+  readonly defaultModelProfile?: CreateAIModelProfileRequest;
   readonly isDefault: boolean;
   readonly keyUpdate: AIProviderKeyUpdateRequest;
 };
@@ -154,14 +187,14 @@ export type ImportAIProviderConfigRequest = {
   readonly name: string;
   readonly provider: string;
   readonly baseURL: string;
-  readonly model: string;
+  readonly defaultModelProfile?: CreateAIModelProfileRequest;
   readonly keyUpdate: ReplaceAIProviderKeyRequest;
 };
 
 export type AIProviderConfigImportPreview = {
   readonly provider: string;
   readonly baseURL: string;
-  readonly model: string;
+  readonly modelProfiles: readonly Pick<AIModelProfileView, "model" | "displayName">[];
   readonly hasKey: boolean;
 };
 
@@ -255,6 +288,7 @@ export type AIConversationRunDTO = {
   readonly id: string;
   readonly status: AIConversationRunStatus;
   readonly providerConfigId?: string;
+  readonly modelProfileId?: string;
   readonly errorMessage: string | null;
   readonly errorCategory?: AIProviderErrorCategory | null;
   readonly usage?: AIConversationRunUsageDTO;
@@ -338,7 +372,7 @@ export type CreateAIConversationResponse = {
 
 export type AppendAIConversationMessageRequest = {
   readonly conversationId: string;
-  readonly providerConfigId: string;
+  readonly modelProfileId: string;
   readonly message: {
     readonly role: "user";
     readonly content: string;
