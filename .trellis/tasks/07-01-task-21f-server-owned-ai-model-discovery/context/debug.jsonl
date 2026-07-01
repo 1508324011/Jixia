@@ -1,0 +1,24 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Backend API/service/persistence guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Frontend UI and test guidance"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Current AI provider/model profile cross-layer contract"}
+{"path": ".trellis/tasks/07-01-task-21e-ai-provider-model-registry-composer-dechrome/prd.md", "reason": "Task21e provider/model split requirements and deferred discovery non-goal"}
+{"path": ".trellis/tasks/07-01-task-21e-ai-provider-model-registry-composer-dechrome/info.md", "reason": "Task21e technical design baseline for model profiles"}
+{"path": ".trellis/tasks/07-01-task-21e-ai-provider-model-registry-composer-dechrome/manual-review.md", "reason": "Manual review evidence and product gap that triggered Task21f"}
+{"path": "packages/shared/src/ai.ts", "reason": "Shared provider/model profile DTOs to extend with discovery-safe responses"}
+{"path": "packages/db/prisma/schema.prisma", "reason": "Provider config and AIModelProfile persistence baseline"}
+{"path": "apps/api/src/modules/ai/ai-config.service.ts", "reason": "Provider settings service and model profile repository logic"}
+{"path": "apps/api/src/modules/ai/ai-config.service.test.ts", "reason": "Focused tests for provider/model profile service behavior"}
+{"path": "apps/api/src/modules/ai/ai-provider-adapter.ts", "reason": "Provider adapter boundary for server-side model list discovery"}
+{"path": "apps/api/src/modules/ai/ai.routes.ts", "reason": "AI route schemas and discovery endpoint placement"}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.ts", "reason": "ModelProfileId execution resolution must remain server-owned"}
+{"path": "apps/web/src/features/ai/AISettingsPage.tsx", "reason": "Provider settings UI to convert from manual models to discovery-first flow"}
+{"path": "apps/web/src/features/ai/chat/AIChatDialog.tsx", "reason": "Standalone chat option derivation from safe model profiles"}
+{"path": "apps/web/src/features/ai/chat/ChatComposer.tsx", "reason": "Compact composer model picker surface"}
+{"path": "apps/web/src/features/documents/DocumentCopilotPanel.tsx", "reason": "Document copilot model picker and context/no-writeback contract"}
+{"path": "apps/web/e2e/test-api.mjs", "reason": "Fixture API for discovery, model profiles, and browser privacy assertions"}
+{"path": "apps/web/src/features/ai/AISettingsPage.test.tsx", "reason": "Settings discovery/model registry component coverage"}
+{"path": "apps/web/src/features/ai/chat/AIChatDialog.test.tsx", "reason": "Composer model picker coverage"}
+{"path": "apps/web/src/features/documents/DocumentCopilotPanel.test.tsx", "reason": "Document copilot model/context coverage"}
+{"path": "apps/web/src/app/App.test.tsx", "reason": "App-level fixture integration coverage"}
+{"path": "packages/db/src/schema-rules.test.ts", "reason": "Schema guard coverage if discovery metadata is persisted"}
