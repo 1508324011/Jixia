@@ -12,10 +12,12 @@ import { getDefaultAuthService } from "../auth/default-service.js";
 import type { AuthService, CurrentSessionResult } from "../auth/service.js";
 import {
   AIConfigError,
+  type CreateAIModelProfileInput,
   type CreateAIProviderConfigInput,
   getDefaultAIConfigService,
   type AIActor,
   type AIConfigService,
+  type UpdateAIModelProfileInput,
   type UpdateAIProviderConfigInput
 } from "./ai-config.service.js";
 import {
@@ -41,25 +43,48 @@ export type AIRoutesOptions = Partial<SessionCookieConfig> & {
 const idParamsSchema = z.object({
   configId: z.string().trim().min(1).max(256).optional(),
   conversationId: z.string().trim().min(1).max(256).optional(),
+  modelProfileId: z.string().trim().min(1).max(256).optional(),
   runId: z.string().trim().min(1).max(256).optional()
 });
+
+const modelProfilePayloadSchema = z.object({
+  model: z.string().trim().min(1).max(256),
+  displayName: z.string().trim().min(1).max(200),
+  temperature: z.number().min(0).max(2),
+  maxTokens: z.number().int().positive(),
+  enabled: z.boolean().optional(),
+  isDefault: z.boolean().optional(),
+});
+
+const updateModelProfilePayloadSchema = modelProfilePayloadSchema.partial().refine((payload) => Object.keys(payload).length > 0);
 
 const configPayloadSchema = z.object({
   name: z.string().trim().min(1).max(200),
   provider: z.string().trim().min(1).max(256),
   baseURL: z.string().trim().min(1).max(2_000),
-  model: z.string().trim().min(1).max(256),
-  temperature: z.number().min(0).max(2),
-  maxTokens: z.number().int().positive(),
+  defaultModelProfile: modelProfilePayloadSchema.optional(),
   isDefault: z.boolean().optional(),
   apiKey: z.string().trim().min(1).max(20_000).optional()
 });
 
-const updateConfigPayloadSchema = configPayloadSchema.partial().refine((payload) => Object.keys(payload).length > 0);
-const testDraftConfigPayloadSchema = configPayloadSchema.omit({ name: true, isDefault: true }).extend({
+const updateConfigPayloadSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  provider: z.string().trim().min(1).max(256).optional(),
+  baseURL: z.string().trim().min(1).max(2_000).optional(),
+  isDefault: z.boolean().optional(),
+  apiKey: z.string().trim().min(1).max(20_000).optional()
+}).refine((payload) => Object.keys(payload).length > 0);
+const testDraftConfigPayloadSchema = z.object({
+  provider: z.string().trim().min(1).max(256),
+  baseURL: z.string().trim().min(1).max(2_000),
+  model: z.string().trim().min(1).max(256),
+  temperature: z.number().min(0).max(2),
+  maxTokens: z.number().int().positive(),
   apiKey: z.string().trim().min(1).max(20_000).optional()
 });
-const testSavedConfigPayloadSchema = testDraftConfigPayloadSchema.partial();
+const testSavedConfigPayloadSchema = testDraftConfigPayloadSchema.partial().extend({
+  modelProfileId: z.string().trim().min(1).max(256).optional()
+});
 
 const createConversationPayloadSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -68,7 +93,7 @@ const createConversationPayloadSchema = z.object({
 });
 
 const appendMessagePayloadSchema = z.object({
-  providerConfigId: z.string().trim().min(1).max(256),
+  modelProfileId: z.string().trim().min(1).max(256),
   selectedContextSnapshot: z.unknown(),
   message: z.object({
     role: z.literal("user"),
@@ -148,11 +173,20 @@ function createConfigInput(
     name: payload.name,
     provider: payload.provider,
     baseURL: payload.baseURL,
-    model: payload.model,
-    temperature: payload.temperature,
-    maxTokens: payload.maxTokens,
+    ...(payload.defaultModelProfile === undefined ? {} : { defaultModelProfile: modelProfileInput(payload.defaultModelProfile) }),
     ...(payload.isDefault === undefined ? {} : { isDefault: payload.isDefault }),
     ...(payload.apiKey === undefined ? {} : { apiKey: payload.apiKey })
+  };
+}
+
+function modelProfileInput(payload: z.infer<typeof modelProfilePayloadSchema>) {
+  return {
+    model: payload.model,
+    displayName: payload.displayName,
+    temperature: payload.temperature,
+    maxTokens: payload.maxTokens,
+    ...(payload.enabled === undefined ? {} : { enabled: payload.enabled }),
+    ...(payload.isDefault === undefined ? {} : { isDefault: payload.isDefault })
   };
 }
 
@@ -167,11 +201,44 @@ function updateConfigInput(
     ...(payload.name === undefined ? {} : { name: payload.name }),
     ...(payload.provider === undefined ? {} : { provider: payload.provider }),
     ...(payload.baseURL === undefined ? {} : { baseURL: payload.baseURL }),
-    ...(payload.model === undefined ? {} : { model: payload.model }),
-    ...(payload.temperature === undefined ? {} : { temperature: payload.temperature }),
-    ...(payload.maxTokens === undefined ? {} : { maxTokens: payload.maxTokens }),
     ...(payload.isDefault === undefined ? {} : { isDefault: payload.isDefault }),
     ...(payload.apiKey === undefined ? {} : { apiKey: payload.apiKey })
+  };
+}
+
+function createModelProfileInput(
+  actor: AIActor,
+  configId: string,
+  payload: z.infer<typeof modelProfilePayloadSchema>
+): CreateAIModelProfileInput {
+  return {
+    actor,
+    configId,
+    model: payload.model,
+    displayName: payload.displayName,
+    temperature: payload.temperature,
+    maxTokens: payload.maxTokens,
+    ...(payload.enabled === undefined ? {} : { enabled: payload.enabled }),
+    ...(payload.isDefault === undefined ? {} : { isDefault: payload.isDefault })
+  };
+}
+
+function updateModelProfileInput(
+  actor: AIActor,
+  configId: string,
+  modelProfileId: string,
+  payload: z.infer<typeof updateModelProfilePayloadSchema>
+): UpdateAIModelProfileInput {
+  return {
+    actor,
+    configId,
+    modelProfileId,
+    ...(payload.model === undefined ? {} : { model: payload.model }),
+    ...(payload.displayName === undefined ? {} : { displayName: payload.displayName }),
+    ...(payload.temperature === undefined ? {} : { temperature: payload.temperature }),
+    ...(payload.maxTokens === undefined ? {} : { maxTokens: payload.maxTokens }),
+    ...(payload.enabled === undefined ? {} : { enabled: payload.enabled }),
+    ...(payload.isDefault === undefined ? {} : { isDefault: payload.isDefault })
   };
 }
 
@@ -206,6 +273,7 @@ function testSavedConfigInput(
   return {
     actor,
     configId,
+    ...(payload.modelProfileId === undefined ? {} : { modelProfileId: payload.modelProfileId }),
     ...(payload.provider === undefined ? {} : { provider: payload.provider }),
     ...(payload.baseURL === undefined ? {} : { baseURL: payload.baseURL }),
     ...(payload.model === undefined ? {} : { model: payload.model }),
@@ -291,6 +359,43 @@ export const aiRoutes: FastifyPluginAsync<AIRoutesOptions> = async (app, options
     const { configId } = parsePayload(idParamsSchema.required({ configId: true }), request.params);
     const payload = parsePayload(testSavedConfigPayloadSchema, request.body ?? {});
     return (await resolveAIConfigService()).testSavedConfig(testSavedConfigInput(actor, configId, payload));
+  });
+
+  app.post("/ai/configs/:configId/model-profiles", async (request, reply) => {
+    const actor = await requireActor(request, reply);
+    const { configId } = parsePayload(idParamsSchema.required({ configId: true }), request.params);
+    const payload = parsePayload(modelProfilePayloadSchema, request.body);
+    return (await resolveAIConfigService()).createModelProfile(createModelProfileInput(actor, configId, payload));
+  });
+
+  app.patch("/ai/configs/:configId/model-profiles/:modelProfileId", async (request, reply) => {
+    const actor = await requireActor(request, reply);
+    const { configId, modelProfileId } = parsePayload(
+      idParamsSchema.required({ configId: true, modelProfileId: true }),
+      request.params
+    );
+    const payload = parsePayload(updateModelProfilePayloadSchema, request.body);
+    return (await resolveAIConfigService()).updateModelProfile(
+      updateModelProfileInput(actor, configId, modelProfileId, payload)
+    );
+  });
+
+  app.delete("/ai/configs/:configId/model-profiles/:modelProfileId", async (request, reply) => {
+    const actor = await requireActor(request, reply);
+    const { configId, modelProfileId } = parsePayload(
+      idParamsSchema.required({ configId: true, modelProfileId: true }),
+      request.params
+    );
+    return (await resolveAIConfigService()).deleteModelProfile({ actor, configId, modelProfileId });
+  });
+
+  app.post("/ai/configs/:configId/model-profiles/:modelProfileId/default", async (request, reply) => {
+    const actor = await requireActor(request, reply);
+    const { configId, modelProfileId } = parsePayload(
+      idParamsSchema.required({ configId: true, modelProfileId: true }),
+      request.params
+    );
+    return (await resolveAIConfigService()).setDefaultModelProfile({ actor, configId, modelProfileId });
   });
 
   app.delete("/ai/configs/:configId", async (request, reply) => {
