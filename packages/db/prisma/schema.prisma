@@ -264,23 +264,38 @@ model UploadIntent {
 }
 
 model AIProviderConfig {
-  id              String   @id @default(cuid())
+  id              String           @id @default(cuid())
   ownerUserId     String
   name            String
   provider        String
   baseURL         String
-  model           String
-  temperature     Float
-  maxTokens       Int
   encryptedApiKey String?
   keyPreview      String?
-  isDefault       Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  owner           User     @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  isDefault       Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  owner           User             @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  modelProfiles   AIModelProfile[]
 
   @@unique([ownerUserId, name])
   @@index([ownerUserId, isDefault])
+}
+
+model AIModelProfile {
+  id               String           @id @default(cuid())
+  providerConfigId String
+  model            String
+  displayName      String
+  temperature      Float
+  maxTokens        Int
+  enabled          Boolean          @default(true)
+  isDefault        Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  providerConfig   AIProviderConfig @relation(fields: [providerConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([providerConfigId, displayName])
+  @@index([providerConfigId, isDefault])
 }
 
 model AIConversation {
