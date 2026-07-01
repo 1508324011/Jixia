@@ -1,10 +1,16 @@
 import type {
+  AIModelProfileResponse,
+  AIModelProfileView,
+  CreateAIModelProfileRequest,
+  DeleteAIModelProfileResponse,
   AIProviderConfigListResponse,
   AIProviderConfigResponse,
   AIProviderConfigView,
   CreateAIProviderConfigRequest,
   ProviderHealthCheck,
+  TestAIProviderSavedRequest,
   TestAIProviderConfigResponse,
+  UpdateAIModelProfileRequest,
   UpdateAIProviderConfigRequest
 } from "@jixia/shared";
 import { useEffect, useMemo, useState } from "react";
@@ -24,6 +30,7 @@ type FormState = {
   readonly name: string;
   readonly provider: string;
   readonly baseURL: string;
+  readonly modelDisplayName: string;
   readonly model: string;
   readonly temperature: string;
   readonly maxTokens: string;
@@ -39,6 +46,7 @@ type ProviderPreset = {
   readonly name: string;
   readonly provider: string;
   readonly baseURL: string;
+  readonly modelDisplayName: string;
   readonly model: string;
   readonly temperature: number;
   readonly maxTokens: number;
@@ -58,6 +66,7 @@ const providerPresets = [
     name: "OpenAI GPT-4o mini",
     provider: "openai",
     baseURL: "https://api.openai.com/v1",
+    modelDisplayName: "GPT-4o mini",
     model: "gpt-4o-mini",
     temperature: 0.2,
     maxTokens: 4096,
@@ -70,6 +79,7 @@ const providerPresets = [
     name: "OpenRouter GPT-4o mini",
     provider: "openrouter",
     baseURL: "https://openrouter.ai/api/v1",
+    modelDisplayName: "OpenAI GPT-4o mini",
     model: "openai/gpt-4o-mini",
     temperature: 0.2,
     maxTokens: 4096,
@@ -82,6 +92,7 @@ const providerPresets = [
     name: "Self-hosted OpenAI-compatible model",
     provider: "self-hosted",
     baseURL: "https://your-ai-gateway.example.com/v1",
+    modelDisplayName: "Llama 3.1",
     model: "llama3.1",
     temperature: 0.2,
     maxTokens: 4096,
@@ -94,6 +105,7 @@ const providerPresets = [
     name: "Custom OpenAI-compatible provider",
     provider: "custom",
     baseURL: "",
+    modelDisplayName: "Default model",
     model: "",
     temperature: 0.2,
     maxTokens: 4096,
@@ -109,6 +121,7 @@ const emptyForm: FormState = formFromPreset(defaultProviderPreset);
 export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat, onOpenUsage }: AISettingsPageProps) {
   const [configs, setConfigs] = useState<readonly AIProviderConfigView[]>([]);
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
+  const [editingModelProfileId, setEditingModelProfileId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [submitState, setSubmitState] = useState<"idle" | "submitting" | "error" | "saved">("idle");
@@ -121,6 +134,7 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
     () => configs.find((config) => config.id === selectedConfigId) ?? null,
     [configs, selectedConfigId]
   );
+  const editingModelProfile = selectedConfig?.modelProfiles.find((profile) => profile.id === editingModelProfileId) ?? null;
   const activePreset = useMemo(() => presetById(form.presetId), [form.presetId]);
   const activeHealthKey = selectedConfig?.id ?? "draft";
   const activeHealthCheck = healthChecks[activeHealthKey] ?? { status: "idle", result: null };
@@ -159,6 +173,7 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
 
   function startCreate(): void {
     setSelectedConfigId(null);
+    setEditingModelProfileId(null);
     setForm(emptyForm);
     setSubmitState("idle");
     setFormMessage(null);
@@ -167,15 +182,18 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
   }
 
   function startEdit(config: AIProviderConfigView): void {
+    const modelProfile = defaultModelProfile(config);
     setSelectedConfigId(config.id);
+    setEditingModelProfileId(null);
     setForm({
       presetId: inferPresetId(config.provider, config.baseURL),
       name: config.name,
       provider: config.provider,
       baseURL: config.baseURL,
-      model: config.model,
-      temperature: String(config.temperature),
-      maxTokens: String(config.maxTokens),
+      modelDisplayName: modelProfile?.displayName ?? "Default model",
+      model: modelProfile?.model ?? "",
+      temperature: String(modelProfile?.temperature ?? 0.2),
+      maxTokens: String(modelProfile?.maxTokens ?? 4096),
       apiKey: "",
       isDefault: config.isDefault
     });
@@ -194,17 +212,17 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
     setSubmitState("submitting");
     setFormMessage(null);
 
-    const parsed = parseForm(form);
-    if (!parsed.ok) {
+    const parsedAccount = parseProviderAccountForm(form);
+    if (!parsedAccount.ok) {
       setSubmitState("error");
-      setFormMessage(parsed.message);
+      setFormMessage(parsedAccount.message);
       setFormMessageTone("danger");
       return;
     }
 
     try {
       if (selectedConfig) {
-        const payload = updatePayloadFromForm(parsed.payload, form.apiKey);
+        const payload = updatePayloadFromForm(parsedAccount.payload, form.apiKey);
         const response = await apiFetch<AIProviderConfigResponse>(
           `/ai/configs/${encodeURIComponent(selectedConfig.id)}`,
           {
@@ -226,7 +244,18 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
         return;
       }
 
-      const payload: CreateAIProviderConfigRequest = createPayloadFromForm(parsed.payload, form.apiKey);
+      const parsedProfile = parseModelProfileForm(form, { isDefault: true });
+      if (!parsedProfile.ok) {
+        setSubmitState("error");
+        setFormMessage(parsedProfile.message);
+        setFormMessageTone("danger");
+        return;
+      }
+
+      const payload: CreateAIProviderConfigRequest = createPayloadFromForm({
+        ...parsedAccount.payload,
+        defaultModelProfile: parsedProfile.payload
+      }, form.apiKey);
       const response = await apiFetch<AIProviderConfigResponse>("/ai/configs", {
         method: "POST",
         json: payload
@@ -238,9 +267,10 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
         name: response.config.name,
         provider: response.config.provider,
         baseURL: response.config.baseURL,
-        model: response.config.model,
-        temperature: String(response.config.temperature),
-        maxTokens: String(response.config.maxTokens),
+        modelDisplayName: defaultModelProfile(response.config)?.displayName ?? parsedProfile.payload.displayName,
+        model: defaultModelProfile(response.config)?.model ?? parsedProfile.payload.model,
+        temperature: String(defaultModelProfile(response.config)?.temperature ?? parsedProfile.payload.temperature),
+        maxTokens: String(defaultModelProfile(response.config)?.maxTokens ?? parsedProfile.payload.maxTokens),
         apiKey: "",
         isDefault: response.config.isDefault
       });
@@ -256,9 +286,16 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
   }
 
   async function handleTestDraft(): Promise<void> {
-    const parsed = parseForm(form);
-    if (!parsed.ok) {
-      setFormMessage(parsed.message);
+    const parsedAccount = parseProviderAccountForm(form);
+    const parsedProfile = parseModelProfileForm(form);
+    if (!parsedAccount.ok) {
+      setFormMessage(parsedAccount.message);
+      setFormMessageTone("danger");
+      return;
+    }
+
+    if (!parsedProfile.ok) {
+      setFormMessage(parsedProfile.message);
       setFormMessageTone("danger");
       return;
     }
@@ -269,7 +306,7 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
     try {
       const response = await apiFetch<TestAIProviderConfigResponse>("/ai/configs/test", {
         method: "POST",
-        json: createPayloadFromForm(parsed.payload, form.apiKey)
+        json: draftTestPayloadFromForm(parsedAccount.payload, parsedProfile.payload, form.apiKey)
       });
       setHealthCheck("draft", stateFromHealthCheck(response.healthCheck));
       setSubmitState(response.healthCheck.ok ? "idle" : "error");
@@ -283,13 +320,19 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
     }
   }
 
-  async function handleTestSaved(config: AIProviderConfigView, includeFormOverrides = false): Promise<void> {
+  async function handleTestSaved(
+    config: AIProviderConfigView,
+    includeFormOverrides = false,
+    modelProfile?: AIModelProfileView
+  ): Promise<void> {
     const key = config.id;
     setHealthCheck(key, { status: "testing", result: null });
     setFormMessage(null);
 
     try {
-      const payload = includeFormOverrides ? savedTestPayloadFromForm(form) : {};
+      const payload = includeFormOverrides
+        ? savedTestPayloadFromForm(form)
+        : modelProfile ? { modelProfileId: modelProfile.id } : {};
       const response = await apiFetch<TestAIProviderConfigResponse>(`/ai/configs/${encodeURIComponent(config.id)}/test`, {
         method: "POST",
         json: payload
@@ -302,6 +345,144 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
       setHealthCheck(key, { status: "failed", result: null });
       setSubmitState("error");
       setFormMessage(error instanceof Error ? error.message : "Unable to test saved provider config.");
+      setFormMessageTone("danger");
+    }
+  }
+
+  async function handleAddModelProfile(config: AIProviderConfigView): Promise<void> {
+    const parsed = parseModelProfileForm(form, { isDefault: false });
+    if (!parsed.ok) {
+      setFormMessage(parsed.message);
+      setFormMessageTone("danger");
+      return;
+    }
+
+    setFormMessage(null);
+
+    try {
+      const response = await apiFetch<AIModelProfileResponse>(
+        `/ai/configs/${encodeURIComponent(config.id)}/model-profiles`,
+        {
+          method: "POST",
+          json: parsed.payload
+        }
+      );
+      upsertConfig(response.config);
+      setFormMessage(`Model profile ${response.modelProfile.displayName} added under ${config.name}.`);
+      setFormMessageTone("success");
+    } catch (error) {
+      setFormMessage(error instanceof Error ? error.message : "Unable to add model profile.");
+      setFormMessageTone("danger");
+    }
+  }
+
+  async function handleSaveModelProfile(config: AIProviderConfigView, profile: AIModelProfileView): Promise<void> {
+    const parsed = parseModelProfileForm(form);
+    if (!parsed.ok) {
+      setFormMessage(parsed.message);
+      setFormMessageTone("danger");
+      return;
+    }
+
+    const payload: UpdateAIModelProfileRequest = {
+      displayName: parsed.payload.displayName,
+      model: parsed.payload.model,
+      temperature: parsed.payload.temperature,
+      maxTokens: parsed.payload.maxTokens
+    };
+    setFormMessage(null);
+
+    try {
+      const response = await apiFetch<AIModelProfileResponse>(
+        `/ai/configs/${encodeURIComponent(config.id)}/model-profiles/${encodeURIComponent(profile.id)}`,
+        {
+          method: "PATCH",
+          json: payload
+        }
+      );
+      upsertConfig(response.config);
+      setEditingModelProfileId(null);
+      setFormMessage(`Model profile ${response.modelProfile.displayName} updated under ${config.name}.`);
+      setFormMessageTone("success");
+    } catch (error) {
+      setFormMessage(error instanceof Error ? error.message : "Unable to update model profile.");
+      setFormMessageTone("danger");
+    }
+  }
+
+  async function handleToggleModelProfileEnabled(config: AIProviderConfigView, profile: AIModelProfileView): Promise<void> {
+    setFormMessage(null);
+
+    try {
+      const response = await apiFetch<AIModelProfileResponse>(
+        `/ai/configs/${encodeURIComponent(config.id)}/model-profiles/${encodeURIComponent(profile.id)}`,
+        {
+          method: "PATCH",
+          json: { enabled: !profile.enabled }
+        }
+      );
+      upsertConfig(response.config);
+      setFormMessage(`${response.modelProfile.displayName} is now ${response.modelProfile.enabled ? "enabled" : "disabled"}.`);
+      setFormMessageTone("success");
+    } catch (error) {
+      setFormMessage(error instanceof Error ? error.message : "Unable to update model profile status.");
+      setFormMessageTone("danger");
+    }
+  }
+
+  function handleStartEditModelProfile(profile: AIModelProfileView): void {
+    setEditingModelProfileId(profile.id);
+    setForm((currentForm) => ({
+      ...currentForm,
+      modelDisplayName: profile.displayName,
+      model: profile.model,
+      temperature: String(profile.temperature),
+      maxTokens: String(profile.maxTokens)
+    }));
+    setFormMessage(null);
+    setFormMessageTone("info");
+  }
+
+  function handleCancelModelProfileEdit(): void {
+    setEditingModelProfileId(null);
+    setFormMessage(null);
+    setFormMessageTone("info");
+  }
+
+  async function handleSetDefaultModelProfile(config: AIProviderConfigView, profile: AIModelProfileView): Promise<void> {
+    setFormMessage(null);
+
+    try {
+      const response = await apiFetch<AIModelProfileResponse>(
+        `/ai/configs/${encodeURIComponent(config.id)}/model-profiles/${encodeURIComponent(profile.id)}/default`,
+        { method: "POST" }
+      );
+      upsertConfig(response.config);
+      setFormMessage(`${response.modelProfile.displayName} is now the default model for ${config.name}.`);
+      setFormMessageTone("success");
+    } catch (error) {
+      setFormMessage(error instanceof Error ? error.message : "Unable to set default model profile.");
+      setFormMessageTone("danger");
+    }
+  }
+
+  async function handleDeleteModelProfile(config: AIProviderConfigView, profile: AIModelProfileView): Promise<void> {
+    if (!window.confirm(`Delete model profile ${profile.displayName}? Provider credentials remain saved.`)) {
+      return;
+    }
+
+    setFormMessage(null);
+
+    try {
+      const response = await apiFetch<DeleteAIModelProfileResponse>(
+        `/ai/configs/${encodeURIComponent(config.id)}/model-profiles/${encodeURIComponent(profile.id)}`,
+        { method: "DELETE" }
+      );
+      upsertConfig(response.config);
+      setFormMessage(`${profile.displayName} removed from ${config.name}.`);
+      setFormMessageTone("success");
+    } catch (error) {
+      setFormMessage(error instanceof Error ? error.message : "Unable to delete model profile.");
       setFormMessageTone("danger");
     }
   }
@@ -371,6 +552,7 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
       name: selectedConfig && currentForm.name.trim() ? currentForm.name : preset.name,
       provider: preset.provider,
       baseURL: preset.baseURL,
+      modelDisplayName: preset.modelDisplayName,
       model: preset.model,
       temperature: String(preset.temperature),
       maxTokens: String(preset.maxTokens)
@@ -504,12 +686,12 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
               <MetaGrid
                 className="jixia-ai-settings-guide"
                 items={[
-                  { label: "Name", value: "Human label shown in settings and model pickers." },
-                  { label: "Provider", value: "Adapter id sent to the API, such as openai, openrouter, local, or custom." },
+                  { label: "Provider account", value: "Name, provider id, base URL, key status, and personal default live on the account." },
                   { label: "Base URL", value: "OpenAI-compatible endpoint; Jixia validates and normalizes it server-side." },
-                  { label: "Model", value: "Provider model id used for requests, for example gpt-4o-mini or openai/gpt-4o-mini." },
+                  { label: "Model profiles", value: "One provider account can own multiple selectable model ids without duplicating keys." },
                   { label: "API key", value: "Write-only secret. Blank on edit means keep the encrypted server-side key." },
-                  { label: "Default", value: "Personal fallback provider for chat when no provider is selected." }
+                  { label: "Provider default", value: "Personal fallback provider account for chat setup." },
+                  { label: "Model default", value: "Fallback enabled model under a provider when chat needs a profile." }
                 ]}
               />
             </details>
@@ -522,9 +704,24 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
             ) : null}
 
             <div className="jixia-ai-settings-form-grid">
-              <TextField label="Config name" onChange={(value) => updateFormText("name", value)} placeholder="e.g. OpenAI production" required value={form.name} />
+              <TextField label="Provider account name" onChange={(value) => updateFormText("name", value)} placeholder="e.g. OpenAI production" required value={form.name} />
               <TextField label="Provider" list="ai-provider-options" onChange={(value) => updateFormText("provider", value)} placeholder="openai" required value={form.provider} />
               <TextField label="Base URL" onChange={(value) => updateFormText("baseURL", value)} placeholder="https://api.openai.com/v1" required value={form.baseURL} />
+            </div>
+
+            <section className="jixia-ai-model-profile-editor" aria-label="Model profile editor">
+              <div>
+                <strong>{selectedConfig ? editingModelProfile ? "Edit model profile" : "Add model profile" : "Default model profile"}</strong>
+                <span>
+                  {selectedConfig && editingModelProfile
+                    ? `Update ${editingModelProfile.displayName}; provider credentials remain account-level.`
+                    : selectedConfig
+                    ? "Create another selectable model under this saved provider account without re-entering the key."
+                    : "This first profile is created with the provider account and becomes its default model."}
+                </span>
+              </div>
+              <div className="jixia-ai-settings-form-grid">
+                <TextField label="Model profile name" onChange={(value) => updateFormText("modelDisplayName", value)} placeholder="e.g. Fast draft model" required value={form.modelDisplayName} />
               <TextField label="Model" onChange={(value) => updateFormText("model", value)} placeholder="gpt-4o-mini" required value={form.model} />
               <TextField
                 inputMode="decimal"
@@ -542,7 +739,35 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
                 required
                 value={form.maxTokens}
               />
-            </div>
+              </div>
+              {selectedConfig ? (
+                <div className="jixia-ai-provider-card__actions">
+                  {editingModelProfile ? (
+                    <>
+                      <Button onClick={() => void handleSaveModelProfile(selectedConfig, editingModelProfile)} type="button">
+                        Save model profile
+                      </Button>
+                      <Button onClick={handleCancelModelProfileEdit} type="button" variant="ghost">Cancel model edit</Button>
+                    </>
+                  ) : (
+                    <Button onClick={() => void handleAddModelProfile(selectedConfig)} type="button">
+                      Add model profile
+                    </Button>
+                  )}
+                </div>
+              ) : null}
+            </section>
+
+            {selectedConfig ? (
+              <ModelProfileList
+                config={selectedConfig}
+                onDelete={(profile) => void handleDeleteModelProfile(selectedConfig, profile)}
+                onEdit={handleStartEditModelProfile}
+                onSetDefault={(profile) => void handleSetDefaultModelProfile(selectedConfig, profile)}
+                onTest={(profile) => void handleTestSaved(selectedConfig, false, profile)}
+                onToggleEnabled={(profile) => void handleToggleModelProfileEnabled(selectedConfig, profile)}
+              />
+            ) : null}
 
             <datalist id="ai-provider-options">
               <option value="openai" />
@@ -567,7 +792,7 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
                 onChange={(event) => setForm({ ...form, isDefault: event.currentTarget.checked })}
                 type="checkbox"
               />
-              <span>Set this as my personal default config</span>
+              <span>Set this as my personal default provider account</span>
             </label>
 
             {formMessage ? (
@@ -583,10 +808,10 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
                 disabled={activeHealthCheck.status === "testing"}
                 onClick={() => selectedConfig ? void handleTestSaved(selectedConfig, true) : void handleTestDraft()}
               >
-                {activeHealthCheck.status === "testing" ? "Testing…" : selectedConfig ? "Test edited config" : "Test draft config"}
+                {activeHealthCheck.status === "testing" ? "Testing…" : selectedConfig ? "Test provider with profile draft" : "Test draft provider and model"}
               </Button>
               <Button disabled={submitState === "submitting"} type="submit" variant="primary">
-                {submitState === "submitting" ? "Saving…" : selectedConfig ? "Save config" : "Create config"}
+                {submitState === "submitting" ? "Saving…" : selectedConfig ? "Save provider account" : "Create provider account"}
               </Button>
               {onOpenChat && (submitState === "saved" || activeHealthCheck.status === "passed") ? <Button onClick={onOpenChat}>Back to chat</Button> : null}
             </div>
@@ -667,12 +892,13 @@ function ProviderConfigCard({
   onSetDefault,
   onTest
 }: ProviderConfigCardProps) {
+  const profile = defaultModelProfile(config);
   return (
     <article aria-current={isSelected ? "true" : undefined} className="jixia-ai-provider-card">
       <div className="jixia-ai-provider-card__header">
         <div>
           <strong>{config.name}</strong>
-          <span>{config.provider} · {config.model}</span>
+          <span>{config.provider} · {config.modelProfiles.length} model {config.modelProfiles.length === 1 ? "profile" : "profiles"}</span>
         </div>
         <div className="jixia-ai-provider-card__pills">
           {config.isDefault ? <Pill tone="accent">Default</Pill> : null}
@@ -684,7 +910,7 @@ function ProviderConfigCard({
       </div>
       <div className="jixia-ai-provider-card__meta">
         <span>{config.baseURL}</span>
-        <span>temp {config.temperature} · {config.maxTokens} tokens · {config.hasKey ? "server key present" : "missing key"}</span>
+        <span>{profile ? `default ${profile.displayName} · ${profile.model}` : "no model profiles"} · {config.hasKey ? "server key present" : "missing key"}</span>
       </div>
       <HealthCheckCard healthCheck={healthCheck} compact />
       <div className="jixia-ai-provider-card__actions">
@@ -695,6 +921,51 @@ function ProviderConfigCard({
         <Button onClick={onDelete} variant="danger">Delete {config.name}</Button>
       </div>
     </article>
+  );
+}
+
+type ModelProfileListProps = {
+  readonly config: AIProviderConfigView;
+  readonly onDelete: (profile: AIModelProfileView) => void;
+  readonly onEdit: (profile: AIModelProfileView) => void;
+  readonly onSetDefault: (profile: AIModelProfileView) => void;
+  readonly onTest: (profile: AIModelProfileView) => void;
+  readonly onToggleEnabled: (profile: AIModelProfileView) => void;
+};
+
+function ModelProfileList({ config, onDelete, onEdit, onSetDefault, onTest, onToggleEnabled }: ModelProfileListProps) {
+  return (
+    <section aria-label="Saved model profiles" className="jixia-ai-model-profile-list">
+      <div>
+        <strong>Saved model profiles</strong>
+        <span>Selectable models under {config.name}. Provider key and base URL remain account-level.</span>
+      </div>
+      {config.modelProfiles.length === 0 ? (
+        <div className="jixia-ai-model-profile-row">
+          <span>No model profiles saved for this provider account.</span>
+        </div>
+      ) : config.modelProfiles.map((profile) => (
+        <article className="jixia-ai-model-profile-row" key={profile.id}>
+          <div>
+            <strong>{profile.displayName}</strong>
+            <span>{profile.model} · temp {profile.temperature} · {profile.maxTokens} tokens</span>
+          </div>
+          <div className="jixia-ai-provider-card__pills">
+            {profile.isDefault ? <Pill tone="accent">Default model</Pill> : null}
+            <Pill tone={profile.enabled ? "success" : "warning"}>{profile.enabled ? "Enabled" : "Disabled"}</Pill>
+          </div>
+          <div className="jixia-ai-provider-card__actions">
+            <Button onClick={() => onTest(profile)} type="button">Test model</Button>
+            <Button onClick={() => onEdit(profile)} type="button">Edit model</Button>
+            <Button onClick={() => onToggleEnabled(profile)} type="button" variant={profile.enabled ? "ghost" : "secondary"}>
+              {profile.enabled ? "Disable model" : "Enable model"}
+            </Button>
+            <Button disabled={profile.isDefault} onClick={() => onSetDefault(profile)} type="button">Set model default</Button>
+            <Button onClick={() => onDelete(profile)} type="button" variant="danger">Delete model</Button>
+          </div>
+        </article>
+      ))}
+    </section>
   );
 }
 
@@ -737,6 +1008,7 @@ function formFromPreset(preset: ProviderPreset): FormState {
     name: preset.name,
     provider: preset.provider,
     baseURL: preset.baseURL,
+    modelDisplayName: preset.modelDisplayName,
     model: preset.model,
     temperature: String(preset.temperature),
     maxTokens: String(preset.maxTokens),
@@ -775,13 +1047,55 @@ function normalizePresetBaseURL(baseURL: string): string {
 type ParsedForm =
   | {
       readonly ok: true;
-      readonly payload: Omit<CreateAIProviderConfigRequest, "apiKey">;
+      readonly payload: Omit<CreateAIProviderConfigRequest, "apiKey" | "defaultModelProfile">;
     }
   | { readonly ok: false; readonly message: string };
 
-function parseForm(form: FormState): ParsedForm {
+type ParsedModelProfileForm =
+  | {
+      readonly ok: true;
+      readonly payload: CreateAIModelProfileRequest;
+    }
+  | { readonly ok: false; readonly message: string };
+
+function parseProviderAccountForm(form: FormState): ParsedForm {
+  if (!form.name.trim()) {
+    return { ok: false, message: "Provider account name is required." };
+  }
+
+  if (!form.provider.trim()) {
+    return { ok: false, message: "Provider is required." };
+  }
+
+  if (!form.baseURL.trim()) {
+    return { ok: false, message: "Base URL is required." };
+  }
+
+  return {
+    ok: true,
+    payload: {
+      name: form.name.trim(),
+      provider: form.provider.trim(),
+      baseURL: form.baseURL.trim(),
+      isDefault: form.isDefault
+    }
+  };
+}
+
+function parseModelProfileForm(
+  form: FormState,
+  options: { readonly enabled?: boolean; readonly isDefault?: boolean } = {}
+): ParsedModelProfileForm {
   const temperature = Number(form.temperature);
   const maxTokens = Number(form.maxTokens);
+
+  if (!form.modelDisplayName.trim()) {
+    return { ok: false, message: "Model profile name is required." };
+  }
+
+  if (!form.model.trim()) {
+    return { ok: false, message: "Model is required." };
+  }
 
   if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
     return { ok: false, message: "Temperature must be a number between 0 and 2." };
@@ -794,13 +1108,12 @@ function parseForm(form: FormState): ParsedForm {
   return {
     ok: true,
     payload: {
-      name: form.name.trim(),
-      provider: form.provider.trim(),
-      baseURL: form.baseURL.trim(),
+      displayName: form.modelDisplayName.trim(),
       model: form.model.trim(),
       temperature,
       maxTokens,
-      isDefault: form.isDefault
+      ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
+      ...(options.isDefault === undefined ? {} : { isDefault: options.isDefault })
     }
   };
 }
@@ -813,13 +1126,32 @@ function createPayloadFromForm(
   return trimmedApiKey ? { ...formPayload, apiKey: trimmedApiKey } : formPayload;
 }
 
-function savedTestPayloadFromForm(form: FormState): UpdateAIProviderConfigRequest {
-  const parsed = parseForm(form);
+function draftTestPayloadFromForm(
+  providerPayload: Omit<CreateAIProviderConfigRequest, "apiKey" | "defaultModelProfile">,
+  profilePayload: CreateAIModelProfileRequest,
+  apiKey: string
+): CreateAIProviderConfigRequest & CreateAIModelProfileRequest {
+  const trimmedApiKey = apiKey.trim();
+  return {
+    ...providerPayload,
+    ...profilePayload,
+    ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {})
+  };
+}
+
+function savedTestPayloadFromForm(form: FormState): TestAIProviderSavedRequest {
+  const parsed = parseModelProfileForm(form);
   if (!parsed.ok) {
     return {};
   }
 
-  return createPayloadFromForm(parsed.payload, form.apiKey);
+  const trimmedApiKey = form.apiKey.trim();
+  return {
+    model: parsed.payload.model,
+    temperature: parsed.payload.temperature,
+    maxTokens: parsed.payload.maxTokens,
+    ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {})
+  };
 }
 
 function stateFromHealthCheck(result: ProviderHealthCheck): HealthCheckState {
@@ -840,11 +1172,18 @@ function healthLabel(healthCheck: HealthCheckState): string {
 }
 
 function updatePayloadFromForm(
-  formPayload: Omit<CreateAIProviderConfigRequest, "apiKey">,
+  formPayload: Omit<CreateAIProviderConfigRequest, "apiKey" | "defaultModelProfile">,
   apiKey: string
 ): UpdateAIProviderConfigRequest {
   const trimmedApiKey = apiKey.trim();
   return trimmedApiKey ? { ...formPayload, apiKey: trimmedApiKey } : formPayload;
+}
+
+function defaultModelProfile(config: AIProviderConfigView): AIModelProfileView | null {
+  return config.modelProfiles.find((profile) => profile.isDefault && profile.enabled)
+    ?? config.modelProfiles.find((profile) => profile.enabled)
+    ?? config.modelProfiles[0]
+    ?? null;
 }
 
 function compareConfigs(left: AIProviderConfigView, right: AIProviderConfigView): number {
