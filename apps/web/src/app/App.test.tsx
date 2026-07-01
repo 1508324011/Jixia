@@ -218,11 +218,22 @@ const providerConfig: AIProviderConfigView = {
   name: "Lab OpenAI",
   provider: "openai",
   baseURL: "https://api.openai.com/v1",
-  model: "gpt-4o-mini",
-  temperature: 0.2,
-  maxTokens: 4096,
   hasKey: true,
   isDefault: true,
+  modelProfiles: [
+    {
+      id: "model-profile-1",
+      providerConfigId: "config-1",
+      model: "gpt-4o-mini",
+      displayName: "GPT-4o mini",
+      temperature: 0.2,
+      maxTokens: 4096,
+      enabled: true,
+      isDefault: true,
+      createdAt: "2026-06-16T10:00:00.000Z",
+      updatedAt: "2026-06-16T10:00:00.000Z"
+    }
+  ],
   createdAt: "2026-06-16T10:00:00.000Z",
   updatedAt: "2026-06-16T10:00:00.000Z"
 };

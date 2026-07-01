@@ -389,13 +389,26 @@ function publicAIProviderConfig(config) {
     name: config.name,
     provider: config.provider,
     baseURL: config.baseURL,
-    model: config.model,
-    temperature: config.temperature,
-    maxTokens: config.maxTokens,
     hasKey: config.hasKey,
     isDefault: config.isDefault,
+    modelProfiles: config.modelProfiles.map(publicAIModelProfile),
     createdAt: config.createdAt,
     updatedAt: config.updatedAt
+  };
+}
+
+function publicAIModelProfile(profile) {
+  return {
+    id: profile.id,
+    providerConfigId: profile.providerConfigId,
+    model: profile.model,
+    displayName: profile.displayName,
+    temperature: profile.temperature,
+    maxTokens: profile.maxTokens,
+    enabled: profile.enabled,
+    isDefault: profile.isDefault,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt
   };
 }
 
@@ -418,15 +431,32 @@ function readAIProviderConfigPayload(body, fallback = {}) {
   const name = String(body.name ?? fallback.name ?? "").trim();
   const provider = String(body.provider ?? fallback.provider ?? "").trim();
   const baseURL = String(body.baseURL ?? fallback.baseURL ?? "").trim();
-  const model = String(body.model ?? fallback.model ?? "").trim();
-  const temperature = Number(body.temperature ?? fallback.temperature ?? 0.2);
-  const maxTokens = Number(body.maxTokens ?? fallback.maxTokens ?? 4096);
 
-  if (!name || !provider || !baseURL || !model || !Number.isFinite(temperature) || !Number.isInteger(maxTokens) || maxTokens <= 0) {
+  if (!name || !provider || !baseURL) {
     return null;
   }
 
-  return { name, provider, baseURL, model, temperature, maxTokens };
+  return { name, provider, baseURL };
+}
+
+function readAIModelProfilePayload(body, fallback = {}) {
+  const model = String(body.model ?? fallback.model ?? "").trim();
+  const displayName = String(body.displayName ?? fallback.displayName ?? model).trim();
+  const temperature = Number(body.temperature ?? fallback.temperature ?? 0.2);
+  const maxTokens = Number(body.maxTokens ?? fallback.maxTokens ?? 4096);
+
+  if (!model || !displayName || !Number.isFinite(temperature) || !Number.isInteger(maxTokens) || maxTokens <= 0) {
+    return null;
+  }
+
+  return {
+    model,
+    displayName,
+    temperature,
+    maxTokens,
+    enabled: body.enabled === undefined ? fallback.enabled ?? true : Boolean(body.enabled),
+    isDefault: body.isDefault === undefined ? fallback.isDefault ?? false : Boolean(body.isDefault)
+  };
 }
 
 function aiProviderHealthCheck(payload) {
@@ -441,6 +471,48 @@ function aiProviderHealthCheck(payload) {
     baseURL: String(payload.baseURL ?? "https://manual-review.local/v1"),
     checkedAt
   };
+}
+
+function defaultAIModelProfile(config) {
+  return config.modelProfiles.find((profile) => profile.enabled && profile.isDefault)
+    ?? config.modelProfiles.find((profile) => profile.enabled)
+    ?? config.modelProfiles[0]
+    ?? null;
+}
+
+function findAIModelProfile(modelProfileId) {
+  for (const config of aiProviderConfigs.values()) {
+    const profile = config.modelProfiles.find((candidate) => candidate.id === modelProfileId);
+    if (profile) {
+      return { config, profile };
+    }
+  }
+  return null;
+}
+
+function createAIModelProfile(config, payload, timestamp = nowIso()) {
+  const shouldBeDefault = Boolean(payload.isDefault) || config.modelProfiles.length === 0;
+  if (shouldBeDefault) {
+    for (const profile of config.modelProfiles) {
+      profile.isDefault = false;
+      profile.updatedAt = timestamp;
+    }
+  }
+  const profile = {
+    id: nextId("ai-model-profile"),
+    providerConfigId: config.id,
+    model: payload.model,
+    displayName: payload.displayName,
+    temperature: payload.temperature,
+    maxTokens: payload.maxTokens,
+    enabled: payload.enabled,
+    isDefault: shouldBeDefault,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  config.modelProfiles.push(profile);
+  config.updatedAt = timestamp;
+  return profile;
 }
 
 function contextAttachmentsFromSnapshot(snapshot) {
@@ -524,12 +596,13 @@ function fixtureAssistantContent(userContent, selectedContextSnapshot) {
   ].join("\n");
 }
 
-function createAIRun(providerConfigId) {
+function createAIRun(providerConfigId, modelProfileId) {
   const timestamp = nowIso();
   const run = {
     id: nextId("ai-run"),
     status: "running",
     providerConfigId,
+    modelProfileId,
     errorMessage: null,
     errorCategory: null,
     usage: null,
@@ -847,7 +920,8 @@ async function handleApiRequest(request, response, url) {
 
     const body = await readJson(request);
     const payload = readAIProviderConfigPayload(body);
-    if (!payload) {
+    const profilePayload = readAIModelProfilePayload(body.defaultModelProfile ?? body);
+    if (!payload || !profilePayload) {
       sendError(response, 400, "Invalid request");
       return;
     }
@@ -857,11 +931,13 @@ async function handleApiRequest(request, response, url) {
       id: nextId("ai-config"),
       ownerUserId: context.user.id,
       ...payload,
+      modelProfiles: [],
       hasKey: typeof body.apiKey === "string" && body.apiKey.trim().length > 0,
       isDefault: Boolean(body.isDefault) || aiProviderConfigsForUser(context.user.id).length === 0,
       createdAt: timestamp,
       updatedAt: timestamp
     };
+    createAIModelProfile(config, { ...profilePayload, isDefault: true }, timestamp);
     aiProviderConfigs.set(config.id, config);
     if (config.isDefault) {
       setDefaultAIProviderConfig(context.user.id, config.id);
@@ -935,7 +1011,94 @@ async function handleApiRequest(request, response, url) {
       return;
     }
     const body = await readJson(request);
-    sendJson(response, 200, { healthCheck: aiProviderHealthCheck({ ...config, ...body }) });
+    const profile = body.modelProfileId
+      ? findAIModelProfile(String(body.modelProfileId))?.profile
+      : defaultAIModelProfile(config);
+    sendJson(response, 200, { healthCheck: aiProviderHealthCheck({ ...config, ...profile, ...body }) });
+    return;
+  }
+
+  const aiModelProfilesMatch = path.match(/^\/api\/ai\/configs\/([^/]+)\/model-profiles$/);
+  if (request.method === "POST" && aiModelProfilesMatch) {
+    const context = requireSession(request, response);
+    const configId = decodeURIComponent(aiModelProfilesMatch[1] ?? "");
+    const config = aiProviderConfigs.get(configId);
+    if (!context) {
+      return;
+    }
+    if (!config || config.ownerUserId !== context.user.id) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+    const body = await readJson(request);
+    const payload = readAIModelProfilePayload(body);
+    if (!payload) {
+      sendError(response, 400, "Invalid request");
+      return;
+    }
+    const profile = createAIModelProfile(config, payload);
+    sendJson(response, 200, { config: publicAIProviderConfig(config), modelProfile: publicAIModelProfile(profile) });
+    return;
+  }
+
+  const aiModelProfileMatch = path.match(/^\/api\/ai\/configs\/([^/]+)\/model-profiles\/([^/]+)$/);
+  if ((request.method === "PATCH" || request.method === "DELETE") && aiModelProfileMatch) {
+    const context = requireSession(request, response);
+    const configId = decodeURIComponent(aiModelProfileMatch[1] ?? "");
+    const modelProfileId = decodeURIComponent(aiModelProfileMatch[2] ?? "");
+    const config = aiProviderConfigs.get(configId);
+    const profile = config?.modelProfiles.find((candidate) => candidate.id === modelProfileId);
+    if (!context) {
+      return;
+    }
+    if (!config || config.ownerUserId !== context.user.id || !profile) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+    if (request.method === "DELETE") {
+      config.modelProfiles = config.modelProfiles.filter((candidate) => candidate.id !== modelProfileId);
+      config.updatedAt = nowIso();
+      sendJson(response, 200, { ok: true, config: publicAIProviderConfig(config) });
+      return;
+    }
+    const body = await readJson(request);
+    const payload = readAIModelProfilePayload(body, profile);
+    if (!payload) {
+      sendError(response, 400, "Invalid request");
+      return;
+    }
+    Object.assign(profile, payload, { updatedAt: nowIso() });
+    if (profile.isDefault) {
+      for (const candidate of config.modelProfiles) {
+        candidate.isDefault = candidate.id === profile.id;
+      }
+    }
+    config.updatedAt = nowIso();
+    sendJson(response, 200, { config: publicAIProviderConfig(config), modelProfile: publicAIModelProfile(profile) });
+    return;
+  }
+
+  const aiModelProfileDefaultMatch = path.match(/^\/api\/ai\/configs\/([^/]+)\/model-profiles\/([^/]+)\/default$/);
+  if (request.method === "POST" && aiModelProfileDefaultMatch) {
+    const context = requireSession(request, response);
+    const configId = decodeURIComponent(aiModelProfileDefaultMatch[1] ?? "");
+    const modelProfileId = decodeURIComponent(aiModelProfileDefaultMatch[2] ?? "");
+    const config = aiProviderConfigs.get(configId);
+    const profile = config?.modelProfiles.find((candidate) => candidate.id === modelProfileId);
+    if (!context) {
+      return;
+    }
+    if (!config || config.ownerUserId !== context.user.id || !profile) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+    for (const candidate of config.modelProfiles) {
+      candidate.isDefault = candidate.id === profile.id;
+      candidate.updatedAt = nowIso();
+    }
+    profile.enabled = true;
+    config.updatedAt = nowIso();
+    sendJson(response, 200, { config: publicAIProviderConfig(config), modelProfile: publicAIModelProfile(profile) });
     return;
   }
 
@@ -996,8 +1159,9 @@ async function handleApiRequest(request, response, url) {
     }
 
     const body = await readJson(request);
-    const providerConfigId = String(body.providerConfigId ?? "");
-    const providerConfig = aiProviderConfigs.get(providerConfigId);
+    const modelProfileId = String(body.modelProfileId ?? "");
+    const modelSelection = findAIModelProfile(modelProfileId);
+    const providerConfig = modelSelection?.config;
     if (!providerConfig || providerConfig.ownerUserId !== context.user.id) {
       sendError(response, 404, "Not found");
       return;
@@ -1011,7 +1175,7 @@ async function handleApiRequest(request, response, url) {
 
     const timestamp = nowIso();
     const userContent = String(body.message?.content ?? "").trim();
-    const run = createAIRun(providerConfig.id);
+    const run = createAIRun(providerConfig.id, modelSelection.profile.id);
     const userMessage = {
       id: nextId("ai-message"),
       role: "user",
