@@ -16,6 +16,8 @@ import {
   createAIConfigService,
   type AIActor,
   type AIConfigService,
+  type AIModelProfileInput,
+  type AIModelProfileRecord,
   type AIProviderConfigRecord,
   type AIProviderConfigRepository
 } from "./ai-config.service.js";
@@ -29,16 +31,24 @@ const cookieName = "jixia_ai_config_test_session";
 
 class InMemoryAIConfigRepository implements AIProviderConfigRepository {
   readonly configs = new Map<string, AIProviderConfigRecord>();
+  readonly modelProfiles = new Map<string, AIModelProfileRecord>();
   private nextId = 1;
+  private nextProfileId = 1;
 
   async listConfigs(ownerUserId: string): Promise<readonly AIProviderConfigRecord[]> {
     return Array.from(this.configs.values())
       .filter((config) => config.ownerUserId === ownerUserId)
-      .sort((left, right) => Number(right.isDefault) - Number(left.isDefault));
+      .sort((left, right) => Number(right.isDefault) - Number(left.isDefault))
+      .map((config) => this.withProfiles(config));
   }
 
   async findConfigById(configId: string): Promise<AIProviderConfigRecord | null> {
-    return this.configs.get(configId) ?? null;
+    const config = this.configs.get(configId);
+    return config ? this.withProfiles(config) : null;
+  }
+
+  async findModelProfileById(modelProfileId: string): Promise<AIModelProfileRecord | null> {
+    return this.modelProfiles.get(modelProfileId) ?? null;
   }
 
   async createConfig(input: {
@@ -46,9 +56,7 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
     readonly name: string;
     readonly provider: string;
     readonly baseURL: string;
-    readonly model: string;
-    readonly temperature: number;
-    readonly maxTokens: number;
+    readonly defaultModelProfile?: AIModelProfileInput;
     readonly encryptedApiKey: string | null;
     readonly keyPreview: string | null;
     readonly isDefault: boolean;
@@ -66,17 +74,18 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
       name: input.name,
       provider: input.provider,
       baseURL: input.baseURL,
-      model: input.model,
-      temperature: input.temperature,
-      maxTokens: input.maxTokens,
       encryptedApiKey: input.encryptedApiKey,
       keyPreview: input.keyPreview,
       isDefault: input.isDefault,
+      modelProfiles: [],
       createdAt: timestamp,
       updatedAt: timestamp
     };
     this.configs.set(config.id, config);
-    return config;
+    if (input.defaultModelProfile) {
+      this.createProfileRecord(config.id, input.defaultModelProfile, true, timestamp);
+    }
+    return this.withProfiles(config);
   }
 
   async updateConfig(input: {
@@ -85,9 +94,6 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
     readonly name?: string;
     readonly provider?: string;
     readonly baseURL?: string;
-    readonly model?: string;
-    readonly temperature?: number;
-    readonly maxTokens?: number;
     readonly encryptedApiKey?: string | null;
     readonly keyPreview?: string | null;
     readonly isDefault?: boolean;
@@ -111,15 +117,95 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
       ...(input.name === undefined ? {} : { name: input.name }),
       ...(input.provider === undefined ? {} : { provider: input.provider }),
       ...(input.baseURL === undefined ? {} : { baseURL: input.baseURL }),
-      ...(input.model === undefined ? {} : { model: input.model }),
-      ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
-      ...(input.maxTokens === undefined ? {} : { maxTokens: input.maxTokens }),
       ...(input.encryptedApiKey === undefined ? {} : { encryptedApiKey: input.encryptedApiKey }),
       ...(input.keyPreview === undefined ? {} : { keyPreview: input.keyPreview }),
       ...(input.isDefault === undefined ? {} : { isDefault: input.isDefault }),
       updatedAt: new Date(current.updatedAt.getTime() + 1_000)
     };
     this.configs.set(updated.id, updated);
+    return this.withProfiles(updated);
+  }
+
+  async createModelProfile(input: {
+    readonly providerConfigId: string;
+    readonly ownerUserId: string;
+    readonly model: string;
+    readonly displayName: string;
+    readonly temperature: number;
+    readonly maxTokens: number;
+    readonly enabled: boolean;
+    readonly isDefault: boolean;
+  }): Promise<AIModelProfileRecord | null> {
+    const config = this.configs.get(input.providerConfigId);
+    if (!config || config.ownerUserId !== input.ownerUserId) {
+      return null;
+    }
+    if (input.isDefault) {
+      this.clearModelDefaults(input.providerConfigId);
+    }
+    return this.createProfileRecord(input.providerConfigId, input, input.isDefault, new Date(config.updatedAt.getTime() + 1_000));
+  }
+
+  async updateModelProfile(input: {
+    readonly providerConfigId: string;
+    readonly modelProfileId: string;
+    readonly ownerUserId: string;
+    readonly model?: string;
+    readonly displayName?: string;
+    readonly temperature?: number;
+    readonly maxTokens?: number;
+    readonly enabled?: boolean;
+    readonly isDefault?: boolean;
+  }): Promise<AIModelProfileRecord | null> {
+    const config = this.configs.get(input.providerConfigId);
+    const profile = this.modelProfiles.get(input.modelProfileId);
+    if (!config || config.ownerUserId !== input.ownerUserId || !profile || profile.providerConfigId !== input.providerConfigId) {
+      return null;
+    }
+    if (input.isDefault === true) {
+      this.clearModelDefaults(input.providerConfigId);
+    }
+    const updated: AIModelProfileRecord = {
+      ...profile,
+      ...(input.model === undefined ? {} : { model: input.model }),
+      ...(input.displayName === undefined ? {} : { displayName: input.displayName }),
+      ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
+      ...(input.maxTokens === undefined ? {} : { maxTokens: input.maxTokens }),
+      ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+      ...(input.isDefault === undefined ? {} : { isDefault: input.isDefault }),
+      updatedAt: new Date(profile.updatedAt.getTime() + 1_000)
+    };
+    this.modelProfiles.set(updated.id, updated);
+    return updated;
+  }
+
+  async deleteModelProfile(input: {
+    readonly providerConfigId: string;
+    readonly modelProfileId: string;
+    readonly ownerUserId: string;
+  }): Promise<boolean> {
+    const config = this.configs.get(input.providerConfigId);
+    const profile = this.modelProfiles.get(input.modelProfileId);
+    if (!config || config.ownerUserId !== input.ownerUserId || !profile || profile.providerConfigId !== input.providerConfigId) {
+      return false;
+    }
+    this.modelProfiles.delete(input.modelProfileId);
+    return true;
+  }
+
+  async setDefaultModelProfile(input: {
+    readonly providerConfigId: string;
+    readonly modelProfileId: string;
+    readonly ownerUserId: string;
+  }): Promise<AIModelProfileRecord | null> {
+    const config = this.configs.get(input.providerConfigId);
+    const profile = this.modelProfiles.get(input.modelProfileId);
+    if (!config || config.ownerUserId !== input.ownerUserId || !profile || profile.providerConfigId !== input.providerConfigId) {
+      return null;
+    }
+    this.clearModelDefaults(input.providerConfigId);
+    const updated = { ...profile, enabled: true, isDefault: true, updatedAt: new Date(profile.updatedAt.getTime() + 1_000) };
+    this.modelProfiles.set(updated.id, updated);
     return updated;
   }
 
@@ -131,6 +217,11 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
     }
 
     this.configs.delete(input.configId);
+    for (const profile of this.modelProfiles.values()) {
+      if (profile.providerConfigId === input.configId) {
+        this.modelProfiles.delete(profile.id);
+      }
+    }
     return true;
   }
 
@@ -147,7 +238,7 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
     this.clearDefaults(input.ownerUserId);
     const updated = { ...config, isDefault: true, updatedAt: new Date(config.updatedAt.getTime() + 1_000) };
     this.configs.set(config.id, updated);
-    return updated;
+    return this.withProfiles(updated);
   }
 
   private clearDefaults(ownerUserId: string): void {
@@ -161,6 +252,45 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
   private ensureUniqueName(ownerUserId: string, name: string): void {
     if (Array.from(this.configs.values()).some((config) => config.ownerUserId === ownerUserId && config.name === name)) {
       throw Object.assign(new Error("duplicate config"), { code: "P2002" });
+    }
+  }
+
+  private createProfileRecord(
+    providerConfigId: string,
+    input: AIModelProfileInput,
+    isDefault: boolean,
+    timestamp: Date
+  ): AIModelProfileRecord {
+    const profile: AIModelProfileRecord = {
+      id: `model-profile-${this.nextProfileId++}`,
+      providerConfigId,
+      model: input.model,
+      displayName: input.displayName,
+      temperature: input.temperature,
+      maxTokens: input.maxTokens,
+      enabled: input.enabled ?? true,
+      isDefault,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    this.modelProfiles.set(profile.id, profile);
+    return profile;
+  }
+
+  private withProfiles(config: AIProviderConfigRecord): AIProviderConfigRecord {
+    return {
+      ...config,
+      modelProfiles: Array.from(this.modelProfiles.values())
+        .filter((profile) => profile.providerConfigId === config.id)
+        .sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.createdAt.getTime() - right.createdAt.getTime())
+    };
+  }
+
+  private clearModelDefaults(providerConfigId: string): void {
+    for (const profile of this.modelProfiles.values()) {
+      if (profile.providerConfigId === providerConfigId && profile.isDefault) {
+        this.modelProfiles.set(profile.id, { ...profile, isDefault: false });
+      }
     }
   }
 }
@@ -191,6 +321,17 @@ class RecordingProviderAdapter implements AIProviderAdapter {
 
 function actor(userId: string, spaceRole: SpaceRole = "SpaceMember"): AIActor {
   return { userId, spaceId: "space-1", spaceRole };
+}
+
+function modelProfile(model: string, temperature = 0.2, maxTokens = 4096): AIModelProfileInput {
+  return {
+    model,
+    displayName: model,
+    temperature,
+    maxTokens,
+    enabled: true,
+    isDefault: true
+  };
 }
 
 async function expectAIConfigError(promise: Promise<unknown>, statusCode: number): Promise<void> {
@@ -352,14 +493,15 @@ describe("AI config service", () => {
       name: "OpenAI",
       provider: "openai",
       baseURL: "https://api.openai.example/v1",
-      model: "gpt-test",
-      temperature: 0.2,
-      maxTokens: 4096,
+      defaultModelProfile: modelProfile("gpt-test"),
       isDefault: true,
       apiKey: "sk-secret-123456"
     });
 
     expect(response.config).toMatchObject({ hasKey: true, isDefault: true });
+    expect(response.config.modelProfiles).toEqual([
+      expect.objectContaining({ model: "gpt-test", displayName: "gpt-test", isDefault: true })
+    ]);
     expect(response.config).not.toHaveProperty("keyPreview");
     expect(JSON.stringify(response)).not.toContain("sk-secret-123456");
     expect(JSON.stringify(response)).not.toContain("encrypted:sk-secret-123456");
@@ -375,20 +517,19 @@ describe("AI config service", () => {
       name: "Config",
       provider: "openai",
       baseURL: "https://api.example/v1",
-      model: "old-model",
-      temperature: 0.1,
-      maxTokens: 1000,
+      defaultModelProfile: modelProfile("old-model", 0.1, 1000),
       apiKey: "sk-preserve-1234"
     });
 
     const updated = await service.updateConfig({
       actor: actor("owner-user"),
       configId: created.config.id,
-      model: "new-model",
-      maxTokens: 2000
+      name: "Config renamed",
+      baseURL: "https://api-renamed.example/v1"
     });
 
-    expect(updated.config).toMatchObject({ model: "new-model", maxTokens: 2000, hasKey: true });
+    expect(updated.config).toMatchObject({ name: "Config renamed", baseURL: "https://api-renamed.example/v1", hasKey: true });
+    expect(updated.config.modelProfiles[0]).toMatchObject({ model: "old-model", maxTokens: 1000 });
     expect(updated.config).not.toHaveProperty("keyPreview");
     expect(repository.configs.get(created.config.id)).toMatchObject({
       encryptedApiKey: "encrypted:sk-preserve-1234",
@@ -402,9 +543,7 @@ describe("AI config service", () => {
       name: "Config",
       provider: "openai",
       baseURL: "https://api.example/v1",
-      model: "model",
-      temperature: 0.1,
-      maxTokens: 1000,
+      defaultModelProfile: modelProfile("model", 0.1, 1000),
       apiKey: "sk-old-123456"
     });
 
@@ -452,9 +591,7 @@ describe("AI config service", () => {
       name: "Config",
       provider: "openai",
       baseURL: "https://api.example/v1",
-      model: "old-model",
-      temperature: 0.1,
-      maxTokens: 1000,
+      defaultModelProfile: modelProfile("old-model", 0.1, 1000),
       apiKey: "sk-saved-secret"
     });
     providerAdapter.failWith = new AIProviderExecutionError("model_not_found", "raw model payload sk-saved-secret");
@@ -475,15 +612,42 @@ describe("AI config service", () => {
     expect(JSON.stringify(result)).not.toMatch(/sk-saved-secret|encrypted|raw model payload|Authorization|headers/i);
   });
 
+  it("keeps one provider key while switching saved health checks between model profiles", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Shared provider",
+      provider: "openai",
+      baseURL: "https://api.example/v1",
+      defaultModelProfile: modelProfile("gpt-fast", 0.1, 1000),
+      apiKey: "sk-shared-secret"
+    });
+    const secondProfile = await service.createModelProfile({
+      actor: actor("owner-user"),
+      configId: created.config.id,
+      model: "gpt-deep",
+      displayName: "Deep reasoning",
+      temperature: 0.4,
+      maxTokens: 8000,
+      enabled: true
+    });
+
+    await service.testSavedConfig({ actor: actor("owner-user"), configId: created.config.id, modelProfileId: created.config.modelProfiles[0]!.id });
+    await service.testSavedConfig({ actor: actor("owner-user"), configId: created.config.id, modelProfileId: secondProfile.modelProfile.id });
+
+    expect(providerAdapter.inputs.map((input) => input.config)).toEqual([
+      expect.objectContaining({ apiKey: "sk-shared-secret", model: "gpt-fast", temperature: 0.1, maxTokens: 1000 }),
+      expect.objectContaining({ apiKey: "sk-shared-secret", model: "gpt-deep", temperature: 0.4, maxTokens: 8000 })
+    ]);
+    expect(new Set(Array.from(repository.configs.values()).map((config) => config.encryptedApiKey))).toEqual(new Set(["encrypted:sk-shared-secret"]));
+  });
+
   it("keeps one default config per owner", async () => {
     const first = await service.createConfig({
       actor: actor("owner-user"),
       name: "First",
       provider: "openai",
       baseURL: "https://one.example/v1",
-      model: "one",
-      temperature: 0,
-      maxTokens: 100,
+      defaultModelProfile: modelProfile("one", 0, 100),
       isDefault: true
     });
     const second = await service.createConfig({
@@ -491,9 +655,7 @@ describe("AI config service", () => {
       name: "Second",
       provider: "anthropic",
       baseURL: "https://two.example/v1",
-      model: "two",
-      temperature: 0,
-      maxTokens: 100,
+      defaultModelProfile: modelProfile("two", 0, 100),
       isDefault: true
     });
 
@@ -510,15 +672,13 @@ describe("AI config service", () => {
       name: "Private",
       provider: "openai",
       baseURL: "https://api.example/v1",
-      model: "model",
-      temperature: 0,
-      maxTokens: 100
+      defaultModelProfile: modelProfile("model", 0, 100)
     });
 
     await expect(service.listConfigs(actor("other-user"))).resolves.toEqual({ configs: [] });
     await expectAIConfigError(service.getConfig(actor("other-user"), created.config.id), 404);
     await expectAIConfigError(
-      service.updateConfig({ actor: actor("other-user"), configId: created.config.id, model: "stolen" }),
+      service.updateConfig({ actor: actor("other-user"), configId: created.config.id, name: "stolen" }),
       404
     );
     await expectAIConfigError(service.setDefaultConfig({ actor: actor("other-user"), configId: created.config.id }), 404);
@@ -571,9 +731,12 @@ describe("AI config routes", () => {
         name: "Route Config",
         provider: "openai",
         baseURL: "https://api.example/v1",
-        model: "gpt-route",
-        temperature: 0.3,
-        maxTokens: 1000,
+        defaultModelProfile: {
+          model: "gpt-route",
+          displayName: "Route model",
+          temperature: 0.3,
+          maxTokens: 1000
+        },
         isDefault: true,
         apiKey: "sk-route-secret"
       }
@@ -607,6 +770,7 @@ describe("AI config routes", () => {
           id: "route-run",
           status: "running",
           providerConfigId: "config-1",
+          modelProfileId: "model-profile-1",
           errorMessage: null,
           createdAt: baseNow.toISOString(),
           startedAt: baseNow.toISOString(),
@@ -619,6 +783,7 @@ describe("AI config routes", () => {
         run: {
           id: "route-run",
           status: "succeeded",
+          modelProfileId: "model-profile-1",
           errorMessage: null,
           createdAt: baseNow.toISOString(),
           startedAt: baseNow.toISOString(),
@@ -659,7 +824,7 @@ describe("AI config routes", () => {
       url: "/ai/conversations/route-conversation/messages/stream",
       headers: { cookie: `${cookieName}=route-session` },
       payload: {
-        providerConfigId: "config-1",
+        modelProfileId: "model-profile-1",
         selectedContextSnapshot: { currentDocumentId: null, items: [], capturedAt: baseNow.toISOString() },
         message: { role: "user", content: "hello" }
       }

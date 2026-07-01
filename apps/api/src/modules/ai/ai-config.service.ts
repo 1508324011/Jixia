@@ -1,5 +1,11 @@
 import type { Prisma, PrismaClient } from "@jixia/db/generated";
-import type { AIConversationMessageDTO, AIProviderConfigView, ProviderHealthCheck, SpaceRole } from "@jixia/shared";
+import type {
+  AIConversationMessageDTO,
+  AIModelProfileView,
+  AIProviderConfigView,
+  ProviderHealthCheck,
+  SpaceRole
+} from "@jixia/shared";
 
 import {
   AIProviderExecutionError,
@@ -28,20 +34,40 @@ export type AIActor = {
   readonly spaceRole: SpaceRole;
 };
 
+export type AIModelProfileRecord = {
+  readonly id: string;
+  readonly providerConfigId: string;
+  readonly model: string;
+  readonly displayName: string;
+  readonly temperature: number;
+  readonly maxTokens: number;
+  readonly enabled: boolean;
+  readonly isDefault: boolean;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
 export type AIProviderConfigRecord = {
   readonly id: string;
   readonly ownerUserId: string;
   readonly name: string;
   readonly provider: string;
   readonly baseURL: string;
-  readonly model: string;
-  readonly temperature: number;
-  readonly maxTokens: number;
   readonly encryptedApiKey: string | null;
   readonly keyPreview: string | null;
   readonly isDefault: boolean;
+  readonly modelProfiles: readonly AIModelProfileRecord[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
+};
+
+export type AIModelProfileInput = {
+  readonly model: string;
+  readonly displayName: string;
+  readonly temperature: number;
+  readonly maxTokens: number;
+  readonly enabled?: boolean;
+  readonly isDefault?: boolean;
 };
 
 export type CreateAIProviderConfigInput = {
@@ -49,9 +75,7 @@ export type CreateAIProviderConfigInput = {
   readonly name: string;
   readonly provider: string;
   readonly baseURL: string;
-  readonly model: string;
-  readonly temperature: number;
-  readonly maxTokens: number;
+  readonly defaultModelProfile?: AIModelProfileInput;
   readonly isDefault?: boolean;
   readonly apiKey?: string;
 };
@@ -62,11 +86,19 @@ export type UpdateAIProviderConfigInput = {
   readonly name?: string;
   readonly provider?: string;
   readonly baseURL?: string;
-  readonly model?: string;
-  readonly temperature?: number;
-  readonly maxTokens?: number;
   readonly isDefault?: boolean;
   readonly apiKey?: string;
+};
+
+export type CreateAIModelProfileInput = AIModelProfileInput & {
+  readonly actor: AIActor;
+  readonly configId: string;
+};
+
+export type UpdateAIModelProfileInput = Partial<AIModelProfileInput> & {
+  readonly actor: AIActor;
+  readonly configId: string;
+  readonly modelProfileId: string;
 };
 
 export type TestAIProviderDraftConfigInput = {
@@ -82,6 +114,7 @@ export type TestAIProviderDraftConfigInput = {
 export type TestAIProviderSavedConfigInput = {
   readonly actor: AIActor;
   readonly configId: string;
+  readonly modelProfileId?: string;
   readonly provider?: string;
   readonly baseURL?: string;
   readonly model?: string;
@@ -93,14 +126,13 @@ export type TestAIProviderSavedConfigInput = {
 export type AIProviderConfigRepository = {
   readonly listConfigs: (ownerUserId: string) => Promise<readonly AIProviderConfigRecord[]>;
   readonly findConfigById: (configId: string) => Promise<AIProviderConfigRecord | null>;
+  readonly findModelProfileById: (modelProfileId: string) => Promise<AIModelProfileRecord | null>;
   readonly createConfig: (input: {
     readonly ownerUserId: string;
     readonly name: string;
     readonly provider: string;
     readonly baseURL: string;
-    readonly model: string;
-    readonly temperature: number;
-    readonly maxTokens: number;
+    readonly defaultModelProfile?: AIModelProfileInput;
     readonly encryptedApiKey: string | null;
     readonly keyPreview: string | null;
     readonly isDefault: boolean;
@@ -111,13 +143,41 @@ export type AIProviderConfigRepository = {
     readonly name?: string;
     readonly provider?: string;
     readonly baseURL?: string;
-    readonly model?: string;
-    readonly temperature?: number;
-    readonly maxTokens?: number;
     readonly encryptedApiKey?: string | null;
     readonly keyPreview?: string | null;
     readonly isDefault?: boolean;
   }) => Promise<AIProviderConfigRecord | null>;
+  readonly createModelProfile: (input: {
+    readonly providerConfigId: string;
+    readonly ownerUserId: string;
+    readonly model: string;
+    readonly displayName: string;
+    readonly temperature: number;
+    readonly maxTokens: number;
+    readonly enabled: boolean;
+    readonly isDefault: boolean;
+  }) => Promise<AIModelProfileRecord | null>;
+  readonly updateModelProfile: (input: {
+    readonly providerConfigId: string;
+    readonly modelProfileId: string;
+    readonly ownerUserId: string;
+    readonly model?: string;
+    readonly displayName?: string;
+    readonly temperature?: number;
+    readonly maxTokens?: number;
+    readonly enabled?: boolean;
+    readonly isDefault?: boolean;
+  }) => Promise<AIModelProfileRecord | null>;
+  readonly deleteModelProfile: (input: {
+    readonly providerConfigId: string;
+    readonly modelProfileId: string;
+    readonly ownerUserId: string;
+  }) => Promise<boolean>;
+  readonly setDefaultModelProfile: (input: {
+    readonly providerConfigId: string;
+    readonly modelProfileId: string;
+    readonly ownerUserId: string;
+  }) => Promise<AIModelProfileRecord | null>;
   readonly deleteConfig: (input: {
     readonly configId: string;
     readonly ownerUserId: string;
@@ -260,6 +320,49 @@ function ensureOwnedConfig(record: AIProviderConfigRecord | null, ownerUserId: s
   return record;
 }
 
+function ensureOwnedModelProfile(
+  record: AIModelProfileRecord | null,
+  providerConfigId: string
+): AIModelProfileRecord {
+  if (!record || record.providerConfigId !== providerConfigId) {
+    throw notFound();
+  }
+
+  return record;
+}
+
+function normalizeModelProfileInput(input: AIModelProfileInput): Required<AIModelProfileInput> {
+  return {
+    model: ensureNonEmptyText(input.model, "model"),
+    displayName: ensureNonEmptyText(input.displayName, "model display name", 200),
+    temperature: ensureTemperature(input.temperature),
+    maxTokens: ensureMaxTokens(input.maxTokens),
+    enabled: input.enabled ?? true,
+    isDefault: input.isDefault ?? false
+  };
+}
+
+function defaultEnabledModelProfile(config: AIProviderConfigRecord): AIModelProfileRecord | null {
+  return config.modelProfiles.find((profile) => profile.enabled && profile.isDefault)
+    ?? config.modelProfiles.find((profile) => profile.enabled)
+    ?? null;
+}
+
+function toModelProfileView(record: AIModelProfileRecord): AIModelProfileView {
+  return {
+    id: record.id,
+    providerConfigId: record.providerConfigId,
+    model: record.model,
+    displayName: record.displayName,
+    temperature: record.temperature,
+    maxTokens: record.maxTokens,
+    enabled: record.enabled,
+    isDefault: record.isDefault,
+    createdAt: toIsoString(record.createdAt),
+    updatedAt: toIsoString(record.updatedAt)
+  };
+}
+
 function toConfigView(record: AIProviderConfigRecord): AIProviderConfigView {
   return {
     id: record.id,
@@ -267,11 +370,9 @@ function toConfigView(record: AIProviderConfigRecord): AIProviderConfigView {
     name: record.name,
     provider: record.provider,
     baseURL: record.baseURL,
-    model: record.model,
-    temperature: record.temperature,
-    maxTokens: record.maxTokens,
     hasKey: Boolean(record.encryptedApiKey),
     isDefault: record.isDefault,
+    modelProfiles: record.modelProfiles.map(toModelProfileView),
     createdAt: toIsoString(record.createdAt),
     updatedAt: toIsoString(record.updatedAt)
   };
@@ -392,15 +493,40 @@ const aiProviderConfigSelect = {
   name: true,
   provider: true,
   baseURL: true,
-  model: true,
-  temperature: true,
-  maxTokens: true,
   encryptedApiKey: true,
   keyPreview: true,
   isDefault: true,
+  modelProfiles: {
+    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      providerConfigId: true,
+      model: true,
+      displayName: true,
+      temperature: true,
+      maxTokens: true,
+      enabled: true,
+      isDefault: true,
+      createdAt: true,
+      updatedAt: true
+    }
+  },
   createdAt: true,
   updatedAt: true
 } satisfies Prisma.AIProviderConfigSelect;
+
+const aiModelProfileSelect = {
+  id: true,
+  providerConfigId: true,
+  model: true,
+  displayName: true,
+  temperature: true,
+  maxTokens: true,
+  enabled: true,
+  isDefault: true,
+  createdAt: true,
+  updatedAt: true
+} satisfies Prisma.AIModelProfileSelect;
 
 function toConfigRecord(record: AIProviderConfigRecord): AIProviderConfigRecord {
   return record;
@@ -430,14 +556,21 @@ export class PrismaAIProviderConfigRepository implements AIProviderConfigReposit
     return config ? toConfigRecord(config) : null;
   }
 
+  async findModelProfileById(modelProfileId: string): Promise<AIModelProfileRecord | null> {
+    const modelProfile = await this.prisma.aIModelProfile.findUnique({
+      where: { id: modelProfileId },
+      select: aiModelProfileSelect
+    });
+
+    return modelProfile;
+  }
+
   async createConfig(input: {
     readonly ownerUserId: string;
     readonly name: string;
     readonly provider: string;
     readonly baseURL: string;
-    readonly model: string;
-    readonly temperature: number;
-    readonly maxTokens: number;
+    readonly defaultModelProfile?: AIModelProfileInput;
     readonly encryptedApiKey: string | null;
     readonly keyPreview: string | null;
     readonly isDefault: boolean;
@@ -448,7 +581,29 @@ export class PrismaAIProviderConfigRepository implements AIProviderConfigReposit
       }
 
       const config = await transaction.aIProviderConfig.create({
-        data: input,
+        data: {
+          ownerUserId: input.ownerUserId,
+          name: input.name,
+          provider: input.provider,
+          baseURL: input.baseURL,
+          encryptedApiKey: input.encryptedApiKey,
+          keyPreview: input.keyPreview,
+          isDefault: input.isDefault,
+          ...(input.defaultModelProfile === undefined
+            ? {}
+            : {
+                modelProfiles: {
+                  create: {
+                    model: input.defaultModelProfile.model,
+                    displayName: input.defaultModelProfile.displayName,
+                    temperature: input.defaultModelProfile.temperature,
+                    maxTokens: input.defaultModelProfile.maxTokens,
+                    enabled: input.defaultModelProfile.enabled ?? true,
+                    isDefault: true
+                  }
+                }
+              })
+        },
         select: aiProviderConfigSelect
       });
 
@@ -462,9 +617,6 @@ export class PrismaAIProviderConfigRepository implements AIProviderConfigReposit
     readonly name?: string;
     readonly provider?: string;
     readonly baseURL?: string;
-    readonly model?: string;
-    readonly temperature?: number;
-    readonly maxTokens?: number;
     readonly encryptedApiKey?: string | null;
     readonly keyPreview?: string | null;
     readonly isDefault?: boolean;
@@ -488,9 +640,6 @@ export class PrismaAIProviderConfigRepository implements AIProviderConfigReposit
       if (input.name !== undefined) data.name = input.name;
       if (input.provider !== undefined) data.provider = input.provider;
       if (input.baseURL !== undefined) data.baseURL = input.baseURL;
-      if (input.model !== undefined) data.model = input.model;
-      if (input.temperature !== undefined) data.temperature = input.temperature;
-      if (input.maxTokens !== undefined) data.maxTokens = input.maxTokens;
       if (input.encryptedApiKey !== undefined) data.encryptedApiKey = input.encryptedApiKey;
       if (input.keyPreview !== undefined) data.keyPreview = input.keyPreview;
       if (input.isDefault !== undefined) data.isDefault = input.isDefault;
@@ -502,6 +651,154 @@ export class PrismaAIProviderConfigRepository implements AIProviderConfigReposit
       });
 
       return toConfigRecord(config);
+    });
+  }
+
+  async createModelProfile(input: {
+    readonly providerConfigId: string;
+    readonly ownerUserId: string;
+    readonly model: string;
+    readonly displayName: string;
+    readonly temperature: number;
+    readonly maxTokens: number;
+    readonly enabled: boolean;
+    readonly isDefault: boolean;
+  }): Promise<AIModelProfileRecord | null> {
+    return this.prisma.$transaction(async (transaction) => {
+      const config = await transaction.aIProviderConfig.findUnique({
+        where: { id: input.providerConfigId },
+        select: { id: true, ownerUserId: true }
+      });
+
+      if (!config || config.ownerUserId !== input.ownerUserId) {
+        return null;
+      }
+
+      if (input.isDefault) {
+        await this.clearModelDefaults(transaction, input.providerConfigId);
+      }
+
+      return transaction.aIModelProfile.create({
+        data: {
+          providerConfigId: input.providerConfigId,
+          model: input.model,
+          displayName: input.displayName,
+          temperature: input.temperature,
+          maxTokens: input.maxTokens,
+          enabled: input.enabled,
+          isDefault: input.isDefault
+        },
+        select: aiModelProfileSelect
+      });
+    });
+  }
+
+  async updateModelProfile(input: {
+    readonly providerConfigId: string;
+    readonly modelProfileId: string;
+    readonly ownerUserId: string;
+    readonly model?: string;
+    readonly displayName?: string;
+    readonly temperature?: number;
+    readonly maxTokens?: number;
+    readonly enabled?: boolean;
+    readonly isDefault?: boolean;
+  }): Promise<AIModelProfileRecord | null> {
+    return this.prisma.$transaction(async (transaction) => {
+      const modelProfile = await transaction.aIModelProfile.findUnique({
+        where: { id: input.modelProfileId },
+        select: {
+          id: true,
+          providerConfigId: true,
+          providerConfig: { select: { ownerUserId: true } }
+        }
+      });
+
+      if (
+        !modelProfile ||
+        modelProfile.providerConfigId !== input.providerConfigId ||
+        modelProfile.providerConfig.ownerUserId !== input.ownerUserId
+      ) {
+        return null;
+      }
+
+      if (input.isDefault === true) {
+        await this.clearModelDefaults(transaction, input.providerConfigId);
+      }
+
+      const data: Prisma.AIModelProfileUncheckedUpdateInput = {};
+      if (input.model !== undefined) data.model = input.model;
+      if (input.displayName !== undefined) data.displayName = input.displayName;
+      if (input.temperature !== undefined) data.temperature = input.temperature;
+      if (input.maxTokens !== undefined) data.maxTokens = input.maxTokens;
+      if (input.enabled !== undefined) data.enabled = input.enabled;
+      if (input.isDefault !== undefined) data.isDefault = input.isDefault;
+
+      return transaction.aIModelProfile.update({
+        where: { id: input.modelProfileId },
+        data,
+        select: aiModelProfileSelect
+      });
+    });
+  }
+
+  async deleteModelProfile(input: {
+    readonly providerConfigId: string;
+    readonly modelProfileId: string;
+    readonly ownerUserId: string;
+  }): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      const modelProfile = await transaction.aIModelProfile.findUnique({
+        where: { id: input.modelProfileId },
+        select: {
+          id: true,
+          providerConfigId: true,
+          providerConfig: { select: { ownerUserId: true } }
+        }
+      });
+
+      if (
+        !modelProfile ||
+        modelProfile.providerConfigId !== input.providerConfigId ||
+        modelProfile.providerConfig.ownerUserId !== input.ownerUserId
+      ) {
+        return false;
+      }
+
+      await transaction.aIModelProfile.delete({ where: { id: input.modelProfileId } });
+      return true;
+    });
+  }
+
+  async setDefaultModelProfile(input: {
+    readonly providerConfigId: string;
+    readonly modelProfileId: string;
+    readonly ownerUserId: string;
+  }): Promise<AIModelProfileRecord | null> {
+    return this.prisma.$transaction(async (transaction) => {
+      const modelProfile = await transaction.aIModelProfile.findUnique({
+        where: { id: input.modelProfileId },
+        select: {
+          id: true,
+          providerConfigId: true,
+          providerConfig: { select: { ownerUserId: true } }
+        }
+      });
+
+      if (
+        !modelProfile ||
+        modelProfile.providerConfigId !== input.providerConfigId ||
+        modelProfile.providerConfig.ownerUserId !== input.ownerUserId
+      ) {
+        return null;
+      }
+
+      await this.clearModelDefaults(transaction, input.providerConfigId);
+      return transaction.aIModelProfile.update({
+        where: { id: input.modelProfileId },
+        data: { isDefault: true, enabled: true },
+        select: aiModelProfileSelect
+      });
     });
   }
 
@@ -550,6 +847,13 @@ export class PrismaAIProviderConfigRepository implements AIProviderConfigReposit
       data: { isDefault: false }
     });
   }
+
+  private async clearModelDefaults(transaction: PrismaTransaction, providerConfigId: string): Promise<void> {
+    await transaction.aIModelProfile.updateMany({
+      where: { providerConfigId, isDefault: true },
+      data: { isDefault: false }
+    });
+  }
 }
 
 export function createAIConfigService(
@@ -580,6 +884,9 @@ export function createAIConfigService(
     async createConfig(input: CreateAIProviderConfigInput): Promise<{ readonly config: AIProviderConfigView }> {
       const apiKey = normalizeOptionalApiKey(input.apiKey);
       const encryptedKey = apiKey ? encryptApiKey(cipher, apiKey) : null;
+      const defaultModelProfile = input.defaultModelProfile === undefined
+        ? undefined
+        : normalizeModelProfileInput(input.defaultModelProfile);
 
       try {
         const config = await repository.createConfig({
@@ -587,9 +894,7 @@ export function createAIConfigService(
           name: ensureNonEmptyText(input.name, "config name", 200),
           provider: ensureNonEmptyText(input.provider, "provider"),
           baseURL: ensureProviderBaseURL(input.baseURL),
-          model: ensureNonEmptyText(input.model, "model"),
-          temperature: ensureTemperature(input.temperature),
-          maxTokens: ensureMaxTokens(input.maxTokens),
+          ...(defaultModelProfile === undefined ? {} : { defaultModelProfile }),
           encryptedApiKey: encryptedKey?.encryptedApiKey ?? null,
           keyPreview: encryptedKey?.keyPreview ?? null,
           isDefault: input.isDefault ?? false
@@ -617,9 +922,6 @@ export function createAIConfigService(
           ...(input.name === undefined ? {} : { name: ensureNonEmptyText(input.name, "config name", 200) }),
           ...(input.provider === undefined ? {} : { provider: ensureNonEmptyText(input.provider, "provider") }),
           ...(input.baseURL === undefined ? {} : { baseURL: ensureProviderBaseURL(input.baseURL) }),
-          ...(input.model === undefined ? {} : { model: ensureNonEmptyText(input.model, "model") }),
-          ...(input.temperature === undefined ? {} : { temperature: ensureTemperature(input.temperature) }),
-          ...(input.maxTokens === undefined ? {} : { maxTokens: ensureMaxTokens(input.maxTokens) }),
           ...(input.isDefault === undefined ? {} : { isDefault: input.isDefault }),
           ...(encryptedKey === undefined
             ? {}
@@ -637,6 +939,118 @@ export function createAIConfigService(
 
         throw error;
       }
+    },
+
+    async createModelProfile(input: CreateAIModelProfileInput): Promise<{
+      readonly config: AIProviderConfigView;
+      readonly modelProfile: AIModelProfileView;
+    }> {
+      ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+      const normalized = normalizeModelProfileInput(input);
+
+      try {
+        const modelProfile = ensureOwnedModelProfile(
+          await repository.createModelProfile({
+            providerConfigId: input.configId,
+            ownerUserId: input.actor.userId,
+            model: normalized.model,
+            displayName: normalized.displayName,
+            temperature: normalized.temperature,
+            maxTokens: normalized.maxTokens,
+            enabled: normalized.enabled,
+            isDefault: normalized.isDefault
+          }),
+          input.configId
+        );
+        const config = ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+
+        return { config: toConfigView(config), modelProfile: toModelProfileView(modelProfile) };
+      } catch (error) {
+        if (isUniqueConstraintError(error)) {
+          throw conflict("AI model profile display name already exists");
+        }
+
+        throw error;
+      }
+    },
+
+    async updateModelProfile(input: UpdateAIModelProfileInput): Promise<{
+      readonly config: AIProviderConfigView;
+      readonly modelProfile: AIModelProfileView;
+    }> {
+      ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+      if (input.enabled === false && input.isDefault === true) {
+        throw badRequest("Default AI model profile must be enabled");
+      }
+
+      try {
+        const modelProfile = ensureOwnedModelProfile(
+          await repository.updateModelProfile({
+            providerConfigId: input.configId,
+            modelProfileId: input.modelProfileId,
+            ownerUserId: input.actor.userId,
+            ...(input.model === undefined ? {} : { model: ensureNonEmptyText(input.model, "model") }),
+            ...(input.displayName === undefined
+              ? {}
+              : { displayName: ensureNonEmptyText(input.displayName, "model display name", 200) }),
+            ...(input.temperature === undefined ? {} : { temperature: ensureTemperature(input.temperature) }),
+            ...(input.maxTokens === undefined ? {} : { maxTokens: ensureMaxTokens(input.maxTokens) }),
+            ...(input.isDefault === true ? { enabled: true } : input.enabled === undefined ? {} : { enabled: input.enabled }),
+            ...(input.enabled === false && input.isDefault === undefined
+              ? { isDefault: false }
+              : input.isDefault === undefined ? {} : { isDefault: input.isDefault })
+          }),
+          input.configId
+        );
+        const config = ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+
+        return { config: toConfigView(config), modelProfile: toModelProfileView(modelProfile) };
+      } catch (error) {
+        if (isUniqueConstraintError(error)) {
+          throw conflict("AI model profile display name already exists");
+        }
+
+        throw error;
+      }
+    },
+
+    async deleteModelProfile(input: {
+      readonly actor: AIActor;
+      readonly configId: string;
+      readonly modelProfileId: string;
+    }): Promise<{ readonly ok: true; readonly config: AIProviderConfigView }> {
+      ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+      if (!(await repository.deleteModelProfile({
+        providerConfigId: input.configId,
+        modelProfileId: input.modelProfileId,
+        ownerUserId: input.actor.userId
+      }))) {
+        throw notFound();
+      }
+
+      return {
+        ok: true,
+        config: toConfigView(ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId))
+      };
+    },
+
+    async setDefaultModelProfile(input: {
+      readonly actor: AIActor;
+      readonly configId: string;
+      readonly modelProfileId: string;
+    }): Promise<{ readonly config: AIProviderConfigView; readonly modelProfile: AIModelProfileView }> {
+      ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+      const modelProfile = ensureOwnedModelProfile(
+        await repository.setDefaultModelProfile({
+          providerConfigId: input.configId,
+          modelProfileId: input.modelProfileId,
+          ownerUserId: input.actor.userId
+        }),
+        input.configId
+      );
+      const config = ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+
+      return { config: toConfigView(config), modelProfile: toModelProfileView(modelProfile) };
     },
 
     async deleteConfig(input: {
@@ -694,22 +1108,28 @@ export function createAIConfigService(
 
     async testSavedConfig(input: TestAIProviderSavedConfigInput): Promise<{ readonly healthCheck: ProviderHealthCheck }> {
       const current = ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+      const currentProfile = input.modelProfileId
+        ? ensureOwnedModelProfile(await repository.findModelProfileById(input.modelProfileId), current.id)
+        : defaultEnabledModelProfile(current);
+      if (!currentProfile) {
+        throw badRequest("No enabled AI model profile is available for this provider");
+      }
       const rawProvider = input.provider ?? current.provider;
       const rawBaseURL = input.baseURL ?? current.baseURL;
-      const rawModel = input.model ?? current.model;
+      const rawModel = input.model ?? currentProfile.model;
 
       try {
         const provider = input.provider === undefined ? current.provider : ensureNonEmptyText(input.provider, "provider");
         const baseURL = input.baseURL === undefined ? current.baseURL : ensureProviderBaseURL(input.baseURL);
-        const model = input.model === undefined ? current.model : ensureNonEmptyText(input.model, "model");
+        const model = input.model === undefined ? currentProfile.model : ensureNonEmptyText(input.model, "model");
         const config: AIProviderExecutionConfig = {
-          id: current.id,
+          id: currentProfile.id,
           ownerUserId: input.actor.userId,
           provider,
           baseURL,
           model,
-          temperature: input.temperature === undefined ? current.temperature : ensureTemperature(input.temperature),
-          maxTokens: input.maxTokens === undefined ? current.maxTokens : ensureMaxTokens(input.maxTokens),
+          temperature: input.temperature === undefined ? currentProfile.temperature : ensureTemperature(input.temperature),
+          maxTokens: input.maxTokens === undefined ? currentProfile.maxTokens : ensureMaxTokens(input.maxTokens),
           apiKey: input.apiKey === undefined ? decryptApiKey(cipher, current.encryptedApiKey) : normalizeRequiredApiKey(input.apiKey)
         };
 
