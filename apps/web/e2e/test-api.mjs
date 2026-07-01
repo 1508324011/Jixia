@@ -496,33 +496,18 @@ function createAIConversation(userId, body) {
   return conversation;
 }
 
-function sourceListForConversation(conversation) {
-  const firstAttachment = conversation.contextAttachments[0];
-  if (!firstAttachment) {
-    return [
-      {
-        id: `${conversation.id}-manual-source`,
-        sourceType: "manual",
-        title: "Manual review fixture",
-        documentId: null,
-        documentType: null,
-        projectId: null,
-        revisionNumber: null,
-        selectedBlockIds: [],
-        selectedBlockCount: 0,
-        capturedAt: nowIso(),
-        label: "Manual review fixture"
-      }
-    ];
-  }
-
-  return [{ ...firstAttachment, label: firstAttachment.title }];
+function sourceListForSnapshot(snapshot) {
+  return contextAttachmentsFromSnapshot(snapshot).map((attachment) => ({
+    ...attachment,
+    label: attachment.sourceType === "current_document" ? "Current document" : attachment.title
+  }));
 }
 
-function fixtureAssistantContent(userContent, conversation) {
-  const contextLine = conversation.currentDocumentId
+function fixtureAssistantContent(userContent, selectedContextSnapshot) {
+  const hasContextItems = Array.isArray(selectedContextSnapshot?.items) && selectedContextSnapshot.items.length > 0;
+  const contextLine = hasContextItems
     ? "I used the bounded current-document context that Jixia sent to the server."
-    : "No document context was attached to this standalone chat.";
+    : "No document context was attached to this message.";
   return [
     `Here is a manual-review fixture response for: ${userContent}`,
     "",
@@ -1018,6 +1003,12 @@ async function handleApiRequest(request, response, url) {
       return;
     }
 
+    const streamContextSnapshot = body.selectedContextSnapshot && typeof body.selectedContextSnapshot === "object"
+      ? clone(body.selectedContextSnapshot)
+      : clone(conversation.selectedContextSnapshot);
+    conversation.selectedContextSnapshot = streamContextSnapshot;
+    conversation.contextAttachments = contextAttachmentsFromSnapshot(streamContextSnapshot);
+
     const timestamp = nowIso();
     const userContent = String(body.message?.content ?? "").trim();
     const run = createAIRun(providerConfig.id);
@@ -1027,8 +1018,8 @@ async function handleApiRequest(request, response, url) {
       content: userContent,
       createdAt: timestamp
     };
-    const assistantContent = fixtureAssistantContent(userContent, conversation);
-    const sources = sourceListForConversation(conversation);
+    const assistantContent = fixtureAssistantContent(userContent, streamContextSnapshot);
+    const sources = sourceListForSnapshot(streamContextSnapshot);
     const assistantMessage = {
       id: nextId("ai-message"),
       role: "assistant",
