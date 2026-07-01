@@ -1,0 +1,109 @@
+{
+  "title": "Task 21d AI Chat Context Control + Visual Dechrome Pass",
+  "slug": "task-21d-ai-chat-context-control-visual-dechrome-pass",
+  "type": "frontend",
+  "status": "finished",
+  "createdAt": "2026-06-22T13:48:12+00:00",
+  "updatedAt": "2026-06-22T15:06:07+00:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "manualReviewRequired": true,
+  "preparation": {
+    "preparedAt": "2026-06-22T13:51:30+00:00",
+    "fromTasks": [
+      ".trellis/tasks/06-22-task-21c-ai-chat-visual-maturity-pass",
+      ".trellis/tasks/06-22-task-21b-ai-chat-visual-refactor",
+      ".trellis/tasks/06-21-task-21a-document-copilot-baseline",
+      ".trellis/tasks/06-18-task-18-8-mature-streaming-ai-chat-provider-settings",
+      ".trellis/tasks/06-18-task-18-7-standalone-ai-chat-dialog-foundation"
+    ],
+    "humanReviewSignal": "User says the AI dialog is still too ugly and document context is attached by default without a way to cancel it.",
+    "behaviorFinding": "Current document copilot uploads a fresh bounded/redacted current-document selectedContextSnapshot on every message; it is not a one-time upload.",
+    "visualMaturityScore": "Approximately 5.5/10 after Task21c: functionally coherent but visually overexplained compared with ResearchClaw (~7/10) and mature OSS chat products (8/10+).",
+    "externalDesignReferences": [
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/components/chat/UnifiedChatModal.tsx",
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/MessageStream.tsx",
+      "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/TextMessage.tsx",
+      "/home/zhurui/github_project/ResearchClaw/tailwind.config.ts",
+      "LobeChat / LobeHub three-zone conversation + working sidebar patterns",
+      "Dify centered 768px transcript and compact composer/citation patterns",
+      "AnythingLLM source pill + right source sidebar patterns",
+      "Open WebUI input menu and grouped history patterns",
+      "LibreChat hover/focus message actions and source/detail affordances",
+      "Chatbot UI lightweight composer and grouped history patterns"
+    ],
+    "bindingDecisions": [
+      "Add explicit document context control; default may remain on, but off must send an empty context snapshot.",
+      "Document context is per-message when on; UI must not imply it is only attached once.",
+      "Move full context preview out of the default layout into progressive disclosure.",
+      "Reduce standalone and document copilot visible chrome before adding decoration.",
+      "Use existing React, Mantine, CSS, BlockNote, and react-markdown; do not add UI-framework dependencies for visual imitation.",
+      "Preserve server-owned provider execution, no browser provider calls, no provider-key exposure, and no document writeback/auto-apply."
+    ],
+    "firstImplementationPriority": "Implement and test context on/off request semantics, then dechrome the default standalone and document-copilot surfaces around that control."
+  },
+  "failureContract": {
+    "noSuccessWithout": [
+      "Document copilot includes an explicit Include current document control.",
+      "Context-on and context-off request bodies are tested or browser-observed.",
+      "Context off sends no bounded document text to the AI provider path.",
+      "User can understand context is attached per message when enabled.",
+      "Default document copilot layout no longer shows a dominant mandatory context card.",
+      "Standalone AI default screen no longer exposes runtime/settings/provider chrome as primary content.",
+      "Composer looks like one polished rounded control surface with compact chips/menus.",
+      "No backend/provider-key/document-writeback contract regression.",
+      "Focused tests pass and manual-review.md records representative browser observations."
+    ],
+    "forbiddenCompletionClaims": [
+      "Context is only uploaded once at conversation creation.",
+      "It is acceptable to keep context forced on because it is bounded/redacted.",
+      "Hiding the context card is enough without changing request semantics.",
+      "More labels, pills, and banners solve the visual maturity problem.",
+      "Standalone and document copilot may diverge into separate visual systems.",
+      "Task21d may add Tailwind, Framer Motion, Lucide, or mature OSS UI stacks just for aesthetics.",
+      "AI output may auto-apply to documents as part of this task."
+    ]
+  },
+  "completedAt": "2026-06-22T15:06:07+00:00",
+  "manualReview": {
+    "result": "passed",
+    "reviewedAt": "2026-06-22T15:06:07.636Z",
+    "reviewer": "GPT-5.5 Debug Agent with Playwright Chromium browser/network review",
+    "environment": {
+      "webOrigin": "http://127.0.0.1:41747",
+      "apiOrigin": "http://127.0.0.1:41037",
+      "browserDevice": "Playwright Chromium, 1366x900 viewport",
+      "providerConfig": "Task21d Fixture Provider (openai, task21d-review-model, hasKey true; raw key not captured in evidence)"
+    },
+    "summary": "Manual browser and network review passed. Document copilot context-on create and stream requests both sent one current_document snapshot item with bounded document text. Context-off create and stream requests both sent an explicit empty selectedContextSnapshot.items array for the scoped document conversation, with disabled document text absent. Standalone AI create and stream requests remained context-free with currentDocumentId null and empty items. Visual review confirmed compact context disclosure, dechromed standalone controls, quiet source disclosure, no document mutation controls, and no browser storage or visible secret leakage.",
+    "evidence": [
+      "/tmp/opencode/task21d-review-evidence.json",
+      "/tmp/opencode/task21d-document-context-on.png",
+      "/tmp/opencode/task21d-document-context-off.png",
+      "/tmp/opencode/task21d-standalone-ai.png"
+    ],
+    "passedChecks": [
+      "Document copilot showed an explicit Include current document control that defaulted on and could be turned off before send.",
+      "Context-on create and stream request bodies contained one current_document context item with bounded document text and no forbidden secret text.",
+      "Context-off create and stream request bodies contained selectedContextSnapshot.currentDocumentId for the scoped document plus items: [], and disabled document text did not leak.",
+      "Standalone AI create and stream request bodies used currentDocumentId null and items: [], preserving no automatic document context.",
+      "Document context details were hidden behind progressive disclosure by default; standalone runtime/provider controls were closed by default.",
+      "Provider-missing state, representative markdown/table/code/source rendering, streaming-to-final behavior, and no-writeback UI were browser-observed or covered by focused tests.",
+      "No API Authorization headers, localStorage/sessionStorage entries, visible HttpOnly session cookie, visible provider/storage secrets, or apply/insert/rewrite/automerge mutation controls were observed."
+    ],
+    "notes": "The local E2E fixture currently returns document conversations from unfiltered /api/ai/conversations, so the browser review clicked New chat before the standalone send to force clean standalone create/stream evidence; the real API service path remains covered by focused tests for standalone context-free conversations."
+  }
+}
