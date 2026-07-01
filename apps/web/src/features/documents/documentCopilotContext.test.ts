@@ -1,7 +1,11 @@
 import type { DocumentDTO, EditorSnapshot } from "@jixia/shared";
 import { describe, expect, it } from "vitest";
 
-import { createDocumentCopilotContext, extractPlainTextFromSnapshot } from "./documentCopilotContext";
+import {
+  createDocumentCopilotContext,
+  createEmptyDocumentCopilotContextSnapshot,
+  extractPlainTextFromSnapshot
+} from "./documentCopilotContext";
 
 const documentRecord: DocumentDTO = {
   id: "doc-1",
@@ -113,5 +117,18 @@ describe("document copilot context", () => {
     };
 
     expect(extractPlainTextFromSnapshot(snapshot)).toBe("- Parent\n  [x] Child task");
+  });
+
+  it("builds an explicit empty snapshot when document context is disabled", () => {
+    const snapshot = createEmptyDocumentCopilotContextSnapshot({
+      capturedAt: new Date("2026-06-21T11:00:00.000Z"),
+      documentId: "doc-1"
+    });
+
+    expect(snapshot).toEqual({
+      currentDocumentId: "doc-1",
+      items: [],
+      capturedAt: "2026-06-21T11:00:00.000Z"
+    });
   });
 });

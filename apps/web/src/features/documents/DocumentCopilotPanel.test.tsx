@@ -199,10 +199,12 @@ describe("DocumentCopilotPanel", () => {
 
     render(<DocumentCopilotPanel {...panelProps()} onOpenSettings={openSettings} />);
 
-    expect(await screen.findByText("Current document snapshot")).toBeTruthy();
+    const contextToggle = (await screen.findByLabelText("Include current document")) as HTMLInputElement;
+    expect(contextToggle.checked).toBe(true);
+    expect(screen.getByText("Document context · on · 1 block · 2/2")).toBeTruthy();
+    expect(screen.getByText("Sent with each message")).toBeTruthy();
     expect(screen.getByText("Project synthesis")).toBeTruthy();
     expect(screen.getByText("doc-1")).toBeTruthy();
-    expect(screen.getByText("2 / 2")).toBeTruthy();
     expect(screen.getByText("Not implemented; sending current document only")).toBeTruthy();
     expect(screen.getByText("No usable provider config with a saved key is available for this document copilot. Provider keys stay server-owned; add one in AI settings before sending.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open AI provider settings" }));
@@ -271,6 +273,72 @@ describe("DocumentCopilotPanel", () => {
     expect(sendBody.message).toEqual({ role: "user", content: "Summarize this document" });
     expect(sendBody.selectedContextSnapshot.items[0]?.content).toContain("Initial finding");
     expect(JSON.stringify([createBody, sendBody])).not.toMatch(/apiKey|encrypted|signedUrl|storageKey|signature|authorization|cookie/i);
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/draft") && !String(url).includes("/revisions"))).toBe(true);
+    expectStorageWasNotUsed();
+  });
+
+  it("sends explicit empty context snapshots when current document context is disabled", async () => {
+    const exportSnapshot = vi.fn(() => baseSnapshot);
+    const offConversation: AIConversationDTO = {
+      ...createdConversation,
+      selectedContextSnapshot: {
+        currentDocumentId: "doc-1",
+        items: [],
+        capturedAt: "2026-06-16T10:02:00.000Z"
+      },
+      messages: []
+    };
+    const offAssistantMessage = {
+      ...streamedAssistantMessage,
+      sources: [],
+      parts: [{ type: "markdown" as const, content: streamedAssistantMessage.content }]
+    };
+    const offDoneConversation = {
+      ...offConversation,
+      messages: [streamedUserMessage, offAssistantMessage]
+    };
+    const fetchMock = mockFetchSequence(
+      { configs: [providerConfig] },
+      { conversations: [] },
+      { conversation: offConversation },
+      streamResponse([
+        { type: "run", run: runningRun },
+        { type: "user_message", message: streamedUserMessage },
+        { type: "assistant_message", message: offAssistantMessage },
+        { type: "done", run: succeededRun, conversation: offDoneConversation }
+      ])
+    );
+
+    render(<DocumentCopilotPanel {...panelProps({ exportSnapshot })} />);
+
+    const contextToggle = (await screen.findByLabelText("Include current document")) as HTMLInputElement;
+    fireEvent.click(contextToggle);
+    expect(contextToggle.checked).toBe(false);
+    expect(screen.getByText("Document context · off")).toBeTruthy();
+    expect(screen.getByText("No document text will be sent")).toBeTruthy();
+
+    const composer = screen.getByLabelText("Document copilot composer");
+    fireEvent.change(within(composer).getByLabelText("Ask document copilot"), {
+      target: { value: "Summarize without context" }
+    });
+    fireEvent.click(within(composer).getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Summary")).toBeTruthy();
+    expect(exportSnapshot).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    const [, createInit] = fetchMock.mock.calls[2] ?? [];
+    const createBody = JSON.parse(String(createInit?.body)) as CreateConversationBody;
+    expect(createBody.currentDocumentId).toBe("doc-1");
+    expect(createBody.selectedContextSnapshot.currentDocumentId).toBe("doc-1");
+    expect(createBody.selectedContextSnapshot.items).toEqual([]);
+
+    const [, sendInit] = fetchMock.mock.calls[3] ?? [];
+    const sendBody = JSON.parse(String(sendInit?.body)) as SendMessageBody;
+    expect(sendBody.message).toEqual({ role: "user", content: "Summarize without context" });
+    expect(sendBody.selectedContextSnapshot.currentDocumentId).toBe("doc-1");
+    expect(sendBody.selectedContextSnapshot.items).toEqual([]);
+    expect(JSON.stringify([createBody, sendBody])).not.toMatch(/Initial finding|current_document|apiKey|encrypted|signedUrl|storageKey|signature|authorization|cookie/i);
     expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/draft") && !String(url).includes("/revisions"))).toBe(true);
     expectStorageWasNotUsed();
   });

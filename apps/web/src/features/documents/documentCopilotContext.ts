@@ -39,6 +39,22 @@ export type CreateDocumentCopilotContextInput = {
   readonly title: string;
 };
 
+export type CreateEmptyDocumentCopilotContextSnapshotInput = {
+  readonly capturedAt?: Date;
+  readonly documentId: string;
+};
+
+export function createEmptyDocumentCopilotContextSnapshot({
+  capturedAt = new Date(),
+  documentId
+}: CreateEmptyDocumentCopilotContextSnapshotInput): AIConversationContextSnapshot {
+  return {
+    currentDocumentId: documentId,
+    capturedAt: capturedAt.toISOString(),
+    items: []
+  };
+}
+
 export function createDocumentCopilotContext({
   baseRevision,
   capturedAt = new Date(),

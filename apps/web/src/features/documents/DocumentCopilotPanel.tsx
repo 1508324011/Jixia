@@ -1,4 +1,5 @@
 import type {
+  AIConversationContextSnapshot,
   AIConversationDTO,
   AIConversationMessageDTO,
   AIConversationRunDTO,
@@ -18,8 +19,12 @@ import { apiFetch, apiStream } from "../../lib/api";
 import { MessageStream } from "../ai/chat/MessageStream";
 import { readChatStream } from "../ai/chat/chatStream";
 import type { ChatMessage as ChatMessageModel } from "../ai/chat/chatTypes";
-import { Button, Notice, Pill } from "../layout/workbench";
-import { createDocumentCopilotContext, type DocumentCopilotContext } from "./documentCopilotContext";
+import { Button, Notice } from "../layout/workbench";
+import {
+  createDocumentCopilotContext,
+  createEmptyDocumentCopilotContextSnapshot,
+  type DocumentCopilotContext
+} from "./documentCopilotContext";
 
 type DocumentCopilotPanelProps = {
   readonly baseRevision: number;
@@ -57,6 +62,7 @@ export function DocumentCopilotPanel({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [hiddenSourceMessageIds, setHiddenSourceMessageIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [includeDocumentContext, setIncludeDocumentContext] = useState(true);
   const assistantTextAccumulatorRef = useRef<Map<string, string>>(new Map());
   const activeStreamRef = useRef<ActiveStream | null>(null);
 
@@ -72,6 +78,7 @@ export function DocumentCopilotPanel({
   const hasNotice = statusMessage !== null || showProviderSetupNotice;
 
   useEffect(() => {
+    setIncludeDocumentContext(true);
     void loadCopilotRuntime();
 
     return () => {
@@ -116,19 +123,13 @@ export function DocumentCopilotPanel({
       return;
     }
 
-    const runtimeContext = createDocumentCopilotContext({
-      baseRevision,
-      document,
-      readOnly,
-      snapshot: exportSnapshot(),
-      title
-    });
+    const selectedContextSnapshot = createRuntimeContextSnapshot();
     setSendState("queued");
     setStatusMessage(null);
     let pendingConversationId: string | null = null;
 
     try {
-      const activeConversation = await ensureConversation(content, runtimeContext);
+      const activeConversation = await ensureConversation(content, selectedContextSnapshot);
       pendingConversationId = activeConversation.id;
       appendOptimisticUserMessage(activeConversation.id, content);
       setMessageText("");
@@ -144,7 +145,7 @@ export function DocumentCopilotPanel({
         json: {
           providerConfigId: selectedProviderConfigId,
           message: { role: "user", content },
-          selectedContextSnapshot: runtimeContext.snapshot
+          selectedContextSnapshot
         }
       });
 
@@ -174,7 +175,7 @@ export function DocumentCopilotPanel({
 
   async function ensureConversation(
     prompt: string,
-    runtimeContext: DocumentCopilotContext
+    selectedContextSnapshot: AIConversationContextSnapshot
   ): Promise<AIConversationDTO> {
     if (conversation) {
       return conversation;
@@ -183,9 +184,9 @@ export function DocumentCopilotPanel({
     const response = await apiFetch<CreateAIConversationResponse>("/ai/conversations", {
       method: "POST",
       json: {
-        title: conversationTitle(runtimeContext.summary.title, prompt),
+        title: conversationTitle(visibleContext.summary.title, prompt),
         currentDocumentId: document.id,
-        selectedContextSnapshot: runtimeContext.snapshot
+        selectedContextSnapshot
       }
     });
 
@@ -415,6 +416,20 @@ export function DocumentCopilotPanel({
     });
   }
 
+  function createRuntimeContextSnapshot(): AIConversationContextSnapshot {
+    if (!includeDocumentContext) {
+      return createEmptyDocumentCopilotContextSnapshot({ documentId: document.id });
+    }
+
+    return createDocumentCopilotContext({
+      baseRevision,
+      document,
+      readOnly,
+      snapshot: exportSnapshot(),
+      title
+    }).snapshot;
+  }
+
   function handleOpenSettings(): void {
     if (onOpenSettings) {
       onOpenSettings();
@@ -441,23 +456,25 @@ export function DocumentCopilotPanel({
       <header className="jixia-document-copilot__header">
         <div className="jixia-document-copilot__title">
           <p className="jixia-eyebrow">Document copilot</p>
-          <h2 id="document-copilot-title">Ask about this document</h2>
-          <span>Advisory answers only · no writeback · no auto-apply</span>
+          <h2 id="document-copilot-title">Ask Jixia</h2>
+          <span>Advisory only · no writeback</span>
         </div>
-        <div className="jixia-document-copilot__status-strip">
-          <Pill tone={selectedProvider ? "success" : "warning"}>{selectedProvider ? providerLabel(selectedProvider) : "Provider setup needed"}</Pill>
-          <details className="jixia-document-copilot__runtime">
-            <summary>{activeRunStatus ?? loadState}</summary>
-            <div>
-              <span>Current-document context only</span>
-              <span>No document mutation</span>
-              <Button disabled={loadState === "loading" || isSending} onClick={() => void loadCopilotRuntime()} variant="ghost">Refresh</Button>
-            </div>
-          </details>
-        </div>
+        <details className="jixia-document-copilot__runtime">
+          <summary aria-label="Document copilot details">Details</summary>
+          <div>
+            <span>{selectedProvider ? providerLabel(selectedProvider) : "Provider setup needed"}</span>
+            <span>{activeRunStatus ? `Run ${activeRunStatus}` : `Runtime ${loadState}`}</span>
+            <span>No document mutation</span>
+            <Button disabled={loadState === "loading" || isSending} onClick={() => void loadCopilotRuntime()} variant="ghost">Refresh</Button>
+          </div>
+        </details>
       </header>
 
-      <ContextCard context={visibleContext} />
+      <ContextControl
+        context={visibleContext}
+        includeDocumentContext={includeDocumentContext}
+        onToggle={setIncludeDocumentContext}
+      />
 
       {hasNotice ? (
         <div className="jixia-document-copilot__notices">
@@ -481,7 +498,7 @@ export function DocumentCopilotPanel({
       <MessageStream
         className="jixia-document-copilot__messages"
         copiedMessageId={copiedMessageId}
-        emptyDescription="Ask from the inspector. Only the visible bounded document context is attached."
+        emptyDescription="Ask from the inspector. The Include current document switch controls context per message."
         emptyTitle="Start a document-scoped chat"
         hiddenSourceMessageIds={hiddenSourceMessageIds}
         isSending={isSending}
@@ -517,19 +534,18 @@ export function DocumentCopilotPanel({
           <div className="jixia-document-copilot__composer-toolbar">
             <label className="jixia-document-copilot__provider-select">
               <span>Model</span>
-            <select
-              aria-label="Document copilot provider"
-              disabled={isSending || usableProviders.length === 0}
-              onChange={(event) => setSelectedProviderConfigId(event.currentTarget.value)}
-              value={selectedProviderConfigId}
-            >
-              <option value="">Select provider</option>
-              {usableProviders.map((provider) => <option key={provider.id} value={provider.id}>{providerLabel(provider)}</option>)}
-            </select>
+              <select
+                aria-label="Document copilot provider"
+                disabled={isSending || usableProviders.length === 0}
+                onChange={(event) => setSelectedProviderConfigId(event.currentTarget.value)}
+                value={selectedProviderConfigId}
+              >
+                <option value="">Select provider</option>
+                {usableProviders.map((provider) => <option key={provider.id} value={provider.id}>{providerLabel(provider)}</option>)}
+              </select>
             </label>
             <div className="jixia-document-copilot__composer-actions">
-              <span>Current document only</span>
-              <span>No document mutation</span>
+              <span>{includeDocumentContext ? "Document context on" : "Document context off"}</span>
               {disabledReason ? <strong>{disabledReason}</strong> : null}
               {isSending && activeRunId ? (
                 <Button onClick={() => void handleStopRun()} title={`Stop server run ${activeRunId}`} type="button" variant="danger">Stop</Button>
@@ -544,33 +560,50 @@ export function DocumentCopilotPanel({
   );
 }
 
-function ContextCard({ context }: { readonly context: DocumentCopilotContext }) {
+function ContextControl({
+  context,
+  includeDocumentContext,
+  onToggle
+}: {
+  readonly context: DocumentCopilotContext;
+  readonly includeDocumentContext: boolean;
+  readonly onToggle: (includeDocumentContext: boolean) => void;
+}) {
+  const blockCopy = `${context.summary.blockCount} ${context.summary.blockCount === 1 ? "block" : "blocks"}`;
+  const revisionCopy = `${context.summary.baseRevision}/${context.summary.currentRevision}`;
+
   return (
-    <section aria-labelledby="document-copilot-context-title" className="jixia-document-copilot__context-card">
-      <details>
+    <section aria-label="Document context controls" className="jixia-document-copilot__context-control">
+      <label className={`jixia-document-copilot__context-toggle jixia-document-copilot__context-toggle--${includeDocumentContext ? "on" : "off"}`}>
+        <input
+          checked={includeDocumentContext}
+          onChange={(event) => onToggle(event.currentTarget.checked)}
+          type="checkbox"
+        />
+        <span>Include current document</span>
+      </label>
+      <details className="jixia-document-copilot__context-details">
         <summary className="jixia-document-copilot__context-summary">
-          <span className="jixia-document-copilot__context-title-block">
-            <span className="jixia-eyebrow">Context attached</span>
-            <strong id="document-copilot-context-title">Current document snapshot</strong>
-            <span>{`${context.summary.title} · ${context.summary.documentId}`}</span>
-          </span>
-          <span className="jixia-document-copilot__context-chips">
-            <Pill tone="accent">{context.summary.documentType}</Pill>
-            <Pill>{`${context.summary.baseRevision} / ${context.summary.currentRevision}`}</Pill>
-            <Pill>{context.summary.blockCount} blocks</Pill>
-          </span>
+          <span>{includeDocumentContext ? `Document context · on · ${blockCopy} · ${revisionCopy}` : "Document context · off"}</span>
+          <span>{includeDocumentContext ? "Sent with each message" : "No document text will be sent"}</span>
         </summary>
         <div className="jixia-document-copilot__context-preview">
-          <p className="jixia-document-copilot__context-preview-label">Review bounded context and safety details</p>
-        <dl>
-          <div><dt>Title</dt><dd>{context.summary.title}</dd></div>
-          <div><dt>Document ID</dt><dd>{context.summary.documentId}</dd></div>
-          <div><dt>Project</dt><dd>{context.summary.projectId ?? "Personal notebook"}</dd></div>
-          <div><dt>Status</dt><dd>{context.summary.readOnly ? "read-only" : "active"}</dd></div>
-          <div><dt>Selected blocks</dt><dd>Not implemented; sending current document only</dd></div>
-          <div><dt>Safety</dt><dd>No signed URLs or storage keys</dd></div>
-        </dl>
-        <p>{context.summary.preview || "No readable text in the current editor snapshot."}</p>
+          <p className="jixia-document-copilot__context-preview-label">
+            {includeDocumentContext ? "Bounded context preview" : "Context disabled for the next message"}
+          </p>
+          <dl>
+            <div><dt>Title</dt><dd>{context.summary.title}</dd></div>
+            <div><dt>Document ID</dt><dd>{context.summary.documentId}</dd></div>
+            <div><dt>Project</dt><dd>{context.summary.projectId ?? "Personal notebook"}</dd></div>
+            <div><dt>Status</dt><dd>{context.summary.readOnly ? "read-only" : "active"}</dd></div>
+            <div><dt>Selected blocks</dt><dd>{includeDocumentContext ? "Not implemented; sending current document only" : "Not sent while context is off"}</dd></div>
+            <div><dt>Safety</dt><dd>No signed URLs or storage keys</dd></div>
+          </dl>
+          <p>
+            {includeDocumentContext
+              ? context.summary.preview || "No readable text in the current editor snapshot."
+              : "Jixia will keep this chat scoped to the document thread, but the next request carries an explicit empty context snapshot."}
+          </p>
         </div>
       </details>
     </section>
