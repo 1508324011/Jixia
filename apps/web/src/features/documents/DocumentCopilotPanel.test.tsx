@@ -19,11 +19,22 @@ const providerConfig: AIProviderConfigView = {
   name: "Lab OpenAI",
   provider: "openai",
   baseURL: "https://api.openai.com/v1",
-  model: "gpt-4o-mini",
-  temperature: 0.2,
-  maxTokens: 4096,
   hasKey: true,
   isDefault: true,
+  modelProfiles: [
+    {
+      id: "model-profile-1",
+      providerConfigId: "config-1",
+      model: "gpt-4o-mini",
+      displayName: "GPT-4o mini",
+      temperature: 0.2,
+      maxTokens: 4096,
+      enabled: true,
+      isDefault: true,
+      createdAt: "2026-06-16T10:00:00.000Z",
+      updatedAt: "2026-06-16T10:00:00.000Z"
+    }
+  ],
   createdAt: "2026-06-16T10:00:00.000Z",
   updatedAt: "2026-06-16T10:00:00.000Z"
 };
@@ -169,6 +180,7 @@ const runningRun = {
   id: "run-1",
   status: "running" as const,
   providerConfigId: "config-1",
+  modelProfileId: "model-profile-1",
   errorMessage: null,
   errorCategory: null,
   createdAt: "2026-06-16T10:02:00.000Z",
@@ -206,7 +218,7 @@ describe("DocumentCopilotPanel", () => {
     expect(screen.getByText("Project synthesis")).toBeTruthy();
     expect(screen.getByText("doc-1")).toBeTruthy();
     expect(screen.getByText("Not implemented; sending current document only")).toBeTruthy();
-    expect(screen.getByText("No usable provider config with a saved key is available for this document copilot. Provider keys stay server-owned; add one in AI settings before sending.")).toBeTruthy();
+    expect(screen.getByText("No usable model profile with a saved provider key is available for this document copilot. Provider keys stay server-owned; add one in AI settings before sending.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open AI provider settings" }));
 
     expect(openSettings).toHaveBeenCalledTimes(1);
@@ -269,7 +281,7 @@ describe("DocumentCopilotPanel", () => {
 
     const [, sendInit] = fetchMock.mock.calls[3] ?? [];
     const sendBody = JSON.parse(String(sendInit?.body)) as SendMessageBody;
-    expect(sendBody.providerConfigId).toBe("config-1");
+    expect(sendBody.modelProfileId).toBe("model-profile-1");
     expect(sendBody.message).toEqual({ role: "user", content: "Summarize this document" });
     expect(sendBody.selectedContextSnapshot.items[0]?.content).toContain("Initial finding");
     expect(JSON.stringify([createBody, sendBody])).not.toMatch(/apiKey|encrypted|signedUrl|storageKey|signature|authorization|cookie/i);
@@ -410,7 +422,7 @@ type CreateConversationBody = {
 };
 
 type SendMessageBody = {
-  readonly providerConfigId: string;
+  readonly modelProfileId: string;
   readonly message: { readonly role: string; readonly content: string };
   readonly selectedContextSnapshot: CreateConversationBody["selectedContextSnapshot"];
 };

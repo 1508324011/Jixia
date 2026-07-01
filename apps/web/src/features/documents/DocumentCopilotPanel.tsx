@@ -5,6 +5,7 @@ import type {
   AIConversationRunDTO,
   AIConversationRunStatus,
   AIConversationRunStreamEvent,
+  AIModelProfileView,
   AIProviderConfigListResponse,
   AIProviderConfigView,
   CreateAIConversationResponse,
@@ -38,6 +39,10 @@ type DocumentCopilotPanelProps = {
 
 type RuntimeLoadState = "idle" | "loading" | "ready" | "error";
 type SendState = "idle" | AIConversationRunStatus;
+type CopilotModelOption = {
+  readonly provider: AIProviderConfigView;
+  readonly profile: AIModelProfileView;
+};
 
 const optimisticMessageIdPrefix = "document-copilot-optimistic-";
 
@@ -51,7 +56,7 @@ export function DocumentCopilotPanel({
   title
 }: DocumentCopilotPanelProps) {
   const [providers, setProviders] = useState<readonly AIProviderConfigView[]>([]);
-  const [selectedProviderConfigId, setSelectedProviderConfigId] = useState("");
+  const [selectedModelProfileId, setSelectedModelProfileId] = useState("");
   const [conversation, setConversation] = useState<AIConversationDTO | null>(null);
   const [messages, setMessages] = useState<readonly AIConversationMessageDTO[]>([]);
   const [messageText, setMessageText] = useState("");
@@ -70,11 +75,11 @@ export function DocumentCopilotPanel({
     () => createDocumentCopilotContext({ baseRevision, document, readOnly, snapshot, title }),
     [baseRevision, document, readOnly, snapshot, title]
   );
-  const usableProviders = useMemo(() => providers.filter((provider) => provider.hasKey), [providers]);
-  const selectedProvider = usableProviders.find((provider) => provider.id === selectedProviderConfigId) ?? null;
+  const usableModelOptions = useMemo(() => modelProfileOptions(providers).filter((option) => option.provider.hasKey && option.profile.enabled), [providers]);
+  const selectedModel = usableModelOptions.find((option) => option.profile.id === selectedModelProfileId) ?? null;
   const isSending = sendState === "queued" || sendState === "running";
-  const disabledReason = sendDisabledReason(messageText, selectedProviderConfigId, usableProviders, sendState);
-  const showProviderSetupNotice = usableProviders.length === 0 && loadState !== "loading";
+  const disabledReason = sendDisabledReason(messageText, selectedModelProfileId, usableModelOptions, sendState);
+  const showProviderSetupNotice = usableModelOptions.length === 0 && loadState !== "loading";
   const hasNotice = statusMessage !== null || showProviderSetupNotice;
 
   useEffect(() => {
@@ -102,11 +107,10 @@ export function DocumentCopilotPanel({
         apiFetch<AIProviderConfigListResponse>("/ai/configs"),
         apiFetch<ListAIConversationsResponse>(`/ai/conversations?currentDocumentId=${encodeURIComponent(document.id)}`)
       ]);
-      const usableConfigs = configResponse.configs.filter((provider) => provider.hasKey);
       const nextConversation = conversationResponse.conversations[0] ?? null;
 
       setProviders(configResponse.configs);
-      setSelectedProviderConfigId((currentProviderId) => providerSelection(currentProviderId, usableConfigs));
+      setSelectedModelProfileId((currentModelProfileId) => modelSelection(currentModelProfileId, configResponse.configs));
       setConversation(nextConversation);
       setMessages(nextConversation?.messages ?? []);
       setLoadState("ready");
@@ -119,7 +123,7 @@ export function DocumentCopilotPanel({
   async function sendMessage(overrideText?: string): Promise<void> {
     const content = (overrideText ?? messageText).trim();
 
-    if (!content || !selectedProviderConfigId || isSending) {
+    if (!content || !selectedModelProfileId || isSending) {
       return;
     }
 
@@ -143,7 +147,7 @@ export function DocumentCopilotPanel({
         method: "POST",
         signal: streamController.signal,
         json: {
-          providerConfigId: selectedProviderConfigId,
+          modelProfileId: selectedModelProfileId,
           message: { role: "user", content },
           selectedContextSnapshot
         }
@@ -462,7 +466,7 @@ export function DocumentCopilotPanel({
         <details className="jixia-document-copilot__runtime">
           <summary aria-label="Document copilot details">Details</summary>
           <div>
-            <span>{selectedProvider ? providerLabel(selectedProvider) : "Provider setup needed"}</span>
+            <span>{selectedModel ? modelLabel(selectedModel) : "Provider/model setup needed"}</span>
             <span>{activeRunStatus ? `Run ${activeRunStatus}` : `Runtime ${loadState}`}</span>
             <span>No document mutation</span>
             <Button disabled={loadState === "loading" || isSending} onClick={() => void loadCopilotRuntime()} variant="ghost">Refresh</Button>
@@ -486,7 +490,7 @@ export function DocumentCopilotPanel({
 
           {showProviderSetupNotice ? (
             <Notice tone="warning">
-              No usable provider config with a saved key is available for this document copilot. Provider keys stay server-owned; add one in AI settings before sending.
+                No usable model profile with a saved provider key is available for this document copilot. Provider keys stay server-owned; add one in AI settings before sending.
               <span className="jixia-document-copilot__inline-action">
                 <Button onClick={handleOpenSettings} variant="link">Open AI provider settings</Button>
               </span>
@@ -521,9 +525,9 @@ export function DocumentCopilotPanel({
         }}
       >
         <div className="jixia-document-copilot__composer-surface">
-          <textarea
-            aria-label="Ask document copilot"
-            disabled={isSending || usableProviders.length === 0}
+            <textarea
+              aria-label="Ask document copilot"
+              disabled={isSending || usableModelOptions.length === 0}
             onChange={(event) => setMessageText(event.currentTarget.value)}
             onKeyDown={handleComposerKeyDown}
             placeholder="Ask about this document…"
@@ -535,13 +539,21 @@ export function DocumentCopilotPanel({
             <label className="jixia-document-copilot__provider-select">
               <span>Model</span>
               <select
-                aria-label="Document copilot provider"
-                disabled={isSending || usableProviders.length === 0}
-                onChange={(event) => setSelectedProviderConfigId(event.currentTarget.value)}
-                value={selectedProviderConfigId}
+                aria-label="Document copilot model"
+                disabled={isSending || usableModelOptions.length === 0}
+                onChange={(event) => setSelectedModelProfileId(event.currentTarget.value)}
+                value={selectedModelProfileId}
               >
-                <option value="">Select provider</option>
-                {usableProviders.map((provider) => <option key={provider.id} value={provider.id}>{providerLabel(provider)}</option>)}
+                <option value="">Select model</option>
+                {providers.map((provider) => (
+                  <optgroup key={provider.id} label={providerGroupLabel(provider)}>
+                    {provider.modelProfiles.map((profile) => (
+                      <option disabled={!provider.hasKey || !profile.enabled} key={profile.id} value={profile.id}>
+                        {profileOptionLabel(profile)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
             </label>
             <div className="jixia-document-copilot__composer-actions">
@@ -612,20 +624,20 @@ function ContextControl({
 
 function sendDisabledReason(
   text: string,
-  providerConfigId: string,
-  providers: readonly AIProviderConfigView[],
+  modelProfileId: string,
+  modelOptions: readonly CopilotModelOption[],
   sendState: SendState
 ): string | null {
   if (sendState === "queued" || sendState === "running") {
     return "Server run in progress";
   }
 
-  if (providers.length === 0) {
-    return "Configure a provider first";
+  if (modelOptions.length === 0) {
+    return "Add an enabled model with a saved key";
   }
 
-  if (!providerConfigId) {
-    return "Select a provider";
+  if (!modelProfileId) {
+    return "Select a model";
   }
 
   if (!text.trim()) {
@@ -635,16 +647,34 @@ function sendDisabledReason(
   return null;
 }
 
-function providerSelection(currentProviderId: string, configs: readonly AIProviderConfigView[]): string {
-  if (configs.some((config) => config.id === currentProviderId)) {
-    return currentProviderId;
+function modelSelection(currentModelProfileId: string, configs: readonly AIProviderConfigView[]): string {
+  const options = modelProfileOptions(configs).filter((option) => option.provider.hasKey && option.profile.enabled);
+
+  if (options.some((option) => option.profile.id === currentModelProfileId)) {
+    return currentModelProfileId;
   }
 
-  return configs.find((config) => config.isDefault)?.id ?? configs[0]?.id ?? "";
+  return options.find((option) => option.provider.isDefault && option.profile.isDefault)?.profile.id
+    ?? options.find((option) => option.profile.isDefault)?.profile.id
+    ?? options[0]?.profile.id
+    ?? "";
 }
 
-function providerLabel(config: AIProviderConfigView): string {
-  return `${config.name} · ${config.model}${config.isDefault ? " · default" : ""}`;
+function modelProfileOptions(configs: readonly AIProviderConfigView[]): readonly CopilotModelOption[] {
+  return configs.flatMap((provider) => provider.modelProfiles.map((profile) => ({ provider, profile })));
+}
+
+function modelLabel(option: CopilotModelOption): string {
+  return `${option.provider.name} · ${option.profile.displayName}`;
+}
+
+function providerGroupLabel(config: AIProviderConfigView): string {
+  return `${config.name} · ${config.provider}${config.hasKey ? "" : " · missing key"}`;
+}
+
+function profileOptionLabel(profile: AIModelProfileView): string {
+  const markers = [profile.isDefault ? "default" : null, profile.enabled ? null : "disabled"].filter(Boolean).join(" · ");
+  return `${profile.displayName} · ${profile.model}${markers ? ` · ${markers}` : ""}`;
 }
 
 function textareaHeight(text: string): string {
