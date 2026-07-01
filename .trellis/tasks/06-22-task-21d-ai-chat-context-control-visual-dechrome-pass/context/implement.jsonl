@@ -1,0 +1,47 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default Trellis guidance"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "Cross-layer completion and contract guidance"}
+{"path": ".trellis/spec/guides/code-reuse.md", "reason": "Reuse existing components/CSS before adding dependencies"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/component-guidelines.md", "reason": "Component design and reuse rules"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend quality and verification rules"}
+{"path": ".trellis/tasks/06-22-task-21d-ai-chat-context-control-visual-dechrome-pass/prd.md", "reason": "Current task requirements"}
+{"path": ".trellis/tasks/06-22-task-21d-ai-chat-context-control-visual-dechrome-pass/info.md", "reason": "Current task technical design"}
+{"path": ".trellis/tasks/06-22-task-21d-ai-chat-context-control-visual-dechrome-pass/manual-review.md", "reason": "Current task manual review checklist"}
+{"path": ".trellis/tasks/06-22-task-21c-ai-chat-visual-maturity-pass/task.json", "reason": "Prior task outcome and manual-review evidence"}
+{"path": ".trellis/tasks/06-22-task-21c-ai-chat-visual-maturity-pass/prd.md", "reason": "Prior visual maturity requirements"}
+{"path": ".trellis/tasks/06-22-task-21c-ai-chat-visual-maturity-pass/info.md", "reason": "Prior visual maturity technical design"}
+{"path": ".trellis/tasks/06-22-task-21c-ai-chat-visual-maturity-pass/manual-review.md", "reason": "Prior browser visual review evidence"}
+{"path": ".trellis/tasks/06-22-task-21b-ai-chat-visual-refactor/task.json", "reason": "Task21b visual refactor record"}
+{"path": ".trellis/tasks/06-21-task-21a-document-copilot-baseline/task.json", "reason": "Document copilot baseline record"}
+{"path": ".trellis/tasks/06-18-task-18-8-mature-streaming-ai-chat-provider-settings/task.json", "reason": "Provider settings and streaming predecessor"}
+{"path": ".trellis/tasks/06-18-task-18-7-standalone-ai-chat-dialog-foundation/task.json", "reason": "Standalone AI chat predecessor"}
+{"path": "apps/web/package.json", "reason": "Web scripts and dependency constraints"}
+{"path": "apps/web/src/lib/api.ts", "reason": "Frontend API route helper and browser request boundary"}
+{"path": "apps/web/src/app/App.tsx", "reason": "AI settings and document route wiring"}
+{"path": "apps/web/src/app/App.test.tsx", "reason": "App shell provider and AI route smoke tests"}
+{"path": "apps/web/src/features/ai/chat/AIChatDialog.tsx", "reason": "Standalone AI dialog and empty-context contract"}
+{"path": "apps/web/src/features/ai/chat/AIChatDialog.test.tsx", "reason": "Standalone AI behavior tests"}
+{"path": "apps/web/src/features/ai/chat/ChatShell.tsx", "reason": "Shared chat shell composition"}
+{"path": "apps/web/src/features/ai/chat/ThreadSidebar.tsx", "reason": "Conversation history sidebar and chrome to reduce"}
+{"path": "apps/web/src/features/ai/chat/ThreadViewport.tsx", "reason": "Transcript viewport and runtime disclosure"}
+{"path": "apps/web/src/features/ai/chat/ChatComposer.tsx", "reason": "Composer behavior, model/provider controls, send/stop"}
+{"path": "apps/web/src/features/ai/chat/ChatMessage.tsx", "reason": "Message row hierarchy and source disclosure"}
+{"path": "apps/web/src/features/ai/chat/MessageStream.tsx", "reason": "Message stream, empty state, scroll behavior"}
+{"path": "apps/web/src/features/ai/chat/MarkdownMessage.tsx", "reason": "Markdown/code/table rendering"}
+{"path": "apps/web/src/features/ai/chat/ToolRunCard.tsx", "reason": "Run/tool card visual weight"}
+{"path": "apps/web/src/features/ai/chat/chat.css", "reason": "Shared standalone and document-copilot visual system"}
+{"path": "apps/web/src/features/documents/DocumentCopilotPanel.tsx", "reason": "Document copilot context control and side panel"}
+{"path": "apps/web/src/features/documents/DocumentCopilotPanel.test.tsx", "reason": "Document copilot behavior and request-body tests"}
+{"path": "apps/web/src/features/documents/documentCopilotContext.ts", "reason": "Bounded/redacted document context builder"}
+{"path": "apps/web/src/features/documents/documentCopilotContext.test.ts", "reason": "Context redaction and empty-context tests"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.tsx", "reason": "Document editor copilot integration"}
+{"path": "apps/web/src/features/documents/DocumentEditorPage.test.tsx", "reason": "Document editor no-writeback integration tests"}
+{"path": "apps/web/e2e/test-api.mjs", "reason": "Fixture AI routes and representative browser review support"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Browser guard for document save/no-writeback flows"}
+{"path": "apps/api/src/modules/ai/ai.routes.ts", "reason": "Backend selectedContextSnapshot request schemas"}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.ts", "reason": "Backend selected context persistence/run semantics"}
+{"path": "apps/api/src/modules/ai/ai-provider-adapter.ts", "reason": "Provider prompt context injection semantics"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/chat/UnifiedChatModal.tsx", "reason": "ResearchClaw compact chat drawer reference"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/MessageStream.tsx", "reason": "ResearchClaw message stream and scroll guard reference"}
+{"path": "/home/zhurui/github_project/ResearchClaw/src/renderer/components/agent-todo/TextMessage.tsx", "reason": "ResearchClaw assistant prose markdown reference"}
+{"path": "/home/zhurui/github_project/ResearchClaw/tailwind.config.ts", "reason": "ResearchClaw palette and spacing reference to translate into CSS"}
