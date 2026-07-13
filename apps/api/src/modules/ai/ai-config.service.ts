@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@jixia/db/generated";
 import type {
   AIConversationMessageDTO,
+  DiscoverAIModelsResponse,
   AIModelProfileView,
   AIProviderConfigView,
   ProviderHealthCheck,
@@ -14,6 +15,7 @@ import {
   providerErrorFromUnknown,
   safeProviderErrorMessage,
   type AIProviderAdapter,
+  type AIProviderDiscoveredModel,
   type AIProviderExecutionConfig
 } from "./ai-provider-adapter.js";
 import { AICryptoError, createAIKeyCipher, createKeyPreview, type AIKeyCipher } from "./crypto.js";
@@ -340,6 +342,63 @@ function normalizeModelProfileInput(input: AIModelProfileInput): Required<AIMode
     enabled: input.enabled ?? true,
     isDefault: input.isDefault ?? false
   };
+}
+
+function normalizeDiscoveredModels(models: readonly AIProviderDiscoveredModel[]): readonly AIProviderDiscoveredModel[] {
+  const seenIds = new Set<string>();
+  const normalizedModels: AIProviderDiscoveredModel[] = [];
+
+  for (const model of models) {
+    const id = ensureNonEmptyText(model.id, "discovered model");
+    if (seenIds.has(id)) {
+      continue;
+    }
+
+    seenIds.add(id);
+    normalizedModels.push({
+      id,
+      ...(model.displayName === undefined
+        ? {}
+        : { displayName: ensureNonEmptyText(model.displayName, "discovered model display name", 200) })
+    });
+  }
+
+  return normalizedModels;
+}
+
+function discoveredModelDisplayName(
+  model: AIProviderDiscoveredModel,
+  usedDisplayNames: ReadonlySet<string>
+): string {
+  const baseName = (model.displayName?.trim() || humanizeModelId(model.id)).slice(0, 200).trim() || model.id;
+
+  if (!usedDisplayNames.has(baseName)) {
+    return baseName;
+  }
+
+  const withModelId = `${baseName} (${model.id})`.slice(0, 200).trim();
+  if (withModelId && !usedDisplayNames.has(withModelId)) {
+    return withModelId;
+  }
+
+  for (let suffix = 2; suffix < 100; suffix += 1) {
+    const suffixText = ` ${suffix}`;
+    const candidate = `${baseName.slice(0, 200 - suffixText.length)}${suffixText}`.trim();
+    if (candidate && !usedDisplayNames.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return `${Date.now()}`;
+}
+
+function humanizeModelId(modelId: string): string {
+  const lastSegment = modelId.split("/").filter(Boolean).pop() ?? modelId;
+  return lastSegment
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function defaultEnabledModelProfile(config: AIProviderConfigRecord): AIModelProfileRecord | null {
@@ -967,7 +1026,7 @@ export function createAIConfigService(
         return { config: toConfigView(config), modelProfile: toModelProfileView(modelProfile) };
       } catch (error) {
         if (isUniqueConstraintError(error)) {
-          throw conflict("AI model profile display name already exists");
+          throw conflict("AI model profile model or display name already exists");
         }
 
         throw error;
@@ -1007,7 +1066,7 @@ export function createAIConfigService(
         return { config: toConfigView(config), modelProfile: toModelProfileView(modelProfile) };
       } catch (error) {
         if (isUniqueConstraintError(error)) {
-          throw conflict("AI model profile display name already exists");
+          throw conflict("AI model profile model or display name already exists");
         }
 
         throw error;
@@ -1074,6 +1133,126 @@ export function createAIConfigService(
       });
 
       return { config: toConfigView(ensureOwnedConfig(config, input.actor.userId)) };
+    },
+
+    async discoverModels(input: {
+      readonly actor: AIActor;
+      readonly configId: string;
+    }): Promise<DiscoverAIModelsResponse> {
+      const current = ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+
+      try {
+        const discoveredModels = normalizeDiscoveredModels(await providerAdapter.listModels({
+          config: {
+            id: current.id,
+            ownerUserId: input.actor.userId,
+            provider: current.provider,
+            baseURL: ensureProviderBaseURL(current.baseURL),
+            apiKey: decryptApiKey(cipher, current.encryptedApiKey)
+          }
+        }));
+        let latestConfig = current;
+        let hasEnabledDefault = latestConfig.modelProfiles.some((profile) => profile.enabled && profile.isDefault);
+        let created = 0;
+        let updated = 0;
+        let skipped = 0;
+
+        for (const discoveredModel of discoveredModels) {
+          latestConfig = ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+          hasEnabledDefault = latestConfig.modelProfiles.some((profile) => profile.enabled && profile.isDefault);
+          const existingProfile = latestConfig.modelProfiles.find((profile) => profile.model === discoveredModel.id);
+
+          if (existingProfile) {
+            skipped += 1;
+            continue;
+          }
+
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            const usedDisplayNames = new Set(latestConfig.modelProfiles.map((profile) => profile.displayName));
+            const displayName = discoveredModelDisplayName(discoveredModel, usedDisplayNames);
+
+            try {
+              const modelProfile = ensureOwnedModelProfile(
+                await repository.createModelProfile({
+                  providerConfigId: current.id,
+                  ownerUserId: input.actor.userId,
+                  model: discoveredModel.id,
+                  displayName,
+                  temperature: 0.2,
+                  maxTokens: 4096,
+                  enabled: true,
+                  isDefault: !hasEnabledDefault
+                }),
+                current.id
+              );
+              created += 1;
+              hasEnabledDefault = hasEnabledDefault || modelProfile.isDefault;
+              latestConfig = ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+              break;
+            } catch (error) {
+              if (!isUniqueConstraintError(error)) {
+                throw error;
+              }
+
+              latestConfig = ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+              hasEnabledDefault = latestConfig.modelProfiles.some((profile) => profile.enabled && profile.isDefault);
+
+              if (latestConfig.modelProfiles.some((profile) => profile.model === discoveredModel.id)) {
+                skipped += 1;
+                break;
+              }
+
+              if (attempt === 2) {
+                throw error;
+              }
+            }
+          }
+        }
+
+        if (!hasEnabledDefault) {
+          latestConfig = ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+          const firstDiscoveredProfile = discoveredModels
+            .map((model) => latestConfig.modelProfiles.find((profile) => profile.model === model.id && profile.enabled))
+            .find((profile): profile is AIModelProfileRecord => Boolean(profile));
+          const defaultCandidate = firstDiscoveredProfile ?? latestConfig.modelProfiles.find((profile) => profile.enabled) ?? null;
+
+          if (defaultCandidate) {
+            ensureOwnedModelProfile(
+              await repository.setDefaultModelProfile({
+                providerConfigId: latestConfig.id,
+                modelProfileId: defaultCandidate.id,
+                ownerUserId: input.actor.userId
+              }),
+              latestConfig.id
+            );
+            updated += 1;
+          }
+        }
+
+        const finalConfig = ensureOwnedConfig(await repository.findConfigById(input.configId), input.actor.userId);
+        const warnings = discoveredModels.length === 0
+          ? ["Provider returned no models. Use advanced manual model entry if this provider cannot list models."]
+          : [];
+
+        return {
+          config: toConfigView(finalConfig),
+          discovered: discoveredModels.length,
+          created,
+          updated,
+          skipped,
+          ...(warnings.length === 0 ? {} : { warnings })
+        };
+      } catch (error) {
+        if (error instanceof AIConfigError) {
+          throw error;
+        }
+
+        const providerError = providerErrorFromUnknown(error);
+        throw new AIConfigError(
+          safeProviderErrorMessage(providerError.category),
+          providerError.category === "missing_key" || providerError.category === "invalid_base_url" ? 400 : 502
+        );
+      }
     },
 
     async testDraftConfig(input: TestAIProviderDraftConfigInput): Promise<{ readonly healthCheck: ProviderHealthCheck }> {

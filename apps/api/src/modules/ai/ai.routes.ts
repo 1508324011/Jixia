@@ -361,6 +361,12 @@ export const aiRoutes: FastifyPluginAsync<AIRoutesOptions> = async (app, options
     return (await resolveAIConfigService()).testSavedConfig(testSavedConfigInput(actor, configId, payload));
   });
 
+  app.post("/ai/configs/:configId/discover-models", async (request, reply) => {
+    const actor = await requireActor(request, reply);
+    const { configId } = parsePayload(idParamsSchema.required({ configId: true }), request.params);
+    return (await resolveAIConfigService()).discoverModels({ actor, configId });
+  });
+
   app.post("/ai/configs/:configId/model-profiles", async (request, reply) => {
     const actor = await requireActor(request, reply);
     const { configId } = parsePayload(idParamsSchema.required({ configId: true }), request.params);

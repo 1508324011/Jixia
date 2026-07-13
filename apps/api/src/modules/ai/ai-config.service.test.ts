@@ -29,6 +29,10 @@ import type { AIKeyCipher } from "./crypto.js";
 const baseNow = new Date("2026-06-15T12:00:00.000Z");
 const cookieName = "jixia_ai_config_test_session";
 
+function uniqueConstraintError(message: string): Error & { readonly code: "P2002" } {
+  return Object.assign(new Error(message), { code: "P2002" as const });
+}
+
 class InMemoryAIConfigRepository implements AIProviderConfigRepository {
   readonly configs = new Map<string, AIProviderConfigRecord>();
   readonly modelProfiles = new Map<string, AIModelProfileRecord>();
@@ -143,6 +147,7 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
     if (input.isDefault) {
       this.clearModelDefaults(input.providerConfigId);
     }
+    this.ensureUniqueModelProfile(input.providerConfigId, input.model, input.displayName);
     return this.createProfileRecord(input.providerConfigId, input, input.isDefault, new Date(config.updatedAt.getTime() + 1_000));
   }
 
@@ -165,6 +170,12 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
     if (input.isDefault === true) {
       this.clearModelDefaults(input.providerConfigId);
     }
+    this.ensureUniqueModelProfile(
+      input.providerConfigId,
+      input.model ?? profile.model,
+      input.displayName ?? profile.displayName,
+      input.modelProfileId
+    );
     const updated: AIModelProfileRecord = {
       ...profile,
       ...(input.model === undefined ? {} : { model: input.model }),
@@ -251,7 +262,22 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
 
   private ensureUniqueName(ownerUserId: string, name: string): void {
     if (Array.from(this.configs.values()).some((config) => config.ownerUserId === ownerUserId && config.name === name)) {
-      throw Object.assign(new Error("duplicate config"), { code: "P2002" });
+      throw uniqueConstraintError("duplicate config");
+    }
+  }
+
+  private ensureUniqueModelProfile(
+    providerConfigId: string,
+    model: string,
+    displayName: string,
+    ignoredProfileId?: string
+  ): void {
+    if (Array.from(this.modelProfiles.values()).some((profile) => (
+      profile.providerConfigId === providerConfigId &&
+      profile.id !== ignoredProfileId &&
+      (profile.model === model || profile.displayName === displayName)
+    ))) {
+      throw uniqueConstraintError("duplicate model profile");
     }
   }
 
@@ -261,6 +287,7 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
     isDefault: boolean,
     timestamp: Date
   ): AIModelProfileRecord {
+    this.ensureUniqueModelProfile(providerConfigId, input.model, input.displayName);
     const profile: AIModelProfileRecord = {
       id: `model-profile-${this.nextProfileId++}`,
       providerConfigId,
@@ -295,6 +322,24 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
   }
 }
 
+class CreateThenThrowDuplicateModelRepository extends InMemoryAIConfigRepository {
+  private didRace = false;
+
+  constructor(private readonly raceModel: string) {
+    super();
+  }
+
+  async createModelProfile(input: Parameters<AIProviderConfigRepository["createModelProfile"]>[0]): Promise<AIModelProfileRecord | null> {
+    if (input.model === this.raceModel && !this.didRace) {
+      this.didRace = true;
+      await super.createModelProfile(input);
+      throw uniqueConstraintError("duplicate model profile");
+    }
+
+    return super.createModelProfile(input);
+  }
+}
+
 const cipher: AIKeyCipher = {
   encrypt: (plaintext) => `encrypted:${plaintext}`,
   decrypt: (ciphertext) => ciphertext.replace(/^encrypted:/, "")
@@ -302,7 +347,19 @@ const cipher: AIKeyCipher = {
 
 class RecordingProviderAdapter implements AIProviderAdapter {
   readonly inputs: AIProviderRunInput[] = [];
+  readonly listModelInputs: Parameters<AIProviderAdapter["listModels"]>[0][] = [];
+  discoveredModels: Awaited<ReturnType<AIProviderAdapter["listModels"]>> = [];
   failWith: Error | null = null;
+
+  async listModels(input: Parameters<AIProviderAdapter["listModels"]>[0]) {
+    this.listModelInputs.push(input);
+
+    if (this.failWith) {
+      throw this.failWith;
+    }
+
+    return this.discoveredModels;
+  }
 
   async runConversation(input: AIProviderRunInput) {
     this.inputs.push(input);
@@ -641,6 +698,178 @@ describe("AI config service", () => {
     expect(new Set(Array.from(repository.configs.values()).map((config) => config.encryptedApiKey))).toEqual(new Set(["encrypted:sk-shared-secret"]));
   });
 
+  it("discovers provider models server-side and preserves existing enabled/default choices on refresh", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Discovery provider",
+      provider: "openai",
+      baseURL: "https://api.example/v1",
+      apiKey: "sk-discovery-secret"
+    });
+    providerAdapter.discoveredModels = [
+      { id: "gpt-fast", displayName: "GPT fast" },
+      { id: "gpt-deep", displayName: "GPT deep" }
+    ];
+
+    const firstDiscovery = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(firstDiscovery).toMatchObject({ discovered: 2, created: 2, skipped: 0, updated: 0 });
+    expect(firstDiscovery.config.modelProfiles).toEqual([
+      expect.objectContaining({ model: "gpt-fast", displayName: "GPT fast", enabled: true, isDefault: true }),
+      expect.objectContaining({ model: "gpt-deep", displayName: "GPT deep", enabled: true, isDefault: false })
+    ]);
+    expect(providerAdapter.listModelInputs).toEqual([
+      expect.objectContaining({
+        config: expect.objectContaining({
+          apiKey: "sk-discovery-secret",
+          baseURL: "https://api.example/v1"
+        })
+      })
+    ]);
+    expect(JSON.stringify(firstDiscovery)).not.toMatch(/sk-discovery-secret|encrypted|Authorization|headers/i);
+
+    const deepProfile = firstDiscovery.config.modelProfiles.find((profile) => profile.model === "gpt-deep")!;
+    await service.setDefaultModelProfile({
+      actor: actor("owner-user"),
+      configId: created.config.id,
+      modelProfileId: deepProfile.id
+    });
+    await service.updateModelProfile({
+      actor: actor("owner-user"),
+      configId: created.config.id,
+      modelProfileId: firstDiscovery.config.modelProfiles[0]!.id,
+      enabled: false
+    });
+
+    providerAdapter.discoveredModels = [
+      { id: "gpt-fast", displayName: "Renamed by provider" },
+      { id: "gpt-deep", displayName: "GPT deep" },
+      { id: "gpt-new", displayName: "GPT new" }
+    ];
+
+    const refreshed = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(refreshed).toMatchObject({ discovered: 3, created: 1, skipped: 2, updated: 0 });
+    expect(refreshed.config.modelProfiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: "gpt-fast", displayName: "GPT fast", enabled: false, isDefault: false }),
+      expect.objectContaining({ model: "gpt-deep", displayName: "GPT deep", enabled: true, isDefault: true }),
+      expect.objectContaining({ model: "gpt-new", displayName: "GPT new", enabled: true, isDefault: false })
+    ]));
+  });
+
+  it("keys discovery by upstream model id when provider display names collide or change", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Colliding provider",
+      provider: "openai",
+      baseURL: "https://api.example/v1",
+      apiKey: "sk-colliding-secret"
+    });
+    providerAdapter.discoveredModels = [
+      { id: "provider/gpt-fast", displayName: "GPT" },
+      { id: "provider/gpt-deep", displayName: "GPT" }
+    ];
+
+    const firstDiscovery = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(firstDiscovery).toMatchObject({ discovered: 2, created: 2, skipped: 0, updated: 0 });
+    expect(firstDiscovery.config.modelProfiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: "provider/gpt-fast", displayName: "GPT" }),
+      expect.objectContaining({ model: "provider/gpt-deep", displayName: "GPT (provider/gpt-deep)" })
+    ]));
+
+    providerAdapter.discoveredModels = [
+      { id: "provider/gpt-fast", displayName: "Renamed GPT" },
+      { id: "provider/gpt-deep", displayName: "GPT" }
+    ];
+
+    const refreshed = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(refreshed).toMatchObject({ discovered: 2, created: 0, skipped: 2, updated: 0 });
+    expect(refreshed.config.modelProfiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: "provider/gpt-fast", displayName: "GPT" }),
+      expect.objectContaining({ model: "provider/gpt-deep", displayName: "GPT (provider/gpt-deep)" })
+    ]));
+  });
+
+  it("treats concurrent duplicate model insertion during discovery as skipped", async () => {
+    repository = new CreateThenThrowDuplicateModelRepository("gpt-race");
+    service = createAIConfigService(repository, cipher, {
+      now: () => baseNow,
+      providerAdapter
+    });
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Racy provider",
+      provider: "openai",
+      baseURL: "https://api.example/v1",
+      apiKey: "sk-racy-secret"
+    });
+    providerAdapter.discoveredModels = [{ id: "gpt-race", displayName: "GPT race" }];
+
+    const discovered = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(discovered).toMatchObject({ discovered: 1, created: 0, skipped: 1, updated: 0 });
+    expect(discovered.config.modelProfiles).toEqual([
+      expect.objectContaining({ model: "gpt-race", displayName: "GPT race", enabled: true, isDefault: true })
+    ]);
+  });
+
+  it("rejects duplicate manual model profiles by upstream model id or display name", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Manual provider",
+      provider: "openai",
+      baseURL: "https://api.example/v1",
+      defaultModelProfile: modelProfile("gpt-fast", 0.2, 4096)
+    });
+
+    await expectAIConfigError(
+      service.createModelProfile({
+        actor: actor("owner-user"),
+        configId: created.config.id,
+        model: "gpt-fast",
+        displayName: "Fast duplicate",
+        temperature: 0.2,
+        maxTokens: 4096
+      }),
+      409
+    );
+    await expectAIConfigError(
+      service.createModelProfile({
+        actor: actor("owner-user"),
+        configId: created.config.id,
+        model: "gpt-deep",
+        displayName: "gpt-fast",
+        temperature: 0.2,
+        maxTokens: 4096
+      }),
+      409
+    );
+  });
+
+  it("returns safe discovery failures for missing keys and empty provider lists", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "No key provider",
+      provider: "openai",
+      baseURL: "https://api.example/v1"
+    });
+
+    await expectAIConfigError(service.discoverModels({ actor: actor("owner-user"), configId: created.config.id }), 400);
+
+    await service.updateConfig({ actor: actor("owner-user"), configId: created.config.id, apiKey: "sk-empty-list" });
+    providerAdapter.discoveredModels = [];
+
+    const emptyDiscovery = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(emptyDiscovery).toMatchObject({ discovered: 0, created: 0, skipped: 0, updated: 0 });
+    expect(emptyDiscovery.warnings).toEqual([
+      "Provider returned no models. Use advanced manual model entry if this provider cannot list models."
+    ]);
+    expect(JSON.stringify(emptyDiscovery)).not.toMatch(/sk-empty-list|encrypted|Authorization/i);
+  });
+
   it("keeps one default config per owner", async () => {
     const first = await service.createConfig({
       actor: actor("owner-user"),
@@ -752,9 +981,14 @@ describe("AI config routes", () => {
   });
 
   it("exposes provider test, SSE stream, and cancel routes with safe payloads", async () => {
+    const routeProviderAdapter = new RecordingProviderAdapter();
+    routeProviderAdapter.discoveredModels = [
+      { id: "gpt-route-fast", displayName: "Route fast" },
+      { id: "gpt-route-deep", displayName: "Route deep" }
+    ];
     service = createAIConfigService(new InMemoryAIConfigRepository(), cipher, {
       now: () => baseNow,
-      providerAdapter: new RecordingProviderAdapter()
+      providerAdapter: routeProviderAdapter
     });
     const sessions = new Map([
       [
@@ -818,6 +1052,33 @@ describe("AI config routes", () => {
     expect(draftTestResponse.statusCode).toBe(200);
     expect(draftTestResponse.json()).toMatchObject({ healthCheck: { ok: true, category: null } });
     expect(draftTestResponse.body).not.toMatch(/sk-route-test|encrypted|Authorization/i);
+
+    const createConfigResponse = await app.inject({
+      method: "POST",
+      url: "/ai/configs",
+      headers: { cookie: `${cookieName}=route-session` },
+      payload: {
+        name: "Discoverable Route Provider",
+        provider: "openai",
+        baseURL: "https://api.example/v1",
+        apiKey: "sk-route-discovery"
+      }
+    });
+    expect(createConfigResponse.statusCode).toBe(200);
+    const routeConfigId = createConfigResponse.json().config.id as string;
+
+    const discoveryResponse = await app.inject({
+      method: "POST",
+      url: `/ai/configs/${routeConfigId}/discover-models`,
+      headers: { cookie: `${cookieName}=route-session` }
+    });
+    expect(discoveryResponse.statusCode).toBe(200);
+    expect(discoveryResponse.json()).toMatchObject({ discovered: 2, created: 2, skipped: 0 });
+    expect(discoveryResponse.json().config.modelProfiles).toEqual([
+      expect.objectContaining({ model: "gpt-route-fast", isDefault: true }),
+      expect.objectContaining({ model: "gpt-route-deep", isDefault: false })
+    ]);
+    expect(discoveryResponse.body).not.toMatch(/sk-route-discovery|encrypted|Authorization|headers/i);
 
     const streamResponse = await app.inject({
       method: "POST",
