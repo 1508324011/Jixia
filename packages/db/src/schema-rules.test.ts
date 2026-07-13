@@ -11,6 +11,10 @@ const modelProfileMigrationPath = new URL(
   "../prisma/migrations/20260701000000_ai_model_profiles/migration.sql",
   import.meta.url
 );
+const modelProfileDiscoveryMigrationPath = new URL(
+  "../prisma/migrations/20260701010000_ai_model_profile_provider_model_unique/migration.sql",
+  import.meta.url
+);
 
 async function readSchema(): Promise<string> {
   return readFile(schemaPath, "utf8");
@@ -22,6 +26,10 @@ async function readMigration(): Promise<string> {
 
 async function readModelProfileMigration(): Promise<string> {
   return readFile(modelProfileMigrationPath, "utf8");
+}
+
+async function readModelProfileDiscoveryMigration(): Promise<string> {
+  return readFile(modelProfileDiscoveryMigrationPath, "utf8");
 }
 
 function block(source: string, kind: "enum" | "model", name: string): string {
@@ -135,6 +143,7 @@ describe("Prisma MVP schema", () => {
     const schema = await readSchema();
     const migration = await readMigration();
     const modelProfileMigration = await readModelProfileMigration();
+    const modelProfileDiscoveryMigration = await readModelProfileDiscoveryMigration();
     const config = block(schema, "model", "AIProviderConfig");
     const modelProfile = block(schema, "model", "AIModelProfile");
     const usage = block(schema, "model", "AIUsageAggregate");
@@ -152,6 +161,7 @@ describe("Prisma MVP schema", () => {
     expect(modelProfile).toContain("maxTokens");
     expect(modelProfile).toContain("enabled");
     expect(modelProfile).toContain("isDefault");
+    expect(modelProfile).toContain("@@unique([providerConfigId, model])");
     expect(modelProfile).not.toMatch(/apiKey|encrypted|credential|authHeader|requestHeader/i);
     expect(migration).toContain('CREATE UNIQUE INDEX "AIProviderConfig_one_default_per_owner_key"');
     expect(migration).toContain('WHERE "isDefault" = true');
@@ -160,6 +170,7 @@ describe("Prisma MVP schema", () => {
     expect(modelProfileMigration).toContain('"AIProviderConfig" DROP COLUMN "model"');
     expect(modelProfileMigration).toContain('CREATE UNIQUE INDEX "AIModelProfile_one_default_per_provider_config_key"');
     expect(modelProfileMigration).toContain('WHERE "isDefault" = true');
+    expect(modelProfileDiscoveryMigration).toContain('CREATE UNIQUE INDEX "AIModelProfile_providerConfigId_model_key"');
     expect(usage).toContain("promptTokens");
     expect(usage).toContain("completionTokens");
     expect(usage).toContain("estimatedCostMicros");

@@ -295,6 +295,7 @@ model AIModelProfile {
   providerConfig   AIProviderConfig @relation(fields: [providerConfigId], references: [id], onDelete: Cascade)
 
   @@unique([providerConfigId, displayName])
+  @@unique([providerConfigId, model])
   @@index([providerConfigId, isDefault])
 }
 
