@@ -40,6 +40,43 @@ const input = {
 };
 
 describe("AI provider adapter", () => {
+  it("discovers OpenAI-compatible models through the server with bearer credentials", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [
+            { id: "gpt-4o-mini", object: "model", owned_by: "openai" },
+            { id: "gpt-4.1-mini", name: "GPT-4.1 mini" },
+            { id: "gpt-4o-mini", name: "duplicate ignored" }
+          ]
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const result = await createOpenAICompatibleProviderAdapter(fetchMock).listModels({
+      config: {
+        id: "config-1",
+        ownerUserId: "owner-user",
+        provider: "openai",
+        baseURL: "https://provider.example/v1/chat/completions",
+        apiKey: "sk-server-only"
+      }
+    });
+
+    expect(result).toEqual([
+      { id: "gpt-4o-mini" },
+      { id: "gpt-4.1-mini", displayName: "GPT-4.1 mini" }
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://provider.example/v1/models",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({ Authorization: "Bearer sk-server-only" })
+      })
+    );
+  });
+
   it("calls an HTTPS OpenAI-compatible endpoint and returns assistant text with aggregate usage", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(

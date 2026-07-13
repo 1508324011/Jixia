@@ -213,6 +213,10 @@ class RecordingProviderAdapter implements AIProviderAdapter {
     }
   ];
 
+  async listModels(): Promise<[]> {
+    return [];
+  }
+
   async runConversation(input: AIProviderRunInput) {
     this.inputs.push(input);
 

@@ -11,6 +11,16 @@ export type AIProviderExecutionConfig = {
   readonly apiKey: string;
 };
 
+export type AIProviderModelDiscoveryConfig = Omit<
+  AIProviderExecutionConfig,
+  "model" | "temperature" | "maxTokens"
+>;
+
+export type AIProviderDiscoveredModel = {
+  readonly id: string;
+  readonly displayName?: string;
+};
+
 export type AIProviderUsageMetadata = {
   readonly promptTokens?: number;
   readonly completionTokens?: number;
@@ -42,6 +52,7 @@ export type AIProviderStreamEvent =
     };
 
 export type AIProviderAdapter = {
+  readonly listModels: (input: { readonly config: AIProviderModelDiscoveryConfig }) => Promise<readonly AIProviderDiscoveredModel[]>;
   readonly runConversation: (input: AIProviderRunInput) => Promise<AIProviderRunResult>;
   readonly streamConversation: (input: AIProviderRunInput) => AsyncIterable<AIProviderStreamEvent>;
 };
@@ -61,6 +72,43 @@ const maxProviderResponseCharacters = 1_000_000;
 
 export function createOpenAICompatibleProviderAdapter(fetchImplementation: typeof fetch = fetch): AIProviderAdapter {
   return {
+    async listModels(input: { readonly config: AIProviderModelDiscoveryConfig }): Promise<readonly AIProviderDiscoveredModel[]> {
+      const requestInit: RequestInit = {
+        method: "GET",
+        redirect: "error",
+        headers: {
+          "Authorization": `Bearer ${input.config.apiKey}`,
+          "Accept": "application/json"
+        }
+      };
+      const timeoutSignal = createProviderSignal();
+
+      if (timeoutSignal) {
+        requestInit.signal = timeoutSignal;
+      }
+
+      const response = await fetchProvider(fetchImplementation, input.config.baseURL, requestInit, "models");
+
+      if (!response.ok) {
+        throw await providerErrorFromResponse(response);
+      }
+
+      const responseText = await response.text();
+
+      if (responseText.length > maxProviderResponseCharacters) {
+        throw new AIProviderExecutionError("response_parse_failure");
+      }
+
+      let payload: unknown;
+      try {
+        payload = JSON.parse(responseText) as unknown;
+      } catch {
+        throw new AIProviderExecutionError("response_parse_failure");
+      }
+
+      return normalizeOpenAICompatibleModels(payload);
+    },
+
     async runConversation(input: AIProviderRunInput): Promise<AIProviderRunResult> {
       const requestInit: RequestInit = {
         method: "POST",
@@ -82,7 +130,7 @@ export function createOpenAICompatibleProviderAdapter(fetchImplementation: typeo
         requestInit.signal = timeoutSignal;
       }
 
-      const response = await fetchProvider(fetchImplementation, input.config.baseURL, requestInit);
+      const response = await fetchProvider(fetchImplementation, input.config.baseURL, requestInit, "chat");
 
       if (!response.ok) {
         throw await providerErrorFromResponse(response);
@@ -127,7 +175,7 @@ export function createOpenAICompatibleProviderAdapter(fetchImplementation: typeo
         requestInit.signal = timeoutSignal;
       }
 
-      const response = await fetchProvider(fetchImplementation, input.config.baseURL, requestInit);
+      const response = await fetchProvider(fetchImplementation, input.config.baseURL, requestInit, "chat");
 
       if (!response.ok) {
         throw await providerErrorFromResponse(response);
@@ -208,14 +256,23 @@ export function normalizeAIProviderBaseURL(baseURL: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
-function providerUrl(baseURL: string): string {
+function providerUrl(baseURL: string, kind: "chat" | "models"): string {
   const normalizedBaseURL = normalizeAIProviderBaseURL(baseURL);
   const url = new URL(normalizedBaseURL);
 
   const normalizedPath = url.pathname.replace(/\/+$/, "");
-  url.pathname = normalizedPath.endsWith("/chat/completions")
-    ? normalizedPath
-    : `${normalizedPath}/chat/completions`;
+  if (kind === "models") {
+    const modelBasePath = normalizedPath.endsWith("/chat/completions")
+      ? normalizedPath.slice(0, -"/chat/completions".length)
+      : normalizedPath;
+    url.pathname = modelBasePath.endsWith("/models")
+      ? modelBasePath
+      : `${modelBasePath}/models`;
+  } else {
+    url.pathname = normalizedPath.endsWith("/chat/completions")
+      ? normalizedPath
+      : `${normalizedPath}/chat/completions`;
+  }
   url.search = "";
   url.hash = "";
 
@@ -256,10 +313,11 @@ function createProviderSignal(externalSignal?: AbortSignal): AbortSignal | undef
 async function fetchProvider(
   fetchImplementation: typeof fetch,
   baseURL: string,
-  requestInit: RequestInit
+  requestInit: RequestInit,
+  kind: "chat" | "models"
 ): Promise<Response> {
   try {
-    return await fetchImplementation(providerUrl(baseURL), requestInit);
+    return await fetchImplementation(providerUrl(baseURL, kind), requestInit);
   } catch (error) {
     throw providerErrorFromUnknown(error, requestInit.signal ?? undefined);
   }
@@ -417,6 +475,52 @@ function normalizeOpenAICompatibleResponse(payload: unknown): AIProviderRunResul
     assistantText: content,
     ...(usage === undefined ? {} : { usage })
   };
+}
+
+function normalizeOpenAICompatibleModels(payload: unknown): readonly AIProviderDiscoveredModel[] {
+  if (!payload || typeof payload !== "object") {
+    throw new AIProviderExecutionError("response_parse_failure");
+  }
+
+  const data = (payload as Record<string, unknown>).data;
+  if (!Array.isArray(data)) {
+    throw new AIProviderExecutionError("response_parse_failure");
+  }
+
+  const seenIds = new Set<string>();
+  const models: AIProviderDiscoveredModel[] = [];
+
+  for (const item of data) {
+    const model = normalizeModelListItem(item);
+    if (!model || seenIds.has(model.id)) {
+      continue;
+    }
+
+    seenIds.add(model.id);
+    models.push(model);
+  }
+
+  return models;
+}
+
+function normalizeModelListItem(item: unknown): AIProviderDiscoveredModel | null {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return null;
+  }
+
+  const record = item as Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id.trim() : "";
+  if (!id) {
+    return null;
+  }
+
+  const displayName = typeof record.name === "string" && record.name.trim()
+    ? record.name.trim()
+    : typeof record.display_name === "string" && record.display_name.trim()
+      ? record.display_name.trim()
+      : undefined;
+
+  return displayName ? { id, displayName } : { id };
 }
 
 function messageContent(value: unknown): string | null {
