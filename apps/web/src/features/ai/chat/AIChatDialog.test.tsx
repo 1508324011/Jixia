@@ -38,6 +38,20 @@ const providerConfig: AIProviderConfigView = {
   updatedAt: "2026-06-16T10:00:00.000Z"
 };
 
+const providerConfigWithDiscoveredModels: AIProviderConfigView = {
+  ...providerConfig,
+  modelProfiles: [
+    providerConfig.modelProfiles[0]!,
+    {
+      ...providerConfig.modelProfiles[0]!,
+      id: "model-profile-2",
+      model: "gpt-4.1-mini",
+      displayName: "GPT-4.1 mini",
+      isDefault: false
+    }
+  ]
+};
+
 const standaloneConversation: AIConversationDTO = {
   id: "conversation-standalone",
   ownerUserId: "user-1",
@@ -225,6 +239,33 @@ describe("AIChatDialog", () => {
     expect(sendBody.selectedContextSnapshot.items).toEqual([]);
     expect(JSON.stringify([createBody, sendBody])).not.toMatch(/doc-1|current_document|Document body|apiKey|encrypted|secret/i);
     expectNoForbiddenControls();
+    expectStorageWasNotUsed();
+  });
+
+  it("sends the selected discovered model profile under one provider account", async () => {
+    const fetchMock = mockFetchSequence(
+      { configs: [providerConfigWithDiscoveredModels] },
+      { conversations: [] },
+      { conversation: createdConversation },
+      streamResponse([
+        { type: "run", run: { ...runningRun, modelProfileId: "model-profile-2" } },
+        { type: "assistant_message", message: streamedAssistantMessage },
+        { type: "done", run: { ...succeededRun, modelProfileId: "model-profile-2" }, conversation: appendedConversation }
+      ])
+    );
+
+    render(<AIChatDialog />);
+
+    const composer = await screen.findByLabelText("AI chat composer");
+    fireEvent.change(within(composer).getByLabelText("AI model profile"), { target: { value: "model-profile-2" } });
+    fireEvent.change(within(composer).getByLabelText("Message Jixia AI"), { target: { value: "Use the deeper model" } });
+    fireEvent.click(within(composer).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const [, sendInit] = fetchMock.mock.calls[3] ?? [];
+    const sendBody = JSON.parse(String(sendInit?.body)) as { readonly modelProfileId: string };
+    expect(sendBody.modelProfileId).toBe("model-profile-2");
+    expect(String(sendInit?.body)).not.toMatch(/apiKey|encrypted|sk-|Authorization/i);
     expectStorageWasNotUsed();
   });
 
