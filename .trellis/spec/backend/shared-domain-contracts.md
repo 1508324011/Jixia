@@ -11,7 +11,7 @@
 - Auth module: `spaceRoles`, `projectRoles`, `CurrentSessionView`, `CurrentUserView`, `ProjectDTO`, `ProjectMembershipDTO`, invitation request/response DTOs, and role guard helpers.
 - Documents module: `DocumentType`, `DocumentStatus`, `EditorBlockType`, editor schema-version constants, editor snapshot/draft/revision/save/conflict/lifecycle request and response DTOs.
 - Attachments module: `AttachmentMetadataDTO`, `UploadIntentDTO`, upload status/failure literal unions, upload/download request and response DTOs, upload expiry/retention constants, and image/file upload limits.
-- AI module: `AIProviderConfigView`, safe provider upsert/import request contracts, private conversation/message/context snapshot DTOs, renderable conversation message parts, source/context attachment cards, safe run-step metadata, future approval/action DTOs, and aggregate usage views.
+- AI module: `AIProviderConfigView`, `AIModelProfileView`, `DiscoverAIModelsResponse`, safe provider upsert/import request contracts, private conversation/message/context snapshot DTOs, renderable conversation message parts, source/context attachment cards, safe run-step metadata, future approval/action DTOs, and aggregate usage views.
 - Entrypoint: `packages/shared/src/index.ts` must re-export the domain modules as the primary shared API; any foundation placeholder exports are legacy scaffold helpers only.
 
 ### 3. Contracts
@@ -21,6 +21,7 @@
 - Signed upload/download URLs may appear only as transient response fields for direct upload/download flows; they must not appear in persisted metadata/config DTOs.
 - Prompt, response, selected context body, API key, storage credential, and signed URL payloads must stay out of audit/log/usage DTOs. AI message and selected-context content may exist only inside the private conversation model.
 - AI render metadata must be projection-safe. Message parts, source cards, run steps, and action descriptors may reference document IDs, block IDs, titles, revision numbers, timestamps, statuses, labels, and disabled action reasons; they must not expose provider request/response JSON, headers, raw or encrypted keys, signed URLs, stack traces, audit payloads, or server runtime state.
+- AI discovery DTOs may expose only refreshed provider/model profile views, count metadata, and safe warnings. Raw upstream model-list payloads, authorization headers, cookies, raw keys, encrypted keys, and credential previews must remain server-private.
 - AI writeback/action DTOs are allowed only as future-safe descriptors. Until a real server approval and document mutation contract exists, any document-changing action must be disabled/unavailable and must not imply browser-side mutation authority.
 
 ### 4. Validation & Error Matrix

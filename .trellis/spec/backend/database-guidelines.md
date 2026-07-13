@@ -23,7 +23,7 @@
 - Drafts and revisions store block-editor JSON snapshots, not Markdown; revisions are full snapshots, and drafts must retain `baseRevision` for conflict checks.
 - Invitations persist `tokenHash` only; sessions persist `userId`, `expiresAt`, and nullable `revokedAt` only.
 - Attachments and upload intents persist backend-owned storage keys and metadata only; signed URLs, object-storage credentials, request headers, and file contents must stay out of persisted tables.
-- AI provider configs persist encrypted key material plus safe preview metadata only; AI conversations are owner-private JSON message/context snapshots; AI usage is aggregate rows only, never per-call prompt/response logs.
+- AI provider configs persist encrypted key material plus safe preview metadata only; AI model profiles are provider-owned registry rows with unique `(providerConfigId, displayName)` and `(providerConfigId, model)` identities; AI conversations are owner-private JSON message/context snapshots; AI usage is aggregate rows only, never per-call prompt/response logs.
 - Audit events store `metadata` JSON only and must avoid fields that encourage storing content bodies, prompts, responses, signed URLs, tokens, credentials, or request headers.
 
 ### 4. Validation & Error Matrix
@@ -38,6 +38,7 @@
 - Good: Migration SQL adds `Document_type_owner_project_check` to enforce notebook/project ownership shape at the database layer.
 - Good: `UploadIntent.storageKey` and `DocumentAttachment.storageKey` persist backend-owned object keys, while signed upload/download URLs remain transient API responses only.
 - Base: `AIProviderConfig.encryptedApiKey` and `keyPreview` support safe config persistence without storing raw provider keys or auth headers.
+- Base: `AIModelProfile.model` stores the upstream model id used for discovery/profile selection, while discovery source payloads and provider authorization headers are not persisted.
 - Bad: A persisted `uploadUrl`, `requiredHeaders`, `apiKey`, `rawToken`, `prompt`, `response`, or `payload` column appears in a DB model.
 
 ### 6. Tests Required
