@@ -2,9 +2,9 @@
   "title": "Task 21f Server-Owned AI Model Discovery",
   "slug": "task-21f-server-owned-ai-model-discovery",
   "type": "fullstack",
-  "status": "active",
+  "status": "manual-review-failed",
   "createdAt": "2026-07-01T13:15:16+00:00",
-  "updatedAt": "2026-07-01T13:19:21+00:00",
+  "updatedAt": "2026-07-13T12:20:42Z",
   "next_action": [
     {
       "phase": 1,
@@ -19,7 +19,7 @@
       "action": "finish"
     }
   ],
-  "current_phase": 0,
+  "current_phase": 3,
   "manualReviewRequired": true,
   "preparation": {
     "preparedAt": "2026-07-01T13:19:21+00:00",
@@ -58,5 +58,27 @@
       "Composer model selection may fall back to providerConfigId or provider-account selection.",
       "Task21f may reintroduce AI document writeback or hide document context off semantics."
     ]
+  },
+  "manualReview": {
+    "result": "failed",
+    "reviewedAt": "2026-07-13T12:20:42Z",
+    "reason": "The server-owned discovery implementation passed automated verification, but the human product review rejected the AI conversation presentation and the provider/model configuration experience.",
+    "whatPassed": [
+      "Provider credentials and upstream model discovery remain server-owned; the browser does not receive raw keys or call provider model-list endpoints directly.",
+      "One provider account can own multiple normalized model profiles selected by modelProfileId.",
+      "Automated API, web, database, typecheck, build, and Playwright verification passed before manual review."
+    ],
+    "whatFailed": [
+      "The AI conversation dialog remains visually unacceptable and does not meet the expected product quality.",
+      "The provider-to-model interaction still presents model profiles as items users manage one by one under a provider instead of making discovered provider capabilities the primary experience.",
+      "Connecting a provider does not yet feel like an automatic capability sync that immediately exposes the supported model choices.",
+      "Context limits and related model parameters are exposed as user-facing configuration in the wrong form and at the wrong level of the interface."
+    ],
+    "rootCauses": [
+      "The implementation translated automatic discovery into the existing manual model-profile management UI instead of redesigning the product around provider capability synchronization.",
+      "The conversation and settings surfaces retained too much configuration chrome and exposed implementation-level parameters rather than presenting a compact model-choice experience.",
+      "Automated contract coverage validated security and data flow but could not establish that the resulting interaction model and visual design were acceptable."
+    ],
+    "disposition": "Archived without repair at the user's request. The rejected implementation is retained in Git as failure evidence; no successor task is created in this session."
   }
 }
