@@ -63,6 +63,15 @@ export type AIModelProfileView = {
   readonly updatedAt: string;
 };
 
+export type DiscoverAIModelsResponse = {
+  readonly config: AIProviderConfigView;
+  readonly discovered: number;
+  readonly created: number;
+  readonly updated: number;
+  readonly skipped: number;
+  readonly warnings?: readonly string[];
+};
+
 export type KeepAIProviderKeyRequest = {
   readonly mode: "keep";
 };
