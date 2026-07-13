@@ -3,6 +3,7 @@ import type {
   AIModelProfileView,
   CreateAIModelProfileRequest,
   DeleteAIModelProfileResponse,
+  DiscoverAIModelsResponse,
   AIProviderConfigListResponse,
   AIProviderConfigResponse,
   AIProviderConfigView,
@@ -58,6 +59,14 @@ type HealthCheckState = {
   readonly status: "idle" | "testing" | "passed" | "failed";
   readonly result: ProviderHealthCheck | null;
 };
+
+type DiscoveryState = {
+  readonly status: "idle" | "discovering" | "discovered" | "empty" | "error";
+  readonly result: DiscoverAIModelsResponse | null;
+  readonly message: string | null;
+};
+
+const idleDiscoveryState: DiscoveryState = { status: "idle", result: null, message: null };
 
 const providerPresets = [
   {
@@ -129,6 +138,7 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
   const [formMessage, setFormMessage] = useState<string | null>(null);
   const [formMessageTone, setFormMessageTone] = useState<"info" | "success" | "warning" | "danger">("info");
   const [healthChecks, setHealthChecks] = useState<Readonly<Record<string, HealthCheckState>>>({});
+  const [discoveries, setDiscoveries] = useState<Readonly<Record<string, DiscoveryState>>>({});
 
   const selectedConfig = useMemo(
     () => configs.find((config) => config.id === selectedConfigId) ?? null,
@@ -138,6 +148,7 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
   const activePreset = useMemo(() => presetById(form.presetId), [form.presetId]);
   const activeHealthKey = selectedConfig?.id ?? "draft";
   const activeHealthCheck = healthChecks[activeHealthKey] ?? { status: "idle", result: null };
+  const activeDiscovery = selectedConfig ? discoveries[selectedConfig.id] ?? idleDiscoveryState : idleDiscoveryState;
 
   useEffect(() => {
     let isCancelled = false;
@@ -244,18 +255,7 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
         return;
       }
 
-      const parsedProfile = parseModelProfileForm(form, { isDefault: true });
-      if (!parsedProfile.ok) {
-        setSubmitState("error");
-        setFormMessage(parsedProfile.message);
-        setFormMessageTone("danger");
-        return;
-      }
-
-      const payload: CreateAIProviderConfigRequest = createPayloadFromForm({
-        ...parsedAccount.payload,
-        defaultModelProfile: parsedProfile.payload
-      }, form.apiKey);
+      const payload: CreateAIProviderConfigRequest = createPayloadFromForm(parsedAccount.payload, form.apiKey);
       const response = await apiFetch<AIProviderConfigResponse>("/ai/configs", {
         method: "POST",
         json: payload
@@ -267,20 +267,61 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
         name: response.config.name,
         provider: response.config.provider,
         baseURL: response.config.baseURL,
-        modelDisplayName: defaultModelProfile(response.config)?.displayName ?? parsedProfile.payload.displayName,
-        model: defaultModelProfile(response.config)?.model ?? parsedProfile.payload.model,
-        temperature: String(defaultModelProfile(response.config)?.temperature ?? parsedProfile.payload.temperature),
-        maxTokens: String(defaultModelProfile(response.config)?.maxTokens ?? parsedProfile.payload.maxTokens),
+        modelDisplayName: defaultModelProfile(response.config)?.displayName ?? form.modelDisplayName,
+        model: defaultModelProfile(response.config)?.model ?? form.model,
+        temperature: String(defaultModelProfile(response.config)?.temperature ?? form.temperature),
+        maxTokens: String(defaultModelProfile(response.config)?.maxTokens ?? form.maxTokens),
         apiKey: "",
         isDefault: response.config.isDefault
       });
       setSubmitState("saved");
-      setFormMessage("AI provider config created. The API key field has been cleared after submission.");
+      setFormMessage(response.config.hasKey
+        ? "AI provider account created. Discover models from the saved server-owned connection next."
+        : "AI provider account created. Add a write-only key before discovering models.");
       setFormMessageTone("success");
       moveDraftHealthCheckToConfig(response.config.id);
+      if (response.config.hasKey) {
+        await handleDiscoverModels(response.config);
+      }
     } catch (error) {
       setSubmitState("error");
       setFormMessage(error instanceof Error ? error.message : "Unable to save AI provider config.");
+      setFormMessageTone("danger");
+    }
+  }
+
+  async function handleDiscoverModels(config: AIProviderConfigView): Promise<void> {
+    if (!config.hasKey) {
+      setDiscovery(config.id, {
+        status: "error",
+        result: null,
+        message: "Add a saved provider key before discovering models."
+      });
+      setFormMessage("Add a write-only provider key before discovering models.");
+      setFormMessageTone("warning");
+      return;
+    }
+
+    setDiscovery(config.id, { status: "discovering", result: null, message: null });
+    setFormMessage(null);
+
+    try {
+      const response = await apiFetch<DiscoverAIModelsResponse>(
+        `/ai/configs/${encodeURIComponent(config.id)}/discover-models`,
+        { method: "POST" }
+      );
+      upsertConfig(response.config);
+      const status = response.discovered === 0 ? "empty" : "discovered";
+      const summary = response.discovered === 0
+        ? response.warnings?.[0] ?? "Provider returned no models."
+        : `Discovered ${response.discovered} models: ${response.created} new, ${response.skipped} already present.`;
+      setDiscovery(config.id, { status, result: response, message: summary });
+      setFormMessage(summary);
+      setFormMessageTone(status === "empty" ? "warning" : "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to discover provider models.";
+      setDiscovery(config.id, { status: "error", result: null, message });
+      setFormMessage(message);
       setFormMessageTone("danger");
     }
   }
@@ -574,6 +615,10 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
     setHealthChecks((current) => ({ ...current, [key]: value }));
   }
 
+  function setDiscovery(key: string, value: DiscoveryState): void {
+    setDiscoveries((current) => ({ ...current, [key]: value }));
+  }
+
   function clearDraftHealthCheck(): void {
     setHealthChecks((current) => {
       const { draft: _draft, ...rest } = current;
@@ -625,9 +670,11 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
                 {configs.map((config) => {
                   const cardProps: ProviderConfigCardProps = {
                     config,
+                    discovery: discoveries[config.id] ?? idleDiscoveryState,
                     healthCheck: healthChecks[config.id] ?? { status: "idle", result: null },
                     isSelected: selectedConfigId === config.id,
                     onDelete: () => void handleDelete(config),
+                    onDiscover: () => void handleDiscoverModels(config),
                     onEdit: () => startEdit(config),
                     onSetDefault: () => void handleSetDefault(config),
                     onTest: () => void handleTestSaved(config),
@@ -673,7 +720,7 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
         >
           <form className="jixia-ai-settings-form" onSubmit={handleSubmit}>
             <Notice>
-              {activePreset.keyInstruction} The API key field is write-only: saved keys are never rendered, and editing without typing a replacement omits apiKey from PATCH.
+              {activePreset.keyInstruction} Connect the provider account first, then discover models through the Jixia API. The API key field is write-only: saved keys are never rendered, and editing without typing a replacement omits apiKey from PATCH.
             </Notice>
 
             <div className="jixia-ai-settings-summary">
@@ -688,10 +735,10 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
                 items={[
                   { label: "Provider account", value: "Name, provider id, base URL, key status, and personal default live on the account." },
                   { label: "Base URL", value: "OpenAI-compatible endpoint; Jixia validates and normalizes it server-side." },
-                  { label: "Model profiles", value: "One provider account can own multiple selectable model ids without duplicating keys." },
+                  { label: "Model discovery", value: "Jixia uses the saved server-side key to discover model ids and normalize them into selectable profiles." },
                   { label: "API key", value: "Write-only secret. Blank on edit means keep the encrypted server-side key." },
                   { label: "Provider default", value: "Personal fallback provider account for chat setup." },
-                  { label: "Model default", value: "Fallback enabled model under a provider when chat needs a profile." }
+                  { label: "Manual fallback", value: "Advanced model entry remains available when a compatible provider cannot list models." }
                 ]}
               />
             </details>
@@ -711,34 +758,32 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
 
             <section className="jixia-ai-model-profile-editor" aria-label="Model profile editor">
               <div>
-                <strong>{selectedConfig ? editingModelProfile ? "Edit model profile" : "Add model profile" : "Default model profile"}</strong>
+                <strong>{selectedConfig ? editingModelProfile ? "Edit model profile" : "Advanced manual model fallback" : "Advanced manual model fallback"}</strong>
                 <span>
                   {selectedConfig && editingModelProfile
                     ? `Update ${editingModelProfile.displayName}; provider credentials remain account-level.`
                     : selectedConfig
-                    ? "Create another selectable model under this saved provider account without re-entering the key."
-                    : "This first profile is created with the provider account and becomes its default model."}
+                    ? "Use this only when discovery returns no usable models or the provider cannot list models."
+                    : "Save the provider connection first; discovery is the primary way to create selectable model profiles."}
                 </span>
               </div>
               <div className="jixia-ai-settings-form-grid">
-                <TextField label="Model profile name" onChange={(value) => updateFormText("modelDisplayName", value)} placeholder="e.g. Fast draft model" required value={form.modelDisplayName} />
-              <TextField label="Model" onChange={(value) => updateFormText("model", value)} placeholder="gpt-4o-mini" required value={form.model} />
-              <TextField
-                inputMode="decimal"
-                label="Temperature"
-                onChange={(value) => updateFormText("temperature", value)}
-                placeholder="0.2"
-                required
-                value={form.temperature}
-              />
-              <TextField
-                inputMode="numeric"
-                label="Max tokens"
-                onChange={(value) => updateFormText("maxTokens", value)}
-                placeholder="4096"
-                required
-                value={form.maxTokens}
-              />
+                <TextField label="Model profile name" onChange={(value) => updateFormText("modelDisplayName", value)} placeholder="e.g. Fast draft model" value={form.modelDisplayName} />
+                <TextField label="Model" onChange={(value) => updateFormText("model", value)} placeholder="gpt-4o-mini" value={form.model} />
+                <TextField
+                  inputMode="decimal"
+                  label="Temperature"
+                  onChange={(value) => updateFormText("temperature", value)}
+                  placeholder="0.2"
+                  value={form.temperature}
+                />
+                <TextField
+                  inputMode="numeric"
+                  label="Max tokens"
+                  onChange={(value) => updateFormText("maxTokens", value)}
+                  placeholder="4096"
+                  value={form.maxTokens}
+                />
               </div>
               {selectedConfig ? (
                 <div className="jixia-ai-provider-card__actions">
@@ -802,6 +847,7 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
             ) : null}
 
             <HealthCheckCard healthCheck={activeHealthCheck} />
+            {selectedConfig ? <DiscoveryCard discovery={activeDiscovery} /> : null}
 
             <div className="jixia-ai-settings-actions">
               <Button
@@ -810,6 +856,16 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
               >
                 {activeHealthCheck.status === "testing" ? "Testing…" : selectedConfig ? "Test provider with profile draft" : "Test draft provider and model"}
               </Button>
+              {selectedConfig ? (
+                <Button
+                  disabled={!selectedConfig.hasKey || activeDiscovery.status === "discovering"}
+                  onClick={() => void handleDiscoverModels(selectedConfig)}
+                  type="button"
+                  variant="primary"
+                >
+                  {activeDiscovery.status === "discovering" ? "Discovering models…" : "Discover models"}
+                </Button>
+              ) : null}
               <Button disabled={submitState === "submitting"} type="submit" variant="primary">
                 {submitState === "submitting" ? "Saving…" : selectedConfig ? "Save provider account" : "Create provider account"}
               </Button>
@@ -873,9 +929,11 @@ function TextField({ inputMode, label, list, onChange, placeholder, required = f
 
 type ProviderConfigCardProps = {
   readonly config: AIProviderConfigView;
+  readonly discovery: DiscoveryState;
   readonly healthCheck: HealthCheckState;
   readonly isSelected: boolean;
   readonly onDelete: () => void;
+  readonly onDiscover: () => void;
   readonly onEdit: () => void;
   readonly onOpenChat?: () => void;
   readonly onSetDefault: () => void;
@@ -884,9 +942,11 @@ type ProviderConfigCardProps = {
 
 function ProviderConfigCard({
   config,
+  discovery,
   healthCheck,
   isSelected,
   onDelete,
+  onDiscover,
   onEdit,
   onOpenChat,
   onSetDefault,
@@ -906,6 +966,9 @@ function ProviderConfigCard({
           <Pill tone={healthCheck.status === "passed" ? "success" : healthCheck.status === "failed" ? "danger" : "neutral"}>
             {healthLabel(healthCheck)}
           </Pill>
+          <Pill tone={discovery.status === "discovered" ? "success" : discovery.status === "error" ? "danger" : discovery.status === "empty" ? "warning" : "neutral"}>
+            {discoveryLabel(discovery, config)}
+          </Pill>
         </div>
       </div>
       <div className="jixia-ai-provider-card__meta">
@@ -913,8 +976,12 @@ function ProviderConfigCard({
         <span>{profile ? `default ${profile.displayName} · ${profile.model}` : "no model profiles"} · {config.hasKey ? "server key present" : "missing key"}</span>
       </div>
       <HealthCheckCard healthCheck={healthCheck} compact />
+      <DiscoveryCard compact discovery={discovery} />
       <div className="jixia-ai-provider-card__actions">
         <Button onClick={onTest}>{healthCheck.status === "testing" ? `Testing ${config.name}…` : `Test ${config.name}`}</Button>
+        <Button disabled={!config.hasKey || discovery.status === "discovering"} onClick={onDiscover} variant="primary">
+          {discovery.status === "discovering" ? "Discovering…" : "Discover models"}
+        </Button>
         <Button onClick={onEdit}>Edit {config.name}</Button>
         <Button disabled={config.isDefault} onClick={onSetDefault}>Set default</Button>
         {onOpenChat && healthCheck.status === "passed" && !isSelected ? <Button onClick={onOpenChat} variant="primary">Back to chat</Button> : null}
@@ -996,6 +1063,38 @@ function HealthCheckCard({ healthCheck, compact = false }: { readonly compact?: 
       {result ? (
         <small>
           {result.provider} · {result.model} · {result.baseURL} · {result.latencyMs}ms · {result.category ?? "ok"}
+        </small>
+      ) : null}
+    </div>
+  );
+}
+
+function DiscoveryCard({ discovery, compact = false }: { readonly compact?: boolean; readonly discovery: DiscoveryState }) {
+  if (discovery.status === "idle") {
+    return compact ? null : (
+      <div className="jixia-ai-health-card">
+        <strong>Model discovery not run</strong>
+        <span>Discover models after the provider connection has a saved server-side key.</span>
+      </div>
+    );
+  }
+
+  if (discovery.status === "discovering") {
+    return (
+      <div className="jixia-ai-health-card jixia-ai-health-card--testing" role="status">
+        <strong>Discovering models through Jixia API…</strong>
+        <span>The browser does not call provider /models endpoints or receive key material.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`jixia-ai-health-card jixia-ai-health-card--${discovery.status === "error" ? "failed" : discovery.status === "empty" ? "failed" : "passed"}`} role={discovery.status === "error" ? "alert" : "status"}>
+      <strong>{discovery.status === "discovered" ? "Models discovered" : discovery.status === "empty" ? "No provider models returned" : "Model discovery failed"}</strong>
+      <span>{discovery.message ?? "Discovery did not return details."}</span>
+      {discovery.result ? (
+        <small>
+          {discovery.result.discovered} discovered · {discovery.result.created} created · {discovery.result.skipped} already present · {discovery.result.updated} defaults updated
         </small>
       ) : null}
     </div>
@@ -1170,6 +1269,22 @@ function healthLabel(healthCheck: HealthCheckState): string {
       return "Untested";
   }
 }
+
+function discoveryLabel(discovery: DiscoveryState, config: AIProviderConfigView): string {
+  switch (discovery.status) {
+    case "discovering":
+      return "Discovering";
+    case "discovered":
+      return `${discovery.result?.discovered ?? config.modelProfiles.length} discovered`;
+    case "empty":
+      return "No models";
+    case "error":
+      return "Discovery failed";
+    case "idle":
+      return config.modelProfiles.length > 0 ? `${config.modelProfiles.length} saved models` : "Not discovered";
+  }
+}
+
 
 function updatePayloadFromForm(
   formPayload: Omit<CreateAIProviderConfigRequest, "apiKey" | "defaultModelProfile">,

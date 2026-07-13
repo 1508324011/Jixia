@@ -480,6 +480,66 @@ function defaultAIModelProfile(config) {
     ?? null;
 }
 
+function fixtureDiscoveredModels(config) {
+  if (config.provider === "openrouter" || config.baseURL.includes("openrouter.ai")) {
+    return [
+      { model: "openai/gpt-4o-mini", displayName: "OpenAI GPT-4o mini" },
+      { model: "anthropic/claude-3-5-sonnet", displayName: "Claude 3.5 Sonnet" }
+    ];
+  }
+
+  return [
+    { model: "gpt-4o-mini", displayName: "GPT-4o mini" },
+    { model: "gpt-4.1-mini", displayName: "GPT-4.1 mini" }
+  ];
+}
+
+function discoverAIModels(config) {
+  const discoveredModels = fixtureDiscoveredModels(config);
+  let created = 0;
+  let skipped = 0;
+  let updated = 0;
+  let hasEnabledDefault = config.modelProfiles.some((profile) => profile.enabled && profile.isDefault);
+
+  for (const discoveredModel of discoveredModels) {
+    const existingProfile = config.modelProfiles.find((profile) => profile.model === discoveredModel.model);
+    if (existingProfile) {
+      skipped += 1;
+      continue;
+    }
+
+    createAIModelProfile(config, {
+      ...discoveredModel,
+      temperature: 0.2,
+      maxTokens: 4096,
+      enabled: true,
+      isDefault: !hasEnabledDefault
+    });
+    created += 1;
+    hasEnabledDefault = true;
+  }
+
+  if (!hasEnabledDefault) {
+    const defaultCandidate = config.modelProfiles.find((profile) => profile.enabled);
+    if (defaultCandidate) {
+      for (const profile of config.modelProfiles) {
+        profile.isDefault = profile.id === defaultCandidate.id;
+        profile.updatedAt = nowIso();
+      }
+      updated += 1;
+    }
+  }
+
+  return {
+    config: publicAIProviderConfig(config),
+    discovered: discoveredModels.length,
+    created,
+    updated,
+    skipped,
+    warnings: discoveredModels.length === 0 ? ["Provider returned no models. Use advanced manual model entry if this provider cannot list models."] : []
+  };
+}
+
 function findAIModelProfile(modelProfileId) {
   for (const config of aiProviderConfigs.values()) {
     const profile = config.modelProfiles.find((candidate) => candidate.id === modelProfileId);
@@ -488,6 +548,11 @@ function findAIModelProfile(modelProfileId) {
     }
   }
   return null;
+}
+
+function findAIModelProfileForConfig(config, modelProfileId) {
+  const profile = config.modelProfiles.find((candidate) => candidate.id === modelProfileId);
+  return profile ? { config, profile } : null;
 }
 
 function createAIModelProfile(config, payload, timestamp = nowIso()) {
@@ -920,8 +985,10 @@ async function handleApiRequest(request, response, url) {
 
     const body = await readJson(request);
     const payload = readAIProviderConfigPayload(body);
-    const profilePayload = readAIModelProfilePayload(body.defaultModelProfile ?? body);
-    if (!payload || !profilePayload) {
+    const profilePayload = body.defaultModelProfile === undefined && body.model === undefined
+      ? null
+      : readAIModelProfilePayload(body.defaultModelProfile ?? body);
+    if (!payload || ((body.defaultModelProfile !== undefined || body.model !== undefined) && !profilePayload)) {
       sendError(response, 400, "Invalid request");
       return;
     }
@@ -937,7 +1004,9 @@ async function handleApiRequest(request, response, url) {
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    createAIModelProfile(config, { ...profilePayload, isDefault: true }, timestamp);
+    if (profilePayload) {
+      createAIModelProfile(config, { ...profilePayload, isDefault: true }, timestamp);
+    }
     aiProviderConfigs.set(config.id, config);
     if (config.isDefault) {
       setDefaultAIProviderConfig(context.user.id, config.id);
@@ -1012,9 +1081,33 @@ async function handleApiRequest(request, response, url) {
     }
     const body = await readJson(request);
     const profile = body.modelProfileId
-      ? findAIModelProfile(String(body.modelProfileId))?.profile
+      ? findAIModelProfileForConfig(config, String(body.modelProfileId))?.profile
       : defaultAIModelProfile(config);
+    if (!profile) {
+      sendError(response, 404, "Not found");
+      return;
+    }
     sendJson(response, 200, { healthCheck: aiProviderHealthCheck({ ...config, ...profile, ...body }) });
+    return;
+  }
+
+  const aiConfigDiscoveryMatch = path.match(/^\/api\/ai\/configs\/([^/]+)\/discover-models$/);
+  if (request.method === "POST" && aiConfigDiscoveryMatch) {
+    const context = requireSession(request, response);
+    const configId = decodeURIComponent(aiConfigDiscoveryMatch[1] ?? "");
+    const config = aiProviderConfigs.get(configId);
+    if (!context) {
+      return;
+    }
+    if (!config || config.ownerUserId !== context.user.id) {
+      sendError(response, 404, "Not found");
+      return;
+    }
+    if (!config.hasKey) {
+      sendError(response, 400, "The provider API key is missing. Add or replace the write-only key and try again.");
+      return;
+    }
+    sendJson(response, 200, discoverAIModels(config));
     return;
   }
 
@@ -1162,7 +1255,7 @@ async function handleApiRequest(request, response, url) {
     const modelProfileId = String(body.modelProfileId ?? "");
     const modelSelection = findAIModelProfile(modelProfileId);
     const providerConfig = modelSelection?.config;
-    if (!providerConfig || providerConfig.ownerUserId !== context.user.id) {
+    if (!providerConfig || providerConfig.ownerUserId !== context.user.id || !modelSelection.profile.enabled || !providerConfig.hasKey) {
       sendError(response, 404, "Not found");
       return;
     }

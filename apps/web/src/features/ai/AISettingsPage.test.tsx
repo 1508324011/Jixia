@@ -3,6 +3,7 @@ import type {
   AIProviderConfigListResponse,
   AIProviderConfigResponse,
   AIProviderConfigView,
+  DiscoverAIModelsResponse,
   TestAIProviderConfigResponse
 } from "@jixia/shared";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -108,15 +109,52 @@ describe("AISettingsPage", () => {
     expect(body).toEqual(expect.objectContaining({
       baseURL: "https://openrouter.ai/api/v1",
       name: "OpenRouter GPT-4o mini",
-      provider: "openrouter",
-      defaultModelProfile: expect.objectContaining({
-        displayName: "OpenAI GPT-4o mini",
-        model: "openai/gpt-4o-mini",
-        temperature: 0.2,
-        maxTokens: 4096
-      })
+      provider: "openrouter"
     }));
+    expect(body).not.toHaveProperty("defaultModelProfile");
     expect(body).not.toHaveProperty("apiKey");
+  });
+
+  it("discovers models for a saved provider without exposing key material or upstream calls", async () => {
+    const discoveredConfig: AIProviderConfigView = {
+      ...savedConfig,
+      modelProfiles: [
+        savedConfig.modelProfiles[0]!,
+        {
+          ...savedConfig.modelProfiles[0]!,
+          id: "model-profile-2",
+          model: "gpt-4.1-mini",
+          displayName: "GPT-4.1 mini",
+          isDefault: false
+        }
+      ]
+    };
+    const fetchMock = mockFetchSequence(
+      { configs: [savedConfig] },
+      {
+        config: discoveredConfig,
+        discovered: 2,
+        created: 1,
+        updated: 0,
+        skipped: 1
+      }
+    );
+
+    render(<AISettingsPage />);
+
+    await screen.findByText("Lab OpenAI");
+    fireEvent.click(screen.getByRole("button", { name: "Discover models" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Models discovered")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Edit Lab OpenAI" }));
+    expect(screen.getByText("GPT-4.1 mini")).toBeTruthy();
+
+    const [url, init] = fetchMock.mock.calls[1] ?? [];
+    expect(url).toBe("/api/ai/configs/config-1/discover-models");
+    expect(init).toEqual(expect.objectContaining({ method: "POST", credentials: "include" }));
+    expect(String(init?.body ?? "")).not.toMatch(/apiKey|encrypted|sk-|Authorization|headers/i);
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringMatching(/\/models$/), expect.anything());
   });
 
   it("omits apiKey when editing without a replacement key", async () => {
@@ -395,6 +433,7 @@ type MockResponseInput =
   | AIProviderConfigListResponse
   | AIProviderConfigResponse
   | AIModelProfileResponse
+  | DiscoverAIModelsResponse
   | TestAIProviderConfigResponse
   | {
       readonly configs: readonly (AIProviderConfigView & Record<string, unknown>)[];
