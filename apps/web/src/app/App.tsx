@@ -1,5 +1,5 @@
 import type { CurrentSessionView, LoginResponse } from "@jixia/shared";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AIChatDialog } from "../features/ai/chat/AIChatDialog";
 import { AISettingsPage } from "../features/ai/AISettingsPage";
@@ -7,6 +7,7 @@ import { AIUsagePage } from "../features/ai/AIUsagePage";
 import { AcceptInvitationPage } from "../features/auth/AcceptInvitationPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { DocumentEditorPage } from "../features/documents/DocumentEditorPage";
+import { browserDefaultLocale, localeCatalog, synchronizeDocumentLanguage, type Locale } from "../features/i18n/locale";
 import { AppShell, type AppSurface } from "../features/layout/AppShell";
 import { Button, EmptyState, MetaGrid, Notice, Pane, SurfaceHeader, WorkbenchSurface } from "../features/layout/workbench";
 import { NotebookPage } from "../features/notebook/NotebookPage";
@@ -17,6 +18,20 @@ export function App() {
   const initialRoute = useMemo(() => routeFromLocation(window.location), []);
   const [route, setRoute] = useState<AppRoute>(initialRoute);
   const [currentSession, setCurrentSession] = useState<CurrentSessionView | null>(null);
+  const [locale, setLocale] = useState<Locale>(browserDefaultLocale);
+
+  useEffect(() => {
+    synchronizeDocumentLanguage(locale);
+  }, [locale]);
+
+  useEffect(() => {
+    function synchronizeRoute(): void {
+      setRoute(routeFromLocation(window.location));
+    }
+
+    window.addEventListener("popstate", synchronizeRoute);
+    return () => window.removeEventListener("popstate", synchronizeRoute);
+  }, []);
 
   function handleAuthenticated(response: LoginResponse): void {
     setCurrentSession(response.currentSession);
@@ -50,6 +65,10 @@ export function App() {
     navigateSettingsSection("ai");
   }
 
+  function changeLocale(nextLocale: Locale): void {
+    setLocale(nextLocale);
+  }
+
   function openProject(projectId: string): void {
     window.history.pushState(window.history.state, "", `/projects/${encodeURIComponent(projectId)}`);
     setRoute({ name: "project", projectId });
@@ -73,12 +92,12 @@ export function App() {
   }
 
   if (route.name === "login") {
-    return <LoginPage onLoginSuccess={handleAuthenticated} />;
+    return <LoginPage locale={locale} onLocaleChange={changeLocale} onLoginSuccess={handleAuthenticated} />;
   }
 
   if (route.name === "project") {
     return (
-      <AppShell activeSurface="projects" currentSession={currentSession} onNavigate={navigateSurface}>
+      <AppShell activeSurface="projects" currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
         <ProjectDetailPage
           onBack={navigateProjects}
           onOpenDocument={(documentId) => openProjectDocument(route.projectId, documentId)}
@@ -90,9 +109,10 @@ export function App() {
 
   if (route.name === "document") {
     return (
-      <AppShell activeSurface="projects" currentSession={currentSession} onNavigate={navigateSurface}>
+      <AppShell activeSurface="projects" currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
         <DocumentEditorPage
           documentId={route.documentId}
+          locale={locale}
           onOpenAISettings={navigateAISettings}
           onBack={() => openProject(route.projectId)}
         />
@@ -102,7 +122,7 @@ export function App() {
 
   if (route.name === "notebook") {
     return (
-      <AppShell activeSurface="notebook" currentSession={currentSession} onNavigate={navigateSurface}>
+      <AppShell activeSurface="notebook" currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
         <NotebookPage onOpenDocument={openNotebookDocument} />
       </AppShell>
     );
@@ -110,10 +130,11 @@ export function App() {
 
   if (route.name === "notebook-document") {
     return (
-      <AppShell activeSurface="notebook" currentSession={currentSession} onNavigate={navigateSurface}>
+      <AppShell activeSurface="notebook" currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
         <DocumentEditorPage
           backLabel="Notebook"
           documentId={route.documentId}
+          locale={locale}
           onBack={() => navigateSurface("notebook")}
           onOpenAISettings={navigateAISettings}
         />
@@ -127,8 +148,10 @@ export function App() {
         activeSettingsSection="usage"
         activeSurface="settings"
         currentSession={currentSession}
+        locale={locale}
         onNavigate={navigateSurface}
         onNavigateAIUsage={navigateAIUsage}
+        onLocaleChange={changeLocale}
         onNavigateSettingsSection={navigateSettingsSection}
       >
         <AIUsagePage onBackToSettings={navigateAISettings} />
@@ -142,12 +165,15 @@ export function App() {
         activeSettingsSection={route.section}
         activeSurface="settings"
         currentSession={currentSession}
+        locale={locale}
         onNavigate={navigateSurface}
         onNavigateAIUsage={navigateAIUsage}
+        onLocaleChange={changeLocale}
         onNavigateSettingsSection={navigateSettingsSection}
       >
         <SettingsSurface
           currentSession={currentSession}
+          locale={locale}
           onOpenChat={navigateAI}
           onOpenUsage={navigateAIUsage}
           section={route.section}
@@ -158,7 +184,7 @@ export function App() {
 
   if (route.name === "ai") {
     return (
-      <AppShell activeSurface="ai" currentSession={currentSession} onNavigate={navigateSurface}>
+      <AppShell activeSurface="ai" currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
         <AIChatDialog onOpenSettings={navigateAISettings} />
       </AppShell>
     );
@@ -166,14 +192,14 @@ export function App() {
 
   if (isPlaceholderRoute(route)) {
     return (
-      <AppShell activeSurface={route.name} currentSession={currentSession} onNavigate={navigateSurface}>
-        <DeferredSurface surface={route.name} onOpenProjects={navigateProjects} />
+      <AppShell activeSurface={route.name} currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
+        <DeferredSurface locale={locale} surface={route.name} onOpenProjects={navigateProjects} />
       </AppShell>
     );
   }
 
   return (
-    <AppShell activeSurface="projects" currentSession={currentSession} onNavigate={navigateSurface}>
+    <AppShell activeSurface="projects" currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
       <ProjectListPage onOpenProject={openProject} />
     </AppShell>
   );
@@ -300,33 +326,14 @@ function isPlaceholderRoute(route: AppRoute): route is { readonly name: Placehol
 }
 
 type DeferredSurfaceProps = {
+  readonly locale: Locale;
   readonly onOpenProjects: () => void;
   readonly surface: PlaceholderSurface;
 };
 
-const deferredSurfaceCopy: Record<PlaceholderSurface, { readonly description: string; readonly eyebrow: string; readonly title: string }> = {
-  home: {
-    eyebrow: "Daily cockpit",
-    title: "Home will open when real work-state contracts exist.",
-    description:
-      "This surface is reserved for server-authorized recent work, document state, and job status. Projects remains the working object surface for this refactor."
-  },
-  search: {
-    eyebrow: "External discovery",
-    title: "Search is reserved for external literature discovery.",
-    description:
-      "Jixia will not fake Search with browser-local state. DOI, URL, and external literature discovery need server-owned contracts first."
-  },
-  library: {
-    eyebrow: "Personal literature",
-    title: "Library needs saved-asset contracts before opening.",
-    description:
-      "The future Library will manage personal literature assets and local library search, but it should not pretend to exist before storage and metadata APIs exist."
-  },
-};
-
-function DeferredSurface({ onOpenProjects, surface }: DeferredSurfaceProps) {
-  const copy = deferredSurfaceCopy[surface];
+function DeferredSurface({ locale, onOpenProjects, surface }: DeferredSurfaceProps) {
+  const workbenchCopy = localeCatalog(locale).workbench;
+  const copy = workbenchCopy.deferred[surface];
 
   return (
     <WorkbenchSurface aria-labelledby={`${surface}-placeholder-title`}>
@@ -337,9 +344,9 @@ function DeferredSurface({ onOpenProjects, surface }: DeferredSurfaceProps) {
         titleId={`${surface}-placeholder-title`}
       />
       <EmptyState
-        actions={<Button onClick={onOpenProjects}>Open Projects</Button>}
-        description="The browser remains a renderer of API-owned objects; no client-only object model is introduced here."
-        title="Surface intentionally not opened yet"
+        actions={<Button onClick={onOpenProjects}>{workbenchCopy.openProjects}</Button>}
+        description={workbenchCopy.deferredDescription}
+        title={workbenchCopy.deferredTitle}
       />
     </WorkbenchSurface>
   );
@@ -347,24 +354,27 @@ function DeferredSurface({ onOpenProjects, surface }: DeferredSurfaceProps) {
 
 type SettingsSurfaceProps = {
   readonly currentSession: CurrentSessionView | null;
+  readonly locale: Locale;
   readonly onOpenChat: () => void;
   readonly onOpenUsage: () => void;
   readonly section: SettingsSection;
 };
 
-function SettingsSurface({ currentSession, onOpenChat, onOpenUsage, section }: SettingsSurfaceProps) {
+function SettingsSurface({ currentSession, locale, onOpenChat, onOpenUsage, section }: SettingsSurfaceProps) {
+  const copy = localeCatalog(locale).workbench.settings;
+
   return (
     <WorkbenchSurface aria-labelledby="settings-title" width="full">
       <SurfaceHeader
-        description="Use the Context sidebar to choose a settings section, then edit only that detail surface. Account context and AI provider configuration no longer compete for the same pane."
-        eyebrow="Global Setting"
-        title="Settings"
+        description={copy.description}
+        eyebrow={copy.eyebrow}
+        title={copy.title}
         titleId="settings-title"
       />
 
       <div className="jixia-settings-detail">
         {section === "account" ? (
-          <AccountSettingsPanel currentSession={currentSession} />
+          <AccountSettingsPanel currentSession={currentSession} locale={locale} />
         ) : (
           <AISettingsPage embedded onOpenChat={onOpenChat} onOpenUsage={onOpenUsage} />
         )}
@@ -373,25 +383,25 @@ function SettingsSurface({ currentSession, onOpenChat, onOpenUsage, section }: S
   );
 }
 
-function AccountSettingsPanel({ currentSession }: { readonly currentSession: CurrentSessionView | null }) {
+function AccountSettingsPanel({ currentSession, locale }: { readonly currentSession: CurrentSessionView | null; readonly locale: Locale }) {
+  const copy = localeCatalog(locale).workbench.settings;
+
   return (
-    <Pane muted title="Account / Profile" titleId="settings-account-title">
-      <Notice>
-        Authentication is still owned by the API through HttpOnly session cookies. This panel renders the current session view only; it does not store auth tokens in browser state.
-      </Notice>
+    <Pane muted title={copy.accountTitle} titleId="settings-account-title">
+      <Notice>{copy.accountNotice}</Notice>
       <MetaGrid
         items={[
           {
-            label: "Name",
-            value: currentSession?.user.displayName ?? "Unavailable until session is loaded"
+            label: copy.name,
+            value: currentSession?.user.displayName ?? copy.unavailable
           },
           {
-            label: "Email",
-            value: currentSession?.user.email ?? "Server cookie required"
+            label: copy.email,
+            value: currentSession?.user.email ?? copy.unavailable
           },
           {
-            label: "Space",
-            value: currentSession?.user.space.name ?? "Server-authorized session"
+            label: copy.space,
+            value: currentSession?.user.space.name ?? copy.unavailable
           }
         ]}
       />

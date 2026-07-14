@@ -40,6 +40,7 @@ describe("App", () => {
     cleanup();
     vi.restoreAllMocks();
     window.history.replaceState(null, "", "/");
+    document.documentElement.lang = "en";
   });
 
   it("replaces auth URLs with the workspace URL after login", async () => {
@@ -80,6 +81,52 @@ describe("App", () => {
     expect(screen.getByText("Researcher")).toBeTruthy();
   });
 
+  it("owns locale state above login and synchronizes the document language", () => {
+    window.history.replaceState(null, "", "/login");
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Language"), { target: { value: "zh-CN" } });
+
+    expect(document.documentElement.lang).toBe("zh-CN");
+    expect(screen.getByRole("heading", { name: "继续推进你的研究。" })).toBeTruthy();
+    expect(screen.getByLabelText("邮箱")).toBeTruthy();
+  });
+
+  it("synchronizes rendered routes when browser history changes", async () => {
+    window.history.replaceState(null, "", "/home");
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Search$/ }));
+    expect(window.location.pathname).toBe("/search");
+    expect(screen.getByRole("heading", { name: "Search is being prepared for literature discovery." })).toBeTruthy();
+
+    window.history.back();
+
+    await waitFor(() => expect(window.location.pathname).toBe("/home"));
+    expect(screen.getByRole("heading", { name: "Home is being prepared for your research day." })).toBeTruthy();
+  });
+
+  it("localizes deferred and account settings surfaces", () => {
+    window.history.replaceState(null, "", "/home");
+
+    const { unmount } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Language"), { target: { value: "zh-CN" } });
+
+    expect(screen.getByRole("heading", { name: "首页正在为你的研究日程做准备。" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "打开项目" })).toBeTruthy();
+
+    unmount();
+    window.history.replaceState(null, "", "/settings/account");
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Language"), { target: { value: "zh-CN" } });
+
+    expect(screen.getByRole("heading", { level: 1, name: "设置" })).toBeTruthy();
+    expect(screen.getByText("下方显示你当前的个人资料和研究空间信息。")).toBeTruthy();
+    expect(screen.getAllByText("暂不可用")).toHaveLength(3);
+  });
+
   it("opens the standalone AI workspace without document context", async () => {
     window.history.replaceState(null, "", "/ai");
     const fetchMock = vi.fn<typeof fetch>()
@@ -103,7 +150,7 @@ describe("App", () => {
 
       render(<App />);
 
-      expect(screen.getByText(/Authentication is still owned by the API through HttpOnly session cookies/i)).toBeTruthy();
+      expect(screen.getByText("Your current profile and research space details appear below.")).toBeTruthy();
       expect(screen.queryByRole("navigation", { name: /Settings sections/i })).toBeNull();
       expect(screen.queryByText("Review and save provider")).toBeNull();
       expect(fetchMock).not.toHaveBeenCalled();
@@ -121,7 +168,7 @@ describe("App", () => {
       expect(await screen.findByText("Lab OpenAI")).toBeTruthy();
       expect(screen.getByText("Review and save provider")).toBeTruthy();
       expect(screen.queryByRole("navigation", { name: /Settings sections/i })).toBeNull();
-      expect(screen.queryByText(/Authentication is still owned by the API through HttpOnly session cookies/i)).toBeNull();
+      expect(screen.queryByText("Your current profile and research space details appear below.")).toBeNull();
       expect(fetchMock).toHaveBeenCalledWith("/api/ai/configs", expect.objectContaining({ credentials: "include" }));
     });
 
@@ -136,7 +183,7 @@ describe("App", () => {
 
     expect(await screen.findByText("Notebook documents are returned by the API for the current owner only. Creating a note sends notebook-scoped intent to the same document service used by Project Docs.")).toBeTruthy();
     expect(await screen.findByText("Notebook draft")).toBeTruthy();
-    expect(screen.queryByText("Surface intentionally not opened yet")).toBeNull();
+    expect(screen.queryByText("This workspace is still taking shape")).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/documents/notebook",
       expect.objectContaining({ credentials: "include" })
@@ -174,7 +221,7 @@ describe("App", () => {
 
       render(<App />);
 
-      fireEvent.click(screen.getByRole("button", { name: /AI Providers/i }));
+      fireEvent.click(screen.getByRole("button", { name: /AI connections/i }));
 
       expect(window.location.pathname).toBe("/settings/ai");
       expect(await screen.findByText("No providers configured yet")).toBeTruthy();
