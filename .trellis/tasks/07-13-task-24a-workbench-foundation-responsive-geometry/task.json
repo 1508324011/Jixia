@@ -1,0 +1,97 @@
+{
+  "title": "Task 24a Workbench Foundation and Responsive Geometry",
+  "slug": "task-24a-workbench-foundation-responsive-geometry",
+  "type": "frontend",
+  "status": "finished",
+  "createdAt": "2026-07-13T15:35:02+00:00",
+  "updatedAt": "2026-07-14T11:33:07+08:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "manualReviewRequired": true,
+  "preparation": {
+    "preparedAt": "2026-07-13T15:52:00+00:00",
+    "program": "doc/Jixia_Implementation_Program.md",
+    "fromTasks": [
+      ".trellis/tasks/06-16-post-mvp-workbench-shell-primitives",
+      ".trellis/tasks/06-21-task-20m-document-visual-baseline",
+      ".trellis/tasks/07-01-task-21f-server-owned-ai-model-discovery"
+    ],
+    "humanReviewSignal": "The full-product audit found that the 1100px document editor collapses the writing canvas because the Copilot inspector reserves at least 520px, the 390px login surface overlaps, and mobile navigation hides or clips primary work surfaces.",
+    "bindingDecisions": [
+      "The program targets an invited beta and a single-organization deployment.",
+      "The UI must support Simplified Chinese and English from the workbench foundation onward.",
+      "Primary navigation remains reachable at every supported viewport.",
+      "The editor and Copilot must switch layout before either pane becomes unusable.",
+      "This task changes no API, database, storage, permission, document lifecycle, or AI execution contract.",
+      "Task21f remains archived manual-review-failed and is not reopened."
+    ],
+    "firstImplementationPriority": "Introduce the locale boundary and shell geometry first, then repair document/login responsive behavior and add viewport-level Playwright assertions."
+  },
+  "failureContract": {
+    "noSuccessWithout": [
+      "All primary navigation surfaces are reachable at 390px, 1100px, and 1366px.",
+      "The document writing canvas and Copilot remain usable at 1100px without fixed-width collapse.",
+      "The login surface has no overlap or horizontal overflow at 390px.",
+      "English and Simplified Chinese shell/login chrome can be switched accessibly.",
+      "Existing server-first, document lifecycle, attachment, and AI no-writeback tests remain green.",
+      "Playwright proves responsive geometry with deterministic assertions before manual review."
+    ],
+    "forbiddenCompletionClaims": [
+      "Hiding Notebook, AI, or Settings navigation on mobile is an acceptable responsive solution.",
+      "Making the entire document page horizontally scrollable is an acceptable inspector fix.",
+      "Passing unit tests replaces viewport-level browser verification.",
+      "Hard-coded bilingual strings scattered through components count as a localization foundation.",
+      "Task24a may repair the rejected Task21f provider/settings presentation as a side effect."
+    ]
+  },
+  "completedAt": "2026-07-14T11:33:07+08:00",
+  "manualReview": {
+    "result": "passed",
+    "reviewedAt": "2026-07-14T11:33:07+08:00",
+    "reviewer": "Hephaestus with project Playwright Chromium runtime",
+    "environment": {
+      "webOrigin": "http://127.0.0.1:5173",
+      "apiOrigin": "http://127.0.0.1:4174",
+      "browserDevice": "Playwright Chromium at 390x844, 1100x800, 1200x800, and 1366x900",
+      "surfaces": "Login, Project document, Notebook document, AI workspace, and Settings"
+    },
+    "summary": "Final responsive review passed after correcting browser-history rendering, researcher-facing localization, the intermediate 1181-1240px shell geometry gap, and the missing favicon request. The 390px bilingual workflow keeps every primary destination reachable and visible with Back/Forward synchronization and zero console, page, or failed-request errors. Document layouts preserve the 520px writing-canvas and 360px inspector minima at 1100px and 1200px, while the full 1366px shell retains its context sidebar.",
+    "evidence": [
+      "/tmp/opencode/jixia-task24a-mobile-settings-fixed.png",
+      "/tmp/opencode/jixia-task24a-desktop-document-fixed.png",
+      "/tmp/opencode/jixia-task24a-final-mobile-projects.png",
+      "/tmp/opencode/jixia-task24a-final-mobile-notebook.png",
+      "/tmp/opencode/jixia-task24a-final-mobile-ai.png",
+      "/tmp/opencode/jixia-task24a-final-mobile-settings.png",
+      "/tmp/opencode/jixia-task24a-{390x844,1100x800,1366x900}-{login,project-document,notebook-document,ai,settings}.png",
+      "apps/web/e2e/responsive-workbench.spec.ts: 390px bilingual/history/error gate plus 1100px, 1200px, and 1366px geometry coverage",
+      "Final five-part review: goal PASS, code quality PASS, security PASS, hands-on QA PASS, context mining PASS"
+    ],
+    "passedChecks": [
+      "The complete 15-view manual matrix reported scrollWidth equal to clientWidth and zero console errors; final live QA also reported zero page errors and zero failed requests.",
+      "At 390px, Home, Search, Library, Projects, Notebook, AI, and Settings remained reachable; active primary items were fully visible and Settings reset the primary scrollport.",
+      "At 1100px and 1366px, Project and Notebook document canvases and Copilot controls remained usable without horizontal page scrolling.",
+      "At 1200px, the context sidebar remains collapsed and both document panes stay fully contained within the workspace at or above their documented minimum widths.",
+      "The 390px login identity block, form fields, submit action, helper copy, and language switch fit without overlap.",
+      "The 390px inspector container kept all tabs, provider settings action, context preview, and send action inside its local bounds.",
+      "English and Simplified Chinese switching worked on login and authenticated surfaces, with localized deferred/account surfaces, compact EN and 中文 options, and synchronized document language.",
+      "Browser Back and Forward update both the URL and rendered surface after locale switching.",
+      "Web lint passed, 91 unit tests passed, the production build passed, and all 13 isolated Chromium E2E tests passed.",
+      "Existing server-first, attachment, document lifecycle, AI context, and no-writeback behavior remained covered and green."
+    ],
+    "notes": "The final review closed every reopened blocker: popstate routing is synchronized, deferred and account settings copy is typed and bilingual, Lucide ISC terms are recorded in doc/Dependency_Licenses.md, the context sidebar stays collapsed through 1240px to protect document pane minima, and the inline favicon removes the previous browser 404. The production build retains the pre-existing Vite warning for a main JavaScript chunk larger than 500 kB; this is non-blocking and outside Task24a responsive geometry scope. Task21f remains archived manual-review-failed and was not reopened."
+  }
+}
