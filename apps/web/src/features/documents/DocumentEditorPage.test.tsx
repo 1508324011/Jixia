@@ -175,6 +175,23 @@ describe("DocumentEditorPage", () => {
     ]);
   });
 
+  it("uses the shared responsive split and localized inspector chrome", async () => {
+    mockFetchSequence(readDocumentResponse());
+
+    render(<DocumentEditorPage documentId="doc-1" locale="zh-CN" />);
+
+    const artifactCanvas = await screen.findByLabelText("Document artifact canvas");
+    const split = artifactCanvas.closest(".jixia-workspace-main-split");
+    const inspector = screen.getByLabelText("Document inspector");
+
+    expect(split).toBeTruthy();
+    expect(split?.getAttribute("style")).toBeNull();
+    expect(split?.firstElementChild).toBe(artifactCanvas);
+    expect(split?.lastElementChild).toBe(inspector);
+    expect(screen.getByRole("navigation", { name: "检查器模式" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "助手" }).getAttribute("aria-current")).toBe("page");
+  });
+
   it("autosaves drafts with the current body and base revision", async () => {
     const draftSnapshot: EditorSnapshot = {
       editorSchemaVersion: 1,

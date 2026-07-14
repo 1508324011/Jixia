@@ -6,6 +6,8 @@ import type {
   LabelHTMLAttributes,
   ReactNode
 } from "react";
+
+import { localeCatalog, type Locale } from "../i18n/locale";
 type WorkbenchSurfaceProps = HTMLAttributes<HTMLElement> & {
   readonly children: ReactNode;
   readonly width?: "normal" | "wide" | "full";
@@ -33,23 +35,11 @@ export function WorkspaceFrame({ children, className, ...props }: WorkspaceFrame
 
 type WorkspaceMainSplitProps = HTMLAttributes<HTMLDivElement> & {
   readonly children: ReactNode;
-  readonly inspectorWidth?: string;
 };
 
-export function WorkspaceMainSplit({
-  children,
-  className,
-  inspectorWidth = "430px",
-  style,
-  ...props
-}: WorkspaceMainSplitProps) {
-  const splitStyle: CSSProperties = {
-    ...style,
-    "--jixia-inspector-width": inspectorWidth
-  } as CSSProperties;
-
+export function WorkspaceMainSplit({ children, className, ...props }: WorkspaceMainSplitProps) {
   return (
-    <div className={classNames("jixia-workspace-main-split", className)} style={splitStyle} {...props}>
+    <div className={classNames("jixia-workspace-main-split", className)} {...props}>
       {children}
     </div>
   );
@@ -70,14 +60,17 @@ export function ArtifactCanvas({ children, className, ...props }: ArtifactCanvas
 type InspectorProps = HTMLAttributes<HTMLElement> & {
   readonly activeMode?: "copilot" | "metadata" | "versions" | "attachments";
   readonly children: ReactNode;
+  readonly locale?: Locale;
 };
 
 const inspectorModes = ["copilot", "metadata", "versions", "attachments"] as const;
 
-export function Inspector({ activeMode = "copilot", children, className, ...props }: InspectorProps) {
+export function Inspector({ activeMode = "copilot", children, className, locale = "en", ...props }: InspectorProps) {
+  const copy = localeCatalog(locale).inspector;
+
   return (
     <aside className={classNames("jixia-inspector", className)} {...props}>
-      <nav aria-label="Inspector modes" className="jixia-inspector__tabs">
+      <nav aria-label={copy.modes} className="jixia-inspector__tabs">
         {inspectorModes.map((mode) => (
           <button
             aria-current={activeMode === mode ? "page" : undefined}
@@ -86,7 +79,7 @@ export function Inspector({ activeMode = "copilot", children, className, ...prop
             key={mode}
             type="button"
           >
-            {inspectorModeLabel(mode)}
+            {copy[mode]}
           </button>
         ))}
       </nav>
@@ -407,17 +400,4 @@ function metaGridKey(item: MetaGridItem, index: number): string {
 
 function statusItemKey(item: ReactNode, index: number): string {
   return `${String(item)}-${index}`;
-}
-
-function inspectorModeLabel(mode: (typeof inspectorModes)[number]): string {
-  switch (mode) {
-    case "copilot":
-      return "Copilot";
-    case "metadata":
-      return "Metadata";
-    case "versions":
-      return "Versions";
-    case "attachments":
-      return "Attachments";
-  }
 }

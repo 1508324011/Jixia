@@ -12,6 +12,7 @@ import { currentEditorSchemaVersion, emptyEditorSnapshot } from "@jixia/shared";
 import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../../lib/api";
+import type { Locale } from "../i18n/locale";
 import {
   ArtifactCanvas,
   Button,
@@ -31,6 +32,7 @@ import { JixiaEditor, type JixiaEditorHandle } from "./editor/JixiaEditor";
 type DocumentEditorPageProps = {
   readonly backLabel?: string;
   readonly documentId: string;
+  readonly locale?: Locale;
   readonly onBack?: () => void;
   readonly onOpenAISettings?: () => void;
 };
@@ -43,7 +45,7 @@ type ReadDocumentResponse = {
 
 type AcceptedRevisionResponse = SaveDocumentRevisionResponse | { readonly error: string };
 
-export function DocumentEditorPage({ backLabel = "Projects", documentId, onBack, onOpenAISettings }: DocumentEditorPageProps) {
+export function DocumentEditorPage({ backLabel = "Projects", documentId, locale = "en", onBack, onOpenAISettings }: DocumentEditorPageProps) {
   const editorRef = useRef<JixiaEditorHandle | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [document, setDocument] = useState<DocumentDTO | null>(null);
@@ -279,7 +281,7 @@ export function DocumentEditorPage({ backLabel = "Projects", documentId, onBack,
           </div>
         ) : null}
 
-        <WorkspaceMainSplit className="jixia-editor-workbench" inspectorWidth="minmax(520px, 38vw)">
+        <WorkspaceMainSplit className="jixia-editor-workbench">
           <ArtifactCanvas aria-label="Document artifact canvas">
             <JixiaEditor
               ref={editorRef}
@@ -290,7 +292,7 @@ export function DocumentEditorPage({ backLabel = "Projects", documentId, onBack,
               value={snapshot}
             />
           </ArtifactCanvas>
-          <Inspector activeMode="copilot" aria-label="Document inspector">
+          <Inspector activeMode="copilot" aria-label="Document inspector" locale={locale}>
             <DocumentCopilotPanel
               baseRevision={baseRevision}
               document={document}

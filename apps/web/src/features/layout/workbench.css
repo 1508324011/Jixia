@@ -1,3 +1,25 @@
+:root {
+  --jixia-color-canvas: #ffffff;
+  --jixia-color-workspace: #fbfcfd;
+  --jixia-color-sidebar: #efebe2;
+  --jixia-color-sidebar-strong: #ebe8df;
+  --jixia-color-ink: #17212b;
+  --jixia-color-muted: #65717d;
+  --jixia-color-accent: #0f7180;
+  --jixia-color-accent-soft: #ecfeff;
+  --jixia-color-border: #dbe5ed;
+  --jixia-color-border-warm: #ded8cd;
+  --jixia-space-1: 4px;
+  --jixia-space-2: 8px;
+  --jixia-space-3: 12px;
+  --jixia-space-4: 16px;
+  --jixia-space-5: 20px;
+  --jixia-radius-sm: 4px;
+  --jixia-radius-md: 8px;
+  --jixia-control-min-height: 44px;
+  --jixia-focus-ring: 0 0 0 3px rgba(15, 113, 128, 0.22);
+}
+
 .jixia-workbench-surface {
   display: grid;
   gap: 12px;
@@ -34,9 +56,13 @@
 }
 
 .jixia-workspace-main-split {
+  --jixia-artifact-min-width: 520px;
+  --jixia-inspector-min-width: 360px;
+  --jixia-inspector-preferred-width: 390px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--jixia-inspector-width, minmax(320px, 430px));
+  grid-template-columns: minmax(var(--jixia-artifact-min-width), 1fr) minmax(var(--jixia-inspector-min-width), var(--jixia-inspector-preferred-width));
   min-height: 0;
+  overflow: hidden;
 }
 
 .jixia-workspace-frame > .jixia-workspace-main-split {
@@ -51,6 +77,8 @@
 }
 
 .jixia-inspector {
+  container-name: inspector;
+  container-type: inline-size;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
@@ -62,12 +90,14 @@
 
 .jixia-inspector__tabs {
   display: flex;
+  min-inline-size: 0;
   overflow-x: auto;
   border-bottom: 1px solid #e2e8f0;
   background: #ffffff;
 }
 
 .jixia-inspector__tab {
+  flex: 0 0 auto;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
@@ -141,11 +171,11 @@
 .jixia-empty-state h2 {
   margin: 4px 0 0;
   color: #10202a;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .jixia-surface-header h1 {
-  font-size: clamp(24px, 4vw, 34px);
+  font-size: 34px;
   line-height: 1.08;
 }
 
@@ -524,8 +554,8 @@
 }
 
 .jixia-editor-workbench {
-  --jixia-inspector-width: minmax(520px, 38vw);
   background: #ffffff;
+  min-height: min(760px, calc(100dvh - 128px));
 }
 
 .jixia-editor-workbench > :first-child {
@@ -544,7 +574,7 @@
   min-height: 620px;
   max-width: var(--jixia-document-page-width);
   margin-inline: auto;
-  padding: clamp(38px, 7vw, 78px) clamp(18px, 5vw, 56px) 68px;
+  padding: 56px 40px 68px;
 }
 
 .jixia-blocknote-shell {
@@ -945,9 +975,9 @@
   background: transparent;
   color: #10202a;
   font: inherit;
-  font-size: clamp(24px, 3vw, 34px);
+  font-size: 34px;
   font-weight: 850;
-  letter-spacing: -0.05em;
+  letter-spacing: 0;
   outline-color: #087f8c;
   padding: 4px 0;
 }
@@ -1784,7 +1814,7 @@
   display: grid;
   grid-template-columns: 70px 244px minmax(0, 1fr);
   background: #f7f5ef;
-  color: #17212b;
+  color: var(--jixia-color-ink);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -1795,7 +1825,7 @@
   gap: 14px;
   min-height: 100vh;
   border-right: 1px solid #d7d0c5;
-  background: #ebe8df;
+  background: var(--jixia-color-sidebar-strong);
   padding: 12px 8px;
 }
 
@@ -1806,8 +1836,8 @@
   min-width: 0;
   min-height: 100vh;
   overflow: hidden;
-  border-right: 1px solid #ded8cd;
-  background: linear-gradient(180deg, #f3efe6 0%, #efebe2 100%);
+  border-right: 1px solid var(--jixia-color-border-warm);
+  background: var(--jixia-color-sidebar);
   padding: 14px;
 }
 
@@ -1859,6 +1889,8 @@
   justify-items: center;
   gap: 4px;
   width: 54px;
+  min-width: 54px;
+  min-height: var(--jixia-control-min-height);
   border: 1px solid transparent;
   border-left: 2px solid transparent;
   background: transparent;
@@ -1877,13 +1909,10 @@
 }
 
 .jixia-shell__rail-icon {
-  display: inline-grid;
-  width: 24px;
-  height: 20px;
-  place-items: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
   color: #64748b;
-  font-size: 12px;
-  font-weight: 900;
 }
 
 .jixia-shell__rail-button[aria-current="page"] .jixia-shell__rail-icon {
@@ -1908,7 +1937,7 @@
   margin: 3px 0 0;
   color: #10202a;
   font-size: 18px;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .jixia-shell__context-list {
@@ -2023,10 +2052,222 @@
 .jixia-shell__content {
   min-width: 0;
   overflow: auto;
-  padding: clamp(12px, 2vw, 20px);
+  padding: var(--jixia-space-5);
 }
 
-@media (max-width: 980px) {
+.jixia-locale-switcher {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--jixia-space-2);
+  min-width: 0;
+  color: var(--jixia-color-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.jixia-locale-switcher select {
+  min-width: 132px;
+  min-height: var(--jixia-control-min-height);
+  border: 1px solid var(--jixia-color-border);
+  border-radius: var(--jixia-radius-sm);
+  background: var(--jixia-color-canvas);
+  color: var(--jixia-color-ink);
+  font: inherit;
+  padding: 0 var(--jixia-space-2);
+}
+
+.jixia-locale-switcher select:focus-visible,
+.jixia-shell__rail-button:focus-visible {
+  outline: none;
+  box-shadow: var(--jixia-focus-ring);
+}
+
+.jixia-locale-switcher--compact {
+  display: grid;
+  width: 54px;
+}
+
+.jixia-locale-switcher__label--compact {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.jixia-locale-switcher--compact select {
+  min-width: 54px;
+  width: 54px;
+  padding-inline: var(--jixia-space-1);
+  text-align: center;
+}
+
+.jixia-login {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+  align-items: center;
+  gap: 64px;
+  min-height: 100dvh;
+  padding: 64px;
+  background: #f5f6f4;
+  color: var(--jixia-color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.jixia-login__intro {
+  display: grid;
+  gap: var(--jixia-space-4);
+  min-width: 0;
+  max-width: 640px;
+}
+
+.jixia-login__intro-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--jixia-space-3);
+  border-bottom: 1px solid var(--jixia-color-border-warm);
+  padding-bottom: var(--jixia-space-3);
+}
+
+.jixia-login__brand,
+.jixia-login__eyebrow,
+.jixia-login__description,
+.jixia-login__form-kicker,
+.jixia-login__helper,
+.jixia-login__notice {
+  margin: 0;
+}
+
+.jixia-login__brand {
+  color: var(--jixia-color-ink);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.jixia-login__eyebrow,
+.jixia-login__form-kicker {
+  color: var(--jixia-color-accent);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.jixia-login__intro h1 {
+  margin: 0;
+  color: var(--jixia-color-ink);
+  font-size: 48px;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.jixia-login__description {
+  max-width: 520px;
+  color: #52606d;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.jixia-login__form {
+  display: grid;
+  gap: var(--jixia-space-4);
+  min-width: 0;
+  border: 1px solid var(--jixia-color-border);
+  border-radius: var(--jixia-radius-md);
+  background: var(--jixia-color-canvas);
+  box-shadow: 0 10px 28px rgba(23, 33, 43, 0.08);
+  padding: 32px;
+}
+
+.jixia-login__form h2 {
+  margin: var(--jixia-space-1) 0 0;
+  color: var(--jixia-color-ink);
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.jixia-login__field {
+  display: grid;
+  gap: var(--jixia-space-2);
+  min-width: 0;
+  color: #334e68;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.jixia-login__field input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--jixia-control-min-height);
+  border: 1px solid #cbd5df;
+  border-radius: var(--jixia-radius-sm);
+  background: var(--jixia-color-workspace);
+  color: var(--jixia-color-ink);
+  font: inherit;
+  padding: 10px var(--jixia-space-3);
+}
+
+.jixia-login__field input:focus-visible,
+.jixia-login__submit:focus-visible {
+  border-color: var(--jixia-color-accent);
+  outline: none;
+  box-shadow: var(--jixia-focus-ring);
+}
+
+.jixia-login__submit {
+  min-height: var(--jixia-control-min-height);
+  border: 1px solid var(--jixia-color-accent);
+  border-radius: var(--jixia-radius-sm);
+  background: var(--jixia-color-accent);
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  padding: 10px var(--jixia-space-4);
+}
+
+.jixia-login__submit:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.jixia-login__helper {
+  color: var(--jixia-color-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.jixia-login__notice {
+  border-left: 3px solid #f87171;
+  background: #fff7f7;
+  color: #991b1b;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px var(--jixia-space-3);
+}
+
+.jixia-login__notice--success {
+  border-left-color: #34d399;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+@media (max-width: 1240px) {
+  .jixia-shell {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .jixia-shell__context-sidebar {
+    display: none;
+  }
+}
+
+@media (max-width: 1000px) {
   .jixia-split-pane,
   .jixia-split-pane--reverse,
   .jixia-workspace-main-split {
@@ -2038,12 +2279,14 @@
     border-top: 1px solid #dbe5ed;
   }
 
-  .jixia-shell {
-    grid-template-columns: 58px minmax(0, 1fr);
+  .jixia-editor-workbench > .jixia-artifact-canvas {
+    min-height: 520px;
   }
 
-  .jixia-shell__context-sidebar {
-    display: none;
+  .jixia-editor-workbench > .jixia-inspector {
+    min-height: 420px;
+    max-height: 70dvh;
+    height: min(640px, 70dvh);
   }
 
   .jixia-split-pane--reverse > :first-child,
@@ -2082,22 +2325,111 @@
   }
 
   .jixia-shell__activity-rail {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto;
     min-height: auto;
     border-right: 0;
     border-bottom: 1px solid #ded8cd;
+    gap: var(--jixia-space-2);
+    padding: 6px var(--jixia-space-2);
   }
 
-  .jixia-shell__rail-nav,
-  .jixia-shell__rail-bottom {
+  .jixia-shell__rail-brand {
+    display: none;
+  }
+
+  .jixia-shell__rail-nav {
     grid-auto-flow: column;
-    grid-auto-columns: min-content;
+    grid-auto-columns: max-content;
+    align-items: center;
     overflow-x: auto;
+    justify-items: start;
+    scrollbar-width: thin;
+  }
+
+  .jixia-shell__rail-bottom {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: auto;
+    border-top: 0;
+    border-left: 1px solid #d7d0c5;
+    padding: 0 0 0 6px;
+  }
+
+  .jixia-shell__rail-button {
+    grid-template-columns: 18px max-content;
+    align-items: center;
+    width: auto;
+    min-width: 80px;
+    min-height: var(--jixia-control-min-height);
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .jixia-shell__rail-bottom .jixia-shell__rail-button {
+    min-width: 88px;
+  }
+
+  .jixia-shell__rail-label {
+    font-size: 12px;
+    line-height: 1.2;
   }
 
   .jixia-workspace-frame {
     min-height: calc(100vh - 84px);
+  }
+
+  .jixia-shell__content {
+    padding: var(--jixia-space-3);
+  }
+
+  .jixia-surface-header h1 {
+    font-size: 26px;
+  }
+
+  .jixia-writing-canvas {
+    min-height: 520px;
+    padding: 32px 18px 48px;
+  }
+
+  .jixia-document-title-input {
+    font-size: 28px;
+  }
+
+  .jixia-login {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: 32px;
+    min-height: 100dvh;
+    padding: 24px 16px 32px;
+  }
+
+  .jixia-login__intro h1 {
+    font-size: 36px;
+  }
+
+  .jixia-login__form {
+    padding: 24px 20px;
+  }
+}
+
+@media (max-width: 420px) {
+  .jixia-login {
+    gap: 24px;
+    padding: 16px 12px 24px;
+  }
+
+  .jixia-login__intro h1 {
+    font-size: 32px;
+  }
+
+  .jixia-login__form {
+    gap: var(--jixia-space-3);
+    padding: 20px 16px;
   }
 }
 .jixia-ai-settings-sidebar,
