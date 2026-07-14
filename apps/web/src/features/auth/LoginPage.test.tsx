@@ -88,4 +88,19 @@ describe("LoginPage", () => {
 
     expect((await screen.findByRole("alert")).textContent).toBe("Invalid credentials");
   });
+
+  it("uses researcher-facing bilingual login chrome without changing form behavior", () => {
+    const onLocaleChange = vi.fn();
+    render(<LoginPage locale="zh-CN" onLocaleChange={onLocaleChange} />);
+
+    expect(screen.getByRole("heading", { name: "继续推进你的研究。" })).toBeTruthy();
+    expect(screen.getByLabelText("邮箱")).toBeTruthy();
+    expect(screen.getByLabelText("密码")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "登录" })).toBeTruthy();
+    expect(screen.queryByText(/HttpOnly|auth tokens|server-first MVP/i)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("语言"), { target: { value: "en" } });
+
+    expect(onLocaleChange).toHaveBeenCalledWith("en");
+  });
 });

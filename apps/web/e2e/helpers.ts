@@ -90,7 +90,7 @@ export async function acceptInvitationThroughUi(page: Page, identity: E2EIdentit
 
 export async function loginThroughUi(page: Page, identity: E2EIdentity): Promise<void> {
   await page.goto("/login");
-  await expect(page.getByRole("heading", { name: "Sign in to the research workbench." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Continue your research." })).toBeVisible();
   await page.getByLabel("Email").fill(identity.email);
   await page.getByLabel("Password").fill(identity.password);
 
