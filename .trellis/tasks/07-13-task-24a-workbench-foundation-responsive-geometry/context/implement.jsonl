@@ -1,0 +1,5 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": "doc/Jixia_Implementation_Program.md", "reason": "Confirmed full-product program decisions"}
+{"path": "doc/Design.md", "reason": "Target-state workbench and product boundaries"}
+{"path": "doc/MVP_rule.md", "reason": "Server-first and no-writeback boundaries"}

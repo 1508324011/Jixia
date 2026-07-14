@@ -1,0 +1,4 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default frontend Trellis guidance"}
+{"path": "apps/web/e2e/document-save.spec.ts", "reason": "Existing document lifecycle browser regression coverage"}
+{"path": "playwright.config.ts", "reason": "Viewport and Playwright execution configuration"}
