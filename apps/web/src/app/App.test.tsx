@@ -152,7 +152,7 @@ describe("App", () => {
 
       expect(screen.getByText("Your current profile and research space details appear below.")).toBeTruthy();
       expect(screen.queryByRole("navigation", { name: /Settings sections/i })).toBeNull();
-      expect(screen.queryByText("Review and save provider")).toBeNull();
+      expect(screen.queryByText("Provider connections")).toBeNull();
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -166,7 +166,7 @@ describe("App", () => {
       render(<App />);
 
       expect(await screen.findByText("Lab OpenAI")).toBeTruthy();
-      expect(screen.getByText("Review and save provider")).toBeTruthy();
+    expect(screen.getByText("1. Choose provider")).toBeTruthy();
       expect(screen.queryByRole("navigation", { name: /Settings sections/i })).toBeNull();
       expect(screen.queryByText("Your current profile and research space details appear below.")).toBeNull();
       expect(fetchMock).toHaveBeenCalledWith("/api/ai/configs", expect.objectContaining({ credentials: "include" }));
@@ -224,7 +224,7 @@ describe("App", () => {
       fireEvent.click(screen.getByRole("button", { name: /AI connections/i }));
 
       expect(window.location.pathname).toBe("/settings/ai");
-      expect(await screen.findByText("No providers configured yet")).toBeTruthy();
+      expect(await screen.findByText("No provider connections yet")).toBeTruthy();
       expect(screen.queryByRole("navigation", { name: /Settings sections/i })).toBeNull();
       expect(fetchMock).toHaveBeenCalledWith("/api/ai/configs", expect.objectContaining({ credentials: "include" }));
     });

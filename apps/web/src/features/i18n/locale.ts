@@ -61,6 +61,135 @@ type LocaleCatalog = {
     readonly versions: string;
     readonly attachments: string;
   };
+  readonly aiSettings: {
+    readonly eyebrow: string;
+    readonly title: string;
+    readonly description: string;
+    readonly connections: string;
+    readonly loading: string;
+    readonly refresh: string;
+    readonly newConnection: string;
+    readonly configuredConnections: string;
+    readonly noConnections: string;
+    readonly noConnectionsDescription: string;
+    readonly createConnection: string;
+    readonly editConnection: string;
+    readonly chooseProvider: string;
+    readonly connectionDetails: string;
+    readonly verification: string;
+    readonly synchronization: string;
+    readonly modelChoice: string;
+    readonly providerName: string;
+    readonly customBaseUrl: string;
+    readonly customBaseUrlHint: string;
+    readonly endpointManaged: string;
+    readonly apiKey: string;
+    readonly replacementApiKey: string;
+    readonly secretHint: string;
+    readonly defaultConnection: string;
+    readonly saveConnection: string;
+    readonly savingConnection: string;
+    readonly savedConnection: string;
+    readonly replacementKeyRequired: string;
+    readonly projects: string;
+    readonly usage: string;
+    readonly errors: {
+      readonly loadConnections: string;
+      readonly refresh: string;
+      readonly saveConnection: string;
+      readonly verifyConnection: string;
+      readonly syncCapabilities: string;
+      readonly defaultModel: string;
+      readonly saveManualModel: string;
+      readonly updateModel: string;
+      readonly deleteModel: string;
+      readonly deleteConnection: string;
+    };
+    readonly providerKinds: Record<"openai" | "openrouter" | "anthropic" | "openai_compatible", string>;
+    readonly providerDescriptions: Record<"openai" | "openrouter" | "anthropic" | "openai_compatible", string>;
+    readonly actions: {
+      readonly open: string;
+      readonly edit: string;
+      readonly delete: string;
+      readonly verify: string;
+      readonly verifying: string;
+      readonly retryVerification: string;
+      readonly sync: string;
+      readonly syncing: string;
+      readonly retrySync: string;
+      readonly setDefault: string;
+      readonly addModel: string;
+      readonly saveModel: string;
+      readonly cancel: string;
+      readonly enable: string;
+      readonly disable: string;
+    };
+    readonly connectionStates: {
+      readonly notChecked: string;
+      readonly reachable: string;
+      readonly unreachable: string;
+      readonly verified: string;
+      readonly rejected: string;
+      readonly unverified: string;
+      readonly missingKey: string;
+    };
+    readonly syncStates: {
+      readonly notAttempted: string;
+      readonly available: string;
+      readonly unsupported: string;
+      readonly empty: string;
+      readonly rateLimited: string;
+      readonly unavailable: string;
+      readonly malformed: string;
+      readonly fresh: string;
+      readonly stale: string;
+      readonly never: string;
+    };
+    readonly connectionHint: string;
+    readonly syncHint: string;
+    readonly syncRequiresKey: string;
+    readonly unsupportedDiscoveryHint: string;
+    readonly emptyInventoryHint: string;
+    readonly inventory: string;
+    readonly selectModel: string;
+    readonly noSelectableModel: string;
+    readonly defaultModel: string;
+    readonly defaultModelSaved: string;
+    readonly modelName: string;
+    readonly modelIdentifier: string;
+    readonly availability: {
+      readonly available: string;
+      readonly unknown: string;
+      readonly unavailable: string;
+    };
+    readonly origins: {
+      readonly manual: string;
+      readonly discovered: string;
+    };
+    readonly capabilities: {
+      readonly observed: string;
+      readonly unknown: string;
+      readonly unsupported: string;
+      readonly context: string;
+      readonly output: string;
+      readonly input: string;
+      readonly outputModalities: string;
+      readonly parameters: string;
+    };
+    readonly advanced: string;
+    readonly advancedDescription: string;
+    readonly displayName: string;
+    readonly temperature: string;
+    readonly maxTokens: string;
+    readonly manualModelHint: string;
+    readonly manualModelSaved: string;
+    readonly modelUpdated: string;
+    readonly modelEnabled: string;
+    readonly modelDisabled: string;
+    readonly deleteConnectionConfirm: string;
+    readonly deleteModelConfirm: string;
+    readonly updatedAt: string;
+  };
   readonly workbench: {
     readonly deferred: Record<
       DeferredSurface,
@@ -183,6 +312,145 @@ const englishCatalog: LocaleCatalog = {
     metadata: "Metadata",
     versions: "Versions",
     attachments: "Attachments"
+  },
+  aiSettings: {
+    eyebrow: "Personal AI connections",
+    title: "Provider connections",
+    description: "Connect a provider through Jixia, verify non-billable access, synchronize observed capabilities, then choose a model.",
+    connections: "Connections",
+    loading: "Loading connections...",
+    refresh: "Refresh",
+    newConnection: "New connection",
+    configuredConnections: "Configured connections",
+    noConnections: "No provider connections yet",
+    noConnectionsDescription: "Start with a provider connection. Keys are submitted only to Jixia and are never shown again.",
+    createConnection: "Create connection",
+    editConnection: "Edit connection",
+    chooseProvider: "1. Choose provider",
+    connectionDetails: "2. Connection details",
+    verification: "3. Verify connection",
+    synchronization: "4. Synchronize capabilities",
+    modelChoice: "5. Choose model",
+    providerName: "Connection name",
+    customBaseUrl: "Custom HTTPS base URL",
+    customBaseUrlHint: "Used only for a custom OpenAI-compatible provider. Jixia validates the destination server-side.",
+    endpointManaged: "Endpoint managed by Jixia",
+    apiKey: "API key",
+    replacementApiKey: "Replacement API key",
+    secretHint: "Write-only. Leave this blank to keep an existing server-owned key.",
+    defaultConnection: "Use as my default connection",
+    saveConnection: "Save connection",
+    savingConnection: "Saving connection...",
+    savedConnection: "Connection saved. Verify it before synchronizing models.",
+    replacementKeyRequired: "Changing the provider identity requires a replacement API key.",
+    projects: "Projects",
+    usage: "Usage",
+    errors: {
+      loadConnections: "Unable to load AI connections.",
+      refresh: "Unable to refresh AI connections.",
+      saveConnection: "Unable to save the provider connection.",
+      verifyConnection: "Unable to verify the provider connection.",
+      syncCapabilities: "Unable to synchronize provider capabilities.",
+      defaultModel: "Unable to set the default model.",
+      saveManualModel: "Unable to save the manual model.",
+      updateModel: "Unable to update the model.",
+      deleteModel: "Unable to delete the model.",
+      deleteConnection: "Unable to delete the provider connection."
+    },
+    providerKinds: {
+      openai: "OpenAI",
+      openrouter: "OpenRouter",
+      anthropic: "Anthropic",
+      openai_compatible: "Custom OpenAI-compatible"
+    },
+    providerDescriptions: {
+      openai: "Native OpenAI connection with a Jixia-managed endpoint.",
+      openrouter: "OpenRouter account verification and account-aware model inventory.",
+      anthropic: "Native Anthropic connection with its provider-specific protocol.",
+      openai_compatible: "A custom HTTPS endpoint compatible with the OpenAI models interface."
+    },
+    actions: {
+      open: "Open",
+      edit: "Edit",
+      delete: "Delete",
+      verify: "Verify",
+      verifying: "Verifying...",
+      retryVerification: "Retry verification",
+      sync: "Sync capabilities",
+      syncing: "Syncing...",
+      retrySync: "Retry sync",
+      setDefault: "Set default",
+      addModel: "Add manual model",
+      saveModel: "Save model",
+      cancel: "Cancel",
+      enable: "Enable",
+      disable: "Disable"
+    },
+    connectionStates: {
+      notChecked: "Not verified",
+      reachable: "Transport reachable",
+      unreachable: "Transport unavailable",
+      verified: "Authentication verified",
+      rejected: "Authentication rejected",
+      unverified: "Authentication not confirmed",
+      missingKey: "A saved key is required"
+    },
+    syncStates: {
+      notAttempted: "Not synchronized",
+      available: "Inventory available",
+      unsupported: "Discovery unsupported",
+      empty: "Empty inventory",
+      rateLimited: "Rate limited",
+      unavailable: "Inventory unavailable",
+      malformed: "Inventory could not be read",
+      fresh: "Fresh",
+      stale: "Stale",
+      never: "Never synchronized"
+    },
+    connectionHint: "Verification checks transport and authentication without making an inference request.",
+    syncHint: "Synchronization records only provider-reported model and capability facts. It does not infer capabilities from model names.",
+    syncRequiresKey: "Save a provider key before synchronizing its inventory.",
+    unsupportedDiscoveryHint: "This provider does not support model discovery. This does not mean the credentials are invalid; add a manual model in Advanced if you know an authorized model ID.",
+    emptyInventoryHint: "The provider returned an empty inventory. Retry later or add a manual fallback in Advanced when appropriate.",
+    inventory: "Model inventory",
+    selectModel: "Default model",
+    noSelectableModel: "No enabled available or unknown model is ready to select.",
+    defaultModel: "Default model",
+    defaultModelSaved: "Default model saved.",
+    modelName: "Model display name",
+    modelIdentifier: "Model ID",
+    availability: {
+      available: "Available",
+      unknown: "Availability unknown",
+      unavailable: "Unavailable"
+    },
+    origins: {
+      manual: "Manual",
+      discovered: "Discovered"
+    },
+    capabilities: {
+      observed: "Observed",
+      unknown: "Unknown",
+      unsupported: "Unsupported",
+      context: "Context",
+      output: "Max output",
+      input: "Input",
+      outputModalities: "Output",
+      parameters: "Parameters"
+    },
+    advanced: "Advanced manual fallback",
+    advancedDescription: "Use this only for a provider that cannot report a usable inventory. Temperature and token limits remain here rather than in the connection flow.",
+    displayName: "Display name",
+    temperature: "Temperature",
+    maxTokens: "Max tokens",
+    manualModelHint: "Manual IDs are not treated as discovered capabilities; unavailable facts remain unknown unless the server reports otherwise.",
+    manualModelSaved: "Manual model saved.",
+    modelUpdated: "Model updated.",
+    modelEnabled: "Model enabled.",
+    modelDisabled: "Model disabled.",
+    deleteConnectionConfirm: "Delete {name}? This removes the saved connection and its model profiles.",
+    deleteModelConfirm: "Delete {name}?",
+    updatedAt: "Updated"
   },
   workbench: {
     deferred: {
@@ -315,6 +583,145 @@ const simplifiedChineseCatalog: LocaleCatalog = {
     metadata: "元数据",
     versions: "版本",
     attachments: "附件"
+  },
+  aiSettings: {
+    eyebrow: "个人 AI 连接",
+    title: "提供商连接",
+    description: "通过 Jixia 连接提供商，进行非计费验证，同步已观测能力，再选择模型。",
+    connections: "连接",
+    loading: "正在加载连接...",
+    refresh: "刷新",
+    newConnection: "新建连接",
+    configuredConnections: "已配置连接",
+    noConnections: "尚未配置提供商连接",
+    noConnectionsDescription: "先创建提供商连接。密钥仅提交给 Jixia，之后不会再次显示。",
+    createConnection: "创建连接",
+    editConnection: "编辑连接",
+    chooseProvider: "1. 选择提供商",
+    connectionDetails: "2. 连接详情",
+    verification: "3. 验证连接",
+    synchronization: "4. 同步能力",
+    modelChoice: "5. 选择模型",
+    providerName: "连接名称",
+    customBaseUrl: "自定义 HTTPS 基础 URL",
+    customBaseUrlHint: "仅用于自定义 OpenAI 兼容提供商。Jixia 会在服务端验证目标地址。",
+    endpointManaged: "端点由 Jixia 管理",
+    apiKey: "API 密钥",
+    replacementApiKey: "替换 API 密钥",
+    secretHint: "仅写入。留空会保留已有的服务端密钥。",
+    defaultConnection: "设为我的默认连接",
+    saveConnection: "保存连接",
+    savingConnection: "正在保存连接...",
+    savedConnection: "连接已保存。请先验证，再同步模型。",
+    replacementKeyRequired: "更改提供商身份时必须填写替换 API 密钥。",
+    projects: "项目",
+    usage: "用量",
+    errors: {
+      loadConnections: "无法加载 AI 连接。",
+      refresh: "无法刷新 AI 连接。",
+      saveConnection: "无法保存提供商连接。",
+      verifyConnection: "无法验证提供商连接。",
+      syncCapabilities: "无法同步提供商能力。",
+      defaultModel: "无法设置默认模型。",
+      saveManualModel: "无法保存手动模型。",
+      updateModel: "无法更新模型。",
+      deleteModel: "无法删除模型。",
+      deleteConnection: "无法删除提供商连接。"
+    },
+    providerKinds: {
+      openai: "OpenAI",
+      openrouter: "OpenRouter",
+      anthropic: "Anthropic",
+      openai_compatible: "自定义 OpenAI 兼容提供商"
+    },
+    providerDescriptions: {
+      openai: "使用由 Jixia 管理端点的原生 OpenAI 连接。",
+      openrouter: "使用 OpenRouter 账户验证和账户级模型清单。",
+      anthropic: "使用提供商专用协议的原生 Anthropic 连接。",
+      openai_compatible: "使用兼容 OpenAI 模型接口的自定义 HTTPS 端点。"
+    },
+    actions: {
+      open: "打开",
+      edit: "编辑",
+      delete: "删除",
+      verify: "验证",
+      verifying: "正在验证...",
+      retryVerification: "重试验证",
+      sync: "同步能力",
+      syncing: "正在同步...",
+      retrySync: "重试同步",
+      setDefault: "设为默认",
+      addModel: "添加手动模型",
+      saveModel: "保存模型",
+      cancel: "取消",
+      enable: "启用",
+      disable: "停用"
+    },
+    connectionStates: {
+      notChecked: "尚未验证",
+      reachable: "传输可达",
+      unreachable: "传输不可用",
+      verified: "身份验证成功",
+      rejected: "身份验证被拒绝",
+      unverified: "身份验证未确认",
+      missingKey: "需要已保存的密钥"
+    },
+    syncStates: {
+      notAttempted: "尚未同步",
+      available: "清单可用",
+      unsupported: "不支持发现",
+      empty: "清单为空",
+      rateLimited: "受到速率限制",
+      unavailable: "清单不可用",
+      malformed: "无法读取清单",
+      fresh: "最新",
+      stale: "已过期",
+      never: "从未同步"
+    },
+    connectionHint: "验证仅检查传输和身份验证，不会发起推理请求。",
+    syncHint: "同步仅记录提供商报告的模型和能力事实，不会从模型名称推断能力。",
+    syncRequiresKey: "请先保存提供商密钥，再同步模型清单。",
+    unsupportedDiscoveryHint: "该提供商不支持模型发现。这不表示凭据无效；若已知获授权模型 ID，可在高级区域添加手动模型。",
+    emptyInventoryHint: "提供商返回了空清单。可稍后重试，或在合适时于高级区域添加手动备用模型。",
+    inventory: "模型清单",
+    selectModel: "默认模型",
+    noSelectableModel: "没有可选择的已启用、可用或状态未知模型。",
+    defaultModel: "默认模型",
+    defaultModelSaved: "默认模型已保存。",
+    modelName: "模型显示名称",
+    modelIdentifier: "模型 ID",
+    availability: {
+      available: "可用",
+      unknown: "可用性未知",
+      unavailable: "不可用"
+    },
+    origins: {
+      manual: "手动添加",
+      discovered: "已发现"
+    },
+    capabilities: {
+      observed: "已观测",
+      unknown: "未知",
+      unsupported: "不支持",
+      context: "上下文",
+      output: "最大输出",
+      input: "输入",
+      outputModalities: "输出",
+      parameters: "参数"
+    },
+    advanced: "高级手动备用设置",
+    advancedDescription: "仅当提供商无法报告可用清单时使用。温度和令牌上限保留在这里，而不是放在连接主流程中。",
+    displayName: "显示名称",
+    temperature: "温度",
+    maxTokens: "最大令牌数",
+    manualModelHint: "手动 ID 不会被当作已发现能力；除非服务端报告，否则能力事实保持未知。",
+    manualModelSaved: "手动模型已保存。",
+    modelUpdated: "模型已更新。",
+    modelEnabled: "模型已启用。",
+    modelDisabled: "模型已停用。",
+    deleteConnectionConfirm: "删除 {name}？这会移除保存的连接及其模型配置。",
+    deleteModelConfirm: "删除 {name}？",
+    updatedAt: "更新时间"
   },
   workbench: {
     deferred: {

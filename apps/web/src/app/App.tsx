@@ -376,7 +376,7 @@ function SettingsSurface({ currentSession, locale, onOpenChat, onOpenUsage, sect
         {section === "account" ? (
           <AccountSettingsPanel currentSession={currentSession} locale={locale} />
         ) : (
-          <AISettingsPage embedded onOpenChat={onOpenChat} onOpenUsage={onOpenUsage} />
+          <AISettingsPage embedded locale={locale} onOpenChat={onOpenChat} onOpenUsage={onOpenUsage} />
         )}
       </div>
     </WorkbenchSurface>
