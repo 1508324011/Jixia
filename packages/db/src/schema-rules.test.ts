@@ -15,6 +15,10 @@ const modelProfileDiscoveryMigrationPath = new URL(
   "../prisma/migrations/20260701010000_ai_model_profile_provider_model_unique/migration.sql",
   import.meta.url
 );
+const providerCapabilityMigrationPath = new URL(
+  "../prisma/migrations/20260714000000_provider_connection_capability_discovery/migration.sql",
+  import.meta.url
+);
 
 async function readSchema(): Promise<string> {
   return readFile(schemaPath, "utf8");
@@ -30,6 +34,10 @@ async function readModelProfileMigration(): Promise<string> {
 
 async function readModelProfileDiscoveryMigration(): Promise<string> {
   return readFile(modelProfileDiscoveryMigrationPath, "utf8");
+}
+
+async function readProviderCapabilityMigration(): Promise<string> {
+  return readFile(providerCapabilityMigrationPath, "utf8");
 }
 
 function block(source: string, kind: "enum" | "model", name: string): string {
@@ -155,7 +163,7 @@ describe("Prisma MVP schema", () => {
     expect(config).not.toMatch(/\bmodel\s+String|temperature\s+Float|maxTokens\s+Int/i);
     expect(config).not.toMatch(/\bapiKey\s+String|authHeader|requestHeader|credential/i);
     expect(modelProfile).toContain("providerConfigId");
-    expect(modelProfile).toContain("model            String");
+    expect(modelProfile).toMatch(/\bmodel\s+String\b/);
     expect(modelProfile).toContain("displayName");
     expect(modelProfile).toContain("temperature");
     expect(modelProfile).toContain("maxTokens");
@@ -183,6 +191,35 @@ describe("Prisma MVP schema", () => {
     expect(migration).toContain('"spaceId" IS NOT NULL');
     expect(migration).toContain('"userId" IS NULL');
     expect(modelNames).not.toEqual(expect.arrayContaining(["AIUsageEvent", "AIUsageLog", "AICallLog"]));
+  });
+
+  it("persists normalized provider lifecycle and observed capability facts without credential payloads", async () => {
+    const schema = await readSchema();
+    const migration = await readProviderCapabilityMigration();
+    const config = block(schema, "model", "AIProviderConfig");
+    const profile = block(schema, "model", "AIModelProfile");
+
+    expect(config).toMatch(/providerKind\s+AIProviderKind/);
+    expect(config).toMatch(/transportState\s+AIProviderTransportState/);
+    expect(config).toMatch(/authState\s+AIProviderAuthState/);
+    expect(config).toMatch(/discoveryState\s+AIProviderDiscoveryState/);
+    expect(config).toMatch(/verificationAttemptToken\s+String\?/);
+    expect(config).toMatch(/syncAttemptToken\s+String\?/);
+    expect(config).toContain("lastSuccessfulSyncAt");
+    expect(profile).toMatch(/origin\s+AIModelProfileOrigin/);
+    expect(profile).toMatch(/availability\s+AIModelAvailabilityState/);
+    expect(profile).toContain("capabilitiesObservedAt");
+    expect(profile).toContain("supportedParametersState");
+    expect(migration).toContain('AIModelProfile_context_window_fact_check');
+    expect(migration).toContain('AIModelProfile_max_output_fact_check');
+    expect(migration).toContain('ADD COLUMN "syncAttemptToken" TEXT');
+    expect(migration).toContain('ADD COLUMN "verificationAttemptToken" TEXT');
+    expect(migration).toContain("regexp_replace(lower(btrim(\"baseURL\")), '/+$', '') = 'https://api.openai.com/v1'");
+    expect(migration).toContain("regexp_replace(lower(btrim(\"baseURL\")), '/+$', '') = 'https://openrouter.ai/api/v1'");
+    expect(migration).toContain("regexp_replace(lower(btrim(\"baseURL\")), '/+$', '') = 'https://api.anthropic.com/v1'");
+    expect(migration).toContain("ELSE 'openai_compatible'::\"AIProviderKind\"");
+    expect(migration).toContain('ELSE "baseURL"');
+    expect(`${config}\n${profile}`).not.toMatch(/rawPayload|responseBody|requestBody|authorizationHeader|rawApiKey/i);
   });
 
   it("keeps audit events metadata-only", async () => {

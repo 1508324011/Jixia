@@ -55,20 +55,73 @@ enum AIUsageScope {
   space
 }
 
+enum AIProviderKind {
+  openai
+  openrouter
+  anthropic
+  openai_compatible
+}
+
+enum AIProviderTransportState {
+  not_checked
+  reachable
+  unreachable
+}
+
+enum AIProviderAuthState {
+  not_checked
+  verified
+  rejected
+  unverified
+}
+
+enum AIProviderDiscoveryState {
+  not_attempted
+  available
+  unsupported
+  empty
+  rate_limited
+  unavailable
+  malformed
+}
+
+enum AIInventoryFreshnessState {
+  never
+  fresh
+  stale
+}
+
+enum AIModelProfileOrigin {
+  manual
+  discovered
+}
+
+enum AIModelAvailabilityState {
+  unknown
+  available
+  unavailable
+}
+
+enum AICapabilityFactState {
+  unknown
+  observed
+  unsupported
+}
+
 model User {
-  id                  String              @id @default(cuid())
-  email               String              @unique
+  id                  String               @id @default(cuid())
+  email               String               @unique
   displayName         String
   passwordHash        String
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
   spaceMembers        SpaceMember[]
-  projectsCreated     Project[]           @relation("ProjectCreator")
+  projectsCreated     Project[]            @relation("ProjectCreator")
   projectMembers      ProjectMember[]
   sessions            Session[]
-  invitationsCreated  Invitation[]        @relation("InvitationCreator")
-  invitationsAccepted Invitation[]        @relation("InvitationAcceptedBy")
-  documents           Document[]          @relation("DocumentOwner")
+  invitationsCreated  Invitation[]         @relation("InvitationCreator")
+  invitationsAccepted Invitation[]         @relation("InvitationAcceptedBy")
+  documents           Document[]           @relation("DocumentOwner")
   documentDrafts      DocumentDraft[]
   documentRevisions   DocumentRevision[]
   documentAttachments DocumentAttachment[]
@@ -76,7 +129,7 @@ model User {
   aiProviderConfigs   AIProviderConfig[]
   aiConversations     AIConversation[]
   aiUsageAggregates   AIUsageAggregate[]
-  auditEvents         AuditEvent[]        @relation("ActorAuditEvents")
+  auditEvents         AuditEvent[]         @relation("ActorAuditEvents")
 }
 
 model Space {
@@ -264,35 +317,63 @@ model UploadIntent {
 }
 
 model AIProviderConfig {
-  id              String           @id @default(cuid())
-  ownerUserId     String
-  name            String
-  provider        String
-  baseURL         String
-  encryptedApiKey String?
-  keyPreview      String?
-  isDefault       Boolean          @default(false)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  owner           User             @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
-  modelProfiles   AIModelProfile[]
+  id                      String                    @id @default(cuid())
+  ownerUserId             String
+  name                    String
+  provider                String
+  providerKind            AIProviderKind            @default(openai_compatible)
+  baseURL                 String
+  encryptedApiKey         String?
+  keyPreview              String?
+  isDefault               Boolean                   @default(false)
+  transportState          AIProviderTransportState  @default(not_checked)
+  authState               AIProviderAuthState       @default(not_checked)
+  discoveryState          AIProviderDiscoveryState  @default(not_attempted)
+  inventoryFreshness      AIInventoryFreshnessState @default(never)
+  lastConnectionAttemptAt DateTime?
+  lastVerifiedAt          DateTime?
+  verificationAttemptToken String?
+  lastSyncAttemptAt       DateTime?
+  syncAttemptToken        String?
+  lastSuccessfulSyncAt    DateTime?
+  connectionErrorCode     String?
+  discoveryErrorCode      String?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  owner                   User                      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  modelProfiles           AIModelProfile[]
 
   @@unique([ownerUserId, name])
   @@index([ownerUserId, isDefault])
 }
 
 model AIModelProfile {
-  id               String           @id @default(cuid())
-  providerConfigId String
-  model            String
-  displayName      String
-  temperature      Float
-  maxTokens        Int
-  enabled          Boolean          @default(true)
-  isDefault        Boolean          @default(false)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  providerConfig   AIProviderConfig @relation(fields: [providerConfigId], references: [id], onDelete: Cascade)
+  id                       String                   @id @default(cuid())
+  providerConfigId         String
+  model                    String
+  displayName              String
+  temperature              Float
+  maxTokens                Int
+  enabled                  Boolean                  @default(true)
+  isDefault                Boolean                  @default(false)
+  origin                   AIModelProfileOrigin     @default(manual)
+  availability             AIModelAvailabilityState @default(unknown)
+  lastSeenAt               DateTime?
+  contextWindowState       AICapabilityFactState    @default(unknown)
+  contextWindowTokens      Int?
+  maxOutputState           AICapabilityFactState    @default(unknown)
+  maxOutputTokens          Int?
+  inputModalitiesState     AICapabilityFactState    @default(unknown)
+  inputModalities          Json?
+  outputModalitiesState    AICapabilityFactState    @default(unknown)
+  outputModalities         Json?
+  supportedParametersState AICapabilityFactState    @default(unknown)
+  supportedParameters      Json?
+  capabilitySource         AIProviderKind?
+  capabilitiesObservedAt   DateTime?
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  providerConfig           AIProviderConfig         @relation(fields: [providerConfigId], references: [id], onDelete: Cascade)
 
   @@unique([providerConfigId, displayName])
   @@unique([providerConfigId, model])
