@@ -10,6 +10,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { unauthorized } from "../auth/errors.js";
 import type { AuthSessionRecord, AuthUserRecord } from "../auth/repository.js";
 import type { AuthService, CurrentSessionResult } from "../auth/service.js";
+import {
+  ensureMetadataOnlyAuditPayload,
+  type AuditService,
+  type WriteAuditEventInput
+} from "../audit/audit.service.js";
 import { createTestApiApp } from "../../test-utils/app.js";
 import {
   AIConfigError,
@@ -29,13 +34,77 @@ import type { AIKeyCipher } from "./crypto.js";
 const baseNow = new Date("2026-06-15T12:00:00.000Z");
 const cookieName = "jixia_ai_config_test_session";
 
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function waitForCount(values: readonly unknown[], expected: number): Promise<void> {
+  for (let attempt = 0; attempt < 100 && values.length < expected; attempt += 1) {
+    await Promise.resolve();
+  }
+  expect(values).toHaveLength(expected);
+}
+
 function uniqueConstraintError(message: string): Error & { readonly code: "P2002" } {
   return Object.assign(new Error(message), { code: "P2002" as const });
+}
+
+function capabilityRecord(
+  capabilities: NonNullable<Parameters<AIProviderConfigRepository["createModelProfile"]>[0]["capabilities"]> | undefined
+) {
+  const values = capabilities ?? {};
+  const unsupported = new Set(values.unsupported ?? []);
+  const state = (name: NonNullable<typeof values.unsupported>[number], value: unknown) =>
+    unsupported.has(name) ? "unsupported" as const : value === undefined ? "unknown" as const : "observed" as const;
+  return {
+    contextWindowState: state("contextWindowTokens", values.contextWindowTokens),
+    contextWindowTokens: values.contextWindowTokens ?? null,
+    maxOutputState: state("maxOutputTokens", values.maxOutputTokens),
+    maxOutputTokens: values.maxOutputTokens ?? null,
+    inputModalitiesState: state("inputModalities", values.inputModalities),
+    inputModalities: values.inputModalities ?? null,
+    outputModalitiesState: state("outputModalities", values.outputModalities),
+    outputModalities: values.outputModalities ?? null,
+    supportedParametersState: state("supportedParameters", values.supportedParameters),
+    supportedParameters: values.supportedParameters ?? null
+  };
+}
+
+function discoveryDisplayName(
+  model: { readonly id: string; readonly displayName?: string },
+  usedDisplayNames: ReadonlySet<string>
+): string {
+  const humanized = (model.id.split("/").filter(Boolean).pop() ?? model.id)
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const baseName = (model.displayName?.trim() || humanized).slice(0, 200).trim() || model.id;
+  if (!usedDisplayNames.has(baseName)) return baseName;
+  const withModelId = `${baseName} (${model.id})`.slice(0, 200).trim();
+  if (withModelId && !usedDisplayNames.has(withModelId)) return withModelId;
+  for (let suffix = 2; ; suffix += 1) {
+    const suffixText = ` ${suffix}`;
+    const candidate = `${baseName.slice(0, 200 - suffixText.length)}${suffixText}`.trim();
+    if (candidate && !usedDisplayNames.has(candidate)) return candidate;
+  }
 }
 
 class InMemoryAIConfigRepository implements AIProviderConfigRepository {
   readonly configs = new Map<string, AIProviderConfigRecord>();
   readonly modelProfiles = new Map<string, AIModelProfileRecord>();
+  failNextDiscoveryCompletion = false;
+  beforeNextDiscoveryBegin: (() => void | Promise<void>) | null = null;
   private nextId = 1;
   private nextProfileId = 1;
 
@@ -59,6 +128,7 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
     readonly ownerUserId: string;
     readonly name: string;
     readonly provider: string;
+    readonly providerKind: AIProviderConfigRecord["providerKind"];
     readonly baseURL: string;
     readonly defaultModelProfile?: AIModelProfileInput;
     readonly encryptedApiKey: string | null;
@@ -77,6 +147,7 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
       ownerUserId: input.ownerUserId,
       name: input.name,
       provider: input.provider,
+      providerKind: input.providerKind,
       baseURL: input.baseURL,
       encryptedApiKey: input.encryptedApiKey,
       keyPreview: input.keyPreview,
@@ -95,17 +166,56 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
   async updateConfig(input: {
     readonly configId: string;
     readonly ownerUserId: string;
+    readonly expectedRuntimeIdentity?: {
+      readonly provider: string;
+      readonly providerKind?: AIProviderConfigRecord["providerKind"];
+      readonly baseURL: string;
+      readonly encryptedApiKey: string | null;
+    };
     readonly name?: string;
     readonly provider?: string;
+    readonly providerKind?: AIProviderConfigRecord["providerKind"];
     readonly baseURL?: string;
     readonly encryptedApiKey?: string | null;
     readonly keyPreview?: string | null;
     readonly isDefault?: boolean;
+    readonly transportState?: AIProviderConfigRecord["transportState"];
+    readonly authState?: AIProviderConfigRecord["authState"];
+    readonly discoveryState?: AIProviderConfigRecord["discoveryState"];
+    readonly inventoryFreshness?: AIProviderConfigRecord["inventoryFreshness"];
+    readonly lastConnectionAttemptAt?: Date | null;
+    readonly lastVerifiedAt?: Date | null;
+    readonly verificationAttemptToken?: string | null;
+    readonly lastSyncAttemptAt?: Date | null;
+    readonly syncAttemptToken?: string | null;
+    readonly lastSuccessfulSyncAt?: Date | null;
+    readonly connectionErrorCode?: string | null;
+    readonly discoveryErrorCode?: string | null;
   }): Promise<AIProviderConfigRecord | null> {
     const current = this.configs.get(input.configId);
 
     if (!current || current.ownerUserId !== input.ownerUserId) {
       return null;
+    }
+
+    if (input.expectedRuntimeIdentity && (
+      current.provider !== input.expectedRuntimeIdentity.provider
+      || current.providerKind !== input.expectedRuntimeIdentity.providerKind
+      || current.baseURL !== input.expectedRuntimeIdentity.baseURL
+      || current.encryptedApiKey !== input.expectedRuntimeIdentity.encryptedApiKey
+    )) {
+      throw new AIConfigError("AI provider connection changed; retry update", 409);
+    }
+
+    const changesConnectionIdentity = (
+      input.provider !== undefined && input.provider !== current.provider
+    ) || (
+      input.providerKind !== undefined && input.providerKind !== current.providerKind
+    ) || (
+      input.baseURL !== undefined && input.baseURL !== current.baseURL
+    );
+    if (changesConnectionIdentity && current.encryptedApiKey && input.encryptedApiKey === undefined) {
+      throw new AIConfigError("Changing provider connection requires a replacement API key", 400);
     }
 
     if (input.name !== undefined && input.name !== current.name) {
@@ -120,14 +230,255 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
       ...current,
       ...(input.name === undefined ? {} : { name: input.name }),
       ...(input.provider === undefined ? {} : { provider: input.provider }),
+      ...(input.providerKind === undefined ? {} : { providerKind: input.providerKind }),
       ...(input.baseURL === undefined ? {} : { baseURL: input.baseURL }),
       ...(input.encryptedApiKey === undefined ? {} : { encryptedApiKey: input.encryptedApiKey }),
       ...(input.keyPreview === undefined ? {} : { keyPreview: input.keyPreview }),
       ...(input.isDefault === undefined ? {} : { isDefault: input.isDefault }),
+      ...(input.transportState === undefined ? {} : { transportState: input.transportState }),
+      ...(input.authState === undefined ? {} : { authState: input.authState }),
+      ...(input.discoveryState === undefined ? {} : { discoveryState: input.discoveryState }),
+      ...(input.inventoryFreshness === undefined ? {} : { inventoryFreshness: input.inventoryFreshness }),
+      ...(input.lastConnectionAttemptAt === undefined ? {} : { lastConnectionAttemptAt: input.lastConnectionAttemptAt }),
+      ...(input.lastVerifiedAt === undefined ? {} : { lastVerifiedAt: input.lastVerifiedAt }),
+      ...(input.verificationAttemptToken === undefined ? {} : { verificationAttemptToken: input.verificationAttemptToken }),
+      ...(input.lastSyncAttemptAt === undefined ? {} : { lastSyncAttemptAt: input.lastSyncAttemptAt }),
+      ...(input.syncAttemptToken === undefined ? {} : { syncAttemptToken: input.syncAttemptToken }),
+      ...(input.lastSuccessfulSyncAt === undefined ? {} : { lastSuccessfulSyncAt: input.lastSuccessfulSyncAt }),
+      ...(input.connectionErrorCode === undefined ? {} : { connectionErrorCode: input.connectionErrorCode }),
+      ...(input.discoveryErrorCode === undefined ? {} : { discoveryErrorCode: input.discoveryErrorCode }),
       updatedAt: new Date(current.updatedAt.getTime() + 1_000)
     };
     this.configs.set(updated.id, updated);
     return this.withProfiles(updated);
+  }
+
+  async beginSavedVerification(
+    input: Parameters<AIProviderConfigRepository["beginSavedVerification"]>[0]
+  ): ReturnType<AIProviderConfigRepository["beginSavedVerification"]> {
+    const current = this.configs.get(input.configId);
+    if (!current || current.ownerUserId !== input.ownerUserId) return null;
+    const updated: AIProviderConfigRecord = {
+      ...current,
+      lastConnectionAttemptAt: input.attemptedAt,
+      verificationAttemptToken: input.attemptToken,
+      updatedAt: input.attemptedAt
+    };
+    this.configs.set(updated.id, updated);
+    return this.withProfiles(updated);
+  }
+
+  async completeSavedVerification(
+    input: Parameters<AIProviderConfigRepository["completeSavedVerification"]>[0]
+  ): ReturnType<AIProviderConfigRepository["completeSavedVerification"]> {
+    const current = this.configs.get(input.configId);
+    if (!current || current.ownerUserId !== input.ownerUserId) {
+      return { status: "applied", config: null };
+    }
+    if (
+      current.verificationAttemptToken !== input.attemptToken
+      || current.provider !== input.expectedRuntimeIdentity.provider
+      || current.providerKind !== input.expectedRuntimeIdentity.providerKind
+      || current.baseURL !== input.expectedRuntimeIdentity.baseURL
+      || current.encryptedApiKey !== input.expectedRuntimeIdentity.encryptedApiKey
+    ) {
+      return { status: "superseded", config: this.withProfiles(current) };
+    }
+    const updated: AIProviderConfigRecord = {
+      ...current,
+      transportState: input.transportState,
+      authState: input.authState,
+      lastConnectionAttemptAt: input.checkedAt,
+      ...(input.authState === "verified" ? { lastVerifiedAt: input.checkedAt } : {}),
+      verificationAttemptToken: null,
+      connectionErrorCode: input.connectionErrorCode,
+      updatedAt: input.checkedAt
+    };
+    this.configs.set(updated.id, updated);
+    return { status: "applied", config: this.withProfiles(updated) };
+  }
+
+  async beginModelDiscovery(
+    input: Parameters<AIProviderConfigRepository["beginModelDiscovery"]>[0]
+  ): ReturnType<AIProviderConfigRepository["beginModelDiscovery"]> {
+    if (this.beforeNextDiscoveryBegin) {
+      const hook = this.beforeNextDiscoveryBegin;
+      this.beforeNextDiscoveryBegin = null;
+      await hook();
+    }
+    const current = this.configs.get(input.configId);
+    if (!current || current.ownerUserId !== input.ownerUserId) return null;
+    const updated: AIProviderConfigRecord = {
+      ...current,
+      lastSyncAttemptAt: input.attemptedAt,
+      syncAttemptToken: input.attemptToken,
+      discoveryState: "not_attempted",
+      discoveryErrorCode: null,
+      updatedAt: input.attemptedAt
+    };
+    this.configs.set(updated.id, updated);
+    return this.withProfiles(updated);
+  }
+
+  async completeModelDiscovery(
+    input: Parameters<AIProviderConfigRepository["completeModelDiscovery"]>[0]
+  ): ReturnType<AIProviderConfigRepository["completeModelDiscovery"]> {
+    const stored = this.configs.get(input.configId);
+    if (!stored || stored.ownerUserId !== input.ownerUserId) {
+      return {
+        status: "applied",
+        config: null,
+        discovered: 0,
+        created: 0,
+        updated: 0,
+        skipped: 0
+      };
+    }
+    const current = this.withProfiles(stored);
+    if (current.syncAttemptToken !== input.attemptToken) {
+      return {
+        status: "superseded",
+        config: current,
+        discovered: 0,
+        created: 0,
+        updated: 0,
+        skipped: 0
+      };
+    }
+
+    const authoritative = input.discoveryState === "available" || input.discoveryState === "empty";
+    if (!authoritative) {
+      const updatedConfig: AIProviderConfigRecord = {
+        ...stored,
+        transportState: input.transportState,
+        authState: input.authState,
+        lastConnectionAttemptAt: input.observedAt,
+        ...(input.transportState === "reachable" && input.authState === "verified"
+          ? { lastVerifiedAt: input.observedAt, connectionErrorCode: null }
+          : { connectionErrorCode: input.discoveryErrorCode }),
+        discoveryState: input.discoveryState,
+        inventoryFreshness: "stale",
+        syncAttemptToken: null,
+        discoveryErrorCode: input.discoveryErrorCode,
+        updatedAt: input.observedAt
+      };
+      this.configs.set(stored.id, updatedConfig);
+      return {
+        status: "applied",
+        config: this.withProfiles(updatedConfig),
+        discovered: 0,
+        created: 0,
+        updated: 0,
+        skipped: 0
+      };
+    }
+
+    const configSnapshot = new Map(this.configs);
+    const profileSnapshot = new Map(this.modelProfiles);
+    const nextProfileIdSnapshot = this.nextProfileId;
+    try {
+      const profilesByModel = new Map(current.modelProfiles.map((profile) => [profile.model, profile]));
+      const usedDisplayNames = new Set(current.modelProfiles.map((profile) => profile.displayName));
+      const discoveredIds = new Set(input.models.map((model) => model.id));
+      let hasEnabledDefault = current.modelProfiles.some((profile) =>
+        profile.enabled
+        && profile.isDefault
+        && (profile.availability ?? "unknown") !== "unavailable"
+        && ((profile.origin ?? "manual") === "manual" || discoveredIds.has(profile.model))
+      );
+      let canAssignNewDefault = !current.modelProfiles.some((profile) => profile.isDefault);
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+
+      for (const model of input.models) {
+        const existing = profilesByModel.get(model.id);
+        if (existing) {
+          this.modelProfiles.set(existing.id, {
+            ...existing,
+            availability: "available",
+            lastSeenAt: input.observedAt,
+            ...capabilityRecord(model.capabilities),
+            capabilitySource: current.providerKind ?? null,
+            capabilitiesObservedAt: input.observedAt,
+            updatedAt: input.observedAt
+          });
+          updated += 1;
+          continue;
+        }
+
+        const displayName = discoveryDisplayName(model, usedDisplayNames);
+        usedDisplayNames.add(displayName);
+        const makeDefault = !hasEnabledDefault && canAssignNewDefault;
+        const profile = this.createProfileRecord(input.configId, {
+          model: model.id,
+          displayName,
+          temperature: 0.2,
+          maxTokens: 4096,
+          enabled: true,
+          isDefault: makeDefault,
+          origin: "discovered",
+          availability: "available",
+          lastSeenAt: input.observedAt,
+          capabilities: model.capabilities,
+          capabilitySource: current.providerKind ?? null,
+          capabilitiesObservedAt: input.observedAt
+        }, makeDefault, input.observedAt);
+        profilesByModel.set(profile.model, profile);
+        hasEnabledDefault = hasEnabledDefault || profile.isDefault;
+        canAssignNewDefault = canAssignNewDefault && !profile.isDefault;
+        created += 1;
+      }
+
+      for (const profile of this.modelProfiles.values()) {
+        if (
+          profile.providerConfigId === input.configId
+          && profile.origin === "discovered"
+          && profile.availability !== "unavailable"
+          && !discoveredIds.has(profile.model)
+        ) {
+          this.modelProfiles.set(profile.id, { ...profile, availability: "unavailable", updatedAt: input.observedAt });
+          updated += 1;
+        }
+      }
+
+      if (this.failNextDiscoveryCompletion) {
+        this.failNextDiscoveryCompletion = false;
+        throw new Error("injected discovery reconciliation failure");
+      }
+
+      const updatedConfig: AIProviderConfigRecord = {
+        ...stored,
+        transportState: input.transportState,
+        authState: input.authState,
+        lastConnectionAttemptAt: input.observedAt,
+        ...(input.transportState === "reachable" && input.authState === "verified"
+          ? { lastVerifiedAt: input.observedAt, connectionErrorCode: null }
+          : { connectionErrorCode: input.discoveryErrorCode }),
+        discoveryState: input.discoveryState,
+        inventoryFreshness: "fresh",
+        syncAttemptToken: null,
+        lastSuccessfulSyncAt: input.observedAt,
+        discoveryErrorCode: input.discoveryErrorCode,
+        updatedAt: input.observedAt
+      };
+      this.configs.set(stored.id, updatedConfig);
+      return {
+        status: "applied",
+        config: this.withProfiles(updatedConfig),
+        discovered: input.models.length,
+        created,
+        updated,
+        skipped
+      };
+    } catch (error) {
+      this.configs.clear();
+      for (const [id, config] of configSnapshot) this.configs.set(id, config);
+      this.modelProfiles.clear();
+      for (const [id, profile] of profileSnapshot) this.modelProfiles.set(id, profile);
+      this.nextProfileId = nextProfileIdSnapshot;
+      throw error;
+    }
   }
 
   async createModelProfile(input: {
@@ -139,6 +490,12 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
     readonly maxTokens: number;
     readonly enabled: boolean;
     readonly isDefault: boolean;
+    readonly origin?: AIModelProfileRecord["origin"];
+    readonly availability?: AIModelProfileRecord["availability"];
+    readonly lastSeenAt?: Date | null;
+    readonly capabilities?: Parameters<AIProviderConfigRepository["createModelProfile"]>[0]["capabilities"];
+    readonly capabilitySource?: AIModelProfileRecord["capabilitySource"];
+    readonly capabilitiesObservedAt?: Date | null;
   }): Promise<AIModelProfileRecord | null> {
     const config = this.configs.get(input.providerConfigId);
     if (!config || config.ownerUserId !== input.ownerUserId) {
@@ -161,6 +518,12 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
     readonly maxTokens?: number;
     readonly enabled?: boolean;
     readonly isDefault?: boolean;
+    readonly origin?: AIModelProfileRecord["origin"];
+    readonly availability?: AIModelProfileRecord["availability"];
+    readonly lastSeenAt?: Date | null;
+    readonly capabilities?: Parameters<AIProviderConfigRepository["updateModelProfile"]>[0]["capabilities"];
+    readonly capabilitySource?: AIModelProfileRecord["capabilitySource"];
+    readonly capabilitiesObservedAt?: Date | null;
   }): Promise<AIModelProfileRecord | null> {
     const config = this.configs.get(input.providerConfigId);
     const profile = this.modelProfiles.get(input.modelProfileId);
@@ -184,6 +547,12 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
       ...(input.maxTokens === undefined ? {} : { maxTokens: input.maxTokens }),
       ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
       ...(input.isDefault === undefined ? {} : { isDefault: input.isDefault }),
+      ...(input.origin === undefined ? {} : { origin: input.origin }),
+      ...(input.availability === undefined ? {} : { availability: input.availability }),
+      ...(input.lastSeenAt === undefined ? {} : { lastSeenAt: input.lastSeenAt }),
+      ...(input.capabilities === undefined ? {} : capabilityRecord(input.capabilities)),
+      ...(input.capabilitySource === undefined ? {} : { capabilitySource: input.capabilitySource }),
+      ...(input.capabilitiesObservedAt === undefined ? {} : { capabilitiesObservedAt: input.capabilitiesObservedAt }),
       updatedAt: new Date(profile.updatedAt.getTime() + 1_000)
     };
     this.modelProfiles.set(updated.id, updated);
@@ -283,7 +652,14 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
 
   private createProfileRecord(
     providerConfigId: string,
-    input: AIModelProfileInput,
+    input: AIModelProfileInput & {
+      readonly origin?: AIModelProfileRecord["origin"] | undefined;
+      readonly availability?: AIModelProfileRecord["availability"] | undefined;
+      readonly lastSeenAt?: Date | null | undefined;
+      readonly capabilities?: Parameters<AIProviderConfigRepository["createModelProfile"]>[0]["capabilities"] | undefined;
+      readonly capabilitySource?: AIModelProfileRecord["capabilitySource"] | undefined;
+      readonly capabilitiesObservedAt?: Date | null | undefined;
+    },
     isDefault: boolean,
     timestamp: Date
   ): AIModelProfileRecord {
@@ -297,6 +673,12 @@ class InMemoryAIConfigRepository implements AIProviderConfigRepository {
       maxTokens: input.maxTokens,
       enabled: input.enabled ?? true,
       isDefault,
+      origin: input.origin ?? "manual",
+      availability: input.availability ?? "unknown",
+      lastSeenAt: input.lastSeenAt ?? null,
+      ...capabilityRecord(input.capabilities),
+      capabilitySource: input.capabilitySource ?? null,
+      capabilitiesObservedAt: input.capabilitiesObservedAt ?? null,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -329,14 +711,29 @@ class CreateThenThrowDuplicateModelRepository extends InMemoryAIConfigRepository
     super();
   }
 
-  async createModelProfile(input: Parameters<AIProviderConfigRepository["createModelProfile"]>[0]): Promise<AIModelProfileRecord | null> {
-    if (input.model === this.raceModel && !this.didRace) {
+  override async completeModelDiscovery(
+    input: Parameters<AIProviderConfigRepository["completeModelDiscovery"]>[0]
+  ): ReturnType<AIProviderConfigRepository["completeModelDiscovery"]> {
+    const racedModel = input.models.find((model) => model.id === this.raceModel);
+    if (racedModel && !this.didRace) {
       this.didRace = true;
-      await super.createModelProfile(input);
-      throw uniqueConstraintError("duplicate model profile");
+      await super.createModelProfile({
+        providerConfigId: input.configId,
+        ownerUserId: input.ownerUserId,
+        model: racedModel.id,
+        displayName: racedModel.displayName ?? racedModel.id,
+        temperature: 0.2,
+        maxTokens: 4096,
+        enabled: true,
+        isDefault: true,
+        origin: "discovered",
+        availability: "available",
+        lastSeenAt: input.observedAt,
+        capabilities: racedModel.capabilities,
+        capabilitiesObservedAt: input.observedAt
+      });
     }
-
-    return super.createModelProfile(input);
+    return super.completeModelDiscovery(input);
   }
 }
 
@@ -347,9 +744,42 @@ const cipher: AIKeyCipher = {
 
 class RecordingProviderAdapter implements AIProviderAdapter {
   readonly inputs: AIProviderRunInput[] = [];
+  readonly verificationInputs: Parameters<AIProviderAdapter["verifyConnection"]>[0][] = [];
   readonly listModelInputs: Parameters<AIProviderAdapter["listModels"]>[0][] = [];
   discoveredModels: Awaited<ReturnType<AIProviderAdapter["listModels"]>> = [];
+  discoveryState: "available" | "empty" | "unsupported" | "rate_limited" | "unavailable" | "malformed" | null = null;
+  discoveryErrorCode: Awaited<ReturnType<AIProviderAdapter["discoverModels"]>>["errorCode"] = null;
+  discoveryHandler: AIProviderAdapter["discoverModels"] | null = null;
+  verificationHandler: AIProviderAdapter["verifyConnection"] | null = null;
   failWith: Error | null = null;
+
+  async verifyConnection(input: Parameters<AIProviderAdapter["verifyConnection"]>[0]) {
+    this.verificationInputs.push(input);
+    if (this.failWith) throw this.failWith;
+    if (this.verificationHandler) return this.verificationHandler(input);
+    return {
+      providerKind: input.config.providerKind ?? "openai_compatible" as const,
+      endpointDisplay: input.config.baseURL,
+      transport: "reachable" as const,
+      authentication: "verified" as const,
+      errorCode: null
+    };
+  }
+
+  async discoverModels(input: Parameters<AIProviderAdapter["discoverModels"]>[0]) {
+    this.listModelInputs.push(input);
+    if (this.failWith) throw this.failWith;
+    if (this.discoveryHandler) return this.discoveryHandler(input);
+    return {
+      providerKind: input.config.providerKind ?? "openai_compatible" as const,
+      endpointDisplay: input.config.baseURL,
+      transport: "reachable" as const,
+      authentication: "verified" as const,
+      discovery: this.discoveryState ?? (this.discoveredModels.length === 0 ? "empty" as const : "available" as const),
+      errorCode: this.discoveryErrorCode,
+      models: this.discoveredModels
+    };
+  }
 
   async listModels(input: Parameters<AIProviderAdapter["listModels"]>[0]) {
     this.listModelInputs.push(input);
@@ -534,14 +964,116 @@ describe("AI config service", () => {
   let repository: InMemoryAIConfigRepository;
   let service: AIConfigService;
   let providerAdapter: RecordingProviderAdapter;
+  let auditEvents: WriteAuditEventInput[];
 
   beforeEach(() => {
     repository = new InMemoryAIConfigRepository();
     providerAdapter = new RecordingProviderAdapter();
+    auditEvents = [];
+    const auditService: Pick<AuditService, "writeAuditEvent"> = {
+      async writeAuditEvent(input) {
+        ensureMetadataOnlyAuditPayload(input.payload);
+        auditEvents.push(input);
+        return {
+          id: `audit-${auditEvents.length}`,
+          actorUserId: input.actorUserId,
+          action: input.action,
+          targetType: input.targetType,
+          targetId: input.targetId,
+          payload: input.payload,
+          createdAt: baseNow.toISOString()
+        };
+      }
+    };
     service = createAIConfigService(repository, cipher, {
       now: () => baseNow,
-      providerAdapter
+      providerAdapter,
+      auditService
     });
+  });
+
+  it("audits connection lifecycle outcomes with metadata only", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Audited provider",
+      provider: "openai",
+      baseURL: "https://private-audit-endpoint.example/v1",
+      apiKey: "sk-audit-secret"
+    });
+    await service.updateConfig({
+      actor: actor("owner-user"),
+      configId: created.config.id,
+      apiKey: "sk-audit-replacement"
+    });
+    await service.testSavedConfig({ actor: actor("owner-user"), configId: created.config.id });
+    providerAdapter.discoveredModels = [{ id: "private-audit-model" }];
+    await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+    await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+    await service.deleteConfig({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(auditEvents.map((event) => event.action)).toEqual([
+      "ai_provider_config.created",
+      "ai_provider_config.updated",
+      "ai_provider_config.verified",
+      "ai_provider_config.models_discovered",
+      "ai_provider_config.models_discovered",
+      "ai_provider_config.deleted"
+    ]);
+    expect(auditEvents.every((event) => event.actorUserId === "owner-user")).toBe(true);
+    expect(auditEvents.every((event) => event.targetType === "AIProviderConfig")).toBe(true);
+    const serialized = JSON.stringify(auditEvents);
+    expect(serialized).not.toContain("private-audit-endpoint");
+    expect(serialized).not.toContain("private-audit-model");
+    expect(serialized).not.toContain("sk-audit");
+    expect(auditEvents[3]?.payload).toMatchObject({
+      providerKind: "openai",
+      outcome: "succeeded",
+      discoveredCount: 1,
+      createdCount: 1,
+      updatedCount: 0,
+      skippedCount: 0,
+      recordedAt: baseNow.toISOString()
+    });
+    expect(auditEvents[4]?.payload).toMatchObject({
+      providerKind: "openai",
+      outcome: "succeeded",
+      discoveredCount: 1,
+      createdCount: 0,
+      updatedCount: 1,
+      skippedCount: 0,
+      recordedAt: baseNow.toISOString()
+    });
+  });
+
+  it("does not report a committed mutation as failed when audit recording fails", async () => {
+    const localRepository = new InMemoryAIConfigRepository();
+    const auditFailures: Array<{ readonly action: string; readonly targetId: string }> = [];
+    const localService = createAIConfigService(localRepository, cipher, {
+      now: () => baseNow,
+      providerAdapter,
+      auditService: {
+        async writeAuditEvent() {
+          throw new Error("audit unavailable");
+        }
+      },
+      onAuditError(_error, context) {
+        auditFailures.push(context);
+        throw new Error("audit reporter unavailable");
+      }
+    });
+
+    const created = await localService.createConfig({
+      actor: actor("owner-user"),
+      name: "Committed provider",
+      provider: "openai",
+      baseURL: "https://api.example/v1"
+    });
+
+    expect(localRepository.configs.has(created.config.id)).toBe(true);
+    expect(auditFailures).toEqual([{
+      action: "ai_provider_config.created",
+      targetId: created.config.id
+    }]);
   });
 
   it("encrypts full API keys at rest and never returns raw or encrypted key material", async () => {
@@ -568,11 +1100,12 @@ describe("AI config service", () => {
     });
   });
 
-  it("preserves encrypted key material when updating non-secret fields", async () => {
+  it("preserves encrypted key material when updating non-connection fields", async () => {
     const created = await service.createConfig({
       actor: actor("owner-user"),
       name: "Config",
       provider: "openai",
+      providerKind: "openai_compatible",
       baseURL: "https://api.example/v1",
       defaultModelProfile: modelProfile("old-model", 0.1, 1000),
       apiKey: "sk-preserve-1234"
@@ -581,11 +1114,10 @@ describe("AI config service", () => {
     const updated = await service.updateConfig({
       actor: actor("owner-user"),
       configId: created.config.id,
-      name: "Config renamed",
-      baseURL: "https://api-renamed.example/v1"
+      name: "Config renamed"
     });
 
-    expect(updated.config).toMatchObject({ name: "Config renamed", baseURL: "https://api-renamed.example/v1", hasKey: true });
+    expect(updated.config).toMatchObject({ name: "Config renamed", baseURL: "https://api.example/v1", hasKey: true });
     expect(updated.config.modelProfiles[0]).toMatchObject({ model: "old-model", maxTokens: 1000 });
     expect(updated.config).not.toHaveProperty("keyPreview");
     expect(repository.configs.get(created.config.id)).toMatchObject({
@@ -594,12 +1126,70 @@ describe("AI config service", () => {
     });
   });
 
+  it("requires a replacement key before changing a saved provider connection", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Locked connection",
+      provider: "custom",
+      providerKind: "openai_compatible",
+      baseURL: "https://provider-a.example/v1",
+      apiKey: "sk-provider-a"
+    });
+
+    await expectAIConfigError(service.updateConfig({
+      actor: actor("owner-user"),
+      configId: created.config.id,
+      baseURL: "https://provider-b.example/v1"
+    }), 400);
+
+    expect(repository.configs.get(created.config.id)).toMatchObject({
+      baseURL: "https://provider-a.example/v1",
+      encryptedApiKey: "encrypted:sk-provider-a"
+    });
+  });
+
+  it("invalidates in-flight synchronization when connection identity or credentials change", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Mutable connection",
+      provider: "custom",
+      providerKind: "openai_compatible",
+      baseURL: "https://provider-a.example/v1",
+      apiKey: "sk-provider-a"
+    });
+    const stored = repository.configs.get(created.config.id)!;
+    repository.configs.set(stored.id, {
+      ...stored,
+      syncAttemptToken: "attempt-a",
+      discoveryState: "available",
+      inventoryFreshness: "fresh"
+    });
+
+    const updated = await service.updateConfig({
+      actor: actor("owner-user"),
+      configId: created.config.id,
+      baseURL: "https://provider-b.example/v1",
+      apiKey: "sk-provider-b"
+    });
+
+    expect(updated.config).toMatchObject({
+      baseURL: "https://provider-b.example/v1",
+      hasKey: true,
+      connection: { transport: "not_checked", authentication: "unverified" },
+      sync: { discovery: "not_attempted", freshness: "stale" }
+    });
+    expect(repository.configs.get(created.config.id)).toMatchObject({
+      encryptedApiKey: "encrypted:sk-provider-b",
+      syncAttemptToken: null
+    });
+  });
+
   it("replaces encrypted key material when a new API key is submitted", async () => {
     const created = await service.createConfig({
       actor: actor("owner-user"),
       name: "Config",
       provider: "openai",
-      baseURL: "https://api.example/v1",
+      baseURL: "https://api.openai.com/v1",
       defaultModelProfile: modelProfile("model", 0.1, 1000),
       apiKey: "sk-old-123456"
     });
@@ -623,21 +1213,25 @@ describe("AI config service", () => {
       apiKey: "sk-draft-secret"
     });
 
-    expect(result.healthCheck).toEqual({
+    expect(result.healthCheck).toMatchObject({
       ok: true,
       category: null,
       message: "Connection verified through the server adapter.",
       latencyMs: 0,
       provider: "openai",
       model: "gpt-test",
-      baseURL: "https://api.example/v1",
-      checkedAt: baseNow.toISOString()
+      baseURL: "https://api.openai.com/v1",
+      checkedAt: baseNow.toISOString(),
+      connection: {
+        transport: "reachable",
+        authentication: "verified",
+        errorCode: null
+      }
     });
-    expect(providerAdapter.inputs[0]).toMatchObject({
-      config: { apiKey: "sk-draft-secret", model: "gpt-test" },
-      userMessage: { content: "Reply with exactly: Jixia provider health check ok" },
-      selectedContextSnapshot: { currentDocumentId: null, items: [] }
-    });
+    expect(providerAdapter.verificationInputs).toEqual([
+      expect.objectContaining({ config: expect.objectContaining({ apiKey: "sk-draft-secret" }) })
+    ]);
+    expect(providerAdapter.inputs).toEqual([]);
     expect(repository.configs.size).toBe(0);
     expect(JSON.stringify(result)).not.toMatch(/sk-draft-secret|encrypted|Authorization|headers/i);
   });
@@ -651,25 +1245,138 @@ describe("AI config service", () => {
       defaultModelProfile: modelProfile("old-model", 0.1, 1000),
       apiKey: "sk-saved-secret"
     });
-    providerAdapter.failWith = new AIProviderExecutionError("model_not_found", "raw model payload sk-saved-secret");
+    providerAdapter.failWith = new AIProviderExecutionError("invalid_key", "raw provider payload sk-saved-secret");
 
-    const result = await service.testSavedConfig({ actor: actor("owner-user"), configId: created.config.id, model: "bad-model" });
+    const result = await service.testSavedConfig({ actor: actor("owner-user"), configId: created.config.id });
 
     expect(result.healthCheck).toMatchObject({
       ok: false,
-      category: "model_not_found",
-      message: "The provider could not find or run the selected model. Check the model id.",
-      model: "bad-model"
+      category: "invalid_key",
+      message: "The provider rejected the API key. Check the key and account permissions.",
+      model: "old-model"
     });
-    expect(providerAdapter.inputs[0]?.config).toMatchObject({ apiKey: "sk-saved-secret", model: "bad-model" });
+    expect(providerAdapter.verificationInputs[0]?.config).toMatchObject({ apiKey: "sk-saved-secret" });
+    expect(providerAdapter.inputs).toEqual([]);
     expect(repository.configs.get(created.config.id)).toMatchObject({
       encryptedApiKey: "encrypted:sk-saved-secret",
       keyPreview: "sk-s…cret"
     });
-    expect(JSON.stringify(result)).not.toMatch(/sk-saved-secret|encrypted|raw model payload|Authorization|headers/i);
+    expect(JSON.stringify(result)).not.toMatch(/sk-saved-secret|encrypted|raw provider payload|Authorization|headers/i);
   });
 
-  it("keeps one provider key while switching saved health checks between model profiles", async () => {
+  it.each([
+    {
+      race: "endpoint replacement",
+      update: {
+        baseURL: "https://provider-b.example/v1",
+        apiKey: "sk-provider-b"
+      },
+      expectedBaseURL: "https://provider-b.example/v1",
+      expectedEncryptedApiKey: "encrypted:sk-provider-b"
+    },
+    {
+      race: "key-only replacement",
+      update: { apiKey: "sk-provider-b" },
+      expectedBaseURL: "https://provider-a.example/v1",
+      expectedEncryptedApiKey: "encrypted:sk-provider-b"
+    }
+  ])("discards saved verification telemetry after a $race", async ({
+    update,
+    expectedBaseURL,
+    expectedEncryptedApiKey
+  }) => {
+    type VerificationResult = Awaited<ReturnType<AIProviderAdapter["verifyConnection"]>>;
+    const pending = deferred<VerificationResult>();
+    providerAdapter.verificationHandler = async () => pending.promise;
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Verification race",
+      provider: "custom",
+      providerKind: "openai_compatible",
+      baseURL: "https://provider-a.example/v1",
+      apiKey: "sk-provider-a"
+    });
+
+    const verificationPromise = service.testSavedConfig({
+      actor: actor("owner-user"),
+      configId: created.config.id
+    });
+    await waitForCount(providerAdapter.verificationInputs, 1);
+    await service.updateConfig({
+      actor: actor("owner-user"),
+      configId: created.config.id,
+      ...update
+    });
+    pending.resolve({
+      providerKind: "openai_compatible",
+      endpointDisplay: "https://provider-a.example/v1",
+      transport: "reachable",
+      authentication: "verified",
+      errorCode: null
+    });
+
+    const result = await verificationPromise;
+    const stored = repository.configs.get(created.config.id);
+    expect(result.healthCheck.ok).toBe(false);
+    expect(stored).toMatchObject({
+      baseURL: expectedBaseURL,
+      encryptedApiKey: expectedEncryptedApiKey,
+      transportState: "not_checked",
+      authState: "unverified",
+      lastVerifiedAt: null,
+      connectionErrorCode: null
+    });
+  });
+
+  it("keeps the newest saved verification when same-generation checks finish out of order", async () => {
+    type VerificationResult = Awaited<ReturnType<AIProviderAdapter["verifyConnection"]>>;
+    const pending: ReturnType<typeof deferred<VerificationResult>>[] = [];
+    providerAdapter.verificationHandler = async () => {
+      const call = deferred<VerificationResult>();
+      pending.push(call);
+      return call.promise;
+    };
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Interleaved verification",
+      provider: "openai",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-interleaved"
+    });
+
+    const olderPromise = service.testSavedConfig({ actor: actor("owner-user"), configId: created.config.id });
+    await waitForCount(pending, 1);
+    const newerPromise = service.testSavedConfig({ actor: actor("owner-user"), configId: created.config.id });
+    await waitForCount(pending, 2);
+    pending[1]!.resolve({
+      providerKind: "openai",
+      endpointDisplay: "https://api.openai.com/v1",
+      transport: "reachable",
+      authentication: "verified",
+      errorCode: null
+    });
+    await expect(newerPromise).resolves.toMatchObject({ healthCheck: { ok: true } });
+    pending[0]!.resolve({
+      providerKind: "openai",
+      endpointDisplay: "https://api.openai.com/v1",
+      transport: "reachable",
+      authentication: "rejected",
+      errorCode: "invalid_key"
+    });
+
+    await expect(olderPromise).resolves.toMatchObject({
+      healthCheck: { ok: false, category: "unknown", message: "A newer connection verification result was kept." }
+    });
+    expect(repository.configs.get(created.config.id)).toMatchObject({
+      transportState: "reachable",
+      authState: "verified",
+      verificationAttemptToken: null,
+      connectionErrorCode: null,
+      lastVerifiedAt: baseNow
+    });
+  });
+
+  it("keeps one provider key while saved connection checks remain model-independent", async () => {
     const created = await service.createConfig({
       actor: actor("owner-user"),
       name: "Shared provider",
@@ -691,10 +1398,11 @@ describe("AI config service", () => {
     await service.testSavedConfig({ actor: actor("owner-user"), configId: created.config.id, modelProfileId: created.config.modelProfiles[0]!.id });
     await service.testSavedConfig({ actor: actor("owner-user"), configId: created.config.id, modelProfileId: secondProfile.modelProfile.id });
 
-    expect(providerAdapter.inputs.map((input) => input.config)).toEqual([
-      expect.objectContaining({ apiKey: "sk-shared-secret", model: "gpt-fast", temperature: 0.1, maxTokens: 1000 }),
-      expect.objectContaining({ apiKey: "sk-shared-secret", model: "gpt-deep", temperature: 0.4, maxTokens: 8000 })
+    expect(providerAdapter.verificationInputs.map((input) => input.config)).toEqual([
+      expect.objectContaining({ apiKey: "sk-shared-secret" }),
+      expect.objectContaining({ apiKey: "sk-shared-secret" })
     ]);
+    expect(providerAdapter.inputs).toEqual([]);
     expect(new Set(Array.from(repository.configs.values()).map((config) => config.encryptedApiKey))).toEqual(new Set(["encrypted:sk-shared-secret"]));
   });
 
@@ -707,22 +1415,75 @@ describe("AI config service", () => {
       apiKey: "sk-discovery-secret"
     });
     providerAdapter.discoveredModels = [
-      { id: "gpt-fast", displayName: "GPT fast" },
-      { id: "gpt-deep", displayName: "GPT deep" }
+      {
+        id: "gpt-fast",
+        displayName: "GPT fast",
+        capabilities: {
+          contextWindowTokens: 128_000,
+          maxOutputTokens: 16_384,
+          inputModalities: ["text", "image"],
+          outputModalities: ["text"],
+          supportedParameters: ["temperature", "max_tokens"]
+        }
+      },
+      {
+        id: "gpt-deep",
+        displayName: "GPT deep",
+        capabilities: {
+          maxOutputTokens: 8_192,
+          unsupported: ["contextWindowTokens", "inputModalities"]
+        }
+      }
     ];
 
     const firstDiscovery = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
 
-    expect(firstDiscovery).toMatchObject({ discovered: 2, created: 2, skipped: 0, updated: 0 });
+    expect(firstDiscovery).toMatchObject({
+      discovered: 2,
+      created: 2,
+      skipped: 0,
+      updated: 0,
+      discovery: "available",
+      freshness: "fresh",
+      config: {
+        connection: { transport: "reachable", authentication: "verified", errorCode: null },
+        sync: { discovery: "available", freshness: "fresh", errorCode: null }
+      }
+    });
     expect(firstDiscovery.config.modelProfiles).toEqual([
-      expect.objectContaining({ model: "gpt-fast", displayName: "GPT fast", enabled: true, isDefault: true }),
-      expect.objectContaining({ model: "gpt-deep", displayName: "GPT deep", enabled: true, isDefault: false })
+      expect.objectContaining({
+        model: "gpt-fast",
+        displayName: "GPT fast",
+        enabled: true,
+        isDefault: true,
+        origin: "discovered",
+        availability: "available",
+        capabilities: {
+          contextWindowTokens: { state: "observed", value: 128_000 },
+          maxOutputTokens: { state: "observed", value: 16_384 },
+          inputModalities: { state: "observed", values: ["text", "image"] },
+          outputModalities: { state: "observed", values: ["text"] },
+          supportedParameters: { state: "observed", values: ["temperature", "max_tokens"] }
+        },
+        provenance: { source: "openai", observedAt: baseNow.toISOString() }
+      }),
+      expect.objectContaining({
+        model: "gpt-deep",
+        displayName: "GPT deep",
+        enabled: true,
+        isDefault: false,
+        capabilities: expect.objectContaining({
+          contextWindowTokens: { state: "unsupported", value: null },
+          maxOutputTokens: { state: "observed", value: 8_192 },
+          inputModalities: { state: "unsupported", values: [] }
+        })
+      })
     ]);
     expect(providerAdapter.listModelInputs).toEqual([
       expect.objectContaining({
         config: expect.objectContaining({
           apiKey: "sk-discovery-secret",
-          baseURL: "https://api.example/v1"
+          baseURL: "https://api.openai.com/v1"
         })
       })
     ]);
@@ -749,11 +1510,30 @@ describe("AI config service", () => {
 
     const refreshed = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
 
-    expect(refreshed).toMatchObject({ discovered: 3, created: 1, skipped: 2, updated: 0 });
+    expect(refreshed).toMatchObject({ discovered: 3, created: 1, skipped: 0, updated: 2 });
     expect(refreshed.config.modelProfiles).toEqual(expect.arrayContaining([
       expect.objectContaining({ model: "gpt-fast", displayName: "GPT fast", enabled: false, isDefault: false }),
       expect.objectContaining({ model: "gpt-deep", displayName: "GPT deep", enabled: true, isDefault: true }),
       expect.objectContaining({ model: "gpt-new", displayName: "GPT new", enabled: true, isDefault: false })
+    ]));
+
+    const manual = await service.createModelProfile({
+      actor: actor("owner-user"),
+      configId: created.config.id,
+      model: "manual-only",
+      displayName: "Manual fallback",
+      temperature: 0.2,
+      maxTokens: 2_048
+    });
+    providerAdapter.discoveredModels = [{ id: "gpt-deep", displayName: "GPT deep" }];
+
+    const inventoryChanged = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(inventoryChanged).toMatchObject({ discovered: 1, created: 0, skipped: 0, updated: 3 });
+    expect(inventoryChanged.config.modelProfiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: "gpt-fast", origin: "discovered", availability: "unavailable" }),
+      expect.objectContaining({ model: "gpt-new", origin: "discovered", availability: "unavailable" }),
+      expect.objectContaining({ id: manual.modelProfile.id, model: "manual-only", origin: "manual", availability: "unknown" })
     ]));
   });
 
@@ -785,14 +1565,14 @@ describe("AI config service", () => {
 
     const refreshed = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
 
-    expect(refreshed).toMatchObject({ discovered: 2, created: 0, skipped: 2, updated: 0 });
+    expect(refreshed).toMatchObject({ discovered: 2, created: 0, skipped: 0, updated: 2 });
     expect(refreshed.config.modelProfiles).toEqual(expect.arrayContaining([
       expect.objectContaining({ model: "provider/gpt-fast", displayName: "GPT" }),
       expect.objectContaining({ model: "provider/gpt-deep", displayName: "GPT (provider/gpt-deep)" })
     ]));
   });
 
-  it("treats concurrent duplicate model insertion during discovery as skipped", async () => {
+  it("refreshes a model inserted concurrently before discovery reconciliation", async () => {
     repository = new CreateThenThrowDuplicateModelRepository("gpt-race");
     service = createAIConfigService(repository, cipher, {
       now: () => baseNow,
@@ -809,7 +1589,7 @@ describe("AI config service", () => {
 
     const discovered = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
 
-    expect(discovered).toMatchObject({ discovered: 1, created: 0, skipped: 1, updated: 0 });
+    expect(discovered).toMatchObject({ discovered: 1, created: 0, skipped: 0, updated: 1 });
     expect(discovered.config.modelProfiles).toEqual([
       expect.objectContaining({ model: "gpt-race", displayName: "GPT race", enabled: true, isDefault: true })
     ]);
@@ -856,7 +1636,23 @@ describe("AI config service", () => {
       baseURL: "https://api.example/v1"
     });
 
+    const discoveryCallCount = providerAdapter.listModelInputs.length;
     await expectAIConfigError(service.discoverModels({ actor: actor("owner-user"), configId: created.config.id }), 400);
+    expect(providerAdapter.listModelInputs).toHaveLength(discoveryCallCount);
+    await expect(service.getConfig(actor("owner-user"), created.config.id)).resolves.toMatchObject({
+      config: {
+        connection: {
+          transport: "not_checked",
+          authentication: "not_checked",
+          errorCode: "missing_key"
+        },
+        sync: {
+          discovery: "unavailable",
+          freshness: "stale",
+          errorCode: "missing_key"
+        }
+      }
+    });
 
     await service.updateConfig({ actor: actor("owner-user"), configId: created.config.id, apiKey: "sk-empty-list" });
     providerAdapter.discoveredModels = [];
@@ -868,6 +1664,408 @@ describe("AI config service", () => {
       "Provider returned no models. Use advanced manual model entry if this provider cannot list models."
     ]);
     expect(JSON.stringify(emptyDiscovery)).not.toMatch(/sk-empty-list|encrypted|Authorization/i);
+  });
+
+  it("returns unsupported discovery as a recoverable connection state", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Manual inventory provider",
+      provider: "custom",
+      providerKind: "openai_compatible",
+      baseURL: "https://custom.example/v1",
+      apiKey: "sk-unsupported"
+    });
+    providerAdapter.discoveryState = "unsupported";
+
+    const result = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(result).toMatchObject({
+      discovered: 0,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      discovery: "unsupported",
+      freshness: "stale",
+      config: {
+        connection: { transport: "reachable", authentication: "verified", errorCode: null },
+        sync: { discovery: "unsupported", freshness: "stale", errorCode: null }
+      }
+    });
+    expect(result.warnings).toEqual([
+      "This endpoint does not expose model discovery. Use advanced manual model entry."
+    ]);
+    expect(JSON.stringify(result)).not.toMatch(/sk-unsupported|encrypted|Authorization|headers/i);
+  });
+
+  it.each([
+    ["rate_limited", "rate_limit"],
+    ["unavailable", "provider_unavailable"],
+    ["malformed", "response_parse_failure"]
+  ] as const)("preserves authoritative inventory and last success after %s discovery", async (state, errorCode) => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: `Preservation ${state}`,
+      provider: "openai",
+      baseURL: "https://api.example/v1",
+      apiKey: "sk-preservation"
+    });
+    providerAdapter.discoveredModels = [{
+      id: "stable-model",
+      displayName: "Stable model",
+      capabilities: { contextWindowTokens: 64_000 }
+    }];
+    const successful = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+    const lastSuccessfulSyncAt = successful.config.sync
+      ? successful.config.sync.lastSuccessfulSyncAt
+      : undefined;
+
+    providerAdapter.discoveryState = state;
+    providerAdapter.discoveryErrorCode = errorCode;
+    providerAdapter.discoveredModels = [];
+    const failed = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(failed.config.sync).toMatchObject({
+      discovery: state,
+      freshness: "stale",
+      lastSuccessfulSyncAt,
+      errorCode
+    });
+    expect(failed.config.modelProfiles).toEqual([
+      expect.objectContaining({
+        model: "stable-model",
+        availability: "available",
+        capabilities: expect.objectContaining({ contextWindowTokens: { state: "observed", value: 64_000 } })
+      })
+    ]);
+  });
+
+  it("records malformed provider model facts and clears the discovery attempt token", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Malformed provider",
+      provider: "openai",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-malformed"
+    });
+    providerAdapter.discoveredModels = [{ id: "x".repeat(257) }];
+
+    const result = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(result).toMatchObject({
+      discovered: 0,
+      created: 0,
+      discovery: "malformed",
+      freshness: "stale",
+      warnings: ["Provider model discovery returned malformed data. Use advanced manual model entry or retry later."]
+    });
+    expect(repository.configs.get(created.config.id)).toMatchObject({
+      discoveryState: "malformed",
+      discoveryErrorCode: "response_parse_failure",
+      syncAttemptToken: null
+    });
+  });
+
+  it("clears stale connection errors after successful authenticated discovery", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Connection recovery",
+      provider: "openai",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-recovery"
+    });
+    providerAdapter.verificationHandler = async () => ({
+      providerKind: "openai",
+      endpointDisplay: "https://api.openai.com/v1",
+      transport: "reachable",
+      authentication: "rejected",
+      errorCode: "invalid_key"
+    });
+    await service.testSavedConfig({ actor: actor("owner-user"), configId: created.config.id });
+    expect(repository.configs.get(created.config.id)).toMatchObject({
+      authState: "rejected",
+      connectionErrorCode: "invalid_key"
+    });
+
+    providerAdapter.verificationHandler = null;
+    providerAdapter.discoveredModels = [{ id: "recovered-model" }];
+    await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(repository.configs.get(created.config.id)).toMatchObject({
+      transportState: "reachable",
+      authState: "verified",
+      connectionErrorCode: null,
+      lastConnectionAttemptAt: baseNow,
+      lastVerifiedAt: baseNow
+    });
+  });
+
+  it("rolls back reconciliation without recording false synchronization success", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Rollback provider",
+      provider: "openai",
+      baseURL: "https://api.example/v1",
+      apiKey: "sk-rollback"
+    });
+    providerAdapter.discoveredModels = [{ id: "existing-model", displayName: "Existing model" }];
+    const successful = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+    const successfulAt = successful.config.sync
+      ? successful.config.sync.lastSuccessfulSyncAt
+      : undefined;
+    const existingProfile = repository.modelProfiles.values().next().value;
+    expect(existingProfile).toBeDefined();
+
+    repository.failNextDiscoveryCompletion = true;
+    providerAdapter.discoveredModels = [{ id: "replacement-model", displayName: "Replacement model" }];
+    await expect(service.discoverModels({ actor: actor("owner-user"), configId: created.config.id }))
+      .rejects.toThrow("injected discovery reconciliation failure");
+
+    const stored = await repository.findConfigById(created.config.id);
+    expect(stored?.lastSuccessfulSyncAt?.toISOString()).toBe(successfulAt);
+    expect(stored?.modelProfiles).toEqual([existingProfile]);
+    expect(stored?.modelProfiles).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: "replacement-model" })
+    ]));
+  });
+
+  it("keeps a newer completion when same-millisecond discoveries finish out of order", async () => {
+    type DiscoveryResult = Awaited<ReturnType<AIProviderAdapter["discoverModels"]>>;
+    const pending: ReturnType<typeof deferred<DiscoveryResult>>[] = [];
+    service = createAIConfigService(repository, cipher, {
+      now: () => new Date(baseNow.getTime()),
+      providerAdapter
+    });
+    providerAdapter.discoveryHandler = async () => {
+      const call = deferred<DiscoveryResult>();
+      pending.push(call);
+      return call.promise;
+    };
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Interleaved provider",
+      provider: "openai",
+      baseURL: "https://api.example/v1",
+      apiKey: "sk-interleaved"
+    });
+
+    const olderPromise = service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+    await waitForCount(pending, 1);
+    const newerPromise = service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+    await waitForCount(pending, 2);
+    pending[1]!.resolve({
+      providerKind: "openai",
+      endpointDisplay: "https://api.openai.com/v1",
+      transport: "reachable",
+      authentication: "verified",
+      discovery: "available",
+      errorCode: null,
+      models: [{ id: "newer-model", displayName: "Newer model" }]
+    });
+    const newer = await newerPromise;
+    pending[0]!.resolve({
+      providerKind: "openai",
+      endpointDisplay: "https://api.openai.com/v1",
+      transport: "reachable",
+      authentication: "verified",
+      discovery: "available",
+      errorCode: null,
+      models: [{ id: "older-model", displayName: "Older model" }]
+    });
+    const older = await olderPromise;
+
+    expect(newer).toMatchObject({ discovered: 1, created: 1, discovery: "available", freshness: "fresh" });
+    expect(older).toMatchObject({ discovered: 0, created: 0, updated: 0, skipped: 0 });
+    expect(older.warnings).toEqual(["A newer synchronization result was kept."]);
+    expect(older.config.modelProfiles).toEqual([
+      expect.objectContaining({ model: "newer-model", availability: "available" })
+    ]);
+    expect(older.config.modelProfiles).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: "older-model" })
+    ]));
+  });
+
+  it("discards discovery results started before a connection change", async () => {
+    type DiscoveryResult = Awaited<ReturnType<AIProviderAdapter["discoverModels"]>>;
+    const pending = deferred<DiscoveryResult>();
+    providerAdapter.discoveryHandler = async () => pending.promise;
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Connection race",
+      provider: "custom",
+      providerKind: "openai_compatible",
+      baseURL: "https://provider-a.example/v1",
+      apiKey: "sk-provider-a"
+    });
+
+    const discoveryPromise = service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+    await Promise.resolve();
+    await service.updateConfig({
+      actor: actor("owner-user"),
+      configId: created.config.id,
+      baseURL: "https://provider-b.example/v1",
+      apiKey: "sk-provider-b"
+    });
+    pending.resolve({
+      providerKind: "openai_compatible",
+      endpointDisplay: "https://provider-a.example/v1",
+      transport: "reachable",
+      authentication: "verified",
+      discovery: "available",
+      errorCode: null,
+      models: [{ id: "provider-a-model" }]
+    });
+
+    const result = await discoveryPromise;
+    expect(result).toMatchObject({ discovered: 0, created: 0, updated: 0, skipped: 0 });
+    expect(result.warnings).toEqual(["A newer synchronization result was kept."]);
+    expect(result.config).toMatchObject({
+      baseURL: "https://provider-b.example/v1",
+      sync: { discovery: "not_attempted", freshness: "stale" }
+    });
+    expect(result.config.modelProfiles).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: "provider-a-model" })
+    ]));
+  });
+
+  it("claims discovery only after reading the row-locked current connection", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Discovery begin race",
+      provider: "custom",
+      providerKind: "openai_compatible",
+      baseURL: "https://provider-a.example/v1",
+      apiKey: "sk-provider-a"
+    });
+    repository.beforeNextDiscoveryBegin = async () => {
+      await service.updateConfig({
+        actor: actor("owner-user"),
+        configId: created.config.id,
+        baseURL: "https://provider-b.example/v1",
+        apiKey: "sk-provider-b"
+      });
+    };
+    providerAdapter.discoveredModels = [{ id: "provider-b-model" }];
+
+    const result = await service.discoverModels({
+      actor: actor("owner-user"),
+      configId: created.config.id
+    });
+
+    expect(providerAdapter.listModelInputs).toEqual([
+      expect.objectContaining({
+        config: expect.objectContaining({
+          baseURL: "https://provider-b.example/v1",
+          apiKey: "sk-provider-b"
+        })
+      })
+    ]);
+    expect(result).toMatchObject({
+      discovered: 1,
+      created: 1,
+      config: { baseURL: "https://provider-b.example/v1" }
+    });
+    expect(result.config.modelProfiles).toEqual([
+      expect.objectContaining({ model: "provider-b-model", availability: "available" })
+    ]);
+  });
+
+  it("adds observed provider facts to a matching manual profile without changing user choices", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Manual collision",
+      provider: "openai",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-manual-collision"
+    });
+    const manual = await service.createModelProfile({
+      actor: actor("owner-user"),
+      configId: created.config.id,
+      model: "shared-model",
+      displayName: "My tuned model",
+      temperature: 0.7,
+      maxTokens: 12_345,
+      enabled: false,
+      isDefault: false
+    });
+    providerAdapter.discoveredModels = [{
+      id: "shared-model",
+      displayName: "Provider label",
+      capabilities: { contextWindowTokens: 128_000, supportedParameters: ["temperature"] }
+    }];
+
+    const result = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(result).toMatchObject({ discovered: 1, created: 0, skipped: 0, updated: 1 });
+    expect(result.config.modelProfiles).toEqual([
+      expect.objectContaining({
+        id: manual.modelProfile.id,
+        origin: "manual",
+        model: "shared-model",
+        displayName: "My tuned model",
+        temperature: 0.7,
+        maxTokens: 12_345,
+        enabled: false,
+        isDefault: false,
+        availability: "available",
+        lastSeenAt: baseNow.toISOString(),
+        provenance: { source: "openai", observedAt: baseNow.toISOString() },
+        capabilities: expect.objectContaining({
+          contextWindowTokens: { state: "observed", value: 128_000 },
+          supportedParameters: { state: "observed", values: ["temperature"] }
+        })
+      })
+    ]);
+  });
+
+  it("treats an empty authoritative inventory as absent discovered models while preserving manual profiles", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Empty inventory provider",
+      provider: "openai",
+      baseURL: "https://api.example/v1",
+      apiKey: "sk-empty-authoritative"
+    });
+    providerAdapter.discoveredModels = [{ id: "listed-model", displayName: "Listed model" }];
+    await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+    const manual = await service.createModelProfile({
+      actor: actor("owner-user"),
+      configId: created.config.id,
+      model: "manual-model",
+      displayName: "Manual model",
+      temperature: 0.4,
+      maxTokens: 2_048
+    });
+
+    providerAdapter.discoveryState = "empty";
+    providerAdapter.discoveredModels = [];
+    const empty = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(empty).toMatchObject({ discovery: "empty", freshness: "fresh", discovered: 0, created: 0 });
+    expect(empty.config.modelProfiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: "listed-model", origin: "discovered", availability: "unavailable" }),
+      expect.objectContaining({ id: manual.modelProfile.id, origin: "manual", availability: "unknown" })
+    ]));
+  });
+
+  it("preserves an unavailable discovered default until the user changes it", async () => {
+    const created = await service.createConfig({
+      actor: actor("owner-user"),
+      name: "Default repair provider",
+      provider: "openai",
+      baseURL: "https://api.example/v1",
+      apiKey: "sk-default-repair"
+    });
+    providerAdapter.discoveredModels = [{ id: "old-default", displayName: "Old default" }];
+    await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    providerAdapter.discoveredModels = [{ id: "new-default", displayName: "New default" }];
+    const refreshed = await service.discoverModels({ actor: actor("owner-user"), configId: created.config.id });
+
+    expect(refreshed.config.modelProfiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: "old-default", availability: "unavailable", isDefault: true }),
+      expect.objectContaining({ model: "new-default", availability: "available", isDefault: false })
+    ]));
+    expect(refreshed.config.modelProfiles.filter((profile) => profile.isDefault)).toHaveLength(1);
   });
 
   it("keeps one default config per owner", async () => {
@@ -911,6 +2109,12 @@ describe("AI config service", () => {
       404
     );
     await expectAIConfigError(service.setDefaultConfig({ actor: actor("other-user"), configId: created.config.id }), 404);
+    const discoveryCallCount = providerAdapter.listModelInputs.length;
+    await expectAIConfigError(service.discoverModels({ actor: actor("other-user"), configId: created.config.id }), 404);
+    expect(providerAdapter.listModelInputs).toHaveLength(discoveryCallCount);
+    const verificationCallCount = providerAdapter.verificationInputs.length;
+    await expectAIConfigError(service.testSavedConfig({ actor: actor("other-user"), configId: created.config.id }), 404);
+    expect(providerAdapter.verificationInputs).toHaveLength(verificationCallCount);
     await expectAIConfigError(service.deleteConfig({ actor: actor("other-user"), configId: created.config.id }), 404);
     expect(repository.configs.has(created.config.id)).toBe(true);
   });
@@ -978,12 +2182,29 @@ describe("AI config routes", () => {
     expect(createResponse.json().config).not.toHaveProperty("keyPreview");
     expect(createResponse.body).not.toContain("sk-route-secret");
     expect(createResponse.body).not.toContain("encrypted:sk-route-secret");
+
+    const retargetResponse = await app.inject({
+      method: "PATCH",
+      url: `/ai/configs/${String(createResponse.json().config.id)}`,
+      headers: { cookie: `${cookieName}=route-session` },
+      payload: {
+        provider: "custom",
+        providerKind: "openai_compatible",
+        baseURL: "https://attacker.example/v1"
+      }
+    });
+    expect(retargetResponse.statusCode).toBe(400);
+    expect(retargetResponse.body).not.toContain("sk-route-secret");
   });
 
   it("exposes provider test, SSE stream, and cancel routes with safe payloads", async () => {
     const routeProviderAdapter = new RecordingProviderAdapter();
     routeProviderAdapter.discoveredModels = [
-      { id: "gpt-route-fast", displayName: "Route fast" },
+      {
+        id: "gpt-route-fast",
+        displayName: "Route fast",
+        capabilities: { contextWindowTokens: 32_000, inputModalities: ["text"] }
+      },
       { id: "gpt-route-deep", displayName: "Route deep" }
     ];
     service = createAIConfigService(new InMemoryAIConfigRepository(), cipher, {
@@ -1042,15 +2263,15 @@ describe("AI config routes", () => {
       headers: { cookie: `${cookieName}=route-session` },
       payload: {
         provider: "openai",
+        providerKind: "openai",
         baseURL: "https://api.example/v1",
-        model: "gpt-route",
-        temperature: 0,
-        maxTokens: 32,
         apiKey: "sk-route-test"
       }
     });
     expect(draftTestResponse.statusCode).toBe(200);
     expect(draftTestResponse.json()).toMatchObject({ healthCheck: { ok: true, category: null } });
+    expect(routeProviderAdapter.verificationInputs).toHaveLength(1);
+    expect(routeProviderAdapter.inputs).toEqual([]);
     expect(draftTestResponse.body).not.toMatch(/sk-route-test|encrypted|Authorization/i);
 
     const createConfigResponse = await app.inject({
@@ -1067,15 +2288,43 @@ describe("AI config routes", () => {
     expect(createConfigResponse.statusCode).toBe(200);
     const routeConfigId = createConfigResponse.json().config.id as string;
 
+    const transientKeySavedTest = await app.inject({
+      method: "POST",
+      url: `/ai/configs/${routeConfigId}/test`,
+      headers: { cookie: `${cookieName}=route-session` },
+      payload: { apiKey: "sk-unsaved-override" }
+    });
+    expect(transientKeySavedTest.statusCode).toBe(400);
+    expect(transientKeySavedTest.body).not.toContain("sk-unsaved-override");
+    expect(routeProviderAdapter.verificationInputs).toHaveLength(1);
+
     const discoveryResponse = await app.inject({
       method: "POST",
-      url: `/ai/configs/${routeConfigId}/discover-models`,
+      url: `/ai/configs/${routeConfigId}/capabilities/sync`,
       headers: { cookie: `${cookieName}=route-session` }
     });
     expect(discoveryResponse.statusCode).toBe(200);
-    expect(discoveryResponse.json()).toMatchObject({ discovered: 2, created: 2, skipped: 0 });
+    expect(discoveryResponse.json()).toMatchObject({
+      discovered: 2,
+      created: 2,
+      skipped: 0,
+      discovery: "available",
+      freshness: "fresh",
+      config: {
+        connection: { transport: "reachable", authentication: "verified" },
+        sync: { discovery: "available", freshness: "fresh" }
+      }
+    });
     expect(discoveryResponse.json().config.modelProfiles).toEqual([
-      expect.objectContaining({ model: "gpt-route-fast", isDefault: true }),
+      expect.objectContaining({
+        model: "gpt-route-fast",
+        isDefault: true,
+        capabilities: expect.objectContaining({
+          contextWindowTokens: { state: "observed", value: 32_000 },
+          inputModalities: { state: "observed", values: ["text"] }
+        }),
+        provenance: { source: "openai", observedAt: baseNow.toISOString() }
+      }),
       expect.objectContaining({ model: "gpt-route-deep", isDefault: false })
     ]);
     expect(discoveryResponse.body).not.toMatch(/sk-route-discovery|encrypted|Authorization|headers/i);
