@@ -8,7 +8,7 @@ import type {
   EditorSnapshot,
   ListAIConversationsResponse
 } from "@jixia/shared";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DocumentCopilotPanel } from "./DocumentCopilotPanel";
@@ -37,6 +37,32 @@ const providerConfig: AIProviderConfigView = {
   ],
   createdAt: "2026-06-16T10:00:00.000Z",
   updatedAt: "2026-06-16T10:00:00.000Z"
+};
+
+const providerConfigWithUnavailableModel: AIProviderConfigView = {
+  ...providerConfig,
+  modelProfiles: [
+    {
+      ...providerConfig.modelProfiles[0]!,
+      availability: "available"
+    },
+    {
+      ...providerConfig.modelProfiles[0]!,
+      id: "model-profile-unknown",
+      model: "gpt-unknown",
+      displayName: "Unknown availability",
+      isDefault: false,
+      availability: "unknown"
+    },
+    {
+      ...providerConfig.modelProfiles[0]!,
+      id: "model-profile-unavailable",
+      model: "gpt-unavailable",
+      displayName: "Unavailable model",
+      isDefault: false,
+      availability: "unavailable"
+    }
+  ]
 };
 
 const documentRecord: DocumentDTO = {
@@ -218,7 +244,7 @@ describe("DocumentCopilotPanel", () => {
     expect(screen.getByText("Project synthesis")).toBeTruthy();
     expect(screen.getByText("doc-1")).toBeTruthy();
     expect(screen.getByText("Not implemented; sending current document only")).toBeTruthy();
-    expect(screen.getByText("No usable model profile with a saved provider key is available for this document copilot. Provider keys stay server-owned; add one in AI settings before sending.")).toBeTruthy();
+    expect(screen.getByText("No enabled model profile that the provider has not marked unavailable is available for this document copilot. Provider keys stay server-owned; add one in AI settings before sending.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open AI provider settings" }));
 
     expect(openSettings).toHaveBeenCalledTimes(1);
@@ -354,6 +380,111 @@ describe("DocumentCopilotPanel", () => {
     expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/draft") && !String(url).includes("/revisions"))).toBe(true);
     expectStorageWasNotUsed();
   });
+
+  it("offers available and unknown models but excludes server-marked unavailable profiles", async () => {
+    mockFetchSequence(
+      { configs: [providerConfigWithUnavailableModel] },
+      { conversations: [] }
+    );
+
+    render(<DocumentCopilotPanel {...panelProps()} />);
+
+    const selector = (await screen.findByLabelText("Document copilot model")) as HTMLSelectElement;
+    await waitFor(() => expect(Array.from(selector.options).map((option) => option.value)).toEqual([
+      "",
+      "model-profile-1",
+      "model-profile-unknown"
+    ]));
+    expect(selector.value).toBe("model-profile-1");
+    expect(screen.queryByRole("option", { name: /Unavailable model/ })).toBeNull();
+  });
+
+  it("ignores a stale runtime response after switching documents", async () => {
+    const staleConversation = deferred<Response>();
+    const secondDocument = { ...documentRecord, id: "doc-2", title: "Second document" };
+    const secondConversation: AIConversationDTO = {
+      ...createdConversation,
+      id: "conversation-doc-2",
+      currentDocumentId: "doc-2",
+      messages: [{
+        ...streamedAssistantMessage,
+        id: "message-doc-2",
+        content: "Document B advisory",
+        parts: [{ type: "markdown", content: "Document B advisory" }],
+        sources: []
+      }]
+    };
+    const signals: AbortSignal[] = [];
+    const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
+      if (init?.signal instanceof AbortSignal) signals.push(init.signal);
+      const path = String(url);
+      if (path === "/api/ai/configs") {
+        return jsonResponse({ configs: [providerConfig] });
+      }
+      if (path.endsWith("currentDocumentId=doc-1")) return staleConversation.promise;
+      if (path.endsWith("currentDocumentId=doc-2")) {
+        return jsonResponse({ conversations: [secondConversation] });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const view = render(<DocumentCopilotPanel {...panelProps()} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/ai/conversations?currentDocumentId=doc-1",
+      expect.objectContaining({ credentials: "include" })
+    ));
+    view.rerender(<DocumentCopilotPanel {...panelProps({ document: secondDocument })} />);
+
+    expect(await screen.findByText("Document B advisory")).toBeTruthy();
+    staleConversation.resolve(jsonResponse({ conversations: [appendedConversation] }));
+    await waitFor(() => expect(signals.some((signal) => signal.aborted)).toBe(true));
+    expect(screen.queryByText("Initial finding remains advisory.")).toBeNull();
+    expect(screen.getByText("Document B advisory")).toBeTruthy();
+  });
+
+  it("aborts pending conversation creation before sending after switching documents", async () => {
+    const pendingCreation = deferred<Response>();
+    const secondDocument = { ...documentRecord, id: "doc-2", title: "Second document" };
+    const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
+      const path = String(url);
+      if (path === "/api/ai/configs") return jsonResponse({ configs: [providerConfig] });
+      if (path.endsWith("currentDocumentId=doc-1") || path.endsWith("currentDocumentId=doc-2")) {
+        return jsonResponse({ conversations: [] });
+      }
+      if (path === "/api/ai/conversations") {
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
+        return pendingCreation.promise;
+      }
+      if (path.includes("/messages/stream")) {
+        throw new Error("Stale document conversation must not start a stream");
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const view = render(<DocumentCopilotPanel {...panelProps()} />);
+    const composer = await screen.findByLabelText("Document copilot composer");
+    fireEvent.change(within(composer).getByLabelText("Ask document copilot"), {
+      target: { value: "Summarize document A" }
+    });
+    fireEvent.click(within(composer).getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/ai/conversations",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    ));
+
+    view.rerender(<DocumentCopilotPanel {...panelProps({ document: secondDocument })} />);
+    pendingCreation.resolve(jsonResponse({ conversation: createdConversation }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/ai/conversations?currentDocumentId=doc-2",
+      expect.objectContaining({ credentials: "include" })
+    ));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/messages/stream"))).toBe(false);
+    expect(screen.queryByRole("listitem", { name: /Summarize document A/ })).toBeNull();
+    expect((screen.getByLabelText("Ask document copilot") as HTMLTextAreaElement).value).toBe("Summarize document A");
+  });
 });
 
 function panelProps(overrides: Partial<{
@@ -403,6 +534,21 @@ function streamResponse(events: readonly AIConversationRunStreamEvent[]): Respon
     status: 200,
     headers: { "Content-Type": "text/event-stream" }
   });
+}
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
+function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((fulfill) => {
+    resolve = fulfill;
+  });
+  return { promise, resolve };
 }
 
 type CreateConversationBody = {

@@ -20,6 +20,7 @@ import { apiFetch, apiStream } from "../../lib/api";
 import { MessageStream } from "../ai/chat/MessageStream";
 import { readChatStream } from "../ai/chat/chatStream";
 import type { ChatMessage as ChatMessageModel } from "../ai/chat/chatTypes";
+import { authorizedModelOptions, preferredAuthorizedModelId, type AuthorizedModelOption } from "../ai/modelOptions";
 import { Button, Notice } from "../layout/workbench";
 import {
   createDocumentCopilotContext,
@@ -39,11 +40,6 @@ type DocumentCopilotPanelProps = {
 
 type RuntimeLoadState = "idle" | "loading" | "ready" | "error";
 type SendState = "idle" | AIConversationRunStatus;
-type CopilotModelOption = {
-  readonly provider: AIProviderConfigView;
-  readonly profile: AIModelProfileView;
-};
-
 const optimisticMessageIdPrefix = "document-copilot-optimistic-";
 
 export function DocumentCopilotPanel({
@@ -70,12 +66,16 @@ export function DocumentCopilotPanel({
   const [includeDocumentContext, setIncludeDocumentContext] = useState(true);
   const assistantTextAccumulatorRef = useRef<Map<string, string>>(new Map());
   const activeStreamRef = useRef<ActiveStream | null>(null);
+  const runtimeLoadControllerRef = useRef<AbortController | null>(null);
+  const sendControllerRef = useRef<AbortController | null>(null);
+  const activeDocumentIdRef = useRef(document.id);
+  activeDocumentIdRef.current = document.id;
 
   const visibleContext = useMemo(
     () => createDocumentCopilotContext({ baseRevision, document, readOnly, snapshot, title }),
     [baseRevision, document, readOnly, snapshot, title]
   );
-  const usableModelOptions = useMemo(() => modelProfileOptions(providers).filter((option) => option.provider.hasKey && option.profile.enabled), [providers]);
+  const usableModelOptions = useMemo(() => authorizedModelOptions(providers), [providers]);
   const selectedModel = usableModelOptions.find((option) => option.profile.id === selectedModelProfileId) ?? null;
   const isSending = sendState === "queued" || sendState === "running";
   const disabledReason = sendDisabledReason(messageText, selectedModelProfileId, usableModelOptions, sendState);
@@ -84,15 +84,26 @@ export function DocumentCopilotPanel({
 
   useEffect(() => {
     setIncludeDocumentContext(true);
-    void loadCopilotRuntime();
+    void startCopilotRuntimeLoad();
 
     return () => {
+      runtimeLoadControllerRef.current?.abort();
+      runtimeLoadControllerRef.current = null;
+      sendControllerRef.current?.abort();
+      sendControllerRef.current = null;
       abortActiveStream();
       assistantTextAccumulatorRef.current.clear();
     };
   }, [document.id]);
 
-  async function loadCopilotRuntime(): Promise<void> {
+  function startCopilotRuntimeLoad(): Promise<void> {
+    runtimeLoadControllerRef.current?.abort();
+    const controller = new AbortController();
+    runtimeLoadControllerRef.current = controller;
+    return loadCopilotRuntime(controller.signal);
+  }
+
+  async function loadCopilotRuntime(signal: AbortSignal): Promise<void> {
     abortActiveStream();
     setLoadState("loading");
     setStatusMessage(null);
@@ -104,9 +115,10 @@ export function DocumentCopilotPanel({
 
     try {
       const [configResponse, conversationResponse] = await Promise.all([
-        apiFetch<AIProviderConfigListResponse>("/ai/configs"),
-        apiFetch<ListAIConversationsResponse>(`/ai/conversations?currentDocumentId=${encodeURIComponent(document.id)}`)
+        apiFetch<AIProviderConfigListResponse>("/ai/configs", { signal }),
+        apiFetch<ListAIConversationsResponse>(`/ai/conversations?currentDocumentId=${encodeURIComponent(document.id)}`, { signal })
       ]);
+      if (signal.aborted) return;
       const nextConversation = conversationResponse.conversations[0] ?? null;
 
       setProviders(configResponse.configs);
@@ -115,6 +127,7 @@ export function DocumentCopilotPanel({
       setMessages(nextConversation?.messages ?? []);
       setLoadState("ready");
     } catch (error) {
+      if (signal.aborted || (error instanceof Error && error.name === "AbortError")) return;
       setLoadState("error");
       setStatusMessage(error instanceof Error ? error.message : "Unable to load document copilot.");
     }
@@ -128,24 +141,32 @@ export function DocumentCopilotPanel({
     }
 
     const selectedContextSnapshot = createRuntimeContextSnapshot();
+    const sendDocumentId = document.id;
     setSendState("queued");
     setStatusMessage(null);
     let pendingConversationId: string | null = null;
+    sendControllerRef.current?.abort();
+    const sendController = new AbortController();
+    sendControllerRef.current = sendController;
 
     try {
-      const activeConversation = await ensureConversation(content, selectedContextSnapshot);
+      const activeConversation = await ensureConversation(content, selectedContextSnapshot, sendDocumentId, sendController.signal);
+      if (
+        sendController.signal.aborted
+        || sendControllerRef.current !== sendController
+        || activeDocumentIdRef.current !== sendDocumentId
+      ) return;
       pendingConversationId = activeConversation.id;
       appendOptimisticUserMessage(activeConversation.id, content);
       setMessageText("");
       setSendState("running");
 
-      const streamController = new AbortController();
       const streamToken = createStreamToken();
-      activeStreamRef.current = { controller: streamController, token: streamToken };
+      activeStreamRef.current = { controller: sendController, token: streamToken };
 
       const response = await apiStream(`/ai/conversations/${encodeURIComponent(activeConversation.id)}/messages/stream`, {
         method: "POST",
-        signal: streamController.signal,
+        signal: sendController.signal,
         json: {
           modelProfileId: selectedModelProfileId,
           message: { role: "user", content },
@@ -162,10 +183,12 @@ export function DocumentCopilotPanel({
       }
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
+        if (sendControllerRef.current === sendController) sendControllerRef.current = null;
         return;
       }
 
       const errorMessage = error instanceof Error ? error.message : "Unable to send copilot message.";
+      if (sendControllerRef.current === sendController) sendControllerRef.current = null;
       clearActiveStream();
       if (pendingConversationId) {
         settleOptimisticUserMessages(pendingConversationId, null, "failed", errorMessage);
@@ -179,7 +202,9 @@ export function DocumentCopilotPanel({
 
   async function ensureConversation(
     prompt: string,
-    selectedContextSnapshot: AIConversationContextSnapshot
+    selectedContextSnapshot: AIConversationContextSnapshot,
+    sendDocumentId: string,
+    signal: AbortSignal
   ): Promise<AIConversationDTO> {
     if (conversation) {
       return conversation;
@@ -187,12 +212,14 @@ export function DocumentCopilotPanel({
 
     const response = await apiFetch<CreateAIConversationResponse>("/ai/conversations", {
       method: "POST",
+      signal,
       json: {
         title: conversationTitle(visibleContext.summary.title, prompt),
-        currentDocumentId: document.id,
+        currentDocumentId: sendDocumentId,
         selectedContextSnapshot
       }
     });
+    if (signal.aborted) throw new DOMException("Request aborted", "AbortError");
 
     setConversation(response.conversation);
     setMessages(response.conversation.messages);
@@ -341,13 +368,20 @@ export function DocumentCopilotPanel({
       return;
     }
 
+    const activeStream = activeStreamRef.current;
     activeStreamRef.current = null;
+    if (sendControllerRef.current === activeStream?.controller) {
+      sendControllerRef.current = null;
+    }
   }
 
   function abortActiveStream(): void {
     const activeStream = activeStreamRef.current;
     activeStreamRef.current = null;
     activeStream?.controller.abort();
+    if (sendControllerRef.current === activeStream?.controller) {
+      sendControllerRef.current = null;
+    }
   }
 
   async function handleStopRun(): Promise<void> {
@@ -469,7 +503,7 @@ export function DocumentCopilotPanel({
             <span>{selectedModel ? modelLabel(selectedModel) : "Provider/model setup needed"}</span>
             <span>{activeRunStatus ? `Run ${activeRunStatus}` : `Runtime ${loadState}`}</span>
             <span>No document mutation</span>
-            <Button disabled={loadState === "loading" || isSending} onClick={() => void loadCopilotRuntime()} variant="ghost">Refresh</Button>
+            <Button disabled={loadState === "loading" || isSending} onClick={() => void startCopilotRuntimeLoad()} variant="ghost">Refresh</Button>
           </div>
         </details>
       </header>
@@ -490,7 +524,7 @@ export function DocumentCopilotPanel({
 
           {showProviderSetupNotice ? (
             <Notice tone="warning">
-                No usable model profile with a saved provider key is available for this document copilot. Provider keys stay server-owned; add one in AI settings before sending.
+                No enabled model profile that the provider has not marked unavailable is available for this document copilot. Provider keys stay server-owned; add one in AI settings before sending.
               <span className="jixia-document-copilot__inline-action">
                 <Button onClick={handleOpenSettings} variant="link">Open AI provider settings</Button>
               </span>
@@ -545,15 +579,16 @@ export function DocumentCopilotPanel({
                 value={selectedModelProfileId}
               >
                 <option value="">Select model</option>
-                {providers.map((provider) => (
-                  <optgroup key={provider.id} label={providerGroupLabel(provider)}>
-                    {provider.modelProfiles.map((profile) => (
-                      <option disabled={!provider.hasKey || !profile.enabled} key={profile.id} value={profile.id}>
-                        {profileOptionLabel(profile)}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
+                {providers.map((provider) => {
+                  const profiles = usableModelOptions.filter((option) => option.provider.id === provider.id).map((option) => option.profile);
+                  return profiles.length > 0 ? (
+                    <optgroup key={provider.id} label={providerGroupLabel(provider)}>
+                      {profiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>{profileOptionLabel(profile)}</option>
+                      ))}
+                    </optgroup>
+                  ) : null;
+                })}
               </select>
             </label>
             <div className="jixia-document-copilot__composer-actions">
@@ -625,7 +660,7 @@ function ContextControl({
 function sendDisabledReason(
   text: string,
   modelProfileId: string,
-  modelOptions: readonly CopilotModelOption[],
+  modelOptions: readonly AuthorizedModelOption[],
   sendState: SendState
 ): string | null {
   if (sendState === "queued" || sendState === "running") {
@@ -633,7 +668,7 @@ function sendDisabledReason(
   }
 
   if (modelOptions.length === 0) {
-    return "Add an enabled model with a saved key";
+    return "Add an enabled model that the provider has not marked unavailable";
   }
 
   if (!modelProfileId) {
@@ -648,32 +683,19 @@ function sendDisabledReason(
 }
 
 function modelSelection(currentModelProfileId: string, configs: readonly AIProviderConfigView[]): string {
-  const options = modelProfileOptions(configs).filter((option) => option.provider.hasKey && option.profile.enabled);
-
-  if (options.some((option) => option.profile.id === currentModelProfileId)) {
-    return currentModelProfileId;
-  }
-
-  return options.find((option) => option.provider.isDefault && option.profile.isDefault)?.profile.id
-    ?? options.find((option) => option.profile.isDefault)?.profile.id
-    ?? options[0]?.profile.id
-    ?? "";
+  return preferredAuthorizedModelId(currentModelProfileId, configs);
 }
 
-function modelProfileOptions(configs: readonly AIProviderConfigView[]): readonly CopilotModelOption[] {
-  return configs.flatMap((provider) => provider.modelProfiles.map((profile) => ({ provider, profile })));
-}
-
-function modelLabel(option: CopilotModelOption): string {
+function modelLabel(option: AuthorizedModelOption): string {
   return `${option.provider.name} · ${option.profile.displayName}`;
 }
 
 function providerGroupLabel(config: AIProviderConfigView): string {
-  return `${config.name} · ${config.provider}${config.hasKey ? "" : " · missing key"}`;
+  return `${config.name} · ${config.provider}`;
 }
 
 function profileOptionLabel(profile: AIModelProfileView): string {
-  const markers = [profile.isDefault ? "default" : null, profile.enabled ? null : "disabled"].filter(Boolean).join(" · ");
+  const markers = [profile.isDefault ? "default" : null].filter(Boolean).join(" · ");
   return `${profile.displayName} · ${profile.model}${markers ? ` · ${markers}` : ""}`;
 }
 
