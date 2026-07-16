@@ -17,6 +17,7 @@ import {
   type AIConversationRunStepDTO,
   type AIConversationRunStatus,
   type AIConversationSourceDTO,
+  type AIModelAvailabilityState,
   type AIProviderErrorCategory,
   type ListAIConversationsResponse,
   type SpaceRole
@@ -25,7 +26,7 @@ import {
 import { canReadDocument as defaultCanReadDocument, type PermissionService } from "../permissions/permission.service.js";
 import {
   AIProviderExecutionError,
-  createOpenAICompatibleProviderAdapter,
+  createAIProviderAdapter,
   providerErrorFromUnknown,
   safeProviderErrorMessage,
   type AIProviderAdapter,
@@ -54,6 +55,7 @@ export type AIProviderConfigExecutionRecord = {
   readonly id: string;
   readonly ownerUserId: string;
   readonly provider: string;
+  readonly providerKind?: import("@jixia/shared").AIProviderKind | undefined;
   readonly baseURL: string;
   readonly encryptedApiKey: string | null;
 };
@@ -66,6 +68,7 @@ export type AIModelProfileExecutionRecord = {
   readonly temperature: number;
   readonly maxTokens: number;
   readonly enabled: boolean;
+  readonly availability?: AIModelAvailabilityState | undefined;
   readonly providerConfig: AIProviderConfigExecutionRecord;
 };
 
@@ -795,11 +798,13 @@ export class PrismaAIConversationRepository implements AIConversationRepository 
         temperature: true,
         maxTokens: true,
         enabled: true,
+        availability: true,
         providerConfig: {
           select: {
             id: true,
             ownerUserId: true,
             provider: true,
+            providerKind: true,
             baseURL: true,
             encryptedApiKey: true
           }
@@ -900,7 +905,7 @@ export function createAIConversationService(
 ) {
   const now = options.now ?? (() => new Date());
   const createId = options.createId ?? randomUUID;
-  const providerAdapter = options.providerAdapter ?? createOpenAICompatibleProviderAdapter();
+  const providerAdapter = options.providerAdapter ?? createAIProviderAdapter();
   const cipher = options.cipher ?? createAIKeyCipher();
 
   async function resolveUsageService(): Promise<Pick<AIUsageService, "recordUsage">> {
@@ -954,7 +959,13 @@ export function createAIConversationService(
     const modelProfile = await repository.findModelProfileById(input.modelProfileId);
     const providerConfig = modelProfile?.providerConfig ?? null;
 
-    if (!modelProfile || !providerConfig || providerConfig.ownerUserId !== input.actor.userId || !modelProfile.enabled) {
+    if (
+      !modelProfile ||
+      !providerConfig ||
+      providerConfig.ownerUserId !== input.actor.userId ||
+      !modelProfile.enabled ||
+      modelProfile.availability === "unavailable"
+    ) {
       throw notFound();
     }
 
@@ -1106,6 +1117,7 @@ export function createAIConversationService(
           id: prepared.providerConfig.id,
           ownerUserId: prepared.providerConfig.ownerUserId,
           provider: prepared.providerConfig.provider,
+          providerKind: prepared.providerConfig.providerKind,
           baseURL: prepared.providerConfig.baseURL,
           model: prepared.modelProfile.model,
           temperature: prepared.modelProfile.temperature,
@@ -1211,6 +1223,7 @@ export function createAIConversationService(
           id: prepared.providerConfig.id,
           ownerUserId: prepared.providerConfig.ownerUserId,
           provider: prepared.providerConfig.provider,
+          providerKind: prepared.providerConfig.providerKind,
           baseURL: prepared.providerConfig.baseURL,
           model: prepared.modelProfile.model,
           temperature: prepared.modelProfile.temperature,

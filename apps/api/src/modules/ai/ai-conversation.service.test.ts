@@ -165,6 +165,7 @@ function modelProfile(
     temperature: overrides.temperature ?? 0.2,
     maxTokens: overrides.maxTokens ?? 4096,
     enabled: overrides.enabled ?? true,
+    availability: overrides.availability ?? "unknown",
     providerConfig: providerConfigRecord
   };
 }
@@ -212,6 +213,28 @@ class RecordingProviderAdapter implements AIProviderAdapter {
       }
     }
   ];
+
+  async verifyConnection(input: Parameters<AIProviderAdapter["verifyConnection"]>[0]) {
+    return {
+      providerKind: input.config.providerKind ?? "openai_compatible" as const,
+      endpointDisplay: input.config.baseURL,
+      transport: "reachable" as const,
+      authentication: "verified" as const,
+      errorCode: null
+    };
+  }
+
+  async discoverModels(input: Parameters<AIProviderAdapter["discoverModels"]>[0]) {
+    return {
+      providerKind: input.config.providerKind ?? "openai_compatible" as const,
+      endpointDisplay: input.config.baseURL,
+      transport: "reachable" as const,
+      authentication: "verified" as const,
+      discovery: "empty" as const,
+      errorCode: null,
+      models: []
+    };
+  }
 
   async listModels(): Promise<[]> {
     return [];
@@ -394,6 +417,32 @@ describe("AI conversation service", () => {
     expect(appended.conversation.messages[1]?.parts).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ type: "source_list" })])
     );
+  });
+
+  it("rejects unavailable model profiles for both buffered and streaming runs", async () => {
+    repository.modelProfiles.set("model-profile-1", modelProfile(providerConfig(), { availability: "unavailable" }));
+    const created = await service.createConversation({
+      actor: actor("owner-user"),
+      title: "Unavailable model",
+      currentDocumentId: null,
+      selectedContextSnapshot: standaloneSnapshot()
+    });
+    const runInput = {
+      actor: actor("owner-user"),
+      conversationId: created.conversation.id,
+      modelProfileId: "model-profile-1",
+      message: { role: "user" as const, content: "do not run" },
+      selectedContextSnapshot: standaloneSnapshot()
+    };
+
+    await expectAIConversationError(service.appendMessage(runInput), 404);
+    const iterator = service.streamMessage(runInput)[Symbol.asyncIterator]();
+    await expect(iterator.next()).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(AIConversationError);
+      expect((error as AIConversationError).statusCode).toBe(404);
+      return true;
+    });
+    expect(providerAdapter.inputs).toEqual([]);
   });
 
   it("rejects standalone conversations with document context until explicit attachment APIs exist", async () => {
