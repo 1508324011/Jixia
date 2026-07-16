@@ -20,6 +20,7 @@ import {
   type UpdateAIModelProfileInput,
   type UpdateAIProviderConfigInput
 } from "./ai-config.service.js";
+import { aiProviderKinds } from "@jixia/shared";
 import {
   AIConversationError,
   getDefaultAIConversationService,
@@ -61,6 +62,7 @@ const updateModelProfilePayloadSchema = modelProfilePayloadSchema.partial().refi
 const configPayloadSchema = z.object({
   name: z.string().trim().min(1).max(200),
   provider: z.string().trim().min(1).max(256),
+  providerKind: z.enum(aiProviderKinds).optional(),
   baseURL: z.string().trim().min(1).max(2_000),
   defaultModelProfile: modelProfilePayloadSchema.optional(),
   isDefault: z.boolean().optional(),
@@ -70,21 +72,23 @@ const configPayloadSchema = z.object({
 const updateConfigPayloadSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   provider: z.string().trim().min(1).max(256).optional(),
+  providerKind: z.enum(aiProviderKinds).optional(),
   baseURL: z.string().trim().min(1).max(2_000).optional(),
   isDefault: z.boolean().optional(),
   apiKey: z.string().trim().min(1).max(20_000).optional()
 }).refine((payload) => Object.keys(payload).length > 0);
 const testDraftConfigPayloadSchema = z.object({
   provider: z.string().trim().min(1).max(256),
+  providerKind: z.enum(aiProviderKinds).optional(),
   baseURL: z.string().trim().min(1).max(2_000),
-  model: z.string().trim().min(1).max(256),
-  temperature: z.number().min(0).max(2),
-  maxTokens: z.number().int().positive(),
+  model: z.string().trim().min(1).max(256).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().int().positive().optional(),
   apiKey: z.string().trim().min(1).max(20_000).optional()
 });
-const testSavedConfigPayloadSchema = testDraftConfigPayloadSchema.partial().extend({
+const testSavedConfigPayloadSchema = z.object({
   modelProfileId: z.string().trim().min(1).max(256).optional()
-});
+}).strict();
 
 const createConversationPayloadSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -172,6 +176,7 @@ function createConfigInput(
     actor,
     name: payload.name,
     provider: payload.provider,
+    ...(payload.providerKind === undefined ? {} : { providerKind: payload.providerKind }),
     baseURL: payload.baseURL,
     ...(payload.defaultModelProfile === undefined ? {} : { defaultModelProfile: modelProfileInput(payload.defaultModelProfile) }),
     ...(payload.isDefault === undefined ? {} : { isDefault: payload.isDefault }),
@@ -200,6 +205,7 @@ function updateConfigInput(
     configId,
     ...(payload.name === undefined ? {} : { name: payload.name }),
     ...(payload.provider === undefined ? {} : { provider: payload.provider }),
+    ...(payload.providerKind === undefined ? {} : { providerKind: payload.providerKind }),
     ...(payload.baseURL === undefined ? {} : { baseURL: payload.baseURL }),
     ...(payload.isDefault === undefined ? {} : { isDefault: payload.isDefault }),
     ...(payload.apiKey === undefined ? {} : { apiKey: payload.apiKey })
@@ -257,10 +263,11 @@ function testDraftConfigInput(
   return {
     actor,
     provider: payload.provider,
+    ...(payload.providerKind === undefined ? {} : { providerKind: payload.providerKind }),
     baseURL: payload.baseURL,
-    model: payload.model,
-    temperature: payload.temperature,
-    maxTokens: payload.maxTokens,
+    ...(payload.model === undefined ? {} : { model: payload.model }),
+    ...(payload.temperature === undefined ? {} : { temperature: payload.temperature }),
+    ...(payload.maxTokens === undefined ? {} : { maxTokens: payload.maxTokens }),
     ...(payload.apiKey === undefined ? {} : { apiKey: payload.apiKey })
   };
 }
@@ -273,13 +280,7 @@ function testSavedConfigInput(
   return {
     actor,
     configId,
-    ...(payload.modelProfileId === undefined ? {} : { modelProfileId: payload.modelProfileId }),
-    ...(payload.provider === undefined ? {} : { provider: payload.provider }),
-    ...(payload.baseURL === undefined ? {} : { baseURL: payload.baseURL }),
-    ...(payload.model === undefined ? {} : { model: payload.model }),
-    ...(payload.temperature === undefined ? {} : { temperature: payload.temperature }),
-    ...(payload.maxTokens === undefined ? {} : { maxTokens: payload.maxTokens }),
-    ...(payload.apiKey === undefined ? {} : { apiKey: payload.apiKey })
+    ...(payload.modelProfileId === undefined ? {} : { modelProfileId: payload.modelProfileId })
   };
 }
 
@@ -362,6 +363,12 @@ export const aiRoutes: FastifyPluginAsync<AIRoutesOptions> = async (app, options
   });
 
   app.post("/ai/configs/:configId/discover-models", async (request, reply) => {
+    const actor = await requireActor(request, reply);
+    const { configId } = parsePayload(idParamsSchema.required({ configId: true }), request.params);
+    return (await resolveAIConfigService()).discoverModels({ actor, configId });
+  });
+
+  app.post("/ai/configs/:configId/capabilities/sync", async (request, reply) => {
     const actor = await requireActor(request, reply);
     const { configId } = parsePayload(idParamsSchema.required({ configId: true }), request.params);
     return (await resolveAIConfigService()).discoverModels({ actor, configId });
