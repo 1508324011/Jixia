@@ -1,12 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { AIProviderExecutionError, createOpenAICompatibleProviderAdapter } from "./ai-provider-adapter.js";
+import {
+  AIProviderExecutionError,
+  createAIProviderAdapter,
+  createPinnedLookup,
+  type AIProviderAdapterOptions
+} from "./ai-provider-adapter.js";
+
+const publicResolver = async () => ["8.8.8.8"];
+
+function createTestAdapter(fetchImplementation: typeof fetch, options: Omit<AIProviderAdapterOptions, "fetchImplementation"> = {}) {
+  return createAIProviderAdapter({ fetchImplementation, resolveAddresses: publicResolver, ...options });
+}
 
 const input = {
   config: {
     id: "config-1",
     ownerUserId: "owner-user",
     provider: "openai",
+    providerKind: "openai_compatible" as const,
     baseURL: "https://provider.example/v1",
     model: "gpt-test",
     temperature: 0.2,
@@ -54,11 +66,12 @@ describe("AI provider adapter", () => {
       )
     );
 
-    const result = await createOpenAICompatibleProviderAdapter(fetchMock).listModels({
+    const result = await createTestAdapter(fetchMock).listModels({
       config: {
         id: "config-1",
         ownerUserId: "owner-user",
         provider: "openai",
+        providerKind: "openai_compatible",
         baseURL: "https://provider.example/v1/chat/completions",
         apiKey: "sk-server-only"
       }
@@ -77,6 +90,205 @@ describe("AI provider adapter", () => {
     );
   });
 
+  it("uses fixed origins and provider-specific non-billable probes", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('{"data":[]}', { status: 200 }))
+      .mockResolvedValueOnce(new Response('{"data":{"label":"research"}}', { status: 200 }))
+      .mockResolvedValueOnce(new Response('{"data":[]}', { status: 200 }));
+    const adapter = createTestAdapter(fetchMock);
+
+    await adapter.verifyConnection({
+      config: { id: "openai", ownerUserId: "owner", provider: "OpenAI", providerKind: "openai", baseURL: "https://ignored.invalid/v1", apiKey: "openai-key" }
+    });
+    await adapter.verifyConnection({
+      config: { id: "openrouter", ownerUserId: "owner", provider: "OpenRouter", providerKind: "openrouter", baseURL: "https://ignored.invalid/v1", apiKey: "openrouter-key" }
+    });
+    await adapter.verifyConnection({
+      config: { id: "anthropic", ownerUserId: "owner", provider: "Anthropic", providerKind: "anthropic", baseURL: "https://ignored.invalid/v1", apiKey: "anthropic-key" }
+    });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.openai.com/v1/models",
+      "https://openrouter.ai/api/v1/key",
+      "https://api.anthropic.com/v1/models?limit=1"
+    ]);
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "GET", redirect: "error" });
+    expect(fetchMock.mock.calls[2]?.[1]?.headers).toMatchObject({
+      "x-api-key": "anthropic-key",
+      "anthropic-version": "2023-06-01"
+    });
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain("chat/completions");
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain("/messages");
+  });
+
+  it("does not verify credentials from malformed successful responses", async () => {
+    for (const body of ["", "<html>ok</html>", '{"status":"ok"}']) {
+      const result = await createTestAdapter(
+        vi.fn<typeof fetch>().mockResolvedValue(new Response(body, { status: 200 }))
+      ).verifyConnection({
+        config: { id: "config", ownerUserId: "owner", provider: "openai", providerKind: "openai", baseURL: "https://ignored.invalid", apiKey: "secret" }
+      });
+      expect(result).toMatchObject({ transport: "reachable", authentication: "unverified", errorCode: "response_parse_failure" });
+    }
+  });
+
+  it("uses account-aware OpenRouter discovery and normalizes observed capability facts", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      data: [{
+        id: "openrouter/model",
+        name: "Router model",
+        context_length: 128000,
+        architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
+        supported_parameters: ["temperature", "max_tokens"]
+      }]
+    }), { status: 200 }));
+
+    const result = await createTestAdapter(fetchMock).discoverModels({
+      config: { id: "config", ownerUserId: "owner", provider: "openrouter", providerKind: "openrouter", baseURL: "https://ignored.invalid", apiKey: "secret" }
+    });
+
+    expect(result).toMatchObject({ discovery: "available", authentication: "verified" });
+    expect(result.models).toEqual([{
+      id: "openrouter/model",
+      displayName: "Router model",
+      capabilities: {
+        contextWindowTokens: 128000,
+        inputModalities: ["text", "image"],
+        outputModalities: ["text"],
+        supportedParameters: ["temperature", "max_tokens"]
+      }
+    }]);
+    expect(fetchMock).toHaveBeenCalledWith("https://openrouter.ai/api/v1/models/user", expect.objectContaining({ method: "GET" }));
+  });
+
+  it("treats unsupported custom discovery as recoverable rather than invalid credentials", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response("not implemented", { status: 501 }));
+
+    const result = await createTestAdapter(fetchMock).discoverModels({
+      config: { id: "config", ownerUserId: "owner", provider: "custom", providerKind: "openai_compatible", baseURL: "https://provider.example/v1", apiKey: "secret" }
+    });
+
+    expect(result).toEqual({
+      providerKind: "openai_compatible",
+      endpointDisplay: "https://provider.example/v1",
+      transport: "reachable",
+      authentication: "unverified",
+      discovery: "unsupported",
+      errorCode: null,
+      models: []
+    });
+  });
+
+  it("rejects private DNS answers and encoded private IPv6 before credentials leave Jixia", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const unsafeAnswers = ["10.1.2.3", "::127.0.0.1", "::ffff:192.168.1.10", "64:ff9b::7f00:1"];
+
+    for (const address of unsafeAnswers) {
+      const result = await createTestAdapter(fetchMock, { resolveAddresses: async () => [address] }).verifyConnection({
+        config: { id: "config", ownerUserId: "owner", provider: "custom", providerKind: "openai_compatible", baseURL: "https://provider.example/v1", apiKey: "secret" }
+      });
+      expect(result).toMatchObject({ transport: "unreachable", authentication: "not_checked", errorCode: "invalid_base_url" });
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("pins connection lookup to the validated DNS snapshot", () => {
+    const approvedSnapshot = [
+      { address: "8.8.8.8", family: 4 as const },
+      { address: "2606:4700:4700::1111", family: 6 as const }
+    ];
+    const lookup = createPinnedLookup("provider.example", approvedSnapshot);
+    const callback = vi.fn();
+
+    lookup("provider.example", { family: 4, all: false }, callback);
+    expect(callback).toHaveBeenCalledWith(null, "8.8.8.8", 4);
+
+    callback.mockClear();
+    lookup("provider.example", { family: 0, all: true }, callback);
+    expect(callback).toHaveBeenCalledWith(null, approvedSnapshot);
+
+    callback.mockClear();
+    lookup("rebound.provider.example", { family: 4, all: false }, callback);
+    expect(callback.mock.calls[0]?.[0]).toMatchObject({ code: "ENOTFOUND" });
+  });
+
+  it("includes DNS resolution in the provider timeout", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const adapter = createTestAdapter(fetchMock, {
+      resolveAddresses: async () => await new Promise<readonly string[]>(() => undefined),
+      timeoutMs: 5
+    });
+
+    const result = await adapter.verifyConnection({
+      config: { id: "config", ownerUserId: "owner", provider: "custom", providerKind: "openai_compatible", baseURL: "https://provider.example/v1", apiKey: "secret" }
+    });
+
+    expect(result).toMatchObject({ transport: "unreachable", authentication: "not_checked", errorCode: "timeout" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("bounds provider bodies and reports malformed discovery without exposing payloads", async () => {
+    const oversized = "x".repeat(65);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(oversized, { status: 200 }));
+
+    const result = await createTestAdapter(fetchMock, { maxResponseBytes: 64 }).discoverModels({
+      config: { id: "config", ownerUserId: "owner", provider: "custom", providerKind: "openai_compatible", baseURL: "https://provider.example/v1", apiKey: "secret" }
+    });
+
+    expect(result).toMatchObject({
+      transport: "reachable",
+      authentication: "not_checked",
+      discovery: "malformed",
+      errorCode: "response_parse_failure"
+    });
+    expect(JSON.stringify(result)).not.toContain(oversized);
+  });
+
+  it("rejects provider inventories above the persistence limit", async () => {
+    const models = Array.from({ length: 501 }, (_, index) => ({ id: `model-${index}` }));
+    const result = await createTestAdapter(
+      vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ data: models }), { status: 200 }))
+    ).discoverModels({
+      config: { id: "config", ownerUserId: "owner", provider: "custom", providerKind: "openai_compatible", baseURL: "https://provider.example/v1", apiKey: "secret" }
+    });
+    expect(result).toMatchObject({ discovery: "malformed", errorCode: "response_parse_failure", models: [] });
+  });
+
+  it("does not treat structurally invalid model entries as an authoritative empty inventory", async () => {
+    const result = await createTestAdapter(
+      vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ data: [{}, 42] }), { status: 200 }))
+    ).discoverModels({
+      config: { id: "config", ownerUserId: "owner", provider: "custom", providerKind: "openai_compatible", baseURL: "https://provider.example/v1", apiKey: "secret" }
+    });
+
+    expect(result).toMatchObject({
+      transport: "reachable",
+      authentication: "not_checked",
+      discovery: "malformed",
+      errorCode: "response_parse_failure",
+      models: []
+    });
+  });
+
+  it("executes Anthropic models with native headers and response normalization", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: "text", text: " Anthropic answer " }],
+      usage: { input_tokens: 12, output_tokens: 7 }
+    }), { status: 200 }));
+
+    const result = await createTestAdapter(fetchMock).runConversation({
+      ...input,
+      config: { ...input.config, provider: "anthropic", providerKind: "anthropic", baseURL: "https://ignored.invalid/v1" }
+    });
+
+    expect(result).toEqual({ assistantText: "Anthropic answer", usage: { promptTokens: 12, completionTokens: 7 } });
+    expect(fetchMock).toHaveBeenCalledWith("https://api.anthropic.com/v1/messages", expect.objectContaining({
+      method: "POST",
+      headers: expect.objectContaining({ "x-api-key": "sk-server-only", "anthropic-version": "2023-06-01" })
+    }));
+  });
+
   it("calls an HTTPS OpenAI-compatible endpoint and returns assistant text with aggregate usage", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
@@ -88,7 +300,7 @@ describe("AI provider adapter", () => {
       )
     );
 
-    const result = await createOpenAICompatibleProviderAdapter(fetchMock).runConversation(input);
+    const result = await createTestAdapter(fetchMock).runConversation(input);
 
     expect(result).toEqual({
       assistantText: "Assistant answer",
@@ -108,7 +320,7 @@ describe("AI provider adapter", () => {
 
   it("blocks unsafe provider base URLs before sending credentials", async () => {
     const fetchMock = vi.fn<typeof fetch>();
-    const adapter = createOpenAICompatibleProviderAdapter(fetchMock);
+    const adapter = createTestAdapter(fetchMock);
     const unsafeInputs = [
       { ...input, config: { ...input.config, baseURL: "http://provider.example/v1" } },
       { ...input, config: { ...input.config, baseURL: "https://user:pass@provider.example/v1" } },
@@ -137,7 +349,7 @@ describe("AI provider adapter", () => {
       )
     );
 
-    await createOpenAICompatibleProviderAdapter(fetchMock).runConversation({
+    await createTestAdapter(fetchMock).runConversation({
       ...input,
       selectedContextSnapshot: {
         currentDocumentId: null,
@@ -163,7 +375,7 @@ describe("AI provider adapter", () => {
     );
 
     const events = [];
-    for await (const event of createOpenAICompatibleProviderAdapter(fetchMock).streamConversation(input)) {
+    for await (const event of createTestAdapter(fetchMock).streamConversation(input)) {
       events.push(event);
     }
 
@@ -182,7 +394,7 @@ describe("AI provider adapter", () => {
     const timeoutError = new DOMException("timed out", "TimeoutError");
     const fetchMock = vi.fn<typeof fetch>().mockRejectedValue(timeoutError);
 
-    await expect(createOpenAICompatibleProviderAdapter(fetchMock).runConversation(input)).rejects.toSatisfy((error: unknown) => {
+    await expect(createTestAdapter(fetchMock).runConversation(input)).rejects.toSatisfy((error: unknown) => {
       expect(error).toBeInstanceOf(AIProviderExecutionError);
       expect((error as AIProviderExecutionError).category).toBe("timeout");
       return true;
