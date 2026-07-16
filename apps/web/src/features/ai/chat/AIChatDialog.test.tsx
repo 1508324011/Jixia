@@ -52,6 +52,32 @@ const providerConfigWithDiscoveredModels: AIProviderConfigView = {
   ]
 };
 
+const providerConfigWithUnavailableModel: AIProviderConfigView = {
+  ...providerConfig,
+  modelProfiles: [
+    {
+      ...providerConfig.modelProfiles[0]!,
+      availability: "available"
+    },
+    {
+      ...providerConfig.modelProfiles[0]!,
+      id: "model-profile-unknown",
+      model: "gpt-unknown",
+      displayName: "Unknown availability",
+      isDefault: false,
+      availability: "unknown"
+    },
+    {
+      ...providerConfig.modelProfiles[0]!,
+      id: "model-profile-unavailable",
+      model: "gpt-unavailable",
+      displayName: "Unavailable model",
+      isDefault: false,
+      availability: "unavailable"
+    }
+  ]
+};
+
 const standaloneConversation: AIConversationDTO = {
   id: "conversation-standalone",
   ownerUserId: "user-1",
@@ -267,6 +293,24 @@ describe("AIChatDialog", () => {
     expect(sendBody.modelProfileId).toBe("model-profile-2");
     expect(String(sendInit?.body)).not.toMatch(/apiKey|encrypted|sk-|Authorization/i);
     expectStorageWasNotUsed();
+  });
+
+  it("offers available and unknown models but excludes server-marked unavailable profiles", async () => {
+    mockFetchSequence(
+      { configs: [providerConfigWithUnavailableModel] },
+      { conversations: [] }
+    );
+
+    render(<AIChatDialog />);
+
+    const selector = (await screen.findByLabelText("AI model profile")) as HTMLSelectElement;
+    await waitFor(() => expect(Array.from(selector.options).map((option) => option.value)).toEqual([
+      "",
+      "model-profile-1",
+      "model-profile-unknown"
+    ]));
+    expect(selector.value).toBe("model-profile-1");
+    expect(screen.queryByRole("option", { name: /Unavailable model/ })).toBeNull();
   });
 
   it("parses CRLF-delimited stream events without dropping deltas", async () => {

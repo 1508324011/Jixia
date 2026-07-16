@@ -1,7 +1,8 @@
 import type { KeyboardEvent } from "react";
 
+import { authorizedModelOptions } from "../modelOptions";
 import { Button } from "../../layout/workbench";
-import type { ChatModelOption, ChatProviderConfig } from "./chatTypes";
+import type { ChatProviderConfig } from "./chatTypes";
 
 type ChatComposerProps = {
   readonly activeRunId: string | null;
@@ -30,7 +31,7 @@ export function ChatComposer({
   selectedModelProfileId,
   text
 }: ChatComposerProps) {
-  const modelOptions = modelProfileOptions(configs);
+  const modelOptions = authorizedModelOptions(configs);
   const selectedModel = modelOptions.find((option) => option.profile.id === selectedModelProfileId) ?? null;
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -73,17 +74,23 @@ export function ChatComposer({
           <div className="jixia-chat-composer__chips">
             <label>
               <span>Model</span>
-              <select aria-label="AI model profile" onChange={(event) => onSelectModelProfile(event.currentTarget.value)} value={selectedModelProfileId}>
+              <select
+                aria-label="AI model profile"
+                disabled={isSending || modelOptions.length === 0}
+                onChange={(event) => onSelectModelProfile(event.currentTarget.value)}
+                value={selectedModelProfileId}
+              >
                 <option value="">Select model</option>
-                {configs.map((config) => (
-                  <optgroup key={config.id} label={providerGroupLabel(config)}>
-                    {config.modelProfiles.map((profile) => (
-                      <option disabled={!profile.enabled || !config.hasKey} key={profile.id} value={profile.id}>
-                        {modelOptionLabel(config, profile)}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
+                {configs.map((config) => {
+                  const profiles = modelOptions.filter((option) => option.provider.id === config.id).map((option) => option.profile);
+                  return profiles.length > 0 ? (
+                    <optgroup key={config.id} label={providerGroupLabel(config)}>
+                      {profiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>{modelOptionLabel(profile)}</option>
+                      ))}
+                    </optgroup>
+                  ) : null;
+                })}
               </select>
             </label>
             <details className="jixia-chat-composer__help">
@@ -121,20 +128,11 @@ function textareaHeight(text: string): string {
   return `${Math.max(48, lineCount * 24 + 24)}px`;
 }
 
-function modelProfileOptions(configs: readonly ChatProviderConfig[]): readonly ChatModelOption[] {
-  return configs.flatMap((provider) => provider.modelProfiles.map((profile) => ({ provider, profile })));
-}
-
 function providerGroupLabel(config: ChatProviderConfig): string {
-  return `${config.name} · ${config.provider}${config.hasKey ? "" : " · missing key"}`;
+  return `${config.name} · ${config.provider}`;
 }
 
-function modelOptionLabel(
-  config: ChatProviderConfig,
-  profile: ChatProviderConfig["modelProfiles"][number]
-): string {
-  const markers = [profile.isDefault ? "default" : null, profile.enabled ? null : "disabled", config.hasKey ? null : "missing key"]
-    .filter(Boolean)
-    .join(" · ");
+function modelOptionLabel(profile: ChatProviderConfig["modelProfiles"][number]): string {
+  const markers = [profile.isDefault ? "default" : null].filter(Boolean).join(" · ");
   return `${profile.displayName} · ${profile.model}${markers ? ` · ${markers}` : ""}`;
 }

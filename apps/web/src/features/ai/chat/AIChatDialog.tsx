@@ -11,10 +11,11 @@ import type {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch, apiStream } from "../../../lib/api";
+import { authorizedModelOptions, preferredAuthorizedModelId } from "../modelOptions";
 import { Button, Notice, SurfaceHeader, WorkbenchSurface } from "../../layout/workbench";
 import { ChatShell } from "./ChatShell";
 import { readChatStream } from "./chatStream";
-import type { ChatMessage, ChatModelOption, ChatProviderConfig, ChatRunStatus, ChatThread } from "./chatTypes";
+import type { ChatMessage, ChatProviderConfig, ChatRunStatus, ChatThread } from "./chatTypes";
 
 type AIChatDialogProps = {
   readonly onOpenSettings?: () => void;
@@ -529,20 +530,7 @@ function titleFromPrompt(content: string): string {
 }
 
 function modelSelection(currentModelProfileId: string, configs: readonly ChatProviderConfig[]): string {
-  const options = modelProfileOptions(configs).filter((option) => option.provider.hasKey && option.profile.enabled);
-
-  if (options.some((option) => option.profile.id === currentModelProfileId)) {
-    return currentModelProfileId;
-  }
-
-  return options.find((option) => option.provider.isDefault && option.profile.isDefault)?.profile.id
-    ?? options.find((option) => option.profile.isDefault)?.profile.id
-    ?? options[0]?.profile.id
-    ?? "";
-}
-
-function modelProfileOptions(configs: readonly ChatProviderConfig[]): readonly ChatModelOption[] {
-  return configs.flatMap((provider) => provider.modelProfiles.map((profile) => ({ provider, profile })));
+  return preferredAuthorizedModelId(currentModelProfileId, configs);
 }
 
 function activeThreadSelection(currentThreadId: string | null, threads: readonly ChatThread[]): string | null {
@@ -660,14 +648,14 @@ function sendDisabledReason(
     return "Server run in progress";
   }
 
-  const options = modelProfileOptions(providers).filter((option) => option.provider.hasKey && option.profile.enabled);
+  const options = authorizedModelOptions(providers);
 
   if (providers.length === 0) {
     return "Configure a provider first";
   }
 
   if (options.length === 0) {
-    return "Add an enabled model with a saved key";
+    return "Add an enabled model that the provider has not marked unavailable";
   }
 
   if (!modelProfileId) {
