@@ -3,6 +3,38 @@ import type { DocumentType } from "./documents";
 export const aiProviderKeyUpdateModes = ["keep", "replace", "remove"] as const;
 export type AIProviderKeyUpdateMode = (typeof aiProviderKeyUpdateModes)[number];
 
+export const aiProviderKinds = ["openai", "openrouter", "anthropic", "openai_compatible"] as const;
+export type AIProviderKind = (typeof aiProviderKinds)[number];
+
+export const aiProviderTransportStates = ["not_checked", "reachable", "unreachable"] as const;
+export type AIProviderTransportState = (typeof aiProviderTransportStates)[number];
+
+export const aiProviderAuthStates = ["not_checked", "verified", "rejected", "unverified"] as const;
+export type AIProviderAuthState = (typeof aiProviderAuthStates)[number];
+
+export const aiProviderDiscoveryStates = [
+  "not_attempted",
+  "available",
+  "unsupported",
+  "empty",
+  "rate_limited",
+  "unavailable",
+  "malformed"
+] as const;
+export type AIProviderDiscoveryState = (typeof aiProviderDiscoveryStates)[number];
+
+export const aiInventoryFreshnessStates = ["never", "fresh", "stale"] as const;
+export type AIInventoryFreshnessState = (typeof aiInventoryFreshnessStates)[number];
+
+export const aiModelProfileOrigins = ["manual", "discovered"] as const;
+export type AIModelProfileOrigin = (typeof aiModelProfileOrigins)[number];
+
+export const aiModelAvailabilityStates = ["unknown", "available", "unavailable"] as const;
+export type AIModelAvailabilityState = (typeof aiModelAvailabilityStates)[number];
+
+export const aiCapabilityFactStates = ["unknown", "observed", "unsupported"] as const;
+export type AICapabilityFactState = (typeof aiCapabilityFactStates)[number];
+
 export const aiConversationMessageRoles = ["user", "assistant"] as const;
 export type AIConversationMessageRole = (typeof aiConversationMessageRoles)[number];
 
@@ -42,12 +74,57 @@ export type AIProviderConfigView = {
   readonly ownerUserId: string;
   readonly name: string;
   readonly provider: string;
+  readonly providerKind?: AIProviderKind;
   readonly baseURL: string;
+  readonly endpointDisplay?: string;
   readonly hasKey: boolean;
   readonly isDefault: boolean;
+  readonly connection?: AIProviderConnectionStateView;
+  readonly sync?: AIProviderSyncStateView;
   readonly modelProfiles: readonly AIModelProfileView[];
   readonly createdAt: string;
   readonly updatedAt: string;
+};
+
+export type AIProviderConnectionStateView = {
+  readonly transport: AIProviderTransportState;
+  readonly authentication: AIProviderAuthState;
+  readonly lastAttemptAt: string | null;
+  readonly lastVerifiedAt: string | null;
+  readonly errorCode: AIProviderErrorCategory | null;
+  readonly message: string | null;
+};
+
+export type AIProviderSyncStateView = {
+  readonly discovery: AIProviderDiscoveryState;
+  readonly freshness: AIInventoryFreshnessState;
+  readonly lastAttemptAt: string | null;
+  readonly lastSuccessfulSyncAt: string | null;
+  readonly errorCode: AIProviderErrorCategory | null;
+  readonly message: string | null;
+};
+
+export type AINumericCapabilityFact = {
+  readonly state: AICapabilityFactState;
+  readonly value: number | null;
+};
+
+export type AIStringListCapabilityFact = {
+  readonly state: AICapabilityFactState;
+  readonly values: readonly string[];
+};
+
+export type AIModelCapabilityFacts = {
+  readonly contextWindowTokens: AINumericCapabilityFact;
+  readonly maxOutputTokens: AINumericCapabilityFact;
+  readonly inputModalities: AIStringListCapabilityFact;
+  readonly outputModalities: AIStringListCapabilityFact;
+  readonly supportedParameters: AIStringListCapabilityFact;
+};
+
+export type AIModelCapabilityProvenance = {
+  readonly source: AIProviderKind | null;
+  readonly observedAt: string | null;
 };
 
 export type AIModelProfileView = {
@@ -59,8 +136,30 @@ export type AIModelProfileView = {
   readonly maxTokens: number;
   readonly enabled: boolean;
   readonly isDefault: boolean;
+  readonly origin?: AIModelProfileOrigin;
+  readonly availability?: AIModelAvailabilityState;
+  readonly lastSeenAt?: string | null;
+  readonly capabilities?: AIModelCapabilityFacts;
+  readonly provenance?: AIModelCapabilityProvenance;
   readonly createdAt: string;
   readonly updatedAt: string;
+};
+
+export type VerifyAIProviderConnectionResult = {
+  readonly providerKind: AIProviderKind;
+  readonly endpointDisplay: string;
+  readonly transport: AIProviderTransportState;
+  readonly authentication: AIProviderAuthState;
+  readonly errorCode: AIProviderErrorCategory | null;
+  readonly message: string;
+  readonly latencyMs: number;
+  readonly checkedAt: string;
+};
+
+export type SyncAIProviderCapabilitiesResponse = DiscoverAIModelsResponse & {
+  readonly discovery: AIProviderDiscoveryState;
+  readonly freshness: AIInventoryFreshnessState;
+  readonly syncedAt: string;
 };
 
 export type DiscoverAIModelsResponse = {
@@ -70,6 +169,9 @@ export type DiscoverAIModelsResponse = {
   readonly updated: number;
   readonly skipped: number;
   readonly warnings?: readonly string[];
+  readonly discovery?: AIProviderDiscoveryState;
+  readonly freshness?: AIInventoryFreshnessState;
+  readonly syncedAt?: string;
 };
 
 export type KeepAIProviderKeyRequest = {
@@ -84,6 +186,7 @@ export type ReplaceAIProviderKeyRequest = {
 export type CreateAIProviderConfigRequest = {
   readonly name: string;
   readonly provider: string;
+  readonly providerKind?: AIProviderKind;
   readonly baseURL: string;
   readonly defaultModelProfile?: CreateAIModelProfileRequest;
   readonly isDefault?: boolean;
@@ -93,6 +196,7 @@ export type CreateAIProviderConfigRequest = {
 export type UpdateAIProviderConfigRequest = {
   readonly name?: string;
   readonly provider?: string;
+  readonly providerKind?: AIProviderKind;
   readonly baseURL?: string;
   readonly isDefault?: boolean;
   readonly apiKey?: string;
@@ -143,26 +247,22 @@ export type ProviderHealthCheck = {
   readonly model: string;
   readonly baseURL: string;
   readonly checkedAt: string;
+  readonly connection?: VerifyAIProviderConnectionResult;
 };
 
 export type TestAIProviderDraftRequest = {
   readonly name?: string;
   readonly provider: string;
+  readonly providerKind?: AIProviderKind;
   readonly baseURL: string;
-  readonly model: string;
-  readonly temperature: number;
-  readonly maxTokens: number;
+  readonly model?: string;
+  readonly temperature?: number;
+  readonly maxTokens?: number;
   readonly apiKey?: string;
 };
 
 export type TestAIProviderSavedRequest = {
   readonly modelProfileId?: string;
-  readonly provider?: string;
-  readonly baseURL?: string;
-  readonly model?: string;
-  readonly temperature?: number;
-  readonly maxTokens?: number;
-  readonly apiKey?: string;
 };
 
 export type TestAIProviderConfigResponse = {
