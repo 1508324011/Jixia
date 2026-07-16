@@ -1,0 +1,14 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/guides/cross-layer.md", "reason": "AI provider runtime, secret, authorization, and shared-contract boundaries"}
+{"path": "doc/MVP_rule.md", "reason": "Server-first AI execution and no-writeback requirements"}
+{"path": "doc/Jixia_Implementation_Program.md", "reason": "Accepted Task24b successor scope and milestone order"}
+{"path": "packages/shared/src/ai.ts", "reason": "Existing transport-safe provider, model, health, and discovery DTOs"}
+{"path": "packages/db/prisma/schema.prisma", "reason": "Canonical encrypted provider connection and model-profile persistence"}
+{"path": "apps/api/src/modules/ai/ai-provider-adapter.ts", "reason": "Server-owned provider URL safety, discovery, and execution adapter"}
+{"path": "apps/api/src/modules/ai/ai-config.service.ts", "reason": "Provider ownership, encrypted-key lifecycle, health tests, and model upsert orchestration"}
+{"path": "apps/api/src/modules/ai/ai.routes.ts", "reason": "Authenticated provider connection and discovery API surface"}
+{"path": "apps/web/src/features/ai/AISettingsPage.tsx", "reason": "Rejected manual-profile-first surface to replace with connection-first workflow"}
+{"path": "apps/web/src/features/ai/chat/AIChatDialog.tsx", "reason": "Compact server-authorized model choice integration"}
+{"path": "apps/web/src/features/documents/DocumentCopilotPanel.tsx", "reason": "Compact model choice while preserving advisory no-writeback behavior"}

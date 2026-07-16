@@ -15,22 +15,24 @@ For changes crossing API, database, worker, or frontend:
 - Boundary: Browser code must never call AI providers directly, including upstream `/models` endpoints, store prompts/responses/provider keys in browser storage, decide AI permissions, or synthesize fake discovery/run/stream/cancel state without a server-owned contract.
 
 ### 2. Signatures
-- Provider metadata view: `AIProviderConfigView` represents the provider account/credential/baseURL/default/key status and exposes nested safe `AIModelProfileView[]`; raw and encrypted keys remain server-private.
-- Model profile view: `AIModelProfileView` exposes provider-owned model selection metadata only, including raw provider model id, display name, temperature, max tokens, enabled state, and default marker.
-- Model discovery response: `DiscoverAIModelsResponse` returns only the refreshed safe `AIProviderConfigView`, discovered/created/updated/skipped counts, and safe warning strings; it never returns upstream model-list payloads, provider headers, raw keys, encrypted keys, cookies, signed URLs, or credential previews.
-- Health test result: `ProviderHealthCheck` returns `ok`, safe `category`, safe `message`, `latencyMs`, provider/model/baseURL, and timestamp.
+- Provider kind: `AIProviderKind` is `openai | openrouter | anthropic | openai_compatible`; native kinds use server-owned canonical origins and protocol adapters, while `openai_compatible` is the explicit custom-endpoint path.
+- Provider metadata view: `AIProviderConfigView` represents the provider account/default/key status and exposes safe endpoint display, separate `connection` transport/authentication state, separate `sync` discovery/freshness state, and nested safe `AIModelProfileView[]`; raw and encrypted keys remain server-private.
+- Model profile view: `AIModelProfileView` exposes provider-owned model selection metadata, `manual | discovered` origin, `unknown | available | unavailable` availability, user-controlled display/runtime/default fields, capability facts, and provider-kind/timestamp provenance. Capability facts use `unknown | observed | unsupported`, never inferred booleans.
+- Capability synchronization response: `SyncAIProviderCapabilitiesResponse` returns only the refreshed safe config view, discovered/created/updated/skipped counts, discovery/freshness states, sync timestamp, and safe warning strings. `DiscoverAIModelsResponse` remains the compatibility shape. Neither may return upstream payloads, provider headers, raw/encrypted keys, cookies, signed URLs, or credential previews.
+- Connection result: `VerifyAIProviderConnectionResult` reports provider kind, safe endpoint display, transport/authentication states, normalized error code/message, latency, and timestamp. `ProviderHealthCheck` may wrap it for draft/saved test compatibility.
 - Run lifecycle: `AIConversationRunDTO` uses `queued | running | succeeded | failed | cancelled` plus timestamps, provider config id, usage, and safe error fields.
 - Stream event union: `AIConversationRunStreamEvent` carries ordered `run`, `user_message`, `assistant_delta`, `assistant_message`, `usage`, `error`, and `done` events.
-- Routes: provider tests use `POST /ai/configs/test` for drafts and `POST /ai/configs/:configId/test` for saved configs; saved provider discovery uses `POST /ai/configs/:configId/discover-models`; model profiles use nested `/ai/configs/:configId/model-profiles` create/update/delete/default routes; streaming uses `POST /ai/conversations/:conversationId/messages/stream`; cancellation uses `POST /ai/runs/:runId/cancel`.
+- Routes: provider tests use `POST /ai/configs/test` for drafts and `POST /ai/configs/:configId/test` for persisted credentials; authoritative capability refresh uses `POST /ai/configs/:configId/capabilities/sync`, with `POST /ai/configs/:configId/discover-models` retained as compatibility. Model profiles use nested `/ai/configs/:configId/model-profiles` create/update/delete/default routes; streaming uses `POST /ai/conversations/:conversationId/messages/stream`; cancellation uses `POST /ai/runs/:runId/cancel`.
 
 ### 3. Contracts
 - The API owns provider execution, encrypted key reads, provider model-list discovery, authorization, context validation, run lifecycle, final message persistence, usage recording, and cancellation controllers.
-- Model discovery must run only for saved provider configs owned by the actor, decrypt the server-side key inside the API, validate the provider/base URL before fetch, call OpenAI-compatible `/models` paths server-side, normalize the returned ids into provider-owned model profiles, and expose only safe registry/profile views plus discovery status counts to the browser.
-- Discovery refresh must upsert by provider config plus upstream model id and preserve user-controlled model profile state where possible, especially enabled/disabled and explicit default choices; existing manual Task21e model profiles must remain selectable as advanced fallback registry entries.
+- Capability synchronization must run only for saved provider configs owned by the actor, decrypt the server-side key inside the API, and route through the provider-kind adapter. OpenAI, OpenRouter, and Anthropic use fixed canonical origins and provider-native non-billable verification/discovery protocols; custom OpenAI-compatible endpoints must be HTTPS, pass DNS/IP egress checks, pin the validated address, forbid redirects, and enforce timeout/body limits before credentials are sent.
+- Synchronization must upsert by provider config plus upstream model id while preserving user-controlled display name, enabled/disabled state, explicit default, manual profiles, and compatible runtime overrides. Missing discovered profiles become unavailable rather than being deleted or silently losing default state; runtime selection may use an available local fallback without rewriting the persisted explicit default.
+- Discovery and saved verification attempts must claim a row-locked unique attempt token and use the exact returned runtime snapshot. Completion applies only when the token and full runtime identity, including encrypted credential generation, still match; older or replaced attempts are superseded without overwriting newer telemetry or inventory.
 - Browser chat requests must select a provider-owned model profile by `modelProfileId`; the API resolves model profile -> provider account -> decrypted key/server adapter config before calling upstream providers.
 - SSE stream responses must contain only shared stream events serialized as `data: <json>\n\n`; provider request JSON, response JSON, headers, raw errors, raw keys, encrypted keys, and stack traces are forbidden.
 - Stop buttons may be rendered only when the frontend has a current server run id from a stream event and a real cancel endpoint path.
-- Provider health tests must use the same server adapter path as chat, accept unsaved draft keys without persistence, and test saved configs with the server-side encrypted key unless a write-only replacement key is supplied.
+- Provider health tests must use the same server adapter path as chat. Unsaved keys are accepted only by the draft test endpoint and are never persisted; saved tests use only the persisted server-side encrypted credential, and strict payload validation rejects transient saved-test keys.
 - Provider errors shown to browsers must map to safe categories such as invalid base URL, missing key, invalid key, model not found, rate limit, timeout, provider unavailable, response parse failure, cancellation, or unknown.
 - Composer text and streamed assistant text are local UI state only during a run; they must not be persisted to localStorage/sessionStorage or sent outside Jixia API routes.
 - Rich message rendering may use focused Markdown/GFM dependencies, but code copy, tables, links, source cards, and run-step UI must remain projection-only and must not add document mutation affordances.
@@ -42,7 +44,10 @@ For changes crossing API, database, worker, or frontend:
 - Cancel before provider completion -> abort the server controller, emit or return cancelled run state, and persist only safe cancelled message/run metadata.
 - Cancel after completion -> return the completed run state without changing succeeded persistence.
 - Discovery without a saved key -> return a safe missing-key error and do not call upstream providers.
-- Provider model-list returns an empty list -> return zero discovered/created/skipped counts plus a safe warning that manual advanced model entry may be needed.
+- Local discovery preflight failure -> connection transport/authentication remain `not_checked`, inventory becomes stale/unavailable, and no provider request is attempted.
+- Provider model-list returns an empty list -> return `empty` with zero discovered/created/updated/skipped counts plus a safe warning that manual advanced model entry may be needed.
+- Provider has no discovery protocol -> return `unsupported`; 429 -> `rate_limited`; malformed provider facts -> `malformed` with `response_parse_failure`; network/provider failure -> `unavailable`. Every terminal completion clears the matching attempt token and remains recoverable through retry or manual profile entry.
+- A stale verification or synchronization completes after a newer attempt or runtime replacement -> mark it superseded and leave newer connection, inventory, and error telemetry unchanged.
 - Refreshing discovery renames, disables, deletes, or changes default state for an existing profile without an explicit user action -> block PR.
 - Any browser response, shared DTO, test assertion, loggable usage payload, or rendered UI exposes provider keys, encrypted keys, authorization headers, raw provider payloads, upstream model-list response bodies, prompt logs outside the private conversation model, or stack traces -> block PR.
 
@@ -50,7 +55,7 @@ For changes crossing API, database, worker, or frontend:
 - Good: The API streams `assistant_delta` events and persists one final assistant message server-side before sending `done` with the updated conversation.
 - Good: Settings tests a draft provider with a typed key, receives safe health metadata, and the config repository remains unchanged.
 - Good: Editing a saved provider with a blank key field omits `apiKey` from PATCH and preserves the encrypted server-side key.
-- Good: A saved provider account discovers models through `POST /ai/configs/:configId/discover-models`; the API uses the encrypted server-side key, creates normalized model profiles, and returns only safe counts plus a refreshed config view.
+- Good: A saved provider account refreshes capabilities through `POST /ai/configs/:configId/capabilities/sync`; the API selects its provider-kind adapter, uses the encrypted server-side key, reconciles normalized profiles/capability facts, and returns only safe states, counts, provenance, timestamps, and a refreshed config view.
 - Good: One saved provider account owns multiple enabled discovered or manual fallback model profiles, the composer switches between their `modelProfileId`s, and provider execution records usage against the selected raw model id.
 - Base: The frontend accumulates deltas by `messageId` and replaces the streaming placeholder with the final `assistant_message`/`done` conversation.
 - Bad: The UI shows Stop because a fetch is pending but has no server run id or cancel endpoint.
@@ -59,15 +64,15 @@ For changes crossing API, database, worker, or frontend:
 - Bad: The browser duplicates provider credentials per model, receives raw/encrypted key material, or sends provider/baseURL/model/key data directly to upstream provider URLs or upstream `/models` endpoints.
 
 ### 6. Tests Required
-- Shared/API tests must cover new AI DTOs or route contracts that cross the API/frontend boundary.
-- Provider adapter tests must cover base URL normalization/blocking, status-to-category mapping, response parsing, streaming chunk accumulation, timeout, and cancellation behavior when changed.
+- Shared tests must pin provider-kind, connection, synchronization, inventory, origin, availability, and capability-fact literal unions and construct a transport-safe `SyncAIProviderCapabilitiesResponse` fixture with observed/unknown/unsupported facts and no credential/provider-payload fields.
+- Provider adapter tests must cover fixed native origins and non-billable OpenAI/OpenRouter/Anthropic protocols, custom-endpoint HTTPS/SSRF/DNS pinning/no-redirect/time/body controls, status-to-category mapping, response parsing, streaming chunk accumulation, timeout, and cancellation behavior when changed.
 - Conversation service tests must cover stream event ordering, final persistence, safe error projection, usage recording, cancel-before-completion, and cancel-after-completion.
-- Config service/route tests must cover draft and saved provider health checks, safe error taxonomy, blank-key preservation, and key redaction.
-- Config service/route tests must cover provider-owned model discovery success/error/empty-list flows, refresh preservation, safe response redaction, create/update/delete/default model profile fallback flows, migration/backfill compatibility, enabled/default rules, and multi-model key reuse.
-- Provider adapter tests must cover OpenAI-compatible model-list URL derivation, duplicate filtering, model id/display-name normalization, timeout/error mapping, and proof that credentials are attached only inside server-side fetches.
+- Config service/route tests must cover draft and persisted-key-only saved provider health checks, strict transient-key rejection, ownership, safe error taxonomy, blank-key preservation, and recursive key/error redaction.
+- Config service/route tests must cover synchronization success, unsupported, empty, rate-limited, unavailable, malformed, and preflight-not-checked flows; attempt supersession before/after I/O; full runtime identity replacement; refresh preservation of manual/display/runtime/enabled/default state; unavailable discovered profiles; migration/backfill compatibility; and multi-model key reuse.
+- Provider adapter tests must cover native/custom model-list derivation, duplicate filtering, model id/display-name/capability normalization, timeout/error mapping, and proof that credentials are attached only inside validated server-side fetches.
 - Conversation service tests must cover selecting two model profiles under one provider account and recording/executing the selected raw model id.
-- Web chat/settings tests must cover SSE parsing, progressive rendering, real stop endpoint use, rich Markdown/code/table layout hooks, provider cards, health result display, and absence of forbidden browser storage.
-- Final verification for AI cross-layer changes must include lint/typecheck plus focused API and web tests before broader workspace checks.
+- Web chat/settings tests must cover SSE parsing, progressive rendering, real stop endpoint use, rich Markdown/code/table layout hooks, provider-kind cards, connection/sync states, capability provenance, manual fallback, responsive settings/chat journeys, and absence of forbidden browser storage or direct provider traffic.
+- Final verification for AI cross-layer changes must include shared contract tests, focused API/provider/config tests, focused web tests, browser provider lifecycle/fallback checks, lint/typecheck, and broader workspace suites.
 
 ### 7. Wrong vs Correct
 #### Wrong
@@ -80,7 +85,7 @@ setIsRunning(true);
 
 #### Correct
 ```typescript
-await apiFetch(`/ai/configs/${configId}/discover-models`, { method: "POST" });
+await apiFetch(`/ai/configs/${configId}/capabilities/sync`, { method: "POST" });
 
 const response = await apiStream(`/ai/conversations/${conversationId}/messages/stream`, {
   method: "POST",

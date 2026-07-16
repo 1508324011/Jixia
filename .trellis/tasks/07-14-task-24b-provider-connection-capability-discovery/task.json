@@ -1,0 +1,55 @@
+{
+  "title": "Task24b Provider Connection and Capability Discovery",
+  "slug": "task-24b-provider-connection-capability-discovery",
+  "type": "fullstack",
+  "status": "finished",
+  "createdAt": "2026-07-14T05:09:31+00:00",
+  "updatedAt": "2026-07-16T20:25:00+08:00",
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    }
+  ],
+  "current_phase": 3,
+  "manualReviewRequired": true,
+  "completedAt": "2026-07-16T20:25:00+08:00",
+  "manualReview": {
+    "result": "passed",
+    "reviewedAt": "2026-07-16T20:25:00+08:00",
+    "reviewer": "Hephaestus with project Playwright Chromium runtime",
+    "environment": {
+      "webOrigin": "http://127.0.0.1:5673",
+      "apiOrigin": "http://127.0.0.1:4674",
+      "browserDevice": "Playwright Chromium at 390px, 1100px, and 1366px workbench widths",
+      "surfaces": "Provider settings, AI chat, and document Copilot"
+    },
+    "summary": "The connection-first provider workflow passed final browser and code review after enforcing server-owned native/custom probes, row-locked verification and synchronization attempts, safe capability reconciliation, explicit-default preservation, metadata-only auditing, and responsive bilingual model selection. Unsupported and malformed discovery remain recoverable through retry or Advanced fallback, secrets never leave Jixia, and the rejected Task21f manual-profile-first experience was not reproduced.",
+    "evidence": [
+      "apps/web/e2e/provider-connection.spec.ts: create, save, verify, synchronize, Jixia-only browser traffic, unsupported discovery, and Advanced fallback",
+      "Final isolated Chromium suite: 15/15 tests passed at JIXIA_E2E_WEB_PORT=5673 and JIXIA_E2E_API_PORT=4674",
+      "Focused shared/DB/API/web review: shared 2/2, DB 9/9, API config and adapter 52/52, web AI surfaces 22/22",
+      "Full workspace verification: 260 tests, lint, type-check, Prisma validate/generate, production build, and git diff check passed",
+      "Final five-part review: goal PASS, hands-on QA PASS, code quality PASS, security PASS, context/history PASS"
+    ],
+    "passedChecks": [
+      "OpenAI, OpenRouter, Anthropic, and custom OpenAI-compatible connections use server-owned, non-billable verification and discovery protocols.",
+      "Custom endpoints enforce HTTPS, public resolved IPv4/IPv6 destinations, pinned DNS, no redirects, bounded timeout, and bounded response bodies.",
+      "Encrypted credentials and provider payloads are absent from browser traffic, shared DTOs, logs, errors, fixtures, and metadata-only audit details.",
+      "Row-locked verification and discovery attempt tokens prevent stale endpoint or credential generations from overwriting current state.",
+      "Synchronization preserves manual profiles, display names, runtime overrides, enabled/default choices, and records accurate created/updated/skipped audit counts.",
+      "Empty, unsupported, rate-limited, unavailable, malformed, stale, and preflight outcomes remain distinguishable and recoverable.",
+      "AI settings, chat, and document Copilot retained compact bilingual model selection, context controls, server-owned execution, and no-writeback behavior at all required widths.",
+      "Task21f remained archived manual-review-failed and was not modified or reopened."
+    ],
+    "notes": "The production build retains the existing Vite warning for a JavaScript chunk larger than 500 kB; it is non-blocking and outside Task24b scope. The lockfile change is limited to Node 20-compatible undici 7.28.0 required by the bounded provider transport."
+  }
+}

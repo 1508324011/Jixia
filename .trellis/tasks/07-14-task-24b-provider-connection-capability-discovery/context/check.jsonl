@@ -1,0 +1,11 @@
+{"path": ".trellis/spec/guides/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/frontend/index.md", "reason": "Default fullstack Trellis guidance"}
+{"path": ".trellis/spec/backend/quality-guidelines.md", "reason": "Authorization, provider-secret, and regression test expectations"}
+{"path": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Focused component and browser quality requirements"}
+{"path": "apps/api/src/modules/ai/ai-provider-adapter.test.ts", "reason": "Provider protocol, URL safety, and normalized-error coverage"}
+{"path": "apps/api/src/modules/ai/ai-config.service.test.ts", "reason": "Ownership, key lifecycle, discovery reconciliation, and leakage coverage"}
+{"path": "apps/api/src/modules/ai/ai-conversation.service.test.ts", "reason": "Existing modelProfileId execution and no-writeback regression coverage"}
+{"path": "apps/web/src/features/ai/AISettingsPage.test.tsx", "reason": "Connection-first settings behavior and responsive state coverage"}
+{"path": "apps/web/e2e/test-api.mjs", "reason": "Browser fixture for deterministic Jixia-only provider workflow testing"}
+{"path": "playwright.config.ts", "reason": "Browser project, viewport, and server configuration"}
