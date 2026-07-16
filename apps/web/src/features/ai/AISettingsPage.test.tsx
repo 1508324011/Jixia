@@ -1,9 +1,8 @@
 import type {
-  AIModelProfileResponse,
   AIProviderConfigListResponse,
   AIProviderConfigResponse,
   AIProviderConfigView,
-  DiscoverAIModelsResponse,
+  SyncAIProviderCapabilitiesResponse,
   TestAIProviderConfigResponse
 } from "@jixia/shared";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -16,9 +15,27 @@ const savedConfig: AIProviderConfigView = {
   ownerUserId: "user-1",
   name: "Lab OpenAI",
   provider: "openai",
+  providerKind: "openai",
   baseURL: "https://api.openai.com/v1",
+  endpointDisplay: "https://api.openai.com/v1",
   hasKey: true,
   isDefault: true,
+  connection: {
+    transport: "not_checked",
+    authentication: "not_checked",
+    lastAttemptAt: null,
+    lastVerifiedAt: null,
+    errorCode: null,
+    message: null
+  },
+  sync: {
+    discovery: "not_attempted",
+    freshness: "never",
+    lastAttemptAt: null,
+    lastSuccessfulSyncAt: null,
+    errorCode: null,
+    message: null
+  },
   modelProfiles: [
     {
       id: "model-profile-1",
@@ -29,6 +46,8 @@ const savedConfig: AIProviderConfigView = {
       maxTokens: 4096,
       enabled: true,
       isDefault: true,
+      origin: "discovered",
+      availability: "available",
       createdAt: "2026-06-16T10:00:00.000Z",
       updatedAt: "2026-06-16T10:00:00.000Z"
     }
@@ -43,406 +62,303 @@ describe("AISettingsPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders config metadata and key status without exposing key material", async () => {
-    const fetchMock = mockFetchSequence({
-      configs: [
-        {
-          ...savedConfig,
-          encryptedApiKey: "encrypted-secret-value",
-          apiKey: "sk-live-full-old-secret"
-        }
-      ]
-    });
+  it("uses Jixia-managed endpoints for known providers and exposes a base URL only for custom providers", async () => {
+    mockFetchSequence({ configs: [] });
 
     render(<AISettingsPage />);
 
-    expect(await screen.findByText("Lab OpenAI")).toBeTruthy();
-    expect(screen.getByText("Key saved")).toBeTruthy();
-    expect(screen.queryByText("sk-...wxyz")).toBeNull();
-    expect(screen.queryByText("sk-live-full-old-secret")).toBeNull();
-    expect(screen.queryByText("encrypted-secret-value")).toBeNull();
-    expect(fetchMock).toHaveBeenCalledWith("/api/ai/configs", expect.objectContaining({ credentials: "include" }));
+    await screen.findByText("No provider connections yet");
+    expect(screen.getByText("https://api.openai.com/v1")).toBeTruthy();
+    expect(screen.queryByLabelText(/^Custom HTTPS base URL/)).toBeNull();
+
+    const customProvider = screen.getByRole("button", { name: /Custom OpenAI-compatible/ });
+    fireEvent.click(customProvider);
+
+    await waitFor(() => expect(customProvider.getAttribute("aria-pressed")).toBe("true"));
+    const customBaseURL = await screen.findByLabelText(/^Custom HTTPS base URL/);
+    expect(customBaseURL).toHaveProperty("value", "");
+
+    fireEvent.change(customBaseURL, { target: { value: "https://gateway.example.test/v1" } });
+    fireEvent.click(screen.getByRole("button", { name: /^OpenAI/ }));
+    expect(screen.queryByLabelText(/^Custom HTTPS base URL/)).toBeNull();
+    fireEvent.click(customProvider);
+    expect(await screen.findByLabelText(/^Custom HTTPS base URL/)).toHaveProperty("value", "https://gateway.example.test/v1");
   });
 
-  it("applies an OpenRouter preset before creating a config", async () => {
+  it("requires a replacement key before changing the identity of a keyed connection", async () => {
+    mockFetchSequence({ configs: [savedConfig] });
+
+    render(<AISettingsPage />);
+
+    await openSavedConnection();
+    const customProvider = screen.getByRole("button", { name: /Custom OpenAI-compatible/ });
+    expect(customProvider).toHaveProperty("disabled", true);
+
+    fireEvent.change(screen.getByLabelText(/^Replacement API key/), { target: { value: "sk-replacement" } });
+    expect(customProvider).toHaveProperty("disabled", false);
+    fireEvent.click(customProvider);
+    expect(await screen.findByLabelText(/^Custom HTTPS base URL/)).toHaveProperty("value", "");
+  });
+
+  it("creates a custom connection through Jixia and clears the write-only key after saving", async () => {
     const createdConfig: AIProviderConfigView = {
       ...savedConfig,
-      id: "config-openrouter",
-      name: "OpenRouter GPT-4o mini",
-      provider: "openrouter",
-      baseURL: "https://openrouter.ai/api/v1",
-      modelProfiles: [
-        {
-          ...savedConfig.modelProfiles[0]!,
-          id: "model-profile-openrouter",
-          providerConfigId: "config-openrouter",
-          model: "openai/gpt-4o-mini",
-          displayName: "OpenAI GPT-4o mini"
-        }
-      ],
-      hasKey: false,
-      isDefault: false
+      id: "config-custom",
+      name: "Research gateway",
+      provider: "openai-compatible",
+      providerKind: "openai_compatible",
+      baseURL: "https://models.example.test/v1",
+      endpointDisplay: "https://models.example.test/v1",
+      isDefault: false,
+      hasKey: true,
+      modelProfiles: []
+    };
+    const fetchMock = mockFetchSequence({ configs: [] }, { config: createdConfig });
+
+    render(<AISettingsPage />);
+
+    await screen.findByText("No provider connections yet");
+    const customProvider = screen.getByRole("button", { name: /Custom OpenAI-compatible/ });
+    fireEvent.click(customProvider);
+    await waitFor(() => expect(customProvider.getAttribute("aria-pressed")).toBe("true"));
+    await screen.findByLabelText(/^Custom HTTPS base URL/);
+    fireEvent.change(screen.getByLabelText("Connection name"), { target: { value: "Research gateway" } });
+    fireEvent.change(screen.getByLabelText(/^Custom HTTPS base URL/), { target: { value: "https://models.example.test/v1" } });
+    fireEvent.change(screen.getByLabelText(/^API key/), { target: { value: "sk-task24b-write-only" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save connection" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [url, init] = fetchMock.mock.calls[1] ?? [];
+    expect(url).toBe("/api/ai/configs");
+    expect(init).toEqual(expect.objectContaining({ method: "POST", credentials: "include" }));
+    expect(JSON.parse(String(init?.body))).toEqual({
+      name: "Research gateway",
+      provider: "openai-compatible",
+      providerKind: "openai_compatible",
+      baseURL: "https://models.example.test/v1",
+      isDefault: false,
+      apiKey: "sk-task24b-write-only"
+    });
+    expect(await screen.findByLabelText(/^Replacement API key/)).toHaveProperty("value", "");
+    expect(screen.queryByDisplayValue("sk-task24b-write-only")).toBeNull();
+    expect(document.body.textContent).not.toContain("sk-task24b-write-only");
+    expectProviderRequestsStayInsideJixia(fetchMock);
+  });
+
+  it("verifies a saved connection through the non-billable saved-config endpoint", async () => {
+    const verifiedConfig: AIProviderConfigView = {
+      ...savedConfig,
+      connection: {
+        transport: "reachable",
+        authentication: "verified",
+        lastAttemptAt: "2026-06-16T10:03:00.000Z",
+        lastVerifiedAt: "2026-06-16T10:03:00.000Z",
+        errorCode: null,
+        message: "Connection verified through the server adapter."
+      }
     };
     const fetchMock = mockFetchSequence(
-      { configs: [] },
-      { config: createdConfig }
+      { configs: [savedConfig] },
+      verifiedTestResponse(),
+      { configs: [verifiedConfig] }
     );
 
     render(<AISettingsPage />);
 
-    await screen.findByText("No providers configured yet");
-    fireEvent.click(screen.getByRole("button", { name: /OpenRouter/ }));
+    await openSavedConnection();
+    fireEvent.click(screen.getByRole("button", { name: "Verify" }));
 
-    expect(screen.getByLabelText("Provider")).toHaveProperty("value", "openrouter");
-    expect(screen.getByLabelText("Base URL")).toHaveProperty("value", "https://openrouter.ai/api/v1");
-    expect(screen.getByLabelText("Model")).toHaveProperty("value", "openai/gpt-4o-mini");
-    expect(screen.getByLabelText("Model profile name")).toHaveProperty("value", "OpenAI GPT-4o mini");
-
-    fireEvent.click(screen.getByRole("button", { name: "Create provider account" }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-
-    const [url, init] = fetchMock.mock.calls[1] ?? [];
-    expect(url).toBe("/api/ai/configs");
-    expect(init).toEqual(expect.objectContaining({ method: "POST", credentials: "include" }));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    expect(body).toEqual(expect.objectContaining({
-      baseURL: "https://openrouter.ai/api/v1",
-      name: "OpenRouter GPT-4o mini",
-      provider: "openrouter"
-    }));
-    expect(body).not.toHaveProperty("defaultModelProfile");
-    expect(body).not.toHaveProperty("apiKey");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/ai/configs/config-1/test",
+      expect.objectContaining({ method: "POST", credentials: "include" })
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({});
+    expect((await screen.findAllByText("Connection verified through the server adapter.")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Verification checks transport and authentication without making an inference request.")).toBeTruthy();
+    expectProviderRequestsStayInsideJixia(fetchMock);
   });
 
-  it("discovers models for a saved provider without exposing key material or upstream calls", async () => {
-    const discoveredConfig: AIProviderConfigView = {
+  it("keeps a refresh failure visible after verification", async () => {
+    const fetchMock = mockFetchSequence(
+      { configs: [savedConfig] },
+      verifiedTestResponse(),
+      new Error("Connection list refresh failed")
+    );
+
+    render(<AISettingsPage />);
+
+    await openSavedConnection();
+    fireEvent.click(screen.getByRole("button", { name: "Verify" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Connection list refresh failed");
+    expect(screen.queryByText("Connection verified through the server adapter.")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("synchronizes capabilities through the new endpoint and makes unsupported discovery recoverable", async () => {
+    const unsupportedConfig: AIProviderConfigView = {
+      ...savedConfig,
+      sync: {
+        discovery: "unsupported",
+        freshness: "never",
+        lastAttemptAt: "2026-06-16T10:04:00.000Z",
+        lastSuccessfulSyncAt: null,
+        errorCode: null,
+        message: "This provider does not expose a model inventory."
+      }
+    };
+    const syncResponse: SyncAIProviderCapabilitiesResponse = {
+      config: unsupportedConfig,
+      discovered: 0,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      discovery: "unsupported",
+      freshness: "never",
+      syncedAt: "2026-06-16T10:04:00.000Z"
+    };
+    const fetchMock = mockFetchSequence({ configs: [savedConfig] }, syncResponse);
+
+    render(<AISettingsPage />);
+
+    await openSavedConnection();
+    fireEvent.click(screen.getByRole("button", { name: "Sync capabilities" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/ai/configs/config-1/capabilities/sync",
+      expect.objectContaining({ method: "POST", credentials: "include" })
+    );
+    expect((await screen.findAllByText(/This provider does not support model discovery/)).length).toBeGreaterThan(0);
+    expect(screen.getByText("Advanced manual fallback")).toBeTruthy();
+    expectProviderRequestsStayInsideJixia(fetchMock);
+  });
+
+  it("only offers enabled available or unknown profiles as default-model candidates", async () => {
+    const modelInventoryConfig: AIProviderConfigView = {
       ...savedConfig,
       modelProfiles: [
         savedConfig.modelProfiles[0]!,
         {
           ...savedConfig.modelProfiles[0]!,
-          id: "model-profile-2",
-          model: "gpt-4.1-mini",
-          displayName: "GPT-4.1 mini",
-          isDefault: false
-        }
-      ]
-    };
-    const fetchMock = mockFetchSequence(
-      { configs: [savedConfig] },
-      {
-        config: discoveredConfig,
-        discovered: 2,
-        created: 1,
-        updated: 0,
-        skipped: 1
-      }
-    );
-
-    render(<AISettingsPage />);
-
-    await screen.findByText("Lab OpenAI");
-    fireEvent.click(screen.getByRole("button", { name: "Discover models" }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("Models discovered")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Edit Lab OpenAI" }));
-    expect(screen.getByText("GPT-4.1 mini")).toBeTruthy();
-
-    const [url, init] = fetchMock.mock.calls[1] ?? [];
-    expect(url).toBe("/api/ai/configs/config-1/discover-models");
-    expect(init).toEqual(expect.objectContaining({ method: "POST", credentials: "include" }));
-    expect(String(init?.body ?? "")).not.toMatch(/apiKey|encrypted|sk-|Authorization|headers/i);
-    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringMatching(/\/models$/), expect.anything());
-  });
-
-  it("omits apiKey when editing without a replacement key", async () => {
-    const updatedConfig: AIProviderConfigView = {
-      ...savedConfig,
-      name: "Lab OpenAI updated",
-      updatedAt: "2026-06-16T10:05:00.000Z"
-    };
-    const fetchMock = mockFetchSequence(
-      { configs: [savedConfig] },
-      { config: updatedConfig }
-    );
-
-    render(<AISettingsPage />);
-
-    await screen.findByText("Lab OpenAI");
-    fireEvent.click(screen.getByRole("button", { name: "Edit Lab OpenAI" }));
-    expect(screen.getByLabelText("Replacement API key")).toHaveProperty("value", "");
-    fireEvent.change(screen.getByLabelText("Provider account name"), { target: { value: "Lab OpenAI updated" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save provider account" }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-
-    const [url, init] = fetchMock.mock.calls[1] ?? [];
-    expect(url).toBe("/api/ai/configs/config-1");
-    expect(init).toEqual(expect.objectContaining({ method: "PATCH", credentials: "include" }));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    expect(body.name).toBe("Lab OpenAI updated");
-    expect(body).not.toHaveProperty("model");
-    expect(body).not.toHaveProperty("defaultModelProfile");
-    expect(body).not.toHaveProperty("apiKey");
-  });
-
-  it("submits apiKey only when the user types a replacement key", async () => {
-    const updatedConfig: AIProviderConfigView = {
-      ...savedConfig,
-      updatedAt: "2026-06-16T10:08:00.000Z"
-    };
-    const fetchMock = mockFetchSequence(
-      { configs: [savedConfig] },
-      { config: updatedConfig }
-    );
-
-    render(<AISettingsPage />);
-
-    await screen.findByText("Lab OpenAI");
-    fireEvent.click(screen.getByRole("button", { name: "Edit Lab OpenAI" }));
-    fireEvent.change(screen.getByLabelText("Replacement API key"), {
-      target: { value: "sk-new-replacement-key" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save provider account" }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-
-    const [, init] = fetchMock.mock.calls[1] ?? [];
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    expect(body.apiKey).toBe("sk-new-replacement-key");
-
-    await waitFor(() => expect(screen.getByLabelText("Replacement API key")).toHaveProperty("value", ""));
-  });
-
-  it("adds another model profile under an existing provider without sending apiKey", async () => {
-    const withSecondProfile: AIProviderConfigView = {
-      ...savedConfig,
-      modelProfiles: [
-        ...savedConfig.modelProfiles,
-        {
-          ...savedConfig.modelProfiles[0]!,
-          id: "model-profile-2",
-          model: "gpt-4.1-mini",
-          displayName: "GPT-4.1 mini",
-          isDefault: false
-        }
-      ]
-    };
-    const fetchMock = mockFetchSequence(
-      { configs: [savedConfig] },
-      { config: withSecondProfile, modelProfile: withSecondProfile.modelProfiles[1]! }
-    );
-
-    render(<AISettingsPage />);
-
-    await screen.findByText("Lab OpenAI");
-    fireEvent.click(screen.getByRole("button", { name: "Edit Lab OpenAI" }));
-    fireEvent.change(screen.getByLabelText("Model profile name"), { target: { value: "GPT-4.1 mini" } });
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "gpt-4.1-mini" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add model profile" }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-
-    const [url, init] = fetchMock.mock.calls[1] ?? [];
-    expect(url).toBe("/api/ai/configs/config-1/model-profiles");
-    expect(init).toEqual(expect.objectContaining({ method: "POST", credentials: "include" }));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    expect(body).toEqual(expect.objectContaining({
-      displayName: "GPT-4.1 mini",
-      model: "gpt-4.1-mini",
-      temperature: 0.2,
-      maxTokens: 4096
-    }));
-    expect(body).not.toHaveProperty("apiKey");
-    expect(await screen.findByText("GPT-4.1 mini")).toBeTruthy();
-  });
-
-  it("edits and disables saved model profiles without touching provider keys", async () => {
-    const renamedConfig: AIProviderConfigView = {
-      ...savedConfig,
-      modelProfiles: [
-        {
-          ...savedConfig.modelProfiles[0]!,
-          model: "gpt-4.1-mini",
-          displayName: "Renamed GPT",
-          maxTokens: 8192,
-          updatedAt: "2026-06-16T10:09:00.000Z"
-        }
-      ]
-    };
-    const disabledConfig: AIProviderConfigView = {
-      ...renamedConfig,
-      modelProfiles: [
-        {
-          ...renamedConfig.modelProfiles[0]!,
-          enabled: false,
+          id: "model-profile-unknown",
+          model: "gpt-unknown",
+          displayName: "Unknown availability",
           isDefault: false,
-          updatedAt: "2026-06-16T10:10:00.000Z"
+          availability: "unknown"
+        },
+        {
+          ...savedConfig.modelProfiles[0]!,
+          id: "model-profile-unavailable",
+          model: "gpt-unavailable",
+          displayName: "Unavailable model",
+          isDefault: false,
+          availability: "unavailable"
         }
       ]
     };
-    const fetchMock = mockFetchSequence(
-      { configs: [savedConfig] },
-      { config: renamedConfig, modelProfile: renamedConfig.modelProfiles[0]! },
-      { config: disabledConfig, modelProfile: disabledConfig.modelProfiles[0]! }
-    );
+    mockFetchSequence({ configs: [modelInventoryConfig] });
 
     render(<AISettingsPage />);
 
-    await screen.findByText("Lab OpenAI");
-    fireEvent.click(screen.getByRole("button", { name: "Edit Lab OpenAI" }));
-    fireEvent.click(screen.getByRole("button", { name: "Edit model" }));
-    fireEvent.change(screen.getByLabelText("Model profile name"), { target: { value: "Renamed GPT" } });
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "gpt-4.1-mini" } });
-    fireEvent.change(screen.getByLabelText("Max tokens"), { target: { value: "8192" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save model profile" }));
+    await openSavedConnection();
+    const candidateIds = Array.from((screen.getByLabelText("Default model") as HTMLSelectElement).options).map((option) => option.value);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    const [editUrl, editInit] = fetchMock.mock.calls[1] ?? [];
-    expect(editUrl).toBe("/api/ai/configs/config-1/model-profiles/model-profile-1");
-    expect(editInit).toEqual(expect.objectContaining({ method: "PATCH", credentials: "include" }));
-    expect(JSON.parse(String(editInit?.body))).toEqual({
-      displayName: "Renamed GPT",
-      model: "gpt-4.1-mini",
-      temperature: 0.2,
-      maxTokens: 8192
-    });
-    expect(String(editInit?.body)).not.toMatch(/apiKey|encrypted|sk-/i);
-
-    expect(await screen.findByText("Renamed GPT")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Disable model" }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    const [disableUrl, disableInit] = fetchMock.mock.calls[2] ?? [];
-    expect(disableUrl).toBe("/api/ai/configs/config-1/model-profiles/model-profile-1");
-    expect(disableInit).toEqual(expect.objectContaining({ method: "PATCH", credentials: "include" }));
-    expect(JSON.parse(String(disableInit?.body))).toEqual({ enabled: false });
-    expect(String(disableInit?.body)).not.toMatch(/apiKey|encrypted|sk-/i);
-    expect(await screen.findByText("Disabled")).toBeTruthy();
+    expect(candidateIds).toEqual(["model-profile-1", "model-profile-unknown"]);
+    expect(screen.getByText("Unavailable model")).toBeTruthy();
   });
 
-  it("tests unsaved draft providers without persisting the key", async () => {
-    const fetchMock = mockFetchSequence(
-      { configs: [] },
-      {
-        healthCheck: {
-          ok: true,
-          category: null,
-          message: "Connection verified through the server adapter.",
-          latencyMs: 42,
-          provider: "openai",
-          model: "gpt-4o-mini",
-          baseURL: "https://api.openai.com/v1",
-          checkedAt: "2026-06-16T10:03:00.000Z"
+  it("keeps manual-profile controls in Advanced while leaving discovered profiles read-only", async () => {
+    const mixedInventoryConfig: AIProviderConfigView = {
+      ...savedConfig,
+      modelProfiles: [
+        savedConfig.modelProfiles[0]!,
+        {
+          ...savedConfig.modelProfiles[0]!,
+          id: "manual-profile-1",
+          model: "manual-authorized-id",
+          displayName: "Manual fallback",
+          isDefault: false,
+          origin: "manual",
+          availability: "unknown"
         }
-      }
-    );
+      ]
+    };
+    mockFetchSequence({ configs: [mixedInventoryConfig] });
 
     render(<AISettingsPage />);
 
-    await screen.findByText("No providers configured yet");
-    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "sk-draft-test-key" } });
-    fireEvent.click(screen.getByRole("button", { name: "Test draft provider and model" }));
+    await openSavedConnection();
+    const advanced = screen.getByText("Advanced manual fallback").closest("details");
+    expect(advanced).not.toBeNull();
+    fireEvent.click(screen.getByText("Advanced manual fallback"));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("Connection verified")).toBeTruthy();
-    expect(screen.getByText(/openai · gpt-4o-mini · https:\/\/api\.openai\.com\/v1 · 42ms · ok/)).toBeTruthy();
-
-    const [url, init] = fetchMock.mock.calls[1] ?? [];
-    expect(url).toBe("/api/ai/configs/test");
-    expect(init).toEqual(expect.objectContaining({ method: "POST", credentials: "include" }));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    expect(body.apiKey).toBe("sk-draft-test-key");
-    expect(body).toEqual(expect.objectContaining({
-      provider: "openai",
-      baseURL: "https://api.openai.com/v1",
-      model: "gpt-4o-mini",
-      temperature: 0.2,
-      maxTokens: 4096
-    }));
-    expect(fetchMock).not.toHaveBeenCalledWith("/api/ai/configs", expect.objectContaining({ method: "POST" }));
-    expect(screen.queryByText("sk-draft-test-key")).toBeNull();
+    expect(advanced).toHaveProperty("open", true);
+    expect(screen.getByRole("button", { name: "Edit Manual fallback" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit GPT-4o mini" })).toBeNull();
   });
 
-  it("tests saved providers through the saved config endpoint", async () => {
-    const handleOpenChat = vi.fn();
-    const fetchMock = mockFetchSequence(
-      { configs: [savedConfig] },
-      {
-        healthCheck: {
-          ok: false,
-          category: "model_not_found",
-          message: "The provider could not find or run the selected model. Check the model id.",
-          latencyMs: 19,
-          provider: "openai",
-          model: "gpt-4o-mini",
-          baseURL: "https://api.openai.com/v1",
-          checkedAt: "2026-06-16T10:04:00.000Z"
-        }
-      }
-    );
+  it("renders the provider connection lifecycle from the Simplified Chinese catalog", async () => {
+    mockFetchSequence({ configs: [savedConfig] });
 
-    render(<AISettingsPage onOpenChat={handleOpenChat} />);
+    render(<AISettingsPage locale="zh-CN" />);
 
-    await screen.findByText("Lab OpenAI");
-    fireEvent.click(screen.getByRole("button", { name: "Test Lab OpenAI" }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("Connection failed")).toBeTruthy();
-    expect(screen.getAllByText("The provider could not find or run the selected model. Check the model id.").length).toBeGreaterThan(0);
-
-    const [url, init] = fetchMock.mock.calls[1] ?? [];
-    expect(url).toBe("/api/ai/configs/config-1/test");
-    expect(init).toEqual(expect.objectContaining({ method: "POST", credentials: "include" }));
-    expect(JSON.parse(String(init?.body))).toEqual({});
-  });
-
-  it("shows a chat handoff after a saved provider passes connection test", async () => {
-    const handleOpenChat = vi.fn();
-    const fetchMock = mockFetchSequence(
-      { configs: [savedConfig] },
-      {
-        healthCheck: {
-          ok: true,
-          category: null,
-          message: "Connection verified through the server adapter.",
-          latencyMs: 31,
-          provider: "openai",
-          model: "gpt-4o-mini",
-          baseURL: "https://api.openai.com/v1",
-          checkedAt: "2026-06-16T10:06:00.000Z"
-        }
-      }
-    );
-
-    render(<AISettingsPage onOpenChat={handleOpenChat} />);
-
-    await screen.findByText("Lab OpenAI");
-    fireEvent.click(screen.getByRole("button", { name: "Test Lab OpenAI" }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("Lab OpenAI connection verified. Chat is ready to use this provider.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
-    expect(handleOpenChat).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("提供商连接")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /^Lab OpenAI/ }));
+    expect(screen.getByText("1. 选择提供商")).toBeTruthy();
+    expect(screen.getByText("高级手动备用设置")).toBeTruthy();
   });
 });
+
+function verifiedTestResponse(): TestAIProviderConfigResponse {
+  return {
+    healthCheck: {
+      ok: true,
+      category: null,
+      message: "Connection verified through the server adapter.",
+      latencyMs: 21,
+      provider: "openai",
+      model: "",
+      baseURL: "https://api.openai.com/v1",
+      checkedAt: "2026-06-16T10:03:00.000Z",
+      connection: {
+        providerKind: "openai",
+        endpointDisplay: "https://api.openai.com/v1",
+        transport: "reachable",
+        authentication: "verified",
+        errorCode: null,
+        message: "Connection verified through the server adapter.",
+        latencyMs: 21,
+        checkedAt: "2026-06-16T10:03:00.000Z"
+      }
+    }
+  };
+}
+
+async function openSavedConnection(): Promise<void> {
+  fireEvent.click(await screen.findByRole("button", { name: /^Lab OpenAI/ }));
+  await screen.findByText("3. Verify connection");
+}
 
 type MockResponseInput =
   | AIProviderConfigListResponse
   | AIProviderConfigResponse
-  | AIModelProfileResponse
-  | DiscoverAIModelsResponse
+  | SyncAIProviderCapabilitiesResponse
   | TestAIProviderConfigResponse
-  | {
-      readonly configs: readonly (AIProviderConfigView & Record<string, unknown>)[];
-    };
+  | Error;
 
 function mockFetchSequence(...responses: readonly MockResponseInput[]) {
   const fetchMock = vi.fn<typeof fetch>();
 
   for (const response of responses) {
+    if (response instanceof Error) {
+      fetchMock.mockRejectedValueOnce(response);
+      continue;
+    }
+
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify(response), {
         status: 200,
@@ -453,4 +369,11 @@ function mockFetchSequence(...responses: readonly MockResponseInput[]) {
 
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
+}
+
+function expectProviderRequestsStayInsideJixia(fetchMock: ReturnType<typeof mockFetchSequence>): void {
+  for (const [url, init] of fetchMock.mock.calls) {
+    expect(String(url)).toMatch(/^\/api\//);
+    expect(init?.headers).not.toEqual(expect.objectContaining({ Authorization: expect.anything() }));
+  }
 }

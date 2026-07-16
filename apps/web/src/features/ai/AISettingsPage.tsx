@@ -1,518 +1,430 @@
 import type {
+  AICapabilityFactState,
   AIModelProfileResponse,
   AIModelProfileView,
-  CreateAIModelProfileRequest,
-  DeleteAIModelProfileResponse,
-  DiscoverAIModelsResponse,
   AIProviderConfigListResponse,
   AIProviderConfigResponse,
   AIProviderConfigView,
+  AIProviderKind,
+  CreateAIModelProfileRequest,
   CreateAIProviderConfigRequest,
-  ProviderHealthCheck,
-  TestAIProviderSavedRequest,
+  DeleteAIModelProfileResponse,
+  SyncAIProviderCapabilitiesResponse,
   TestAIProviderConfigResponse,
   UpdateAIModelProfileRequest,
   UpdateAIProviderConfigRequest
 } from "@jixia/shared";
-import { useEffect, useMemo, useState } from "react";
+import {
+  Bot,
+  Cable,
+  CheckCircle2,
+  Cloud,
+  KeyRound,
+  Pencil,
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Settings,
+  Trash2
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 import { apiFetch } from "../../lib/api";
-import { Button, EmptyState, Field, MetaGrid, Notice, Pane, Pill, SplitPane, SurfaceHeader, WorkbenchSurface } from "../layout/workbench";
+import { localeCatalog, type Locale } from "../i18n/locale";
+import {
+  Button,
+  EmptyState,
+  Field,
+  Notice,
+  Pane,
+  Pill,
+  SplitPane,
+  SurfaceHeader,
+  WorkbenchSurface
+} from "../layout/workbench";
+import { availabilityState, authorizedModelsForProvider } from "./modelOptions";
 
 type AISettingsPageProps = {
   readonly embedded?: boolean;
+  readonly locale?: Locale;
   readonly onBackToWorkspace?: () => void;
   readonly onOpenChat?: () => void;
   readonly onOpenUsage?: () => void;
 };
 
-type FormState = {
-  readonly presetId: ProviderPresetId;
+type ProviderKind = AIProviderKind;
+type AISettingsCopy = ReturnType<typeof localeCatalog>["aiSettings"];
+
+type ConnectionDraft = {
+  readonly kind: ProviderKind;
   readonly name: string;
-  readonly provider: string;
   readonly baseURL: string;
-  readonly modelDisplayName: string;
-  readonly model: string;
-  readonly temperature: string;
-  readonly maxTokens: string;
+  readonly customBaseURL: string;
   readonly apiKey: string;
   readonly isDefault: boolean;
 };
 
-type ProviderPresetId = "openai" | "openrouter" | "self-hosted" | "custom";
-
-type ProviderPreset = {
-  readonly id: ProviderPresetId;
-  readonly label: string;
-  readonly name: string;
-  readonly provider: string;
-  readonly baseURL: string;
-  readonly modelDisplayName: string;
+type ManualModelDraft = {
+  readonly displayName: string;
+  readonly maxTokens: string;
   readonly model: string;
-  readonly temperature: number;
-  readonly maxTokens: number;
-  readonly description: string;
-  readonly keyInstruction: string;
+  readonly temperature: string;
 };
 
-type HealthCheckState = {
-  readonly status: "idle" | "testing" | "passed" | "failed";
-  readonly result: ProviderHealthCheck | null;
+type ActiveAction = "save" | "verify" | "sync" | "save-model" | "toggle-model" | "default-model" | "delete";
+type NoticeState = { readonly content: string; readonly tone: "info" | "success" | "warning" | "danger" } | null;
+
+const providerKinds = ["openai", "openrouter", "anthropic", "openai_compatible"] as const satisfies readonly ProviderKind[];
+
+const managedProviderOrigins: Readonly<Partial<Record<ProviderKind, string>>> = {
+  openai: "https://api.openai.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+  anthropic: "https://api.anthropic.com/v1"
 };
 
-type DiscoveryState = {
-  readonly status: "idle" | "discovering" | "discovered" | "empty" | "error";
-  readonly result: DiscoverAIModelsResponse | null;
-  readonly message: string | null;
+const emptyManualModelDraft: ManualModelDraft = {
+  displayName: "",
+  maxTokens: "4096",
+  model: "",
+  temperature: "0.2"
 };
 
-const idleDiscoveryState: DiscoveryState = { status: "idle", result: null, message: null };
-
-const providerPresets = [
-  {
-    id: "openai",
-    label: "OpenAI",
-    name: "OpenAI GPT-4o mini",
-    provider: "openai",
-    baseURL: "https://api.openai.com/v1",
-    modelDisplayName: "GPT-4o mini",
-    model: "gpt-4o-mini",
-    temperature: 0.2,
-    maxTokens: 4096,
-    description: "Direct OpenAI billing with the standard OpenAI-compatible /v1 endpoint.",
-    keyInstruction: "Paste an OpenAI project key only when creating or replacing the saved key."
-  },
-  {
-    id: "openrouter",
-    label: "OpenRouter",
-    name: "OpenRouter GPT-4o mini",
-    provider: "openrouter",
-    baseURL: "https://openrouter.ai/api/v1",
-    modelDisplayName: "OpenAI GPT-4o mini",
-    model: "openai/gpt-4o-mini",
-    temperature: 0.2,
-    maxTokens: 4096,
-    description: "One hosted gateway for many vendor models, using OpenRouter model IDs.",
-    keyInstruction: "Paste an OpenRouter key; the UI still sends it write-only to Jixia."
-  },
-  {
-    id: "self-hosted",
-    label: "Self-hosted HTTPS",
-    name: "Self-hosted OpenAI-compatible model",
-    provider: "self-hosted",
-    baseURL: "https://your-ai-gateway.example.com/v1",
-    modelDisplayName: "Llama 3.1",
-    model: "llama3.1",
-    temperature: 0.2,
-    maxTokens: 4096,
-    description: "For vLLM, Ollama, LM Studio, or an enterprise proxy exposed through HTTPS.",
-    keyInstruction: "Use an HTTPS gateway reachable by the Jixia API server; localhost and private-network URLs are blocked for safety."
-  },
-  {
-    id: "custom",
-    label: "Custom gateway",
-    name: "Custom OpenAI-compatible provider",
-    provider: "custom",
-    baseURL: "",
-    modelDisplayName: "Default model",
-    model: "",
-    temperature: 0.2,
-    maxTokens: 4096,
-    description: "Use an enterprise proxy, private gateway, or any compatible provider endpoint.",
-    keyInstruction: "Enter the gateway token only if this provider requires one."
-  }
-] as const satisfies readonly ProviderPreset[];
-
-const defaultProviderPreset = providerPresets[0];
-const customProviderPreset = providerPresets[3];
-const emptyForm: FormState = formFromPreset(defaultProviderPreset);
-
-export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat, onOpenUsage }: AISettingsPageProps) {
+export function AISettingsPage({
+  embedded = false,
+  locale = "en",
+  onBackToWorkspace,
+  onOpenChat,
+  onOpenUsage
+}: AISettingsPageProps) {
+  const copy = localeCatalog(locale).aiSettings;
   const [configs, setConfigs] = useState<readonly AIProviderConfigView[]>([]);
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
-  const [editingModelProfileId, setEditingModelProfileId] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm);
+  const [draft, setDraft] = useState<ConnectionDraft>(() => connectionDraftForKind("openai", copy));
+  const [manualModelDraft, setManualModelDraft] = useState<ManualModelDraft>(emptyManualModelDraft);
+  const [editingManualModelId, setEditingManualModelId] = useState<string | null>(null);
+  const [selectedModelProfileId, setSelectedModelProfileId] = useState("");
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
-  const [submitState, setSubmitState] = useState<"idle" | "submitting" | "error" | "saved">("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [formMessage, setFormMessage] = useState<string | null>(null);
-  const [formMessageTone, setFormMessageTone] = useState<"info" | "success" | "warning" | "danger">("info");
-  const [healthChecks, setHealthChecks] = useState<Readonly<Record<string, HealthCheckState>>>({});
-  const [discoveries, setDiscoveries] = useState<Readonly<Record<string, DiscoveryState>>>({});
+  const [activeAction, setActiveAction] = useState<ActiveAction | null>(null);
+  const [notice, setNotice] = useState<NoticeState>(null);
+  const actionLockRef = useRef(false);
+  const refreshLockRef = useRef(false);
 
   const selectedConfig = useMemo(
     () => configs.find((config) => config.id === selectedConfigId) ?? null,
     [configs, selectedConfigId]
   );
-  const editingModelProfile = selectedConfig?.modelProfiles.find((profile) => profile.id === editingModelProfileId) ?? null;
-  const activePreset = useMemo(() => presetById(form.presetId), [form.presetId]);
-  const activeHealthKey = selectedConfig?.id ?? "draft";
-  const activeHealthCheck = healthChecks[activeHealthKey] ?? { status: "idle", result: null };
-  const activeDiscovery = selectedConfig ? discoveries[selectedConfig.id] ?? idleDiscoveryState : idleDiscoveryState;
+  const selectableModels = useMemo(
+    () => selectedConfig ? authorizedModelsForProvider(selectedConfig) : [],
+    [selectedConfig]
+  );
+  const chosenModelProfileId = useMemo(
+    () => selectModelProfileId(selectedModelProfileId, selectableModels),
+    [selectedModelProfileId, selectableModels]
+  );
+  const chosenModel = selectableModels.find((option) => option.profile.id === chosenModelProfileId)?.profile ?? null;
+  const editingManualModel = selectedConfig?.modelProfiles.find((profile) => profile.id === editingManualModelId) ?? null;
+  const isMutating = activeAction !== null;
+  const providerIdentityChanged = selectedConfig !== null && (
+    draft.kind !== providerKindForConfig(selectedConfig)
+    || (draft.kind === "openai_compatible" && draft.baseURL.trim() !== selectedConfig.baseURL)
+  );
+  const providerIdentityLocked = Boolean(selectedConfig?.hasKey && !draft.apiKey.trim());
 
   useEffect(() => {
-    let isCancelled = false;
+    let cancelled = false;
 
     async function loadConfigs(): Promise<void> {
       setLoadState("loading");
-      setErrorMessage(null);
 
       try {
         const response = await apiFetch<AIProviderConfigListResponse>("/ai/configs");
-        if (isCancelled) {
+        if (cancelled) {
           return;
         }
 
         setConfigs(response.configs);
+        setSelectedConfigId((current) => response.configs.some((config) => config.id === current) ? current : null);
         setLoadState("ready");
       } catch (error) {
-        if (isCancelled) {
+        if (cancelled) {
           return;
         }
 
         setLoadState("error");
-        setErrorMessage(error instanceof Error ? error.message : "Unable to load AI settings.");
+        setNotice({ content: safeErrorMessage(error, copy.errors.loadConnections), tone: "danger" });
       }
     }
 
     void loadConfigs();
 
     return () => {
-      isCancelled = true;
+      cancelled = true;
     };
   }, []);
 
-  function startCreate(): void {
+  async function refreshConfigs(): Promise<boolean> {
+    if (refreshLockRef.current) {
+      return false;
+    }
+
+    refreshLockRef.current = true;
+    setLoadState("loading");
+
+    try {
+      const response = await apiFetch<AIProviderConfigListResponse>("/ai/configs");
+      setConfigs(response.configs);
+      setSelectedConfigId((current) => response.configs.some((config) => config.id === current) ? current : null);
+      setLoadState("ready");
+      return true;
+    } catch (error) {
+      setLoadState("error");
+      setNotice({ content: safeErrorMessage(error, copy.errors.refresh), tone: "danger" });
+      return false;
+    } finally {
+      refreshLockRef.current = false;
+    }
+  }
+
+  function beginNewConnection(): void {
     setSelectedConfigId(null);
-    setEditingModelProfileId(null);
-    setForm(emptyForm);
-    setSubmitState("idle");
-    setFormMessage(null);
-    setFormMessageTone("info");
-    clearDraftHealthCheck();
+    setDraft(connectionDraftForKind("openai", copy));
+    setManualModelDraft(emptyManualModelDraft);
+    setEditingManualModelId(null);
+    setSelectedModelProfileId("");
+    setNotice(null);
   }
 
-  function startEdit(config: AIProviderConfigView): void {
-    const modelProfile = defaultModelProfile(config);
+  function beginEditConnection(config: AIProviderConfigView): void {
     setSelectedConfigId(config.id);
-    setEditingModelProfileId(null);
-    setForm({
-      presetId: inferPresetId(config.provider, config.baseURL),
-      name: config.name,
-      provider: config.provider,
-      baseURL: config.baseURL,
-      modelDisplayName: modelProfile?.displayName ?? "Default model",
-      model: modelProfile?.model ?? "",
-      temperature: String(modelProfile?.temperature ?? 0.2),
-      maxTokens: String(modelProfile?.maxTokens ?? 4096),
-      apiKey: "",
-      isDefault: config.isDefault
-    });
-    setSubmitState("idle");
-    setFormMessage(null);
-    setFormMessageTone("info");
+    setDraft(connectionDraftFromConfig(config));
+    setManualModelDraft(emptyManualModelDraft);
+    setEditingManualModelId(null);
+    setSelectedModelProfileId(defaultModelProfile(config)?.id ?? "");
+    setNotice(null);
   }
 
-  async function reloadConfigs(): Promise<void> {
-    const response = await apiFetch<AIProviderConfigListResponse>("/ai/configs");
-    setConfigs(response.configs);
-  }
-
-  async function handleSubmit(event: { readonly preventDefault: () => void }): Promise<void> {
-    event.preventDefault();
-    setSubmitState("submitting");
-    setFormMessage(null);
-
-    const parsedAccount = parseProviderAccountForm(form);
-    if (!parsedAccount.ok) {
-      setSubmitState("error");
-      setFormMessage(parsedAccount.message);
-      setFormMessageTone("danger");
+  function selectProviderKind(kind: ProviderKind): void {
+    if (providerIdentityLocked) {
       return;
     }
 
-    try {
-      if (selectedConfig) {
-        const payload = updatePayloadFromForm(parsedAccount.payload, form.apiKey);
-        const response = await apiFetch<AIProviderConfigResponse>(
-          `/ai/configs/${encodeURIComponent(selectedConfig.id)}`,
-          {
-            method: "PATCH",
-            json: payload
-          }
-        );
-        upsertConfig(response.config);
-        setForm((currentForm) => ({
-          ...currentForm,
-          apiKey: "",
-          presetId: inferPresetId(response.config.provider, response.config.baseURL),
-          isDefault: response.config.isDefault
-        }));
-        setSubmitState("saved");
-        setFormMessage("AI provider config saved. Existing server-side key was preserved unless you typed a replacement.");
-        setFormMessageTone("success");
-        clearDraftHealthCheck();
-        return;
-      }
+    setDraft((current) => ({
+      ...current,
+      kind,
+      customBaseURL: current.kind === "openai_compatible" ? current.baseURL : current.customBaseURL,
+      baseURL: managedProviderOrigins[kind] ?? current.customBaseURL
+    }));
+    setNotice(null);
+  }
 
-      const payload: CreateAIProviderConfigRequest = createPayloadFromForm(parsedAccount.payload, form.apiKey);
-      const response = await apiFetch<AIProviderConfigResponse>("/ai/configs", {
-        method: "POST",
-        json: payload
-      });
+  function beginAction(action: ActiveAction): boolean {
+    if (actionLockRef.current) {
+      return false;
+    }
+
+    actionLockRef.current = true;
+    setActiveAction(action);
+    return true;
+  }
+
+  function completeAction(): void {
+    actionLockRef.current = false;
+    setActiveAction(null);
+  }
+
+  async function saveConnection(event: { readonly preventDefault: () => void }): Promise<void> {
+    event.preventDefault();
+    if (selectedConfig?.hasKey && !draft.apiKey.trim() && providerIdentityChanged) {
+      setNotice({ content: copy.replacementKeyRequired, tone: "warning" });
+      return;
+    }
+
+    const parsed = parseConnectionDraft(draft, copy);
+    if (!parsed.ok) {
+      setNotice({ content: parsed.message, tone: "danger" });
+      return;
+    }
+
+    if (!beginAction("save")) {
+      return;
+    }
+    setNotice(null);
+
+    try {
+      const response = selectedConfig
+        ? await apiFetch<AIProviderConfigResponse>(`/ai/configs/${encodeURIComponent(selectedConfig.id)}`, {
+          method: "PATCH",
+          json: updateConnectionPayload(parsed.payload, draft.apiKey)
+        })
+        : await apiFetch<AIProviderConfigResponse>("/ai/configs", {
+          method: "POST",
+          json: createConnectionPayload(parsed.payload, draft.apiKey)
+        });
       upsertConfig(response.config);
       setSelectedConfigId(response.config.id);
-      setForm({
-        presetId: inferPresetId(response.config.provider, response.config.baseURL),
-        name: response.config.name,
-        provider: response.config.provider,
-        baseURL: response.config.baseURL,
-        modelDisplayName: defaultModelProfile(response.config)?.displayName ?? form.modelDisplayName,
-        model: defaultModelProfile(response.config)?.model ?? form.model,
-        temperature: String(defaultModelProfile(response.config)?.temperature ?? form.temperature),
-        maxTokens: String(defaultModelProfile(response.config)?.maxTokens ?? form.maxTokens),
-        apiKey: "",
-        isDefault: response.config.isDefault
-      });
-      setSubmitState("saved");
-      setFormMessage(response.config.hasKey
-        ? "AI provider account created. Discover models from the saved server-owned connection next."
-        : "AI provider account created. Add a write-only key before discovering models.");
-      setFormMessageTone("success");
-      moveDraftHealthCheckToConfig(response.config.id);
-      if (response.config.hasKey) {
-        await handleDiscoverModels(response.config);
-      }
+      setDraft(connectionDraftFromConfig(response.config));
+      setSelectedModelProfileId(defaultModelProfile(response.config)?.id ?? "");
+      setNotice({ content: copy.savedConnection, tone: "success" });
     } catch (error) {
-      setSubmitState("error");
-      setFormMessage(error instanceof Error ? error.message : "Unable to save AI provider config.");
-      setFormMessageTone("danger");
+      setNotice({ content: safeErrorMessage(error, copy.errors.saveConnection), tone: "danger" });
+    } finally {
+      completeAction();
     }
   }
 
-  async function handleDiscoverModels(config: AIProviderConfigView): Promise<void> {
-    if (!config.hasKey) {
-      setDiscovery(config.id, {
-        status: "error",
-        result: null,
-        message: "Add a saved provider key before discovering models."
-      });
-      setFormMessage("Add a write-only provider key before discovering models.");
-      setFormMessageTone("warning");
+  async function verifyConnection(config: AIProviderConfigView): Promise<void> {
+    if (!beginAction("verify")) {
       return;
     }
-
-    setDiscovery(config.id, { status: "discovering", result: null, message: null });
-    setFormMessage(null);
+    setNotice(null);
 
     try {
-      const response = await apiFetch<DiscoverAIModelsResponse>(
-        `/ai/configs/${encodeURIComponent(config.id)}/discover-models`,
-        { method: "POST" }
-      );
-      upsertConfig(response.config);
-      const status = response.discovered === 0 ? "empty" : "discovered";
-      const summary = response.discovered === 0
-        ? response.warnings?.[0] ?? "Provider returned no models."
-        : `Discovered ${response.discovered} models: ${response.created} new, ${response.skipped} already present.`;
-      setDiscovery(config.id, { status, result: response, message: summary });
-      setFormMessage(summary);
-      setFormMessageTone(status === "empty" ? "warning" : "success");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to discover provider models.";
-      setDiscovery(config.id, { status: "error", result: null, message });
-      setFormMessage(message);
-      setFormMessageTone("danger");
-    }
-  }
-
-  async function handleTestDraft(): Promise<void> {
-    const parsedAccount = parseProviderAccountForm(form);
-    const parsedProfile = parseModelProfileForm(form);
-    if (!parsedAccount.ok) {
-      setFormMessage(parsedAccount.message);
-      setFormMessageTone("danger");
-      return;
-    }
-
-    if (!parsedProfile.ok) {
-      setFormMessage(parsedProfile.message);
-      setFormMessageTone("danger");
-      return;
-    }
-
-    setHealthCheck("draft", { status: "testing", result: null });
-    setFormMessage(null);
-
-    try {
-      const response = await apiFetch<TestAIProviderConfigResponse>("/ai/configs/test", {
-        method: "POST",
-        json: draftTestPayloadFromForm(parsedAccount.payload, parsedProfile.payload, form.apiKey)
-      });
-      setHealthCheck("draft", stateFromHealthCheck(response.healthCheck));
-      setSubmitState(response.healthCheck.ok ? "idle" : "error");
-      setFormMessage(response.healthCheck.ok ? "Draft connection verified. Save this provider or go back to chat if it is already saved elsewhere." : response.healthCheck.message);
-      setFormMessageTone(response.healthCheck.ok ? "success" : "danger");
-    } catch (error) {
-      setHealthCheck("draft", { status: "failed", result: null });
-      setSubmitState("error");
-      setFormMessage(error instanceof Error ? error.message : "Unable to test draft provider config.");
-      setFormMessageTone("danger");
-    }
-  }
-
-  async function handleTestSaved(
-    config: AIProviderConfigView,
-    includeFormOverrides = false,
-    modelProfile?: AIModelProfileView
-  ): Promise<void> {
-    const key = config.id;
-    setHealthCheck(key, { status: "testing", result: null });
-    setFormMessage(null);
-
-    try {
-      const payload = includeFormOverrides
-        ? savedTestPayloadFromForm(form)
-        : modelProfile ? { modelProfileId: modelProfile.id } : {};
       const response = await apiFetch<TestAIProviderConfigResponse>(`/ai/configs/${encodeURIComponent(config.id)}/test`, {
         method: "POST",
-        json: payload
+        json: {}
       });
-      setHealthCheck(key, stateFromHealthCheck(response.healthCheck));
-      setSubmitState(response.healthCheck.ok ? "idle" : "error");
-      setFormMessage(response.healthCheck.ok ? `${config.name} connection verified. Chat is ready to use this provider.` : response.healthCheck.message);
-      setFormMessageTone(response.healthCheck.ok ? "success" : "danger");
+      const refreshed = await refreshConfigs();
+      if (!refreshed) {
+        return;
+      }
+      const result = response.healthCheck.connection;
+      setNotice({
+        content: result?.message ?? response.healthCheck.message,
+        tone: result?.authentication === "verified" ? "success" : "warning"
+      });
     } catch (error) {
-      setHealthCheck(key, { status: "failed", result: null });
-      setSubmitState("error");
-      setFormMessage(error instanceof Error ? error.message : "Unable to test saved provider config.");
-      setFormMessageTone("danger");
+      setNotice({ content: safeErrorMessage(error, copy.errors.verifyConnection), tone: "danger" });
+    } finally {
+      completeAction();
     }
   }
 
-  async function handleAddModelProfile(config: AIProviderConfigView): Promise<void> {
-    const parsed = parseModelProfileForm(form, { isDefault: false });
-    if (!parsed.ok) {
-      setFormMessage(parsed.message);
-      setFormMessageTone("danger");
+  async function synchronizeCapabilities(config: AIProviderConfigView): Promise<void> {
+    if (!config.hasKey) {
+      setNotice({ content: copy.syncRequiresKey, tone: "warning" });
       return;
     }
 
-    setFormMessage(null);
-
-    try {
-      const response = await apiFetch<AIModelProfileResponse>(
-        `/ai/configs/${encodeURIComponent(config.id)}/model-profiles`,
-        {
-          method: "POST",
-          json: parsed.payload
-        }
-      );
-      upsertConfig(response.config);
-      setFormMessage(`Model profile ${response.modelProfile.displayName} added under ${config.name}.`);
-      setFormMessageTone("success");
-    } catch (error) {
-      setFormMessage(error instanceof Error ? error.message : "Unable to add model profile.");
-      setFormMessageTone("danger");
-    }
-  }
-
-  async function handleSaveModelProfile(config: AIProviderConfigView, profile: AIModelProfileView): Promise<void> {
-    const parsed = parseModelProfileForm(form);
-    if (!parsed.ok) {
-      setFormMessage(parsed.message);
-      setFormMessageTone("danger");
+    if (!beginAction("sync")) {
       return;
     }
-
-    const payload: UpdateAIModelProfileRequest = {
-      displayName: parsed.payload.displayName,
-      model: parsed.payload.model,
-      temperature: parsed.payload.temperature,
-      maxTokens: parsed.payload.maxTokens
-    };
-    setFormMessage(null);
+    setNotice(null);
 
     try {
-      const response = await apiFetch<AIModelProfileResponse>(
-        `/ai/configs/${encodeURIComponent(config.id)}/model-profiles/${encodeURIComponent(profile.id)}`,
-        {
-          method: "PATCH",
-          json: payload
-        }
-      );
-      upsertConfig(response.config);
-      setEditingModelProfileId(null);
-      setFormMessage(`Model profile ${response.modelProfile.displayName} updated under ${config.name}.`);
-      setFormMessageTone("success");
-    } catch (error) {
-      setFormMessage(error instanceof Error ? error.message : "Unable to update model profile.");
-      setFormMessageTone("danger");
-    }
-  }
-
-  async function handleToggleModelProfileEnabled(config: AIProviderConfigView, profile: AIModelProfileView): Promise<void> {
-    setFormMessage(null);
-
-    try {
-      const response = await apiFetch<AIModelProfileResponse>(
-        `/ai/configs/${encodeURIComponent(config.id)}/model-profiles/${encodeURIComponent(profile.id)}`,
-        {
-          method: "PATCH",
-          json: { enabled: !profile.enabled }
-        }
-      );
-      upsertConfig(response.config);
-      setFormMessage(`${response.modelProfile.displayName} is now ${response.modelProfile.enabled ? "enabled" : "disabled"}.`);
-      setFormMessageTone("success");
-    } catch (error) {
-      setFormMessage(error instanceof Error ? error.message : "Unable to update model profile status.");
-      setFormMessageTone("danger");
-    }
-  }
-
-  function handleStartEditModelProfile(profile: AIModelProfileView): void {
-    setEditingModelProfileId(profile.id);
-    setForm((currentForm) => ({
-      ...currentForm,
-      modelDisplayName: profile.displayName,
-      model: profile.model,
-      temperature: String(profile.temperature),
-      maxTokens: String(profile.maxTokens)
-    }));
-    setFormMessage(null);
-    setFormMessageTone("info");
-  }
-
-  function handleCancelModelProfileEdit(): void {
-    setEditingModelProfileId(null);
-    setFormMessage(null);
-    setFormMessageTone("info");
-  }
-
-  async function handleSetDefaultModelProfile(config: AIProviderConfigView, profile: AIModelProfileView): Promise<void> {
-    setFormMessage(null);
-
-    try {
-      const response = await apiFetch<AIModelProfileResponse>(
-        `/ai/configs/${encodeURIComponent(config.id)}/model-profiles/${encodeURIComponent(profile.id)}/default`,
+      const response = await apiFetch<SyncAIProviderCapabilitiesResponse>(
+        `/ai/configs/${encodeURIComponent(config.id)}/capabilities/sync`,
         { method: "POST" }
       );
       upsertConfig(response.config);
-      setFormMessage(`${response.modelProfile.displayName} is now the default model for ${config.name}.`);
-      setFormMessageTone("success");
+      setSelectedModelProfileId(defaultModelProfile(response.config)?.id ?? "");
+      setNotice({ content: syncMessage(response, copy), tone: syncTone(response.discovery) });
     } catch (error) {
-      setFormMessage(error instanceof Error ? error.message : "Unable to set default model profile.");
-      setFormMessageTone("danger");
+      setNotice({ content: safeErrorMessage(error, copy.errors.syncCapabilities), tone: "danger" });
+    } finally {
+      completeAction();
     }
   }
 
-  async function handleDeleteModelProfile(config: AIProviderConfigView, profile: AIModelProfileView): Promise<void> {
-    if (!window.confirm(`Delete model profile ${profile.displayName}? Provider credentials remain saved.`)) {
+  async function setDefaultModel(config: AIProviderConfigView, modelProfileId: string): Promise<void> {
+    if (!modelProfileId) {
       return;
     }
 
-    setFormMessage(null);
+    if (!beginAction("default-model")) {
+      return;
+    }
+    setNotice(null);
+
+    try {
+      const response = await apiFetch<AIModelProfileResponse>(
+        `/ai/configs/${encodeURIComponent(config.id)}/model-profiles/${encodeURIComponent(modelProfileId)}/default`,
+        { method: "POST" }
+      );
+      upsertConfig(response.config);
+      setSelectedModelProfileId(response.modelProfile.id);
+      setNotice({ content: copy.defaultModelSaved, tone: "success" });
+    } catch (error) {
+      setNotice({ content: safeErrorMessage(error, copy.errors.defaultModel), tone: "danger" });
+    } finally {
+      completeAction();
+    }
+  }
+
+  async function saveManualModel(config: AIProviderConfigView): Promise<void> {
+    const parsed = parseManualModelDraft(manualModelDraft, copy);
+    if (!parsed.ok) {
+      setNotice({ content: parsed.message, tone: "danger" });
+      return;
+    }
+
+    if (!beginAction("save-model")) {
+      return;
+    }
+    setNotice(null);
+
+    try {
+      const response = editingManualModel
+        ? await apiFetch<AIModelProfileResponse>(
+          `/ai/configs/${encodeURIComponent(config.id)}/model-profiles/${encodeURIComponent(editingManualModel.id)}`,
+          { method: "PATCH", json: updateManualModelPayload(parsed.payload) }
+        )
+        : await apiFetch<AIModelProfileResponse>(`/ai/configs/${encodeURIComponent(config.id)}/model-profiles`, {
+          method: "POST",
+          json: parsed.payload
+        });
+      upsertConfig(response.config);
+      setSelectedModelProfileId(response.modelProfile.id);
+      setManualModelDraft(emptyManualModelDraft);
+      setEditingManualModelId(null);
+      setNotice({ content: editingManualModel ? copy.modelUpdated : copy.manualModelSaved, tone: "success" });
+    } catch (error) {
+      setNotice({ content: safeErrorMessage(error, copy.errors.saveManualModel), tone: "danger" });
+    } finally {
+      completeAction();
+    }
+  }
+
+  function beginManualModelEdit(profile: AIModelProfileView): void {
+    setEditingManualModelId(profile.id);
+    setManualModelDraft({
+      displayName: profile.displayName,
+      maxTokens: String(profile.maxTokens),
+      model: profile.model,
+      temperature: String(profile.temperature)
+    });
+    setNotice(null);
+  }
+
+  async function toggleModel(config: AIProviderConfigView, profile: AIModelProfileView): Promise<void> {
+    if (!beginAction("toggle-model")) {
+      return;
+    }
+    setNotice(null);
+
+    try {
+      const response = await apiFetch<AIModelProfileResponse>(
+        `/ai/configs/${encodeURIComponent(config.id)}/model-profiles/${encodeURIComponent(profile.id)}`,
+        { method: "PATCH", json: { enabled: !profile.enabled } }
+      );
+      upsertConfig(response.config);
+      setNotice({ content: response.modelProfile.enabled ? copy.modelEnabled : copy.modelDisabled, tone: "success" });
+    } catch (error) {
+      setNotice({ content: safeErrorMessage(error, copy.errors.updateModel), tone: "danger" });
+    } finally {
+      completeAction();
+    }
+  }
+
+  async function deleteManualModel(config: AIProviderConfigView, profile: AIModelProfileView): Promise<void> {
+    if (!window.confirm(interpolate(copy.deleteModelConfirm, { name: profile.displayName }))) {
+      return;
+    }
+
+    if (!beginAction("delete")) {
+      return;
+    }
+    setNotice(null);
 
     try {
       const response = await apiFetch<DeleteAIModelProfileResponse>(
@@ -520,365 +432,261 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
         { method: "DELETE" }
       );
       upsertConfig(response.config);
-      setFormMessage(`${profile.displayName} removed from ${config.name}.`);
-      setFormMessageTone("success");
-    } catch (error) {
-      setFormMessage(error instanceof Error ? error.message : "Unable to delete model profile.");
-      setFormMessageTone("danger");
-    }
-  }
-
-  async function handleSetDefault(config: AIProviderConfigView): Promise<void> {
-    setFormMessage(null);
-
-    try {
-      const response = await apiFetch<AIProviderConfigResponse>(
-        `/ai/configs/${encodeURIComponent(config.id)}/default`,
-        {
-          method: "POST"
-        }
-      );
-      setConfigs((currentConfigs) =>
-        currentConfigs.map((currentConfig) => ({
-          ...currentConfig,
-          isDefault: currentConfig.id === response.config.id
-        }))
-      );
-      if (selectedConfigId === response.config.id) {
-        setForm((currentForm) => ({ ...currentForm, isDefault: true }));
+      if (editingManualModelId === profile.id) {
+        setEditingManualModelId(null);
+        setManualModelDraft(emptyManualModelDraft);
       }
-      setFormMessage("Default AI provider config updated through the API.");
-      setFormMessageTone("success");
     } catch (error) {
-      setFormMessage(error instanceof Error ? error.message : "Unable to set default AI provider config.");
-      setFormMessageTone("danger");
+      setNotice({ content: safeErrorMessage(error, copy.errors.deleteModel), tone: "danger" });
+    } finally {
+      completeAction();
     }
   }
 
-  async function handleDelete(config: AIProviderConfigView): Promise<void> {
-    if (!window.confirm(`Delete ${config.name}? This removes provider metadata and its encrypted server-side key.`)) {
+  async function deleteConnection(config: AIProviderConfigView): Promise<void> {
+    if (!window.confirm(interpolate(copy.deleteConnectionConfirm, { name: config.name }))) {
       return;
     }
 
-    setFormMessage(null);
+    if (!beginAction("delete")) {
+      return;
+    }
+    setNotice(null);
 
     try {
-      await apiFetch<{ readonly ok: true }>(`/ai/configs/${encodeURIComponent(config.id)}`, {
-        method: "DELETE"
-      });
-      setConfigs((currentConfigs) => currentConfigs.filter((currentConfig) => currentConfig.id !== config.id));
+      await apiFetch<{ readonly ok: true }>(`/ai/configs/${encodeURIComponent(config.id)}`, { method: "DELETE" });
+      setConfigs((current) => current.filter((item) => item.id !== config.id));
       if (selectedConfigId === config.id) {
-        startCreate();
+        beginNewConnection();
       }
     } catch (error) {
-      setFormMessage(error instanceof Error ? error.message : "Unable to delete AI provider config.");
-      setFormMessageTone("danger");
+      setNotice({ content: safeErrorMessage(error, copy.errors.deleteConnection), tone: "danger" });
+    } finally {
+      completeAction();
     }
   }
 
   function upsertConfig(config: AIProviderConfigView): void {
-    setConfigs((currentConfigs) => {
-      const withoutSaved = currentConfigs.filter((currentConfig) => currentConfig.id !== config.id);
-      const normalized = config.isDefault
-        ? withoutSaved.map((currentConfig) => ({ ...currentConfig, isDefault: false }))
-        : withoutSaved;
+    setConfigs((current) => {
+      const remaining = current.filter((item) => item.id !== config.id);
+      const normalized = config.isDefault ? remaining.map((item) => ({ ...item, isDefault: false })) : remaining;
       return [config, ...normalized].sort(compareConfigs);
     });
   }
 
-  function applyPreset(preset: ProviderPreset): void {
-    setForm((currentForm) => ({
-      ...currentForm,
-      presetId: preset.id,
-      name: selectedConfig && currentForm.name.trim() ? currentForm.name : preset.name,
-      provider: preset.provider,
-      baseURL: preset.baseURL,
-      modelDisplayName: preset.modelDisplayName,
-      model: preset.model,
-      temperature: String(preset.temperature),
-      maxTokens: String(preset.maxTokens)
-    }));
-    setSubmitState("idle");
-    setFormMessage(null);
-    setFormMessageTone("info");
-    clearDraftHealthCheck();
-  }
+  const detailTitle = selectedConfig ? copy.editConnection : copy.createConnection;
+  const content = (
+    <div className="jixia-provider-settings">
+      {notice ? <Notice role={notice.tone === "danger" ? "alert" : "status"} tone={notice.tone}>{notice.content}</Notice> : null}
+      {loadState === "error" && !notice ? <Notice role="alert" tone="danger">{copy.errors.loadConnections}</Notice> : null}
 
-  function updateFormText(field: keyof Omit<FormState, "isDefault" | "presetId">, value: string): void {
-    setForm((currentForm) => withInferredPreset({ ...currentForm, [field]: value }));
-    if (!selectedConfigId) {
-      clearDraftHealthCheck();
-    }
-  }
-
-  function setHealthCheck(key: string, value: HealthCheckState): void {
-    setHealthChecks((current) => ({ ...current, [key]: value }));
-  }
-
-  function setDiscovery(key: string, value: DiscoveryState): void {
-    setDiscoveries((current) => ({ ...current, [key]: value }));
-  }
-
-  function clearDraftHealthCheck(): void {
-    setHealthChecks((current) => {
-      const { draft: _draft, ...rest } = current;
-      return rest;
-    });
-  }
-
-  function moveDraftHealthCheckToConfig(configId: string): void {
-    setHealthChecks((current) => {
-      const draft = current.draft;
-      const { draft: _draft, ...rest } = current;
-      return draft ? { ...rest, [configId]: draft } : rest;
-    });
-  }
-
-  const settingsContent = (
-    <>
-      {loadState === "loading" ? <p className="jixia-description">Loading AI provider configs…</p> : null}
-      {loadState === "error" && errorMessage ? (
-        <Notice role="alert" tone="danger">
-          {errorMessage}
-        </Notice>
-      ) : null}
-
-      <SplitPane className="jixia-ai-settings-layout" sideWidth="360px">
-        <div className="jixia-ai-settings-sidebar">
-          <Pane
-            actions={
-              <>
-                <Button onClick={() => void reloadConfigs()}>Refresh</Button>
-                <Button onClick={startCreate} variant="primary">New provider</Button>
-              </>
-            }
-            aria-labelledby="ai-config-list-title"
-            eyebrow="Provider cards"
-            title="Configured providers"
-            titleId="ai-config-list-title"
-          >
-            <p className="jixia-description">Configure, test, set default, then chat. Cards show only server-safe metadata and write-only key status.</p>
-            {loadState === "ready" && configs.length === 0 ? (
-              <EmptyState
-                description="Create one from a preset. The server stores encrypted keys and returns only safe previews."
-                title="No providers configured yet"
-              />
-            ) : null}
-
-            {configs.length > 0 ? (
-              <div className="jixia-ai-provider-card-list">
-                {configs.map((config) => {
-                  const cardProps: ProviderConfigCardProps = {
-                    config,
-                    discovery: discoveries[config.id] ?? idleDiscoveryState,
-                    healthCheck: healthChecks[config.id] ?? { status: "idle", result: null },
-                    isSelected: selectedConfigId === config.id,
-                    onDelete: () => void handleDelete(config),
-                    onDiscover: () => void handleDiscoverModels(config),
-                    onEdit: () => startEdit(config),
-                    onSetDefault: () => void handleSetDefault(config),
-                    onTest: () => void handleTestSaved(config),
-                    ...(onOpenChat ? { onOpenChat } : {})
-                  };
-
-                  return <ProviderConfigCard key={config.id} {...cardProps} />;
-                })}
-              </div>
-            ) : null}
-          </Pane>
-
-          <details className="jixia-ai-preset-drawer" open={configs.length === 0}>
-            <summary>Provider presets</summary>
-            <p>Use a preset to seed the editor, then test through the Jixia API before saving.</p>
-            <div className="jixia-ai-preset-list">
-              {providerPresets.map((preset) => (
-                <button
-                  aria-pressed={form.presetId === preset.id}
-                  className="jixia-ai-preset-card"
-                  key={preset.id}
-                  onClick={() => applyPreset(preset)}
-                  type="button"
-                >
-                  <span className="jixia-ai-preset-card__topline">
-                    <strong>{preset.label}</strong>
-                    {form.presetId === preset.id ? <Pill tone="accent">Selected</Pill> : null}
-                  </span>
-                  <span>{preset.description}</span>
-                  <small>{preset.baseURL || "Bring your own base URL"}</small>
-                </button>
+      <SplitPane className="jixia-provider-settings__layout" sideWidth="344px">
+        <Pane
+          actions={
+            <>
+              <Button aria-label={copy.refresh} disabled={loadState === "loading" || isMutating} onClick={() => void refreshConfigs()} title={copy.refresh}>
+                <RefreshCw aria-hidden="true" className="jixia-button__icon" size={15} />
+              </Button>
+              <Button disabled={isMutating} onClick={beginNewConnection} variant="primary">
+                <Plus aria-hidden="true" className="jixia-button__icon" size={15} />
+                {copy.newConnection}
+              </Button>
+            </>
+          }
+          aria-labelledby="provider-connections-title"
+          eyebrow={copy.connections}
+          title={copy.configuredConnections}
+          titleId="provider-connections-title"
+        >
+          {loadState === "loading" ? <p className="jixia-description">{copy.loading}</p> : null}
+          {loadState === "ready" && configs.length === 0 ? (
+            <EmptyState description={copy.noConnectionsDescription} title={copy.noConnections} />
+          ) : null}
+          {configs.length > 0 ? (
+            <div className="jixia-provider-connection-list">
+              {configs.map((config) => (
+                <ProviderConnectionRow
+                  config={config}
+                  copy={copy}
+                  disabled={isMutating}
+                  isSelected={config.id === selectedConfigId}
+                  key={config.id}
+                  onDelete={() => void deleteConnection(config)}
+                  onOpen={() => beginEditConnection(config)}
+                />
               ))}
             </div>
-          </details>
-        </div>
+          ) : null}
+        </Pane>
 
-        <Pane
-          aria-labelledby="ai-config-form-title"
-          eyebrow={selectedConfig ? "Edit provider" : "Create provider"}
-          muted
-          title={selectedConfig ? selectedConfig.name : "Review and save provider"}
-          titleId="ai-config-form-title"
-        >
-          <form className="jixia-ai-settings-form" onSubmit={handleSubmit}>
-            <Notice>
-              {activePreset.keyInstruction} Connect the provider account first, then discover models through the Jixia API. The API key field is write-only: saved keys are never rendered, and editing without typing a replacement omits apiKey from PATCH.
-            </Notice>
-
-            <div className="jixia-ai-settings-summary">
-              <Pill tone="accent">{activePreset.label}</Pill>
-              <span>{activePreset.description}</span>
-            </div>
-
-            <details className="jixia-ai-settings-field-guide">
-              <summary>Field guide</summary>
-              <MetaGrid
-                className="jixia-ai-settings-guide"
-                items={[
-                  { label: "Provider account", value: "Name, provider id, base URL, key status, and personal default live on the account." },
-                  { label: "Base URL", value: "OpenAI-compatible endpoint; Jixia validates and normalizes it server-side." },
-                  { label: "Model discovery", value: "Jixia uses the saved server-side key to discover model ids and normalize them into selectable profiles." },
-                  { label: "API key", value: "Write-only secret. Blank on edit means keep the encrypted server-side key." },
-                  { label: "Provider default", value: "Personal fallback provider account for chat setup." },
-                  { label: "Manual fallback", value: "Advanced model entry remains available when a compatible provider cannot list models." }
-                ]}
-              />
-            </details>
-
-            {selectedConfig ? (
-              <Notice>
-                Saved key: {selectedConfig.hasKey ? "present" : "none"}.
-                Leave replacement API key blank to preserve the encrypted server-side key.
-              </Notice>
-            ) : null}
-
-            <div className="jixia-ai-settings-form-grid">
-              <TextField label="Provider account name" onChange={(value) => updateFormText("name", value)} placeholder="e.g. OpenAI production" required value={form.name} />
-              <TextField label="Provider" list="ai-provider-options" onChange={(value) => updateFormText("provider", value)} placeholder="openai" required value={form.provider} />
-              <TextField label="Base URL" onChange={(value) => updateFormText("baseURL", value)} placeholder="https://api.openai.com/v1" required value={form.baseURL} />
-            </div>
-
-            <section className="jixia-ai-model-profile-editor" aria-label="Model profile editor">
-              <div>
-                <strong>{selectedConfig ? editingModelProfile ? "Edit model profile" : "Advanced manual model fallback" : "Advanced manual model fallback"}</strong>
-                <span>
-                  {selectedConfig && editingModelProfile
-                    ? `Update ${editingModelProfile.displayName}; provider credentials remain account-level.`
-                    : selectedConfig
-                    ? "Use this only when discovery returns no usable models or the provider cannot list models."
-                    : "Save the provider connection first; discovery is the primary way to create selectable model profiles."}
-                </span>
+        <Pane aria-labelledby="provider-connection-detail-title" eyebrow={selectedConfig ? copy.connections : copy.newConnection} muted title={detailTitle} titleId="provider-connection-detail-title">
+          <form className="jixia-provider-settings__form" onSubmit={(event) => void saveConnection(event)}>
+            <ProviderPhase title={copy.chooseProvider}>
+              <div className="jixia-provider-kind-grid" role="group" aria-label={copy.chooseProvider}>
+                {providerKinds.map((kind) => (
+                  <ProviderKindButton
+                    copy={copy}
+                    disabled={isMutating || providerIdentityLocked}
+                    isSelected={draft.kind === kind}
+                    key={kind}
+                    kind={kind}
+                    onSelect={() => selectProviderKind(kind)}
+                  />
+                ))}
               </div>
-              <div className="jixia-ai-settings-form-grid">
-                <TextField label="Model profile name" onChange={(value) => updateFormText("modelDisplayName", value)} placeholder="e.g. Fast draft model" value={form.modelDisplayName} />
-                <TextField label="Model" onChange={(value) => updateFormText("model", value)} placeholder="gpt-4o-mini" value={form.model} />
-                <TextField
-                  inputMode="decimal"
-                  label="Temperature"
-                  onChange={(value) => updateFormText("temperature", value)}
-                  placeholder="0.2"
-                  value={form.temperature}
-                />
-                <TextField
-                  inputMode="numeric"
-                  label="Max tokens"
-                  onChange={(value) => updateFormText("maxTokens", value)}
-                  placeholder="4096"
-                  value={form.maxTokens}
-                />
+            </ProviderPhase>
+
+            <ProviderPhase title={copy.connectionDetails}>
+              <div className="jixia-provider-settings__field-grid">
+                <Field label={copy.providerName}>
+                  <input
+                    disabled={isMutating}
+                    onChange={(event) => {
+                      const name = event.currentTarget.value;
+                      setDraft((current) => ({ ...current, name }));
+                    }}
+                    required
+                    value={draft.name}
+                  />
+                </Field>
+                {draft.kind === "openai_compatible" ? (
+                  <Field hint={copy.customBaseUrlHint} label={copy.customBaseUrl}>
+                    <input
+                      disabled={isMutating || providerIdentityLocked}
+                      inputMode="url"
+                      onChange={(event) => {
+                        const baseURL = event.currentTarget.value;
+                        setDraft((current) => ({ ...current, baseURL, customBaseURL: baseURL }));
+                      }}
+                      placeholder="https://provider.example/v1"
+                      required
+                      value={draft.baseURL}
+                    />
+                  </Field>
+                ) : (
+                  <div className="jixia-provider-managed-endpoint">
+                    <span>{copy.endpointManaged}</span>
+                    <strong>{managedProviderOrigins[draft.kind]}</strong>
+                  </div>
+                )}
+                <Field hint={copy.secretHint} label={selectedConfig ? copy.replacementApiKey : copy.apiKey}>
+                  <input
+                    autoComplete="new-password"
+                    disabled={isMutating}
+                    onChange={(event) => {
+                      const apiKey = event.currentTarget.value;
+                      setDraft((current) => ({ ...current, apiKey }));
+                    }}
+                    placeholder={selectedConfig ? copy.secretHint : undefined}
+                    type="password"
+                    value={draft.apiKey}
+                  />
+                </Field>
               </div>
-              {selectedConfig ? (
-                <div className="jixia-ai-provider-card__actions">
-                  {editingModelProfile ? (
-                    <>
-                      <Button onClick={() => void handleSaveModelProfile(selectedConfig, editingModelProfile)} type="button">
-                        Save model profile
-                      </Button>
-                      <Button onClick={handleCancelModelProfileEdit} type="button" variant="ghost">Cancel model edit</Button>
-                    </>
-                  ) : (
-                    <Button onClick={() => void handleAddModelProfile(selectedConfig)} type="button">
-                      Add model profile
-                    </Button>
-                  )}
-                </div>
-              ) : null}
-            </section>
-
-            {selectedConfig ? (
-              <ModelProfileList
-                config={selectedConfig}
-                onDelete={(profile) => void handleDeleteModelProfile(selectedConfig, profile)}
-                onEdit={handleStartEditModelProfile}
-                onSetDefault={(profile) => void handleSetDefaultModelProfile(selectedConfig, profile)}
-                onTest={(profile) => void handleTestSaved(selectedConfig, false, profile)}
-                onToggleEnabled={(profile) => void handleToggleModelProfileEnabled(selectedConfig, profile)}
-              />
-            ) : null}
-
-            <datalist id="ai-provider-options">
-              <option value="openai" />
-              <option value="openrouter" />
-              <option value="self-hosted" />
-              <option value="custom" />
-            </datalist>
-
-            <Field label={selectedConfig ? "Replacement API key" : "API key"}>
-              <input
-                autoComplete="new-password"
-                onChange={(event) => updateFormText("apiKey", event.currentTarget.value)}
-                placeholder={selectedConfig ? "Leave blank to keep current server key" : "Optional; sent once if entered"}
-                type="password"
-                value={form.apiKey}
-              />
-            </Field>
-
-            <label className="jixia-ai-settings-default-toggle">
-              <input
-                checked={form.isDefault}
-                onChange={(event) => setForm({ ...form, isDefault: event.currentTarget.checked })}
-                type="checkbox"
-              />
-              <span>Set this as my personal default provider account</span>
-            </label>
-
-            {formMessage ? (
-              <Notice role={formMessageTone === "danger" ? "alert" : "status"} tone={formMessageTone}>
-                {formMessage}
-              </Notice>
-            ) : null}
-
-            <HealthCheckCard healthCheck={activeHealthCheck} />
-            {selectedConfig ? <DiscoveryCard discovery={activeDiscovery} /> : null}
-
-            <div className="jixia-ai-settings-actions">
-              <Button
-                disabled={activeHealthCheck.status === "testing"}
-                onClick={() => selectedConfig ? void handleTestSaved(selectedConfig, true) : void handleTestDraft()}
-              >
-                {activeHealthCheck.status === "testing" ? "Testing…" : selectedConfig ? "Test provider with profile draft" : "Test draft provider and model"}
-              </Button>
-              {selectedConfig ? (
-                <Button
-                  disabled={!selectedConfig.hasKey || activeDiscovery.status === "discovering"}
-                  onClick={() => void handleDiscoverModels(selectedConfig)}
-                  type="button"
-                  variant="primary"
-                >
-                  {activeDiscovery.status === "discovering" ? "Discovering models…" : "Discover models"}
+              {providerIdentityLocked ? <Notice tone="warning">{copy.replacementKeyRequired}</Notice> : null}
+              <label className="jixia-provider-default-toggle">
+                <input
+                  checked={draft.isDefault}
+                  disabled={isMutating}
+                  onChange={(event) => {
+                    const isDefault = event.currentTarget.checked;
+                    setDraft((current) => ({ ...current, isDefault }));
+                  }}
+                  type="checkbox"
+                />
+                <span>{copy.defaultConnection}</span>
+              </label>
+              <div className="jixia-provider-settings__actions">
+                <Button disabled={isMutating} type="submit" variant="primary">
+                  <KeyRound aria-hidden="true" className="jixia-button__icon" size={15} />
+                  {activeAction === "save" ? copy.savingConnection : copy.saveConnection}
                 </Button>
-              ) : null}
-              <Button disabled={submitState === "submitting"} type="submit" variant="primary">
-                {submitState === "submitting" ? "Saving…" : selectedConfig ? "Save provider account" : "Create provider account"}
-              </Button>
-              {onOpenChat && (submitState === "saved" || activeHealthCheck.status === "passed") ? <Button onClick={onOpenChat}>Back to chat</Button> : null}
-            </div>
+                {selectedConfig && onOpenChat ? <Button disabled={isMutating} onClick={onOpenChat}>{copy.modelChoice}</Button> : null}
+              </div>
+            </ProviderPhase>
           </form>
+
+          {selectedConfig ? (
+            <div className="jixia-provider-settings__lifecycle">
+              <ProviderPhase title={copy.verification}>
+                <ConnectionStatus config={selectedConfig} copy={copy} locale={locale} />
+                <p className="jixia-provider-phase__hint">{copy.connectionHint}</p>
+                <div className="jixia-provider-settings__actions">
+                  <Button disabled={isMutating} onClick={() => void verifyConnection(selectedConfig)}>
+                    <RotateCw aria-hidden="true" className="jixia-button__icon" size={15} />
+                    {activeAction === "verify"
+                      ? copy.actions.verifying
+                      : selectedConfig.connection?.lastAttemptAt ? copy.actions.retryVerification : copy.actions.verify}
+                  </Button>
+                </div>
+              </ProviderPhase>
+
+              <ProviderPhase title={copy.synchronization}>
+                <SyncStatus config={selectedConfig} copy={copy} locale={locale} />
+                <p className="jixia-provider-phase__hint">{copy.syncHint}</p>
+                <div className="jixia-provider-settings__actions">
+                  <Button disabled={isMutating || !selectedConfig.hasKey} onClick={() => void synchronizeCapabilities(selectedConfig)} variant="primary">
+                    <Cloud aria-hidden="true" className="jixia-button__icon" size={15} />
+                    {activeAction === "sync"
+                      ? copy.actions.syncing
+                      : selectedConfig.sync?.lastAttemptAt ? copy.actions.retrySync : copy.actions.sync}
+                  </Button>
+                </div>
+              </ProviderPhase>
+
+              <ProviderPhase title={copy.modelChoice}>
+                <ModelInventory
+                  chosenModel={chosenModel}
+                  chosenModelProfileId={chosenModelProfileId}
+                  config={selectedConfig}
+                  copy={copy}
+                  disabled={isMutating}
+                  isSavingDefault={activeAction === "default-model"}
+                  locale={locale}
+                  onChoose={setSelectedModelProfileId}
+                  onSetDefault={() => void setDefaultModel(selectedConfig, chosenModelProfileId)}
+                  selectableModels={selectableModels}
+                />
+              </ProviderPhase>
+
+              <details className="jixia-provider-settings__advanced">
+                <summary>
+                  <Settings aria-hidden="true" className="jixia-provider-settings__summary-icon" size={15} />
+                  {copy.advanced}
+                </summary>
+                <p>{copy.advancedDescription}</p>
+                <ManualModelEditor
+                  copy={copy}
+                  draft={manualModelDraft}
+                  editingModel={editingManualModel}
+                  onChange={setManualModelDraft}
+                  onCancel={() => {
+                    setEditingManualModelId(null);
+                    setManualModelDraft(emptyManualModelDraft);
+                  }}
+                  onSave={() => void saveManualModel(selectedConfig)}
+                  disabled={isMutating}
+                  saving={activeAction === "save-model"}
+                />
+                <ManualModelList
+                  config={selectedConfig}
+                  copy={copy}
+                  locale={locale}
+                  onDelete={(profile) => void deleteManualModel(selectedConfig, profile)}
+                  onEdit={beginManualModelEdit}
+                  onToggle={(profile) => void toggleModel(selectedConfig, profile)}
+                  updating={isMutating}
+                />
+              </details>
+            </div>
+          ) : null}
         </Pane>
       </SplitPane>
-    </>
+    </div>
   );
 
   if (embedded) {
-    return settingsContent;
+    return content;
   }
 
   return (
@@ -886,425 +694,618 @@ export function AISettingsPage({ embedded = false, onBackToWorkspace, onOpenChat
       <SurfaceHeader
         actions={
           <>
-            {onBackToWorkspace ? <Button onClick={onBackToWorkspace}>← Projects</Button> : null}
-            {onOpenUsage ? <Button onClick={onOpenUsage}>Open usage summary</Button> : null}
+            {onBackToWorkspace ? <Button disabled={isMutating} onClick={onBackToWorkspace}>{copy.projects}</Button> : null}
+            {onOpenUsage ? <Button disabled={isMutating} onClick={onOpenUsage}>{copy.usage}</Button> : null}
           </>
         }
-        description="The API returns only your provider metadata plus safe key status. Full API keys are accepted only as write-only replacement values and are never re-rendered by this UI."
-        eyebrow="Personal AI settings"
-        title="Configure AI providers from safe presets."
+        description={copy.description}
+        eyebrow={copy.eyebrow}
+        title={copy.title}
         titleId="ai-settings-title"
       />
-
-      {settingsContent}
+      {content}
     </WorkbenchSurface>
   );
 }
 
-type TextFieldProps = {
-  readonly inputMode?: "decimal" | "numeric";
-  readonly label: string;
-  readonly list?: string;
-  readonly onChange: (value: string) => void;
-  readonly placeholder?: string;
-  readonly required?: boolean;
-  readonly value: string;
-};
-
-function TextField({ inputMode, label, list, onChange, placeholder, required = false, value }: TextFieldProps) {
-  return (
-    <Field label={label}>
-      <input
-        inputMode={inputMode}
-        list={list}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        placeholder={placeholder}
-        required={required}
-        type="text"
-        value={value}
-      />
-    </Field>
-  );
-}
-
-type ProviderConfigCardProps = {
-  readonly config: AIProviderConfigView;
-  readonly discovery: DiscoveryState;
-  readonly healthCheck: HealthCheckState;
-  readonly isSelected: boolean;
-  readonly onDelete: () => void;
-  readonly onDiscover: () => void;
-  readonly onEdit: () => void;
-  readonly onOpenChat?: () => void;
-  readonly onSetDefault: () => void;
-  readonly onTest: () => void;
-};
-
-function ProviderConfigCard({
+function ProviderConnectionRow({
   config,
-  discovery,
-  healthCheck,
+  copy,
+  disabled,
   isSelected,
   onDelete,
-  onDiscover,
-  onEdit,
-  onOpenChat,
-  onSetDefault,
-  onTest
-}: ProviderConfigCardProps) {
-  const profile = defaultModelProfile(config);
+  onOpen
+}: {
+  readonly config: AIProviderConfigView;
+  readonly copy: AISettingsCopy;
+  readonly disabled: boolean;
+  readonly isSelected: boolean;
+  readonly onDelete: () => void;
+  readonly onOpen: () => void;
+}) {
+  const kind = providerKindForConfig(config);
+  const connectionTone = connectionToneFor(config);
+  const syncToneValue = syncToneForConfig(config);
+
   return (
-    <article aria-current={isSelected ? "true" : undefined} className="jixia-ai-provider-card">
-      <div className="jixia-ai-provider-card__header">
-        <div>
+    <article aria-current={isSelected ? "true" : undefined} className="jixia-provider-connection-row">
+      <button className="jixia-provider-connection-row__main" disabled={disabled} onClick={onOpen} type="button">
+        <ProviderGlyph kind={kind} />
+        <span>
           <strong>{config.name}</strong>
-          <span>{config.provider} · {config.modelProfiles.length} model {config.modelProfiles.length === 1 ? "profile" : "profiles"}</span>
-        </div>
-        <div className="jixia-ai-provider-card__pills">
-          {config.isDefault ? <Pill tone="accent">Default</Pill> : null}
-          <Pill tone={config.hasKey ? "success" : "warning"}>{config.hasKey ? "Key saved" : "No key"}</Pill>
-          <Pill tone={healthCheck.status === "passed" ? "success" : healthCheck.status === "failed" ? "danger" : "neutral"}>
-            {healthLabel(healthCheck)}
-          </Pill>
-          <Pill tone={discovery.status === "discovered" ? "success" : discovery.status === "error" ? "danger" : discovery.status === "empty" ? "warning" : "neutral"}>
-            {discoveryLabel(discovery, config)}
-          </Pill>
-        </div>
+          <small>{copy.providerKinds[kind]} · {config.modelProfiles.length} {copy.inventory.toLowerCase()}</small>
+        </span>
+      </button>
+      <div className="jixia-provider-connection-row__status">
+        {config.isDefault ? <Pill tone="accent">{copy.defaultConnection}</Pill> : null}
+        <Pill tone={connectionTone}>{connectionLabel(config, copy)}</Pill>
+        <Pill tone={syncToneValue}>{syncLabel(config, copy)}</Pill>
       </div>
-      <div className="jixia-ai-provider-card__meta">
-        <span>{config.baseURL}</span>
-        <span>{profile ? `default ${profile.displayName} · ${profile.model}` : "no model profiles"} · {config.hasKey ? "server key present" : "missing key"}</span>
-      </div>
-      <HealthCheckCard healthCheck={healthCheck} compact />
-      <DiscoveryCard compact discovery={discovery} />
-      <div className="jixia-ai-provider-card__actions">
-        <Button onClick={onTest}>{healthCheck.status === "testing" ? `Testing ${config.name}…` : `Test ${config.name}`}</Button>
-        <Button disabled={!config.hasKey || discovery.status === "discovering"} onClick={onDiscover} variant="primary">
-          {discovery.status === "discovering" ? "Discovering…" : "Discover models"}
+      <div className="jixia-provider-connection-row__actions">
+        <Button aria-label={`${copy.actions.edit} ${config.name}`} disabled={disabled} onClick={onOpen} title={`${copy.actions.edit} ${config.name}`}>
+          <Pencil aria-hidden="true" className="jixia-button__icon" size={15} />
         </Button>
-        <Button onClick={onEdit}>Edit {config.name}</Button>
-        <Button disabled={config.isDefault} onClick={onSetDefault}>Set default</Button>
-        {onOpenChat && healthCheck.status === "passed" && !isSelected ? <Button onClick={onOpenChat} variant="primary">Back to chat</Button> : null}
-        <Button onClick={onDelete} variant="danger">Delete {config.name}</Button>
+        <Button aria-label={`${copy.actions.delete} ${config.name}`} disabled={disabled} onClick={onDelete} title={`${copy.actions.delete} ${config.name}`} variant="danger">
+          <Trash2 aria-hidden="true" className="jixia-button__icon" size={15} />
+        </Button>
       </div>
     </article>
   );
 }
 
-type ModelProfileListProps = {
-  readonly config: AIProviderConfigView;
-  readonly onDelete: (profile: AIModelProfileView) => void;
-  readonly onEdit: (profile: AIModelProfileView) => void;
-  readonly onSetDefault: (profile: AIModelProfileView) => void;
-  readonly onTest: (profile: AIModelProfileView) => void;
-  readonly onToggleEnabled: (profile: AIModelProfileView) => void;
-};
-
-function ModelProfileList({ config, onDelete, onEdit, onSetDefault, onTest, onToggleEnabled }: ModelProfileListProps) {
+function ProviderKindButton({
+  copy,
+  disabled,
+  isSelected,
+  kind,
+  onSelect
+}: {
+  readonly copy: AISettingsCopy;
+  readonly disabled: boolean;
+  readonly isSelected: boolean;
+  readonly kind: ProviderKind;
+  readonly onSelect: () => void;
+}) {
   return (
-    <section aria-label="Saved model profiles" className="jixia-ai-model-profile-list">
-      <div>
-        <strong>Saved model profiles</strong>
-        <span>Selectable models under {config.name}. Provider key and base URL remain account-level.</span>
-      </div>
-      {config.modelProfiles.length === 0 ? (
-        <div className="jixia-ai-model-profile-row">
-          <span>No model profiles saved for this provider account.</span>
-        </div>
-      ) : config.modelProfiles.map((profile) => (
-        <article className="jixia-ai-model-profile-row" key={profile.id}>
-          <div>
-            <strong>{profile.displayName}</strong>
-            <span>{profile.model} · temp {profile.temperature} · {profile.maxTokens} tokens</span>
-          </div>
-          <div className="jixia-ai-provider-card__pills">
-            {profile.isDefault ? <Pill tone="accent">Default model</Pill> : null}
-            <Pill tone={profile.enabled ? "success" : "warning"}>{profile.enabled ? "Enabled" : "Disabled"}</Pill>
-          </div>
-          <div className="jixia-ai-provider-card__actions">
-            <Button onClick={() => onTest(profile)} type="button">Test model</Button>
-            <Button onClick={() => onEdit(profile)} type="button">Edit model</Button>
-            <Button onClick={() => onToggleEnabled(profile)} type="button" variant={profile.enabled ? "ghost" : "secondary"}>
-              {profile.enabled ? "Disable model" : "Enable model"}
-            </Button>
-            <Button disabled={profile.isDefault} onClick={() => onSetDefault(profile)} type="button">Set model default</Button>
-            <Button onClick={() => onDelete(profile)} type="button" variant="danger">Delete model</Button>
-          </div>
-        </article>
-      ))}
+    <button aria-pressed={isSelected} className="jixia-provider-kind-button" disabled={disabled} onClick={onSelect} type="button">
+      <ProviderGlyph kind={kind} />
+      <span>
+        <strong>{copy.providerKinds[kind]}</strong>
+        <small>{copy.providerDescriptions[kind]}</small>
+      </span>
+      {isSelected ? <CheckCircle2 aria-label={copy.providerKinds[kind]} className="jixia-provider-kind-button__selected" size={16} /> : null}
+    </button>
+  );
+}
+
+function ProviderGlyph({ kind }: { readonly kind: ProviderKind }) {
+  const Icon = kind === "anthropic" ? Bot : kind === "openai_compatible" ? Cable : Cloud;
+  return <Icon aria-hidden="true" className="jixia-provider-glyph" size={18} strokeWidth={1.8} />;
+}
+
+function ProviderPhase({ children, title }: { readonly children: ReactNode; readonly title: string }) {
+  return (
+    <section className="jixia-provider-phase">
+      <h3 className="jixia-provider-phase__title">{title}</h3>
+      {children}
     </section>
   );
 }
 
-function HealthCheckCard({ healthCheck, compact = false }: { readonly compact?: boolean; readonly healthCheck: HealthCheckState }) {
-  if (healthCheck.status === "idle") {
-    return compact ? null : (
-      <div className="jixia-ai-health-card">
-        <strong>Provider test not run</strong>
-        <span>Test the draft or saved config before starting a conversation.</span>
-      </div>
-    );
-  }
+function ConnectionStatus({ config, copy, locale }: { readonly config: AIProviderConfigView; readonly copy: AISettingsCopy; readonly locale: Locale }) {
+  const connection = config.connection;
+  const transport = connection?.transport ?? "not_checked";
+  const authentication = connection?.authentication ?? "not_checked";
 
-  if (healthCheck.status === "testing") {
-    return (
-      <div className="jixia-ai-health-card jixia-ai-health-card--testing" role="status">
-        <strong>Testing provider through Jixia API…</strong>
-        <span>Keys stay server-side; the browser receives only safe health metadata.</span>
-      </div>
-    );
-  }
-
-  const result = healthCheck.result;
   return (
-    <div className={`jixia-ai-health-card jixia-ai-health-card--${healthCheck.status}`} role={healthCheck.status === "failed" ? "alert" : "status"}>
-      <strong>{healthCheck.status === "passed" ? "Connection verified" : "Connection failed"}</strong>
-      <span>{result?.message ?? "The provider test did not return details."}</span>
-      {result ? (
-        <small>
-          {result.provider} · {result.model} · {result.baseURL} · {result.latencyMs}ms · {result.category ?? "ok"}
-        </small>
+    <div className="jixia-provider-status-band" data-tone={connectionToneFor(config)}>
+      <div>
+        <strong>{connectionLabel(config, copy)}</strong>
+        <span>{connection?.message ?? connectionMessage(config, copy)}</span>
+      </div>
+      <div className="jixia-provider-status-band__meta">
+        <Pill tone={transport === "reachable" ? "success" : transport === "unreachable" ? "danger" : "neutral"}>{transportLabel(transport, copy)}</Pill>
+        <Pill tone={authentication === "verified" ? "success" : authentication === "rejected" ? "danger" : "warning"}>{authLabel(authentication, copy)}</Pill>
+        {connection?.lastAttemptAt ? <small>{copy.updatedAt} {formatTimestamp(connection.lastAttemptAt, locale)}</small> : null}
+      </div>
+    </div>
+  );
+}
+
+function SyncStatus({ config, copy, locale }: { readonly config: AIProviderConfigView; readonly copy: AISettingsCopy; readonly locale: Locale }) {
+  const sync = config.sync;
+  const discovery = sync?.discovery ?? "not_attempted";
+  const freshness = sync?.freshness ?? "never";
+
+  return (
+    <div className="jixia-provider-sync-state">
+      <div className="jixia-provider-status-band" data-tone={syncToneForConfig(config)}>
+        <div>
+          <strong>{syncLabel(config, copy)}</strong>
+          <span>{sync?.message ?? syncMessageForConfig(config, copy)}</span>
+        </div>
+        <div className="jixia-provider-status-band__meta">
+          <Pill tone={syncToneForConfig(config)}>{freshnessLabel(freshness, copy)}</Pill>
+          {sync?.lastSuccessfulSyncAt ? <small>{copy.updatedAt} {formatTimestamp(sync.lastSuccessfulSyncAt, locale)}</small> : null}
+        </div>
+      </div>
+      {discovery === "unsupported" ? <Notice tone="warning">{copy.unsupportedDiscoveryHint}</Notice> : null}
+      {discovery === "empty" ? <Notice tone="warning">{copy.emptyInventoryHint}</Notice> : null}
+    </div>
+  );
+}
+
+function ModelInventory({
+  chosenModel,
+  chosenModelProfileId,
+  config,
+  copy,
+  disabled,
+  isSavingDefault,
+  locale,
+  onChoose,
+  onSetDefault,
+  selectableModels
+}: {
+  readonly chosenModel: AIModelProfileView | null;
+  readonly chosenModelProfileId: string;
+  readonly config: AIProviderConfigView;
+  readonly copy: AISettingsCopy;
+  readonly disabled: boolean;
+  readonly isSavingDefault: boolean;
+  readonly locale: Locale;
+  readonly onChoose: (modelProfileId: string) => void;
+  readonly onSetDefault: () => void;
+  readonly selectableModels: readonly { readonly profile: AIModelProfileView }[];
+}) {
+  return (
+    <div className="jixia-provider-inventory">
+      {selectableModels.length === 0 ? (
+        <Notice tone="warning">{copy.noSelectableModel}</Notice>
+      ) : (
+        <div className="jixia-provider-default-model-control">
+          <Field label={copy.selectModel}>
+            <select aria-label={copy.selectModel} disabled={disabled} onChange={(event) => onChoose(event.currentTarget.value)} value={chosenModelProfileId}>
+              {selectableModels.map(({ profile }) => (
+                <option key={profile.id} value={profile.id}>{modelOptionLabel(profile, copy)}</option>
+              ))}
+            </select>
+          </Field>
+          <Button disabled={disabled || isSavingDefault || !chosenModel || chosenModel.isDefault} onClick={onSetDefault} variant="primary">
+            {copy.actions.setDefault}
+          </Button>
+        </div>
+      )}
+
+      {config.modelProfiles.length > 0 ? (
+        <div className="jixia-provider-model-list" aria-label={copy.inventory}>
+          {config.modelProfiles.map((profile) => (
+            <ModelInventoryRow copy={copy} key={profile.id} locale={locale} profile={profile} />
+          ))}
+        </div>
       ) : null}
     </div>
   );
 }
 
-function DiscoveryCard({ discovery, compact = false }: { readonly compact?: boolean; readonly discovery: DiscoveryState }) {
-  if (discovery.status === "idle") {
-    return compact ? null : (
-      <div className="jixia-ai-health-card">
-        <strong>Model discovery not run</strong>
-        <span>Discover models after the provider connection has a saved server-side key.</span>
-      </div>
-    );
-  }
+function ModelInventoryRow({ copy, locale, profile }: { readonly copy: AISettingsCopy; readonly locale: Locale; readonly profile: AIModelProfileView }) {
+  const availability = availabilityState(profile);
 
-  if (discovery.status === "discovering") {
-    return (
-      <div className="jixia-ai-health-card jixia-ai-health-card--testing" role="status">
-        <strong>Discovering models through Jixia API…</strong>
-        <span>The browser does not call provider /models endpoints or receive key material.</span>
+  return (
+    <article className="jixia-provider-model-row">
+      <div className="jixia-provider-model-row__title">
+        <strong>{profile.displayName}</strong>
+        <span>{profile.model}</span>
       </div>
-    );
+      <div className="jixia-provider-model-row__pills">
+        {profile.isDefault ? <Pill tone="accent">{copy.defaultModel}</Pill> : null}
+        <Pill tone={availability === "available" ? "success" : availability === "unavailable" ? "danger" : "warning"}>{copy.availability[availability]}</Pill>
+        <Pill>{profile.origin === "manual" ? copy.origins.manual : copy.origins.discovered}</Pill>
+      </div>
+      <CapabilityFacts copy={copy} profile={profile} />
+      {profile.provenance?.observedAt ? <small>{copy.updatedAt} {formatTimestamp(profile.provenance.observedAt, locale)}</small> : null}
+    </article>
+  );
+}
+
+function CapabilityFacts({ copy, profile }: { readonly copy: AISettingsCopy; readonly profile: AIModelProfileView }) {
+  const capabilities = profile.capabilities;
+  if (!capabilities) {
+    return <div className="jixia-provider-capability-facts"><CapabilityFact copy={copy} label={copy.capabilities.context} state="unknown" /></div>;
   }
 
   return (
-    <div className={`jixia-ai-health-card jixia-ai-health-card--${discovery.status === "error" ? "failed" : discovery.status === "empty" ? "failed" : "passed"}`} role={discovery.status === "error" ? "alert" : "status"}>
-      <strong>{discovery.status === "discovered" ? "Models discovered" : discovery.status === "empty" ? "No provider models returned" : "Model discovery failed"}</strong>
-      <span>{discovery.message ?? "Discovery did not return details."}</span>
-      {discovery.result ? (
-        <small>
-          {discovery.result.discovered} discovered · {discovery.result.created} created · {discovery.result.skipped} already present · {discovery.result.updated} defaults updated
-        </small>
-      ) : null}
+    <div className="jixia-provider-capability-facts">
+      <CapabilityFact copy={copy} label={copy.capabilities.context} state={capabilities.contextWindowTokens.state} value={capabilities.contextWindowTokens.value} />
+      <CapabilityFact copy={copy} label={copy.capabilities.output} state={capabilities.maxOutputTokens.state} value={capabilities.maxOutputTokens.value} />
+      <CapabilityFact copy={copy} label={copy.capabilities.input} state={capabilities.inputModalities.state} values={capabilities.inputModalities.values} />
+      <CapabilityFact copy={copy} label={copy.capabilities.outputModalities} state={capabilities.outputModalities.state} values={capabilities.outputModalities.values} />
+      <CapabilityFact copy={copy} label={copy.capabilities.parameters} state={capabilities.supportedParameters.state} values={capabilities.supportedParameters.values} />
     </div>
   );
 }
 
-function formFromPreset(preset: ProviderPreset): FormState {
+function CapabilityFact({
+  copy,
+  label,
+  state,
+  value,
+  values
+}: {
+  readonly copy: AISettingsCopy;
+  readonly label: string;
+  readonly state: AICapabilityFactState;
+  readonly value?: number | null;
+  readonly values?: readonly string[];
+}) {
+  const factValue = state === "observed"
+    ? value !== undefined && value !== null
+      ? value.toLocaleString()
+      : values && values.length > 0
+        ? compactValues(values)
+        : copy.capabilities.observed
+    : copy.capabilities[state];
+  return <span>{label}: {factValue}</span>;
+}
+
+function ManualModelEditor({
+  copy,
+  disabled,
+  draft,
+  editingModel,
+  onCancel,
+  onChange,
+  onSave,
+  saving
+}: {
+  readonly copy: AISettingsCopy;
+  readonly disabled: boolean;
+  readonly draft: ManualModelDraft;
+  readonly editingModel: AIModelProfileView | null;
+  readonly onCancel: () => void;
+  readonly onChange: (draft: ManualModelDraft) => void;
+  readonly onSave: () => void;
+  readonly saving: boolean;
+}) {
+  return (
+    <div className="jixia-provider-manual-editor">
+      <p>{copy.manualModelHint}</p>
+      <div className="jixia-provider-settings__field-grid">
+        <Field label={copy.displayName}>
+          <input disabled={disabled} onChange={(event) => onChange({ ...draft, displayName: event.currentTarget.value })} value={draft.displayName} />
+        </Field>
+        <Field label={copy.modelIdentifier}>
+          <input disabled={disabled} onChange={(event) => onChange({ ...draft, model: event.currentTarget.value })} value={draft.model} />
+        </Field>
+        <Field label={copy.temperature}>
+          <input disabled={disabled} inputMode="decimal" onChange={(event) => onChange({ ...draft, temperature: event.currentTarget.value })} value={draft.temperature} />
+        </Field>
+        <Field label={copy.maxTokens}>
+          <input disabled={disabled} inputMode="numeric" onChange={(event) => onChange({ ...draft, maxTokens: event.currentTarget.value })} value={draft.maxTokens} />
+        </Field>
+      </div>
+      <div className="jixia-provider-settings__actions">
+        <Button disabled={disabled || saving} onClick={onSave} variant="primary">
+          <Plus aria-hidden="true" className="jixia-button__icon" size={15} />
+          {saving ? copy.savingConnection : editingModel ? copy.actions.saveModel : copy.actions.addModel}
+        </Button>
+        {editingModel ? <Button disabled={disabled} onClick={onCancel}>{copy.actions.cancel}</Button> : null}
+      </div>
+    </div>
+  );
+}
+
+function ManualModelList({
+  config,
+  copy,
+  locale,
+  onDelete,
+  onEdit,
+  onToggle,
+  updating
+}: {
+  readonly config: AIProviderConfigView;
+  readonly copy: AISettingsCopy;
+  readonly locale: Locale;
+  readonly onDelete: (profile: AIModelProfileView) => void;
+  readonly onEdit: (profile: AIModelProfileView) => void;
+  readonly onToggle: (profile: AIModelProfileView) => void;
+  readonly updating: boolean;
+}) {
+  const manualProfiles = config.modelProfiles.filter((profile) => profile.origin !== "discovered");
+
+  return (
+    <div className="jixia-provider-manual-list">
+      {manualProfiles.map((profile) => (
+        <article className="jixia-provider-manual-row" key={profile.id}>
+          <div>
+            <strong>{profile.displayName}</strong>
+            <span>{profile.model} · {profile.enabled ? copy.actions.disable : copy.actions.enable}</span>
+            <small>{copy.updatedAt} {formatTimestamp(profile.updatedAt, locale)}</small>
+          </div>
+          <div className="jixia-provider-manual-row__actions">
+            <Button aria-label={`${copy.actions.edit} ${profile.displayName}`} onClick={() => onEdit(profile)} title={`${copy.actions.edit} ${profile.displayName}`}>
+              <Pencil aria-hidden="true" className="jixia-button__icon" size={15} />
+            </Button>
+            <Button disabled={updating} onClick={() => onToggle(profile)}>{profile.enabled ? copy.actions.disable : copy.actions.enable}</Button>
+            <Button aria-label={`${copy.actions.delete} ${profile.displayName}`} disabled={updating} onClick={() => onDelete(profile)} title={`${copy.actions.delete} ${profile.displayName}`} variant="danger">
+              <Trash2 aria-hidden="true" className="jixia-button__icon" size={15} />
+            </Button>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function connectionDraftForKind(kind: ProviderKind, copy: AISettingsCopy): ConnectionDraft {
   return {
-    presetId: preset.id,
-    name: preset.name,
-    provider: preset.provider,
-    baseURL: preset.baseURL,
-    modelDisplayName: preset.modelDisplayName,
-    model: preset.model,
-    temperature: String(preset.temperature),
-    maxTokens: String(preset.maxTokens),
+    kind,
+    name: copy.providerKinds[kind],
+    baseURL: managedProviderOrigins[kind] ?? "",
+    customBaseURL: "",
     apiKey: "",
     isDefault: false
   };
 }
 
-function presetById(presetId: ProviderPresetId): ProviderPreset {
-  return providerPresets.find((preset) => preset.id === presetId) ?? customProviderPreset;
-}
+function connectionDraftFromConfig(config: AIProviderConfigView): ConnectionDraft {
+  const kind = providerKindForConfig(config);
 
-function withInferredPreset(form: FormState): FormState {
   return {
-    ...form,
-    presetId: inferPresetId(form.provider, form.baseURL)
+    kind,
+    name: config.name,
+    baseURL: config.baseURL,
+    customBaseURL: kind === "openai_compatible" ? config.baseURL : "",
+    apiKey: "",
+    isDefault: config.isDefault
   };
 }
 
-function inferPresetId(provider: string, baseURL: string): ProviderPresetId {
-  const normalizedProvider = provider.trim().toLowerCase();
-  const normalizedBaseURL = normalizePresetBaseURL(baseURL);
-  const match = providerPresets.find(
-    (preset) =>
-      preset.id !== "custom" &&
-      preset.provider === normalizedProvider &&
-      normalizePresetBaseURL(preset.baseURL) === normalizedBaseURL
-  );
-  return match?.id ?? "custom";
-}
-
-function normalizePresetBaseURL(baseURL: string): string {
-  return baseURL.trim().replace(/\/+$/, "").toLowerCase();
-}
-
-type ParsedForm =
-  | {
-      readonly ok: true;
-      readonly payload: Omit<CreateAIProviderConfigRequest, "apiKey" | "defaultModelProfile">;
-    }
+type ParsedConnectionDraft =
+  | { readonly ok: true; readonly payload: Omit<CreateAIProviderConfigRequest, "apiKey" | "defaultModelProfile"> }
   | { readonly ok: false; readonly message: string };
 
-type ParsedModelProfileForm =
-  | {
-      readonly ok: true;
-      readonly payload: CreateAIModelProfileRequest;
-    }
-  | { readonly ok: false; readonly message: string };
-
-function parseProviderAccountForm(form: FormState): ParsedForm {
-  if (!form.name.trim()) {
-    return { ok: false, message: "Provider account name is required." };
+function parseConnectionDraft(draft: ConnectionDraft, copy: AISettingsCopy): ParsedConnectionDraft {
+  if (!draft.name.trim()) {
+    return { ok: false, message: copy.providerName };
   }
 
-  if (!form.provider.trim()) {
-    return { ok: false, message: "Provider is required." };
-  }
-
-  if (!form.baseURL.trim()) {
-    return { ok: false, message: "Base URL is required." };
+  if (draft.kind === "openai_compatible" && !draft.baseURL.trim()) {
+    return { ok: false, message: copy.customBaseUrl };
   }
 
   return {
     ok: true,
     payload: {
-      name: form.name.trim(),
-      provider: form.provider.trim(),
-      baseURL: form.baseURL.trim(),
-      isDefault: form.isDefault
+      name: draft.name.trim(),
+      provider: providerIdentifier(draft.kind),
+      providerKind: draft.kind,
+      baseURL: managedProviderOrigins[draft.kind] ?? draft.baseURL.trim(),
+      isDefault: draft.isDefault
     }
   };
 }
 
-function parseModelProfileForm(
-  form: FormState,
-  options: { readonly enabled?: boolean; readonly isDefault?: boolean } = {}
-): ParsedModelProfileForm {
-  const temperature = Number(form.temperature);
-  const maxTokens = Number(form.maxTokens);
-
-  if (!form.modelDisplayName.trim()) {
-    return { ok: false, message: "Model profile name is required." };
-  }
-
-  if (!form.model.trim()) {
-    return { ok: false, message: "Model is required." };
-  }
-
-  if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
-    return { ok: false, message: "Temperature must be a number between 0 and 2." };
-  }
-
-  if (!Number.isInteger(maxTokens) || maxTokens <= 0) {
-    return { ok: false, message: "Max tokens must be a positive integer." };
-  }
-
-  return {
-    ok: true,
-    payload: {
-      displayName: form.modelDisplayName.trim(),
-      model: form.model.trim(),
-      temperature,
-      maxTokens,
-      ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
-      ...(options.isDefault === undefined ? {} : { isDefault: options.isDefault })
-    }
-  };
-}
-
-function createPayloadFromForm(
-  formPayload: Omit<CreateAIProviderConfigRequest, "apiKey">,
+function createConnectionPayload(
+  payload: Omit<CreateAIProviderConfigRequest, "apiKey" | "defaultModelProfile">,
   apiKey: string
 ): CreateAIProviderConfigRequest {
-  const trimmedApiKey = apiKey.trim();
-  return trimmedApiKey ? { ...formPayload, apiKey: trimmedApiKey } : formPayload;
+  const normalizedApiKey = apiKey.trim();
+  return normalizedApiKey ? { ...payload, apiKey: normalizedApiKey } : payload;
 }
 
-function draftTestPayloadFromForm(
-  providerPayload: Omit<CreateAIProviderConfigRequest, "apiKey" | "defaultModelProfile">,
-  profilePayload: CreateAIModelProfileRequest,
-  apiKey: string
-): CreateAIProviderConfigRequest & CreateAIModelProfileRequest {
-  const trimmedApiKey = apiKey.trim();
-  return {
-    ...providerPayload,
-    ...profilePayload,
-    ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {})
-  };
-}
-
-function savedTestPayloadFromForm(form: FormState): TestAIProviderSavedRequest {
-  const parsed = parseModelProfileForm(form);
-  if (!parsed.ok) {
-    return {};
-  }
-
-  const trimmedApiKey = form.apiKey.trim();
-  return {
-    model: parsed.payload.model,
-    temperature: parsed.payload.temperature,
-    maxTokens: parsed.payload.maxTokens,
-    ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {})
-  };
-}
-
-function stateFromHealthCheck(result: ProviderHealthCheck): HealthCheckState {
-  return { status: result.ok ? "passed" : "failed", result };
-}
-
-function healthLabel(healthCheck: HealthCheckState): string {
-  switch (healthCheck.status) {
-    case "testing":
-      return "Testing";
-    case "passed":
-      return "Test passed";
-    case "failed":
-      return "Test failed";
-    case "idle":
-      return "Untested";
-  }
-}
-
-function discoveryLabel(discovery: DiscoveryState, config: AIProviderConfigView): string {
-  switch (discovery.status) {
-    case "discovering":
-      return "Discovering";
-    case "discovered":
-      return `${discovery.result?.discovered ?? config.modelProfiles.length} discovered`;
-    case "empty":
-      return "No models";
-    case "error":
-      return "Discovery failed";
-    case "idle":
-      return config.modelProfiles.length > 0 ? `${config.modelProfiles.length} saved models` : "Not discovered";
-  }
-}
-
-
-function updatePayloadFromForm(
-  formPayload: Omit<CreateAIProviderConfigRequest, "apiKey" | "defaultModelProfile">,
+function updateConnectionPayload(
+  payload: Omit<CreateAIProviderConfigRequest, "apiKey" | "defaultModelProfile">,
   apiKey: string
 ): UpdateAIProviderConfigRequest {
-  const trimmedApiKey = apiKey.trim();
-  return trimmedApiKey ? { ...formPayload, apiKey: trimmedApiKey } : formPayload;
+  const normalizedApiKey = apiKey.trim();
+  return normalizedApiKey ? { ...payload, apiKey: normalizedApiKey } : payload;
+}
+
+type ParsedManualModelDraft =
+  | { readonly ok: true; readonly payload: CreateAIModelProfileRequest }
+  | { readonly ok: false; readonly message: string };
+
+function parseManualModelDraft(draft: ManualModelDraft, copy: AISettingsCopy): ParsedManualModelDraft {
+  const temperature = Number(draft.temperature);
+  const maxTokens = Number(draft.maxTokens);
+
+  if (!draft.displayName.trim()) {
+    return { ok: false, message: copy.displayName };
+  }
+  if (!draft.model.trim()) {
+    return { ok: false, message: copy.modelIdentifier };
+  }
+  if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
+    return { ok: false, message: copy.temperature };
+  }
+  if (!Number.isInteger(maxTokens) || maxTokens <= 0) {
+    return { ok: false, message: copy.maxTokens };
+  }
+
+  return {
+    ok: true,
+    payload: {
+      displayName: draft.displayName.trim(),
+      model: draft.model.trim(),
+      temperature,
+      maxTokens,
+      enabled: true
+    }
+  };
+}
+
+function updateManualModelPayload(payload: CreateAIModelProfileRequest): UpdateAIModelProfileRequest {
+  return {
+    displayName: payload.displayName,
+    model: payload.model,
+    temperature: payload.temperature,
+    maxTokens: payload.maxTokens
+  };
+}
+
+function providerIdentifier(kind: ProviderKind): string {
+  return kind === "openai_compatible" ? "openai-compatible" : kind;
+}
+
+function providerKindForConfig(config: AIProviderConfigView): ProviderKind {
+  if (config.providerKind) {
+    return config.providerKind;
+  }
+  if (config.provider === "openai" || config.provider === "openrouter" || config.provider === "anthropic") {
+    return config.provider;
+  }
+  return "openai_compatible";
 }
 
 function defaultModelProfile(config: AIProviderConfigView): AIModelProfileView | null {
-  return config.modelProfiles.find((profile) => profile.isDefault && profile.enabled)
-    ?? config.modelProfiles.find((profile) => profile.enabled)
-    ?? config.modelProfiles[0]
+  return config.modelProfiles.find((profile) => profile.isDefault && profile.enabled && profile.availability !== "unavailable")
+    ?? config.modelProfiles.find((profile) => profile.enabled && profile.availability !== "unavailable")
     ?? null;
+}
+
+function selectModelProfileId(
+  currentModelProfileId: string,
+  options: readonly { readonly profile: AIModelProfileView }[]
+): string {
+  if (options.some((option) => option.profile.id === currentModelProfileId)) {
+    return currentModelProfileId;
+  }
+  return options.find((option) => option.profile.isDefault)?.profile.id ?? options[0]?.profile.id ?? "";
+}
+
+function modelOptionLabel(profile: AIModelProfileView, copy: AISettingsCopy): string {
+  const availability = availabilityState(profile);
+  return `${profile.displayName} · ${profile.model} · ${copy.availability[availability]}`;
+}
+
+function connectionLabel(config: AIProviderConfigView, copy: AISettingsCopy): string {
+  if (!config.hasKey) {
+    return copy.connectionStates.missingKey;
+  }
+  return authLabel(config.connection?.authentication ?? "not_checked", copy);
+}
+
+function connectionMessage(config: AIProviderConfigView, copy: AISettingsCopy): string {
+  if (!config.hasKey) {
+    return copy.connectionStates.missingKey;
+  }
+  return config.connection?.authentication === "verified" ? copy.connectionStates.verified : copy.connectionStates.notChecked;
+}
+
+function transportLabel(transport: "not_checked" | "reachable" | "unreachable", copy: AISettingsCopy): string {
+  return transport === "reachable"
+    ? copy.connectionStates.reachable
+    : transport === "unreachable"
+      ? copy.connectionStates.unreachable
+      : copy.connectionStates.notChecked;
+}
+
+function authLabel(authentication: "not_checked" | "verified" | "rejected" | "unverified", copy: AISettingsCopy): string {
+  return authentication === "verified"
+    ? copy.connectionStates.verified
+    : authentication === "rejected"
+      ? copy.connectionStates.rejected
+      : authentication === "unverified"
+        ? copy.connectionStates.unverified
+        : copy.connectionStates.notChecked;
+}
+
+function syncLabel(config: AIProviderConfigView, copy: AISettingsCopy): string {
+  const discovery = config.sync?.discovery ?? "not_attempted";
+  return discovery === "available"
+    ? copy.syncStates.available
+    : discovery === "unsupported"
+      ? copy.syncStates.unsupported
+      : discovery === "empty"
+        ? copy.syncStates.empty
+        : discovery === "rate_limited"
+          ? copy.syncStates.rateLimited
+          : discovery === "unavailable"
+            ? copy.syncStates.unavailable
+            : discovery === "malformed"
+              ? copy.syncStates.malformed
+              : copy.syncStates.notAttempted;
+}
+
+function syncMessageForConfig(config: AIProviderConfigView, copy: AISettingsCopy): string {
+  const discovery = config.sync?.discovery ?? "not_attempted";
+  if (discovery === "unsupported") {
+    return copy.unsupportedDiscoveryHint;
+  }
+  if (discovery === "empty") {
+    return copy.emptyInventoryHint;
+  }
+  return syncLabel(config, copy);
+}
+
+function freshnessLabel(freshness: "never" | "fresh" | "stale", copy: AISettingsCopy): string {
+  return freshness === "fresh" ? copy.syncStates.fresh : freshness === "stale" ? copy.syncStates.stale : copy.syncStates.never;
+}
+
+function connectionToneFor(config: AIProviderConfigView): "neutral" | "success" | "warning" | "danger" {
+  if (!config.hasKey) {
+    return "warning";
+  }
+  if (config.connection?.authentication === "verified") {
+    return "success";
+  }
+  if (config.connection?.authentication === "rejected" || config.connection?.transport === "unreachable") {
+    return "danger";
+  }
+  return "warning";
+}
+
+function syncToneForConfig(config: AIProviderConfigView): "neutral" | "success" | "warning" | "danger" {
+  const discovery = config.sync?.discovery ?? "not_attempted";
+  if (discovery === "available" && config.sync?.freshness === "fresh") {
+    return "success";
+  }
+  if (discovery === "unsupported" || discovery === "empty" || discovery === "rate_limited" || discovery === "not_attempted") {
+    return "warning";
+  }
+  if (discovery === "unavailable" || discovery === "malformed") {
+    return "danger";
+  }
+  return "neutral";
+}
+
+function syncTone(discovery: SyncAIProviderCapabilitiesResponse["discovery"]): "success" | "warning" | "danger" {
+  return discovery === "available" ? "success" : discovery === "unavailable" || discovery === "malformed" ? "danger" : "warning";
+}
+
+function syncMessage(response: SyncAIProviderCapabilitiesResponse, copy: AISettingsCopy): string {
+  if (response.discovery === "unsupported") {
+    return copy.unsupportedDiscoveryHint;
+  }
+  if (response.discovery === "empty") {
+    return copy.emptyInventoryHint;
+  }
+  return response.config.sync?.message ?? syncLabel(response.config, copy);
+}
+
+function compactValues(values: readonly string[]): string {
+  const visibleValues = values.slice(0, 3);
+  const suffix = values.length > visibleValues.length ? ` +${values.length - visibleValues.length}` : "";
+  return `${visibleValues.join(", ")}${suffix}`;
+}
+
+function formatTimestamp(value: string, locale: Locale): string {
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function safeErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim() ? error.message : fallback;
+}
+
+function interpolate(template: string, values: Readonly<Record<string, string>>): string {
+  return Object.entries(values).reduce((result, [key, value]) => result.replace(`{${key}}`, value), template);
 }
 
 function compareConfigs(left: AIProviderConfigView, right: AIProviderConfigView): number {
   if (left.isDefault !== right.isDefault) {
     return left.isDefault ? -1 : 1;
   }
-
   return left.name.localeCompare(right.name);
 }
