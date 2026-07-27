@@ -269,7 +269,7 @@ export function ListRow({ actions, className, description, meta, onOpen, selecte
     <article className={classNames("jixia-list-row", selected ? "jixia-list-row--selected" : undefined, className)} {...props}>
       <div className="jixia-list-row__main">
         {onOpen ? (
-          <button className="jixia-list-row__button" onClick={onOpen} type="button">
+          <button aria-pressed={selected} className="jixia-list-row__button" onClick={onOpen} type="button">
             {content}
           </button>
         ) : (

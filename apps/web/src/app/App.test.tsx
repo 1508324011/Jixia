@@ -7,6 +7,7 @@ import type {
   AIUsageAggregateResponse,
   ListDocumentsResponse,
   ListAIConversationsResponse,
+  ListLiteratureResponse,
   LoginResponse
 } from "@jixia/shared";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -100,7 +101,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Search$/ }));
     expect(window.location.pathname).toBe("/search");
-    expect(screen.getByRole("heading", { name: "Search is being prepared for literature discovery." })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Search the literature" })).toBeTruthy();
 
     window.history.back();
 
@@ -174,15 +175,22 @@ describe("App", () => {
 
   it("renders /notebook as a real document-backed surface", async () => {
     window.history.replaceState(null, "", "/notebook");
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
-      jsonResponse({ documents: [notebookDocument] } satisfies ListDocumentsResponse)
-    );
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      if (input === "/api/documents/notebook" && (init?.method ?? "GET") === "GET") {
+        return jsonResponse({ documents: [notebookDocument] } satisfies ListDocumentsResponse);
+      }
+      if (input === "/api/literature?scope=personal&limit=25" && (init?.method ?? "GET") === "GET") {
+        return jsonResponse({ literature: [], nextCursor: null } satisfies ListLiteratureResponse);
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${String(input)}`);
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
 
     expect(await screen.findByText("Notebook documents are returned by the API for the current owner only. Creating a note sends notebook-scoped intent to the same document service used by Project Docs.")).toBeTruthy();
     expect(await screen.findByText("Notebook draft")).toBeTruthy();
+    expect(await screen.findByText("No personal literature")).toBeTruthy();
     expect(screen.queryByText("This workspace is still taking shape")).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/documents/notebook",

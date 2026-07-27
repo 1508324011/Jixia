@@ -1,18 +1,35 @@
-import type { CurrentSessionView, LoginResponse } from "@jixia/shared";
+import type {
+  CurrentSessionView,
+  LiteratureImportWarningCode,
+  LiteratureTargetScope,
+  LoginResponse
+} from "@jixia/shared";
 import { useEffect, useMemo, useState } from "react";
 
 import { AIChatDialog } from "../features/ai/chat/AIChatDialog";
-import { AISettingsPage } from "../features/ai/AISettingsPage";
 import { AIUsagePage } from "../features/ai/AIUsagePage";
 import { AcceptInvitationPage } from "../features/auth/AcceptInvitationPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { DocumentEditorPage } from "../features/documents/DocumentEditorPage";
-import { browserDefaultLocale, localeCatalog, synchronizeDocumentLanguage, type Locale } from "../features/i18n/locale";
+import { browserDefaultLocale, synchronizeDocumentLanguage, type Locale } from "../features/i18n/locale";
 import { AppShell, type AppSurface } from "../features/layout/AppShell";
-import { Button, EmptyState, MetaGrid, Notice, Pane, SurfaceHeader, WorkbenchSurface } from "../features/layout/workbench";
+import { LiteratureRouteSurface } from "../features/literature/LiteratureRouteSurface";
 import { NotebookPage } from "../features/notebook/NotebookPage";
 import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { ProjectListPage } from "../features/projects/ProjectListPage";
+import {
+  isPlaceholderRoute,
+  libraryPath,
+  routeFromLocation,
+  settingsPath,
+  surfacePath,
+  surfaceRoute,
+  type AppRoute,
+  type SettingsSection
+} from "./app-route";
+import { DeferredSurface, SettingsSurface } from "./AppSupportingSurfaces";
+
+export { libraryPath, routeFromLocation } from "./app-route";
 
 export function App() {
   const initialRoute = useMemo(() => routeFromLocation(window.location), []);
@@ -42,6 +59,17 @@ export function App() {
   function navigateSurface(surface: AppSurface): void {
     window.history.pushState(window.history.state, "", surfacePath(surface));
     setRoute(surfaceRoute(surface));
+  }
+
+  function openLiterature(
+    literatureId: string,
+    target: LiteratureTargetScope,
+    importWarnings?: readonly LiteratureImportWarningCode[]
+  ): void {
+    window.history.pushState(window.history.state, "", libraryPath(literatureId, target));
+    setRoute(importWarnings !== undefined && importWarnings.length > 0
+      ? { name: "library", initialLiteratureId: literatureId, target, importWarnings }
+      : { name: "library", initialLiteratureId: literatureId, target });
   }
 
   function navigateAIUsage(): void {
@@ -99,6 +127,7 @@ export function App() {
     return (
       <AppShell activeSurface="projects" currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
         <ProjectDetailPage
+          locale={locale}
           onBack={navigateProjects}
           onOpenDocument={(documentId) => openProjectDocument(route.projectId, documentId)}
           projectId={route.projectId}
@@ -123,7 +152,7 @@ export function App() {
   if (route.name === "notebook") {
     return (
       <AppShell activeSurface="notebook" currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
-        <NotebookPage onOpenDocument={openNotebookDocument} />
+        <NotebookPage locale={locale} onOpenDocument={openNotebookDocument} />
       </AppShell>
     );
   }
@@ -190,6 +219,28 @@ export function App() {
     );
   }
 
+  if (route.name === "search" || route.name === "library") {
+    const literatureRouteContext =
+      route.name === "library"
+        ? {
+            ...(route.initialLiteratureId === undefined ? {} : { initialLiteratureId: route.initialLiteratureId }),
+            ...(route.target === undefined ? {} : { target: route.target }),
+            ...(route.importWarnings === undefined ? {} : { importWarnings: route.importWarnings })
+          }
+        : {};
+
+    return (
+      <AppShell activeSurface={route.name} currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
+        <LiteratureRouteSurface
+          locale={locale}
+          onOpenLiterature={openLiterature}
+          surface={route.name}
+          {...literatureRouteContext}
+        />
+      </AppShell>
+    );
+  }
+
   if (isPlaceholderRoute(route)) {
     return (
       <AppShell activeSurface={route.name} currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
@@ -202,209 +253,5 @@ export function App() {
     <AppShell activeSurface="projects" currentSession={currentSession} locale={locale} onLocaleChange={changeLocale} onNavigate={navigateSurface}>
       <ProjectListPage onOpenProject={openProject} />
     </AppShell>
-  );
-}
-
-type SettingsSection = "account" | "ai";
-
-type AppRoute =
-  | { readonly name: "login" }
-  | { readonly name: "accept-invitation" }
-  | { readonly name: "home" }
-  | { readonly name: "search" }
-  | { readonly name: "library" }
-  | { readonly name: "projects" }
-  | { readonly name: "notebook" }
-  | { readonly name: "notebook-document"; readonly documentId: string }
-  | { readonly name: "ai" }
-  | { readonly name: "settings"; readonly section: SettingsSection }
-  | { readonly name: "ai-usage" }
-  | { readonly name: "project"; readonly projectId: string }
-  | { readonly name: "document"; readonly projectId: string; readonly documentId: string };
-
-type PlaceholderSurface = Extract<AppSurface, "home" | "search" | "library">;
-
-function routeFromLocation(location: Location): AppRoute {
-  if (location.pathname === "/accept-invitation") {
-    return { name: "accept-invitation" };
-  }
-
-  if (location.pathname === "/login" || location.pathname === "/") {
-    return { name: "login" };
-  }
-
-  if (location.pathname === "/home") {
-    return { name: "home" };
-  }
-
-  if (location.pathname === "/search") {
-    return { name: "search" };
-  }
-
-  if (location.pathname === "/library") {
-    return { name: "library" };
-  }
-
-  const notebookDocumentRouteMatch = location.pathname.match(/^\/notebook\/documents\/([^/]+)$/);
-  if (notebookDocumentRouteMatch) {
-    return {
-      name: "notebook-document",
-      documentId: decodeURIComponent(notebookDocumentRouteMatch[1] ?? "")
-    };
-  }
-
-  if (location.pathname === "/notebook") {
-    return { name: "notebook" };
-  }
-
-  if (location.pathname === "/ai") {
-    return { name: "ai" };
-  }
-
-  if (location.pathname === "/settings/ai/usage" || location.pathname === "/ai/usage") {
-    return { name: "ai-usage" };
-  }
-
-  if (location.pathname === "/settings/ai" || location.pathname === "/ai/settings") {
-    return { name: "settings", section: "ai" };
-  }
-
-  if (location.pathname === "/settings" || location.pathname === "/settings/account") {
-    return { name: "settings", section: "account" };
-  }
-
-  const documentRouteMatch = location.pathname.match(/^\/projects\/([^/]+)\/documents\/([^/]+)$/);
-  if (documentRouteMatch) {
-    return {
-      name: "document",
-      projectId: decodeURIComponent(documentRouteMatch[1] ?? ""),
-      documentId: decodeURIComponent(documentRouteMatch[2] ?? "")
-    };
-  }
-
-  const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)$/);
-  if (projectRouteMatch) {
-    return {
-      name: "project",
-      projectId: decodeURIComponent(projectRouteMatch[1] ?? "")
-    };
-  }
-
-  return { name: "projects" };
-}
-
-function settingsPath(section: SettingsSection): string {
-  return section === "account" ? "/settings/account" : "/settings/ai";
-}
-
-function surfacePath(surface: AppSurface): string {
-  if (surface === "projects") {
-    return "/workspace";
-  }
-
-  if (surface === "settings") {
-    return settingsPath("account");
-  }
-
-  return `/${surface}`;
-}
-
-function surfaceRoute(surface: AppSurface): AppRoute {
-  if (surface === "projects") {
-    return { name: "projects" };
-  }
-
-  if (surface === "settings") {
-    return { name: "settings", section: "account" };
-  }
-
-  return { name: surface };
-}
-
-function isPlaceholderRoute(route: AppRoute): route is { readonly name: PlaceholderSurface } {
-  return route.name === "home" || route.name === "search" || route.name === "library";
-}
-
-type DeferredSurfaceProps = {
-  readonly locale: Locale;
-  readonly onOpenProjects: () => void;
-  readonly surface: PlaceholderSurface;
-};
-
-function DeferredSurface({ locale, onOpenProjects, surface }: DeferredSurfaceProps) {
-  const workbenchCopy = localeCatalog(locale).workbench;
-  const copy = workbenchCopy.deferred[surface];
-
-  return (
-    <WorkbenchSurface aria-labelledby={`${surface}-placeholder-title`}>
-      <SurfaceHeader
-        description={copy.description}
-        eyebrow={copy.eyebrow}
-        title={copy.title}
-        titleId={`${surface}-placeholder-title`}
-      />
-      <EmptyState
-        actions={<Button onClick={onOpenProjects}>{workbenchCopy.openProjects}</Button>}
-        description={workbenchCopy.deferredDescription}
-        title={workbenchCopy.deferredTitle}
-      />
-    </WorkbenchSurface>
-  );
-}
-
-type SettingsSurfaceProps = {
-  readonly currentSession: CurrentSessionView | null;
-  readonly locale: Locale;
-  readonly onOpenChat: () => void;
-  readonly onOpenUsage: () => void;
-  readonly section: SettingsSection;
-};
-
-function SettingsSurface({ currentSession, locale, onOpenChat, onOpenUsage, section }: SettingsSurfaceProps) {
-  const copy = localeCatalog(locale).workbench.settings;
-
-  return (
-    <WorkbenchSurface aria-labelledby="settings-title" width="full">
-      <SurfaceHeader
-        description={copy.description}
-        eyebrow={copy.eyebrow}
-        title={copy.title}
-        titleId="settings-title"
-      />
-
-      <div className="jixia-settings-detail">
-        {section === "account" ? (
-          <AccountSettingsPanel currentSession={currentSession} locale={locale} />
-        ) : (
-          <AISettingsPage embedded locale={locale} onOpenChat={onOpenChat} onOpenUsage={onOpenUsage} />
-        )}
-      </div>
-    </WorkbenchSurface>
-  );
-}
-
-function AccountSettingsPanel({ currentSession, locale }: { readonly currentSession: CurrentSessionView | null; readonly locale: Locale }) {
-  const copy = localeCatalog(locale).workbench.settings;
-
-  return (
-    <Pane muted title={copy.accountTitle} titleId="settings-account-title">
-      <Notice>{copy.accountNotice}</Notice>
-      <MetaGrid
-        items={[
-          {
-            label: copy.name,
-            value: currentSession?.user.displayName ?? copy.unavailable
-          },
-          {
-            label: copy.email,
-            value: currentSession?.user.email ?? copy.unavailable
-          },
-          {
-            label: copy.space,
-            value: currentSession?.user.space.name ?? copy.unavailable
-          }
-        ]}
-      />
-    </Pane>
   );
 }
