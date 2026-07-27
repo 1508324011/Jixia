@@ -1,6 +1,6 @@
 # Jixia MVP 锁定规则
 
-_用途：记录已确认的 Jixia MVP 工程边界、权限规则、文档模型、附件链路与 AI 约束。最后更新：2026-06-13。_
+_用途：记录已确认的 Jixia MVP 工程边界、权限规则、文档模型、附件链路与 AI 约束。最后更新：2026-07-17。_
 
 ---
 
@@ -374,6 +374,32 @@ MVP 审计服务治理，不服务内容窥探。
 不写 `AuditEvent`：每次附件下载、AIConversation 删除、个人 AI 对话内容、每次 AI 调用详情。
 
 审计 payload 禁止包含正文、版本快照、附件内容、AI prompt/response、API Key、signed URL、请求头、token、对象存储凭证。
+
+## Post-MVP Literature Foundation 边界
+
+Task25 Phase 1 是首版 MVP 之后、任何 Literature 用户界面之前的服务器基础阶段。它不改变上文“首版不提供结构化证据/引用产品能力”的规则，只允许建立后续阶段需要的最小持久化与 API 边界。
+
+- Phase 1 可以新增 `Literature`、`ProviderRecord`、append-only `Assertion`、append-only `RelationAssertion`、owner-scoped `ImportOperation`、immutable `SourceRevision`、`Annotation`、immutable `Excerpt`、explicit `Evidence`、versioned immutable `NotebookProjection` 和 semantic immutable `CitationOccurrence` 共十一类契约与持久化模型。
+- 每条 Literature 状态必须且只能属于一个个人 owner 或一个 Project。API 对每次读写都必须按已登录 owner 或显式 `ProjectMember` 权限 fail closed；`SpaceAdmin` 身份不得自动获得研究内容访问权。
+- Phase 1 只允许三个 Literature API：创建 Literature、追加规范化 assertions、读取确定性 replay projection。其余上述概念只提供共享语义契约和数据库持久化，不提供 route、job、worker 或 UI。
+- Literature mutation、ordinal 分配、权限校验和 metadata-only `AuditEvent` 必须在同一数据库事务内完成。审计元数据不得保存 provider-native payload、title、abstract、DOI 值、source/annotation/excerpt 内容、prompt、response、signed URL、credential 或 request header。
+- Provider adapter/call、aggregate search、source acquisition/download、Reader UI、Notebook reconciliation/generation、citation parsing/rendering、bibliography、merge/ranking、worker execution、ownership transfer 和所有新前端 surface 均不进入 Phase 1。
+
+## Post-MVP Literature Discovery、Import 与 Library（Task25 Phase 2）
+
+Task25 Phase 2 在 Phase 1 的持久化与权限边界之上，交付受限的外部文献发现、导入和 Library 工作台。它不把 Phase 1 的历史规则改写为“从一开始就提供完整 Literature 产品”，也不开放全文阅读、证据编辑、引用解析或模糊合并。
+
+- External Search 是只读聚合请求。OpenAlex、Crossref、PubMed 负责发现与元数据候选；Unpaywall、PMC 只能作为 enrichment-only 来源，不能成为新的发现入口或全文下载入口。浏览器不得直接访问 provider；provider credentials 只存在服务端。
+- 服务端配置键固定为 `OPENALEX_API_KEY`、`CROSSREF_MAILTO`、`NCBI_API_KEY`、`NCBI_TOOL`、`NCBI_EMAIL`、`UNPAYWALL_EMAIL` 和至少 32 字节的 `LITERATURE_CURSOR_SECRET`。缺失或无效的 provider 配置只禁用对应 adapter，并在 discovery provider status 中返回 `unconfigured`；import operation 使用独立的终态失败码 `provider_unconfigured`。NCBI 配置共同控制 PubMed/PMC。缺失 cursor secret 时 discovery 返回 `503 discovery_unconfigured`，不得阻止其他 API domain 启动。
+- Search response 只返回规范化候选、来源匹配、分页 cursor 和每个 provider 的 succeeded/rate-limited/unavailable/unconfigured 状态。请求 `limit` 默认为 20，只接受 3-20；cursor 最多五页、累计 100 个 exact identities。搜索不得写入 Literature、Assertion 或 AuditEvent；provider 原始 response body 不进入浏览器持久化或数据库。
+- 规范化 query、canonical DOI 和 exact provider source identity 只允许存在于完成 discovery/import 所需的 authenticated transport DTO 与 transient in-memory UI state；不得进入日志、AuditEvent、浏览器持久化或 untyped database payload。持久 DOI/provider identity 只能进入 typed canonical assertion/identity columns。
+- Import request 只接受明确 scope 与 provider seed。服务端重新获取 seed 并在同一 scope 内按确定性 identity 合并；personal 记录只属于 owner，project 记录必须由 ProjectMember 访问。`Idempotency-Key` 必须是 UUID，同一用户、同一 key 与同一请求重放同一个 operation；transport replay 不创建第二次导入。
+- Import 是可观察的 operation 状态机：running、succeeded、failed。failed operation 只能通过显式 retry 继续，retry 增加 attempt 但保留 operation identity；读取、创建、retry 都按 scope fail closed，不因 SpaceAdmin 身份自动扩大研究内容访问权。
+- Library、Notebook personal Literature 和 Project Literature 只读取服务端返回的 summary、projection、provider records 与 typed assertion history。浏览器不重建 canonical state，不保存 raw provider body；冲突和 provenance 由服务端事实展示。列表、详情和 scope 切换必须取消过期请求并丢弃 stale response。
+- Literature 相关 AuditEvent 仅保留 metadata-only 操作信息；不得包含 title、abstract、DOI、provider payload、source/annotation/excerpt 内容、URL、request header、credential、token 或 API key。
+- Phase 2 migration 只能通过 `pnpm db:deploy` 使用独立的特权 `MIGRATION_DATABASE_URL` 和受限 `DATABASE_URL` 部署；直接 `prisma migrate deploy` 不受支持。Guarded rollback 在任何 structured assertion、LiteratureIdentity、ImportOperation 或其他 Phase 2 数据存在时必须拒绝执行，不能丢弃已导入状态。
+
+Task25 Phase 2 的明确非目标仍包括全文/Reader、下载与抓取、fuzzy merge、citation parsing、bibliography、evidence authoring、Notebook reconciliation/generation，以及未被本阶段契约授权的后台 worker。
 
 ## 当前仍待确认
 

@@ -2063,38 +2063,85 @@ content still requires project membership.
 
 ### Post-MVP Stage E: Define Search and Library contracts before full UI
 
-**Decision:** defer full `Search` and `Library` implementation until server-owned
-literature, asset, citation, and external discovery contracts are explicit.
+**Historical decision:** defer full `Search` and `Library` implementation until
+server-owned literature, asset, citation, and external discovery contracts are
+explicit. This gate was completed before Task25 Phase 2; the historical reason
+for the gate remains part of the implementation record.
 
-- [ ] **Step 1: Keep Search semantics external**
+- [x] **Step 1: Keep Search semantics external**
 
 Top-level `Search` means external literature/DOI/URL discovery, not internal
 global object search. Internal object lookup should be handled by command/global
 search separately.
 
-- [ ] **Step 2: Keep Library semantics personal/local**
+- [x] **Step 2: Keep Library semantics stored/scope-local**
 
-`Library` means stored literature/assets owned by the user's workspace context,
-with local search over saved assets. It is not the same as external discovery.
+`Library` means stored literature/assets owned by the personal or selected
+Project scope. It is not the same as external discovery.
 
-- [ ] **Step 3: Add contracts before UI-heavy work**
+- [x] **Step 3: Add contracts before UI-heavy work**
 
 Do not build full Search/Library pages until the relevant server-owned models
 and shared payloads exist, such as external discovery results, saved literature
 assets, reader metadata, references, citations, excerpts, and provenance.
 
-- [ ] **Step 4: Verify no fake client-owned library state**
+#### Task25 Phase 2 completion boundary
 
-Search and Library must not rely on fake browser-only state or raw provider keys.
-They must follow the same server-first storage, authorization, and audit rules as
-Projects, Documents, Attachments, and AI.
+Task25 now supplies the explicit server-owned contracts that this stage
+required. The delivered surface is intentionally bounded:
+
+- `POST /literature/discovery/search` performs read-only OpenAlex/Crossref/PubMed
+  discovery and returns normalized candidates, source matches, cursors, and
+  per-provider partial/unavailable status. Unpaywall and PMC remain
+  enrichment-only. Search defaults to 20 results and accepts 3-20; signed
+  cursors are bounded to five pages and 100 seen exact identities.
+- Server configuration uses `OPENALEX_API_KEY`, `CROSSREF_MAILTO`,
+  `NCBI_API_KEY`, `NCBI_TOOL`, `NCBI_EMAIL`, `UNPAYWALL_EMAIL`, and a
+  minimum-32-byte `LITERATURE_CURSOR_SECRET`. Missing or invalid provider
+  configuration disables only that adapter; NCBI controls PubMed/PMC together.
+  Missing cursor configuration makes discovery return `503` without blocking
+  unrelated API domains.
+- `POST /literature/imports`, `GET /literature/imports/:operationId`, and
+  `POST /literature/imports/:operationId/retry` implement UUID idempotency,
+  server-refetched seeds, explicit running/succeeded/failed operation states,
+  and exact owner/project-member authorization. Import requests do not accept
+  provider response bodies from the browser.
+- `GET /literature` and `GET /literature/:literatureId` expose scope-filtered
+  summaries plus server projection, typed assertion history, provider records,
+  provenance, and conflict data. Raw provider payloads and full text are not
+  persisted or returned.
+- Web `/search` and `/library` use the existing workbench primitives. Notebook
+  owns a separate personal Literature panel, and Project detail owns a
+  separate project-scoped panel; document loading/rendering remains independent.
+  Search/import/library state is cancellable and browser storage is not used as
+  a canonical library. Normalized query, DOI, and exact source identities may
+  exist only in authenticated DTOs and transient in-memory UI state needed for
+  search/import; they are excluded from logs, audit, browser persistence, and
+  untyped database payloads.
+- The Phase 2 migration is deployed only through `pnpm db:deploy` with separate
+  privileged `MIGRATION_DATABASE_URL` and restricted runtime `DATABASE_URL`
+  identities. Direct Prisma migration deployment is unsupported. Its guarded
+  rollback refuses to run while any Phase 2 structured assertion, identity, or
+  import-operation state exists.
+- The deterministic PostgreSQL and browser fixtures exercise provider status
+  partial failure, explicit retry, replay, project authorization, provenance,
+  DOI conflict display, responsive CJK layout, and console/network hygiene.
+  Full-text Reader, fuzzy merge, citation parsing, bibliography, evidence
+  authoring, and Notebook reconciliation remain future work.
+
+- [x] **Step 4: Verify no fake client-owned library state**
+
+Search and Library do not rely on fake browser-only canonical state or raw
+provider payloads. Exact provider seed identities are transient request intent;
+the server refetches canonical metadata and applies the same storage,
+authorization, and audit rules as Projects, Documents, Attachments, and AI.
 
 ---
 
 ## Self-review checklist
 
-- [ ] Product boundary follows `doc/MVP_rule.md`
-- [ ] No evidence/reference machinery is implemented in MVP
+- [x] Product boundary follows `doc/MVP_rule.md`
+- [x] No full-text Reader, evidence authoring, or citation/reference machinery is implemented in MVP; the Task25 post-MVP surface remains limited to the documented discovery/import/library contracts
 - [ ] `SpaceAdmin` cannot read project content unless also project member
 - [ ] All document permission checks happen on API server
 - [ ] `Document.type` DB constraint exists
