@@ -9,6 +9,10 @@ import {
 } from "./modules/attachments/local-object-storage.routes.js";
 import { authRoutes, type AuthRoutesOptions } from "./modules/auth/routes.js";
 import { documentRoutes, type DocumentRoutesOptions } from "./modules/documents/document.routes.js";
+import {
+  literatureRoutes,
+  type LiteratureRoutesOptions
+} from "./modules/literature/literature.routes.js";
 import { projectRoutes, type ProjectRoutesOptions } from "./modules/projects/project.routes.js";
 import { cookiePlugin } from "./plugins/cookies.js";
 import { healthRoutes } from "./routes/health.js";
@@ -20,6 +24,7 @@ export type CreateApiAppOptions = {
   readonly auth?: AuthRoutesOptions;
   readonly documents?: DocumentRoutesOptions;
   readonly localObjectStorage?: LocalObjectStorageRoutesOptions;
+  readonly literature?: LiteratureRoutesOptions;
   readonly logger?: FastifyServerOptions["logger"];
   readonly projects?: ProjectRoutesOptions;
 };
@@ -34,6 +39,7 @@ export function createApiApp(options: CreateApiAppOptions = {}): FastifyInstance
   app.register(authRoutes, options.auth ?? {});
   app.register(projectRoutes, options.projects ?? {});
   app.register(documentRoutes, options.documents ?? {});
+  app.register(literatureRoutes, options.literature ?? {});
   app.register(attachmentRoutes, options.attachments ?? {});
   app.register(localObjectStorageRoutes, options.localObjectStorage ?? {});
   app.register(aiRoutes, options.ai ?? {});

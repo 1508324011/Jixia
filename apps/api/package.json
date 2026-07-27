@@ -6,6 +6,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc --project ../../tsconfig.base.json",
     "test": "vitest run --passWithNoTests",
+    "test:postgres": "JIXIA_RUN_POSTGRES_INTEGRATION=1 vitest run --no-file-parallelism src/modules/literature/literature.postgres.integration.test.ts src/modules/literature/literature.http.postgres.integration.test.ts src/modules/literature/literature.authorization.http.postgres.integration.test.ts src/modules/literature/literature.library.http.postgres.integration.test.ts src/modules/literature/literature.import-operation.postgres.integration.test.ts src/modules/literature/literature.import-identity.postgres.integration.test.ts src/modules/literature/literature.import-assertion.postgres.integration.test.ts src/modules/literature/literature.assembled.http.postgres.integration.test.ts",
     "lint": "tsc --project ../../tsconfig.base.json"
   },
   "dependencies": {
@@ -13,6 +14,7 @@
     "@jixia/db": "workspace:*",
     "@jixia/shared": "workspace:*",
     "argon2": "^0.44.0",
+    "fast-xml-parser": "5.10.1",
     "fastify": "latest",
     "undici": "7.28.0",
     "zod": "latest"
