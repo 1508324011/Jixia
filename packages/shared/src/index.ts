@@ -2,6 +2,7 @@ export * from "./auth";
 export * from "./documents";
 export * from "./attachments";
 export * from "./ai";
+export * from "./literature";
 
 export const workspacePackageNames = [
   "@jixia/api",
