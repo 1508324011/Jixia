@@ -1,4 +1,9 @@
-import type { CreateDocumentResponse, DocumentDTO, ListDocumentsResponse } from "@jixia/shared";
+import type {
+  CreateDocumentResponse,
+  DocumentDTO,
+  ListDocumentsResponse,
+  ListLiteratureResponse
+} from "@jixia/shared";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -24,9 +29,7 @@ describe("NotebookPage", () => {
   });
 
   it("lists server-authorized notebook documents", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
-      jsonResponse({ documents: [notebookDocument] } satisfies ListDocumentsResponse)
-    );
+    const fetchMock = createNotebookFetchMock();
     vi.stubGlobal("fetch", fetchMock);
 
     render(<NotebookPage onOpenDocument={vi.fn()} />);
@@ -34,6 +37,7 @@ describe("NotebookPage", () => {
     expect(await screen.findByText("Personal synthesis")).toBeTruthy();
     expect(screen.getByText("Notebook documents are returned by the API for the current owner only. Creating a note sends notebook-scoped intent to the same document service used by Project Docs.")).toBeTruthy();
     expect(screen.getByText("1 loaded")).toBeTruthy();
+    expect(await screen.findByText("No personal literature")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/documents/notebook",
       expect.objectContaining({ credentials: "include" })
@@ -48,11 +52,7 @@ describe("NotebookPage", () => {
       title: "Fresh note",
       updatedAt: "2026-06-18T09:10:00.000Z"
     };
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ documents: [notebookDocument] } satisfies ListDocumentsResponse))
-      .mockResolvedValueOnce(
-        jsonResponse({ document: createdDocument, revision: null } satisfies CreateDocumentResponse)
-      );
+    const fetchMock = createNotebookFetchMock(createdDocument);
     vi.stubGlobal("fetch", fetchMock);
 
     render(<NotebookPage onOpenDocument={onOpenDocument} />);
@@ -66,7 +66,10 @@ describe("NotebookPage", () => {
     await waitFor(() => expect(onOpenDocument).toHaveBeenCalledWith("notebook-doc-2"));
     expect(screen.getByText("Fresh note")).toBeTruthy();
 
-    const [createUrl, createInit] = fetchMock.mock.calls[1] ?? [];
+    const createCall = fetchMock.mock.calls.find(
+      ([input, init]) => requestUrl(input) === "/api/documents/notebook" && init?.method === "POST"
+    );
+    const [createUrl, createInit] = createCall ?? [];
     expect(createUrl).toBe("/api/documents/notebook");
     expect(createInit).toEqual(
       expect.objectContaining({
@@ -77,6 +80,31 @@ describe("NotebookPage", () => {
     );
   });
 });
+
+function createNotebookFetchMock(createdDocument?: DocumentDTO) {
+  return vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+    const url = requestUrl(input);
+    const method = init?.method ?? "GET";
+
+    if (method === "GET" && url === "/api/documents/notebook") {
+      return jsonResponse({ documents: [notebookDocument] } satisfies ListDocumentsResponse);
+    }
+    if (method === "GET" && url === "/api/literature?scope=personal&limit=25") {
+      return jsonResponse({ literature: [], nextCursor: null } satisfies ListLiteratureResponse);
+    }
+    if (method === "POST" && url === "/api/documents/notebook" && createdDocument) {
+      return jsonResponse({ document: createdDocument, revision: null } satisfies CreateDocumentResponse);
+    }
+
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  });
+}
+
+function requestUrl(input: Parameters<typeof fetch>[0]): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
 
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {

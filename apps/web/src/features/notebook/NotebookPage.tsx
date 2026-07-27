@@ -3,13 +3,16 @@ import { useEffect, useState } from "react";
 
 import { apiFetch } from "../../lib/api";
 import { DocumentList } from "../documents/DocumentList";
+import type { Locale } from "../i18n/locale";
 import { SurfaceHeader, WorkbenchSurface } from "../layout/workbench";
+import { LiteratureLibraryPanel } from "../literature/LiteratureLibraryPanel";
 
 type NotebookPageProps = {
+  readonly locale?: Locale;
   readonly onOpenDocument: (documentId: string) => void;
 };
 
-export function NotebookPage({ onOpenDocument }: NotebookPageProps) {
+export function NotebookPage({ locale = "en", onOpenDocument }: NotebookPageProps) {
   const [documents, setDocuments] = useState<readonly DocumentDTO[]>([]);
   const [loadState, setLoadState] = useState<"idle" | "loading" | "error">("loading");
   const [loadMessage, setLoadMessage] = useState<string | null>(null);
@@ -60,6 +63,7 @@ export function NotebookPage({ onOpenDocument }: NotebookPageProps) {
         onOpenDocument={onOpenDocument}
         scope="notebook"
       />
+      <LiteratureLibraryPanel locale={locale} scope="personal" />
     </WorkbenchSurface>
   );
 }
