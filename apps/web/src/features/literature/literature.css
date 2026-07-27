@@ -1,0 +1,174 @@
+.jixia-literature-library {
+  display: grid;
+  gap: var(--jixia-space-3);
+  min-width: 0;
+}
+
+.jixia-literature-library__split {
+  align-items: start;
+}
+
+.jixia-literature-library__list,
+.jixia-literature-detail {
+  display: grid;
+  align-content: start;
+  gap: var(--jixia-space-3);
+  min-width: 0;
+}
+
+.jixia-literature-library__list > .jixia-button {
+  justify-self: start;
+}
+
+.jixia-literature-library .jixia-button,
+.jixia-literature-library .jixia-list-row__button {
+  min-height: var(--jixia-control-min-height);
+}
+
+.jixia-literature-library__list .jixia-list-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 40%);
+}
+
+.jixia-literature-library__list .jixia-list-row__actions {
+  min-width: 0;
+}
+
+.jixia-literature-library__row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+  justify-content: flex-end;
+  gap: var(--jixia-space-2);
+  color: var(--jixia-color-muted);
+  font-size: var(--jixia-font-small);
+  text-align: right;
+}
+
+.jixia-literature-library__row-meta > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jixia-literature-library__list .jixia-list-row__title {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.jixia-literature-detail {
+  border-left: var(--jixia-border-width) solid var(--jixia-color-border);
+  padding-left: var(--jixia-space-4);
+}
+
+.jixia-literature-library__detail-title,
+.jixia-literature-detail__section > h3 {
+  margin: 0;
+  color: var(--jixia-color-ink);
+}
+
+.jixia-literature-detail__section {
+  display: grid;
+  gap: var(--jixia-space-3);
+}
+
+.jixia-literature-detail__projection {
+  display: grid;
+  gap: var(--jixia-space-2);
+}
+
+.jixia-literature-detail__field {
+  display: grid;
+  gap: var(--jixia-space-1);
+  border-bottom: var(--jixia-border-width) solid var(--jixia-color-border);
+  padding-bottom: var(--jixia-space-3);
+}
+
+.jixia-literature-detail__field h3,
+.jixia-literature-detail__conflicts h4 {
+  margin: 0;
+  color: var(--jixia-color-ink);
+  font-size: var(--jixia-font-body);
+}
+
+.jixia-literature-detail__conflicts {
+  display: grid;
+  gap: var(--jixia-space-1);
+  border-left: 2px solid var(--jixia-color-warning-border);
+  background: var(--jixia-color-warning-bg);
+  color: var(--jixia-color-warning-ink);
+  padding: var(--jixia-space-2);
+}
+
+.jixia-literature-detail__value {
+  display: grid;
+  gap: var(--jixia-space-1);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.jixia-literature-detail__value strong,
+.jixia-literature-detail__assertion-list strong {
+  color: var(--jixia-color-muted);
+  font-size: var(--jixia-font-small);
+}
+
+.jixia-literature-detail__value small,
+.jixia-literature-detail__assertion-list small {
+  color: var(--jixia-color-muted);
+  font-size: var(--jixia-font-small);
+}
+
+.jixia-literature-detail__provider-list,
+.jixia-literature-detail__assertion-list {
+  display: grid;
+  gap: var(--jixia-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jixia-literature-detail__provider-list li {
+  border-left: 2px solid var(--jixia-color-accent-border);
+  color: var(--jixia-color-ink);
+  font-size: var(--jixia-font-small);
+  overflow-wrap: anywhere;
+  padding-left: var(--jixia-space-2);
+}
+
+.jixia-literature-detail__assertion-list li {
+  display: grid;
+  gap: var(--jixia-space-1);
+  border-bottom: var(--jixia-border-width) solid var(--jixia-color-border);
+  color: var(--jixia-color-ink);
+  font-size: var(--jixia-font-small);
+  overflow-wrap: anywhere;
+  padding-bottom: var(--jixia-space-2);
+}
+
+@media (max-width: 1000px) {
+  .jixia-literature-detail {
+    border-top: var(--jixia-border-width) solid var(--jixia-color-border);
+    border-left: 0;
+    padding-top: var(--jixia-space-3);
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .jixia-literature-library__list .jixia-list-row {
+    grid-template-columns: 1fr;
+  }
+
+  .jixia-literature-library__row-meta {
+    max-width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .jixia-literature-library__row-meta > span {
+    overflow: visible;
+    white-space: normal;
+  }
+}
