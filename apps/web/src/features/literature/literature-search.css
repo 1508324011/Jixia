@@ -1,0 +1,114 @@
+.literature-search {
+  container-name: literature-search;
+  container-type: inline-size;
+}
+
+.literature-search__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--jixia-space-3);
+}
+
+.literature-search .jixia-field input,
+.literature-search .jixia-field select,
+.literature-search .jixia-button {
+  min-height: var(--jixia-control-min-height);
+}
+
+.literature-search__results,
+.literature-search__provider-notices,
+.literature-search__selection,
+.literature-search__target {
+  display: grid;
+  gap: var(--jixia-space-2);
+  min-width: 0;
+}
+
+.literature-search__result {
+  display: grid;
+  gap: var(--jixia-space-2);
+  min-width: 0;
+  border: 1px solid var(--jixia-color-border);
+  border-radius: var(--jixia-radius-sm);
+  background: var(--jixia-color-canvas);
+  color: var(--jixia-color-ink);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.45;
+  padding: var(--jixia-space-3);
+  text-align: left;
+}
+
+.literature-search__result:hover,
+.literature-search__result[aria-pressed="true"] {
+  border-color: var(--jixia-color-accent);
+  background: var(--jixia-color-accent-soft);
+}
+
+.literature-search__result:focus-visible {
+  outline: 0;
+  box-shadow: var(--jixia-focus-ring);
+}
+
+.literature-search__result-heading,
+.literature-search__link {
+  display: flex;
+  align-items: center;
+  gap: var(--jixia-space-2);
+  min-width: 0;
+}
+
+.literature-search__result-heading strong,
+.literature-search__abstract,
+.literature-search__link,
+.literature-search__selection span {
+  overflow-wrap: anywhere;
+}
+
+.literature-search__result-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.literature-search__result-heading .jixia-pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.literature-search__abstract,
+.literature-search__link {
+  color: var(--jixia-color-muted);
+  font-size: var(--jixia-font-small);
+}
+
+.literature-search__target {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.literature-search__target label {
+  display: flex;
+  align-items: center;
+  gap: var(--jixia-space-2);
+  min-height: var(--jixia-control-min-height);
+}
+
+.literature-search__selection {
+  border-left: 3px solid var(--jixia-color-accent);
+  background: var(--jixia-color-accent-soft);
+  padding: var(--jixia-space-3);
+}
+
+@container literature-search (max-width: 680px) {
+  .literature-search__form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .literature-search__form .jixia-button {
+    justify-content: center;
+  }
+}
