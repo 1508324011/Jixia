@@ -6,24 +6,31 @@
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
     "./generated": "./src/generated/prisma/client.ts",
+    "./postgres-integration-environment": "./src/postgres-integration-environment.ts",
     "./browser": "./src/generated/prisma/browser.ts"
   },
   "scripts": {
     "build": "tsc --project ../../tsconfig.base.json",
     "test": "vitest run --passWithNoTests",
+    "test:postgres": "JIXIA_RUN_POSTGRES_INTEGRATION=1 vitest run --no-file-parallelism src/literature.postgres.integration.test.ts src/literature-constraints.postgres.integration.test.ts src/literature-provenance.postgres.integration.test.ts src/literature-lifecycle.postgres.integration.test.ts src/literature-structured-assertions.postgres.integration.test.ts src/literature-identity.postgres.integration.test.ts src/literature-import-operation.postgres.integration.test.ts src/literature-phase2-migration.postgres.integration.test.ts src/literature-lifecycle-security.postgres.integration.test.ts src/database-deployment.postgres.integration.test.ts src/database-deployment-runtime.postgres.integration.test.ts src/database-deployment-drift.postgres.integration.test.ts",
+    "test:postgres:root": "JIXIA_RUN_POSTGRES_INTEGRATION=1 tsx src/postgres-test-orchestrator.ts",
     "lint": "tsc --project ../../tsconfig.base.json",
     "db:generate": "prisma generate --schema prisma/schema.prisma",
     "db:validate": "prisma validate --schema prisma/schema.prisma",
     "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
-    "db:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:deploy": "tsx src/database-deploy-cli.ts deploy",
+    "db:deploy:verify": "tsx src/database-deploy-cli.ts verify",
     "prisma": "prisma"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.8.0",
     "@prisma/client": "7.8.0",
-    "pg": "^8.21.0"
+    "pg": "^8.21.0",
+    "tsx": "4.22.4",
+    "zod": "4.4.3"
   },
   "devDependencies": {
+    "@types/pg": "8.20.0",
     "prisma": "7.8.0"
   }
 }
