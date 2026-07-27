@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
 
+import { createLiteratureTestApi } from "./literature-test-api.mjs";
+
 const apiPort = Number(process.env.JIXIA_E2E_API_PORT ?? 4174);
 const webPort = Number(process.env.JIXIA_E2E_WEB_PORT ?? 5173);
 const apiListenHost = process.env.JIXIA_E2E_API_HOST?.trim() || "127.0.0.1";
@@ -300,6 +302,19 @@ function sameOriginFromRequest(request) {
 function isProjectMember(userId, projectId) {
   return projects.get(projectId)?.members.some((member) => member.userId === userId) ?? false;
 }
+
+function canWriteProject(userId, projectId) {
+  const role = projects.get(projectId)?.members.find((member) => member.userId === userId)?.role;
+  return role === "ProjectOwner" || role === "ProjectEditor";
+}
+
+const literatureApi = createLiteratureTestApi({
+  authenticate(request, response) {
+    return requireSession(request, response)?.user.id ?? null;
+  },
+  canReadProject: isProjectMember,
+  canWriteProject
+});
 
 function canReadDocument(userId, document) {
   if (document.type === "notebook") {
@@ -714,6 +729,8 @@ async function handleApiRequest(request, response, url) {
     sendJson(response, 200, { ok: true });
     return;
   }
+
+  if (await literatureApi.handle({ path, request, response, url })) return;
 
   if (request.method === "POST" && path === "/api/invitations/accept") {
     const body = await readJson(request);
