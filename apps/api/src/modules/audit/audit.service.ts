@@ -1,15 +1,14 @@
 import type { Prisma, PrismaClient } from "@jixia/db/generated";
 import type { SpaceRole } from "@jixia/shared";
 
-export class AuditError extends Error {
-  constructor(
-    message: string,
-    readonly statusCode: number
-  ) {
-    super(message);
-    this.name = "AuditError";
-  }
-}
+import { AuditError } from "./audit.errors.js";
+import {
+  ensureMetadataOnlyAuditPayload,
+  parseMetadataOnlyAuditPayload
+} from "./audit.metadata.js";
+
+export { AuditError } from "./audit.errors.js";
+export { ensureMetadataOnlyAuditPayload } from "./audit.metadata.js";
 
 export type AuditActor = {
   readonly userId: string;
@@ -62,6 +61,7 @@ export type AuditRepository = {
     readonly targetId?: string;
     readonly limit: number;
     readonly cursor?: string;
+    readonly excludedActionPrefixes: readonly string[];
   }) => Promise<readonly AuditEventRecord[]>;
 };
 
@@ -69,67 +69,7 @@ const defaultAuditPageSize = 50;
 const maxAuditPageSize = 100;
 const maxIdentifierLength = 256;
 const maxActionLength = 256;
-
-const forbiddenExactKeys = new Set([
-  "apikey",
-  "attachmentbody",
-  "attachmentcontent",
-  "authorization",
-  "authorizationheader",
-  "body",
-  "content",
-  "contentsnapshot",
-  "cookie",
-  "credentials",
-  "documentbody",
-  "documentcontent",
-  "documentsnapshot",
-  "draftcontent",
-  "encryptedapikey",
-  "filebody",
-  "filecontent",
-  "headers",
-  "objectkey",
-  "objectstoragecredentials",
-  "password",
-  "providerpayloadbody",
-  "rawtoken",
-  "requestbody",
-  "requestheaders",
-  "requiredheaders",
-  "response",
-  "selectedcontextbody",
-  "sessionid",
-  "signedurl",
-  "storagecredentials",
-  "storagekey",
-  "token",
-  "versionsnapshot"
-]);
-
-const forbiddenKeyFragments = [
-  "apikey",
-  "authorization",
-  "body",
-  "content",
-  "credential",
-  "cookie",
-  "encryptedapikey",
-  "header",
-  "password",
-  "prompt",
-  "response",
-  "signedurl",
-  "token"
-] as const;
-
-const forbiddenStringFragments = [
-  "awsaccesskeyid=",
-  "bearer ",
-  "x-amz-credential=",
-  "x-amz-signature=",
-  "x-goog-signature="
-] as const;
+const genericAuditExcludedActionPrefixes = ["literature."] as const;
 
 function badRequest(message = "Invalid audit request"): AuditError {
   return new AuditError(message, 400);
@@ -139,111 +79,8 @@ function forbidden(message = "Forbidden"): AuditError {
   return new AuditError(message, 403);
 }
 
-function unavailable(message = "Audit event unavailable"): AuditError {
-  return new AuditError(message, 500);
-}
-
 function toIsoString(date: Date): string {
   return date.toISOString();
-}
-
-function isRecordObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isPlainRecordObject(value: unknown): value is Record<string, unknown> {
-  if (!isRecordObject(value)) {
-    return false;
-  }
-
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-function normalizeAuditKey(key: string): string {
-  return key
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "");
-}
-
-function isForbiddenAuditKey(key: string): boolean {
-  const normalizedKey = normalizeAuditKey(key);
-
-  return (
-    forbiddenExactKeys.has(normalizedKey) ||
-    forbiddenKeyFragments.some((fragment) => normalizedKey.includes(fragment))
-  );
-}
-
-function isForbiddenAuditStringValue(value: string): boolean {
-  const normalizedValue = value.normalize("NFKC").toLowerCase();
-  return forbiddenStringFragments.some((fragment) => normalizedValue.includes(fragment));
-}
-
-function assertJsonScalar(value: unknown): void {
-  if (typeof value === "string") {
-    if (isForbiddenAuditStringValue(value)) {
-      throw badRequest("Audit payload contains forbidden data");
-    }
-
-    return;
-  }
-
-  if (value === null || typeof value === "boolean") {
-    return;
-  }
-
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return;
-  }
-
-  throw badRequest("Invalid audit payload");
-}
-
-export function ensureMetadataOnlyAuditPayload(payload: Record<string, unknown>): void {
-  const visited = new WeakSet<object>();
-
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      if (visited.has(value)) {
-        throw badRequest("Invalid audit payload");
-      }
-
-      visited.add(value);
-      value.forEach(visit);
-      return;
-    }
-
-    if (!isRecordObject(value)) {
-      assertJsonScalar(value);
-      return;
-    }
-
-    if (!isPlainRecordObject(value)) {
-      throw badRequest("Invalid audit payload");
-    }
-
-    if (visited.has(value)) {
-      throw badRequest("Invalid audit payload");
-    }
-
-    visited.add(value);
-
-    for (const [key, child] of Object.entries(value)) {
-      if (isForbiddenAuditKey(key)) {
-        throw badRequest("Audit payload contains forbidden data");
-      }
-
-      visit(child);
-    }
-  };
-
-  if (!isPlainRecordObject(payload)) {
-    throw badRequest("Invalid audit payload");
-  }
-
-  visit(payload);
 }
 
 function ensureNonEmptyText(value: string, maxLength: number): string {
@@ -288,15 +125,6 @@ function toAuditEventDTO(record: AuditEventRecord): AuditEventDTO {
   };
 }
 
-function metadataToPayload(value: unknown): Record<string, unknown> {
-  if (!isRecordObject(value)) {
-    throw unavailable();
-  }
-
-  ensureMetadataOnlyAuditPayload(value);
-  return value;
-}
-
 const auditEventSelect = {
   id: true,
   actorUserId: true,
@@ -322,7 +150,7 @@ function toAuditEventRecord(record: {
     action: record.action,
     targetType: record.targetType,
     targetId: record.targetId,
-    payload: metadataToPayload(record.metadata),
+    payload: parseMetadataOnlyAuditPayload(record.metadata),
     createdAt: record.createdAt
   };
 }
@@ -331,13 +159,15 @@ export class PrismaAuditRepository implements AuditRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async createAuditEvent(input: WriteAuditEventInput): Promise<AuditEventRecord> {
+    const metadata = input.payload;
+    ensureMetadataOnlyAuditPayload(metadata);
     const event = await this.prisma.auditEvent.create({
       data: {
         actorUserId: input.actorUserId,
         action: input.action,
         targetType: input.targetType,
         targetId: input.targetId,
-        metadata: input.payload as Prisma.InputJsonValue
+        metadata
       },
       select: auditEventSelect
     });
@@ -351,9 +181,11 @@ export class PrismaAuditRepository implements AuditRepository {
     readonly targetId?: string;
     readonly limit: number;
     readonly cursor?: string;
+    readonly excludedActionPrefixes: readonly string[];
   }): Promise<readonly AuditEventRecord[]> {
     const events = await this.prisma.auditEvent.findMany({
       where: {
+        NOT: input.excludedActionPrefixes.map((prefix) => ({ action: { startsWith: prefix } })),
         ...(input.action === undefined ? {} : { action: input.action }),
         ...(input.targetType === undefined ? {} : { targetType: input.targetType }),
         ...(input.targetId === undefined ? {} : { targetId: input.targetId })
@@ -396,6 +228,7 @@ export function createAuditService(repository: AuditRepository) {
       const limit = ensurePageSize(input.limit);
       const events = await repository.listAuditEvents({
         limit,
+        excludedActionPrefixes: genericAuditExcludedActionPrefixes,
         ...(input.action === undefined ? {} : { action: ensureNonEmptyText(input.action, maxActionLength) }),
         ...(input.targetType === undefined
           ? {}
@@ -404,7 +237,14 @@ export function createAuditService(repository: AuditRepository) {
         ...(input.cursor === undefined ? {} : { cursor: ensureNonEmptyText(input.cursor, maxIdentifierLength) })
       });
 
-      return { events: events.map(toAuditEventDTO) };
+      return {
+        events: events
+          .filter(
+            (event) =>
+              !genericAuditExcludedActionPrefixes.some((prefix) => event.action.startsWith(prefix))
+          )
+          .map(toAuditEventDTO)
+      };
     }
   };
 }
