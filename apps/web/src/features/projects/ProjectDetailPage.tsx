@@ -3,9 +3,12 @@ import { useEffect, useState } from "react";
 
 import { apiFetch } from "../../lib/api";
 import { DocumentList } from "../documents/DocumentList";
+import type { Locale } from "../i18n/locale";
 import { Button, MetaGrid, Notice, SurfaceHeader, WorkbenchSurface } from "../layout/workbench";
+import { LiteratureLibraryPanel } from "../literature/LiteratureLibraryPanel";
 
 type ProjectDetailPageProps = {
+  readonly locale?: Locale;
   readonly projectId: string;
   readonly onBack: () => void;
   readonly onOpenDocument: (documentId: string) => void;
@@ -15,7 +18,7 @@ type GetProjectResponse = {
   readonly project: ProjectDTO;
 };
 
-export function ProjectDetailPage({ projectId, onBack, onOpenDocument }: ProjectDetailPageProps) {
+export function ProjectDetailPage({ locale = "en", projectId, onBack, onOpenDocument }: ProjectDetailPageProps) {
   const [project, setProject] = useState<ProjectDTO | null>(null);
   const [documents, setDocuments] = useState<readonly DocumentDTO[]>([]);
   const [projectState, setProjectState] = useState<"loading" | "ready" | "error">("loading");
@@ -127,6 +130,7 @@ export function ProjectDetailPage({ projectId, onBack, onOpenDocument }: Project
         projectId={project.id}
         scope="project"
       />
+      <LiteratureLibraryPanel locale={locale} projectId={project.id} scope="project" />
     </WorkbenchSurface>
   );
 }

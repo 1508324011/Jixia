@@ -1,4 +1,10 @@
-import type { CreateDocumentResponse, DocumentDTO, ListDocumentsResponse, ProjectDTO } from "@jixia/shared";
+import type {
+  CreateDocumentResponse,
+  DocumentDTO,
+  ListDocumentsResponse,
+  ListLiteratureResponse,
+  ProjectDTO
+} from "@jixia/shared";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -33,9 +39,7 @@ describe("ProjectDetailPage", () => {
   });
 
   it("loads real project document rows without the missing-route fallback copy", async () => {
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ project }))
-      .mockResolvedValueOnce(jsonResponse({ documents: [projectDocument] } satisfies ListDocumentsResponse));
+    const fetchMock = createProjectFetchMock();
     vi.stubGlobal("fetch", fetchMock);
 
     render(<ProjectDetailPage onBack={vi.fn()} onOpenDocument={vi.fn()} projectId="project-1" />);
@@ -43,13 +47,12 @@ describe("ProjectDetailPage", () => {
     expect(await screen.findByText("Shared synthesis")).toBeTruthy();
     expect(screen.getByText("Cancer literature review")).toBeTruthy();
     expect(screen.queryByText(/Project document listing is not available/i)).toBeNull();
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
+    expect(await screen.findByText("No project literature")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith(
       "/api/projects/project-1",
       expect.objectContaining({ credentials: "include" })
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
+    expect(fetchMock).toHaveBeenCalledWith(
       "/api/projects/project-1/documents",
       expect.objectContaining({ credentials: "include" })
     );
@@ -63,12 +66,7 @@ describe("ProjectDetailPage", () => {
       title: "New shared document",
       updatedAt: "2026-06-18T09:10:00.000Z"
     };
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ project }))
-      .mockResolvedValueOnce(jsonResponse({ documents: [projectDocument] } satisfies ListDocumentsResponse))
-      .mockResolvedValueOnce(
-        jsonResponse({ document: createdDocument, revision: null } satisfies CreateDocumentResponse)
-      );
+    const fetchMock = createProjectFetchMock(createdDocument);
     vi.stubGlobal("fetch", fetchMock);
 
     render(<ProjectDetailPage onBack={vi.fn()} onOpenDocument={onOpenDocument} projectId="project-1" />);
@@ -82,7 +80,10 @@ describe("ProjectDetailPage", () => {
     await waitFor(() => expect(onOpenDocument).toHaveBeenCalledWith("project-doc-2"));
     expect(screen.getByText("New shared document")).toBeTruthy();
 
-    const [createUrl, createInit] = fetchMock.mock.calls[2] ?? [];
+    const createCall = fetchMock.mock.calls.find(
+      ([input, init]) => requestUrl(input) === "/api/documents/project" && init?.method === "POST"
+    );
+    const [createUrl, createInit] = createCall ?? [];
     expect(createUrl).toBe("/api/documents/project");
     expect(createInit).toEqual(
       expect.objectContaining({
@@ -93,6 +94,34 @@ describe("ProjectDetailPage", () => {
     );
   });
 });
+
+function createProjectFetchMock(createdDocument?: DocumentDTO) {
+  return vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+    const url = requestUrl(input);
+    const method = init?.method ?? "GET";
+
+    if (method === "GET" && url === "/api/projects/project-1") {
+      return jsonResponse({ project });
+    }
+    if (method === "GET" && url === "/api/projects/project-1/documents") {
+      return jsonResponse({ documents: [projectDocument] } satisfies ListDocumentsResponse);
+    }
+    if (method === "GET" && url === "/api/literature?scope=project&projectId=project-1&limit=25") {
+      return jsonResponse({ literature: [], nextCursor: null } satisfies ListLiteratureResponse);
+    }
+    if (method === "POST" && url === "/api/documents/project" && createdDocument) {
+      return jsonResponse({ document: createdDocument, revision: null } satisfies CreateDocumentResponse);
+    }
+
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  });
+}
+
+function requestUrl(input: Parameters<typeof fetch>[0]): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
 
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
