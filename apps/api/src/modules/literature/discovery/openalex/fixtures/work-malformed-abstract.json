@@ -1,0 +1,26 @@
+{
+  "id": "https://openalex.org/W10",
+  "doi": null,
+  "title": "Malformed abstract",
+  "publication_year": 2024,
+  "publication_date": "2024-01-01",
+  "type": "article",
+  "primary_location": null,
+  "best_oa_location": null,
+  "open_access": {
+    "is_oa": false,
+    "oa_url": null,
+    "oa_status": "closed"
+  },
+  "authorships": [],
+  "ids": {
+    "openalex": "https://openalex.org/W10",
+    "doi": null,
+    "pmid": null,
+    "pmcid": null
+  },
+  "abstract_inverted_index": {
+    "duplicate": [0],
+    "position": [0]
+  }
+}

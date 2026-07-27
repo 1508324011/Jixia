@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "count": 1,
+    "per_page": 1,
+    "next_cursor": null
+  },
+  "results": [
+    {
+      "id": "https://openalex.org/W2",
+      "doi": null,
+      "title": null,
+      "publication_year": null,
+      "publication_date": null,
+      "type": "other",
+      "primary_location": null,
+      "best_oa_location": null,
+      "open_access": {
+        "is_oa": false,
+        "oa_url": null,
+        "oa_status": "closed"
+      },
+      "authorships": [],
+      "ids": {
+        "openalex": "https://openalex.org/W2",
+        "doi": null,
+        "pmid": null,
+        "pmcid": null
+      },
+      "abstract_inverted_index": null
+    }
+  ]
+}
