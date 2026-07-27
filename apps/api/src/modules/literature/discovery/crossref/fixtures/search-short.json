@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "message-type": "work-list",
+  "message-version": "1.0.0",
+  "message": {
+    "total-results": 1,
+    "items-per-page": 2,
+    "next-cursor": "stale-provider-cursor",
+    "items": [
+      {
+        "DOI": "10.1000/GAMMA",
+        "issued": { "date-parts": [[2021]] },
+        "type": "other",
+        "author": []
+      }
+    ]
+  }
+}

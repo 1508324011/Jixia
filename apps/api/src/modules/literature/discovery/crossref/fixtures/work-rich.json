@@ -1,0 +1,17 @@
+{
+  "status": "ok",
+  "message-type": "work",
+  "message-version": "1.0.0",
+  "message": {
+    "DOI": "10.1000/ALPHA(2024)/PART",
+    "title": ["Exact DOI work"],
+    "abstract": "<jats:p>First <jats:bold>ordered</jats:bold> paragraph.</jats:p><jats:p>Second paragraph.</jats:p>",
+    "issued": { "date-parts": [[2020]] },
+    "container-title": ["Exact Work Journal"],
+    "type": "journal-article",
+    "author": [{ "name": "Exact Consortium" }],
+    "ISSN": ["2049-3630"],
+    "publisher": "Exact Publisher",
+    "URL": "https://publisher.example/work"
+  }
+}

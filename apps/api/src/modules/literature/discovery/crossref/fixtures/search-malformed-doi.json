@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "message-type": "work-list",
+  "message-version": "1.0.0",
+  "message": {
+    "total-results": 1,
+    "items-per-page": 1,
+    "next-cursor": "unused",
+    "items": [
+      {
+        "DOI": "not-a-doi",
+        "title": ["Malformed identity"]
+      }
+    ]
+  }
+}

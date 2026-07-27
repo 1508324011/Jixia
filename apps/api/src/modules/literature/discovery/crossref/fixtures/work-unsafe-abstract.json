@@ -1,0 +1,10 @@
+{
+  "status": "ok",
+  "message-type": "work",
+  "message-version": "1.0.0",
+  "message": {
+    "DOI": "10.1000/ALPHA",
+    "title": ["Unsafe abstract"],
+    "abstract": "<!DOCTYPE article [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><jats:p>&xxe;</jats:p>"
+  }
+}
