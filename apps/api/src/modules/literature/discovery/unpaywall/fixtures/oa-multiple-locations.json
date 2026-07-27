@@ -1,0 +1,32 @@
+{
+  "doi": "10.1000/multiple",
+  "doi_url": "https://doi.org/10.1000/multiple",
+  "is_oa": true,
+  "best_oa_location": {
+    "host_type": "repository",
+    "license": "cc-by-nc",
+    "version": "acceptedVersion",
+    "url": "https://best-repository.example/items/multiple.pdf",
+    "url_for_landing_page": "https://best-repository.example/items/multiple",
+    "url_for_pdf": "https://best-repository.example/items/multiple.pdf"
+  },
+  "oa_locations": [
+    {
+      "host_type": "publisher",
+      "license": "implied-oa",
+      "version": "publishedVersion",
+      "url": "https://other-publisher.example/articles/multiple",
+      "url_for_landing_page": "https://other-publisher.example/articles/multiple",
+      "url_for_pdf": null
+    },
+    {
+      "host_type": "repository",
+      "license": "cc-by-nc",
+      "version": "acceptedVersion",
+      "url": "https://best-repository.example/items/multiple.pdf",
+      "url_for_landing_page": "https://best-repository.example/items/multiple",
+      "url_for_pdf": "https://best-repository.example/items/multiple.pdf"
+    }
+  ],
+  "publisher": "Multiple Press"
+}

@@ -1,0 +1,15 @@
+{
+  "doi": "10.1000/alpha",
+  "doi_url": "https://doi.org/10.1000/alpha",
+  "is_oa": true,
+  "best_oa_location": {
+    "host_type": "publisher",
+    "license": "cc-by",
+    "version": "draftVersion",
+    "url": "https://publisher.example/articles/alpha",
+    "url_for_landing_page": "https://publisher.example/articles/alpha",
+    "url_for_pdf": null
+  },
+  "oa_locations": [],
+  "publisher": "Exact Press"
+}
