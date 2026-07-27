@@ -1,0 +1,20 @@
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>1</PMID>
+      <Article>
+        <Journal>
+          <JournalIssue><PubDate><Year>2024</Year></PubDate></JournalIssue>
+          <Title>Inline Markup Journal</Title>
+        </Journal>
+        <ArticleTitle>BRCA<i>1</i>-mediated p<i>53</i>-dependent repair<sup>2</sup>.</ArticleTitle>
+        <Abstract>
+          <AbstractText Label="RESULTS">The p<i>53</i>-response had q<sup>2</sup>-adjusted values.</AbstractText>
+        </Abstract>
+      </Article>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList><ArticleId IdType="pubmed">1</ArticleId></ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>

@@ -1,0 +1,11 @@
+{
+  "header": { "type": "esearch", "version": "0.3" },
+  "esearchresult": {
+    "count": "3",
+    "retmax": "1",
+    "retstart": "2",
+    "idlist": ["3"],
+    "translationset": [],
+    "querytranslation": "glioblastoma"
+  }
+}

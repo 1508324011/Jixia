@@ -1,0 +1,5 @@
+<OA>
+  <responseDate>2026-07-19 10:00:00</responseDate>
+  <request id="PMC999">https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC999</request>
+  <error code="idIsNotOpenAccess">Identifier is not in the OA subset</error>
+</OA>

@@ -1,0 +1,2 @@
+<!DOCTYPE PubmedArticleSet [<!ENTITY leak SYSTEM "file:///etc/passwd">]>
+<PubmedArticleSet><PubmedArticle>&leak;</PubmedArticle></PubmedArticleSet>

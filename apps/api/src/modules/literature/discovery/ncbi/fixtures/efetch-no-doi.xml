@@ -1,0 +1,18 @@
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE" Owner="NLM">
+      <PMID Version="1">2</PMID>
+      <Article PubModel="Print">
+        <Journal>
+          <JournalIssue CitedMedium="Print"><PubDate><MedlineDate>2023 Jan-Feb</MedlineDate></PubDate></JournalIssue>
+          <Title>Sparse Journal</Title>
+        </Journal>
+        <ArticleTitle>Record without DOI</ArticleTitle>
+        <AuthorList CompleteYN="Y"><Author ValidYN="Y"><CollectiveName>Sparse Group</CollectiveName></Author></AuthorList>
+        <PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>
+      </Article>
+      <MedlineJournalInfo><Country>United States</Country><MedlineTA>Sparse Journal</MedlineTA></MedlineJournalInfo>
+    </MedlineCitation>
+    <PubmedData><ArticleIdList><ArticleId IdType="pubmed">2</ArticleId></ArticleIdList></PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>

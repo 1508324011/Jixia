@@ -1,0 +1,10 @@
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE" Owner="NLM"><PMID Version="1">1</PMID><Article PubModel="Print"><Journal><JournalIssue CitedMedium="Print"><PubDate><Year>2024</Year></PubDate></JournalIssue><Title>One</Title></Journal><ArticleTitle>One</ArticleTitle><PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList></Article><MedlineJournalInfo><Country>US</Country><MedlineTA>One</MedlineTA></MedlineJournalInfo></MedlineCitation>
+    <PubmedData><ArticleIdList><ArticleId IdType="pubmed">1</ArticleId></ArticleIdList></PubmedData>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE" Owner="NLM"><PMID Version="1">2</PMID><Article PubModel="Print"><Journal><JournalIssue CitedMedium="Print"><PubDate><Year>2024</Year></PubDate></JournalIssue><Title>Two</Title></Journal><ArticleTitle>Two</ArticleTitle><PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList></Article><MedlineJournalInfo><Country>US</Country><MedlineTA>Two</MedlineTA></MedlineJournalInfo></MedlineCitation>
+    <PubmedData><ArticleIdList><ArticleId IdType="pubmed">2</ArticleId></ArticleIdList></PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>

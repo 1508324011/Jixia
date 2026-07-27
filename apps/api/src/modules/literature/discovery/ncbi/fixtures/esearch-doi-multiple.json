@@ -1,0 +1,11 @@
+{
+  "header": { "type": "esearch", "version": "0.3" },
+  "esearchresult": {
+    "count": "2",
+    "retmax": "2",
+    "retstart": "0",
+    "idlist": ["1", "2"],
+    "translationset": [],
+    "querytranslation": "10.1000/alpha[AID]"
+  }
+}

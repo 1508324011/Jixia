@@ -1,0 +1,52 @@
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE" Owner="NLM">
+      <PMID Version="1">1</PMID>
+      <Article PubModel="Print-Electronic">
+        <Journal>
+          <ISSN IssnType="Electronic">8765-4321</ISSN>
+          <JournalIssue CitedMedium="Internet">
+            <Volume>42</Volume>
+            <Issue>1</Issue>
+            <PubDate><Year>2024</Year><Month>Mar</Month><Day>1</Day></PubDate>
+          </JournalIssue>
+          <Title>Journal of Exact Results</Title>
+          <ISOAbbreviation>J Exact Results</ISOAbbreviation>
+        </Journal>
+        <ArticleTitle>Alpha <i>discovery</i> &amp; validation</ArticleTitle>
+        <ELocationID EIdType="doi" ValidYN="Y">10.1000/ALPHA</ELocationID>
+        <Abstract>
+          <AbstractText Label="BACKGROUND" NlmCategory="BACKGROUND">Alpha &amp; beta.</AbstractText>
+          <AbstractText Label="RESULTS" NlmCategory="RESULTS">Gamma <b>result</b>.</AbstractText>
+        </Abstract>
+        <AuthorList CompleteYN="Y">
+          <Author ValidYN="Y">
+            <LastName>Author</LastName>
+            <ForeName>Ada</ForeName>
+            <Initials>AA</Initials>
+            <Identifier Source="ORCID">https://orcid.org/0000-0001-2345-6789</Identifier>
+          </Author>
+          <Author ValidYN="Y"><CollectiveName>Exact Consortium</CollectiveName></Author>
+        </AuthorList>
+        <PublicationTypeList>
+          <PublicationType UI="D016428">Journal Article</PublicationType>
+          <PublicationType UI="D016449">Randomized Controlled Trial</PublicationType>
+        </PublicationTypeList>
+        <ArticleDate DateType="Electronic"><Year>2024</Year><Month>03</Month><Day>01</Day></ArticleDate>
+      </Article>
+      <MedlineJournalInfo>
+        <Country>United States</Country>
+        <MedlineTA>J Exact Results</MedlineTA>
+        <NlmUniqueID>1234567</NlmUniqueID>
+        <ISSNLinking>1234-5678</ISSNLinking>
+      </MedlineJournalInfo>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList>
+        <ArticleId IdType="pubmed">1</ArticleId>
+        <ArticleId IdType="doi">10.1000/ALPHA</ArticleId>
+        <ArticleId IdType="pmc">PMC100</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>

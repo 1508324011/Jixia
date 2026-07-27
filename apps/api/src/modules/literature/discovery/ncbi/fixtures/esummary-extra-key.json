@@ -1,0 +1,38 @@
+{
+  "header": { "type": "esummary", "version": "0.3" },
+  "result": {
+    "uids": ["3"],
+    "3": {
+      "uid": "3",
+      "pubdate": "2022 Dec",
+      "sortpubdate": "2022/12/01 00:00",
+      "source": "Third Journal",
+      "authors": [{ "name": "Third Author", "authtype": "Author", "clusterid": "" }],
+      "title": "Third result",
+      "fulljournalname": "Third Journal",
+      "issn": "1111-2222",
+      "essn": "",
+      "pubtype": ["Journal Article"],
+      "articleids": [
+        { "idtype": "pubmed", "idtypen": 1, "value": "3" }
+      ],
+      "publishername": ""
+    },
+    "999": {
+      "uid": "999",
+      "pubdate": "2021",
+      "sortpubdate": "2021/01/01 00:00",
+      "source": "Unexpected Journal",
+      "authors": [],
+      "title": "Unexpected keyed record",
+      "fulljournalname": "Unexpected Journal",
+      "issn": "",
+      "essn": "",
+      "pubtype": ["Journal Article"],
+      "articleids": [
+        { "idtype": "pubmed", "idtypen": 1, "value": "999" }
+      ],
+      "publishername": ""
+    }
+  }
+}

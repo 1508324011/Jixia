@@ -1,0 +1,10 @@
+<OA>
+  <responseDate>2026-07-19 10:00:00</responseDate>
+  <request id="PMC100">https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC100</request>
+  <records returned-count="1" total-count="1">
+    <record id="PMC100" citation="Alpha discovery" license="CC BY" retracted="no">
+      <link format="tgz" updated="2026-07-18 09:00:00" href="ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_package/alpha.tar.gz"/>
+      <link format="pdf" updated="2026-07-18 09:00:01" href="https://pmc.ncbi.nlm.nih.gov/articles/PMC100/bin/alpha.pdf"/>
+    </record>
+  </records>
+</OA>
