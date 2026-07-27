@@ -69,7 +69,7 @@ test.describe("responsive workbench foundation", () => {
 
     await page.goForward();
     await expect(page).toHaveURL(/\/search$/);
-    await expect(page.getByRole("heading", { name: "搜索正在为文献发现做准备。" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "检索文献" })).toBeVisible();
     expect(browserErrors).toEqual([]);
   });
 
