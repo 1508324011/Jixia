@@ -108,28 +108,116 @@ enum AICapabilityFactState {
   unsupported
 }
 
+enum AssertionKind {
+  title
+  abstract
+  publicationYear
+  doi
+  publicationDate
+  venue
+  publicationType
+  authors
+  identifiers
+  openAccess
+  publisher
+}
+
+enum LiteratureIdentityKind {
+  doi
+  provider
+}
+
+enum LiteratureIdentifierScheme {
+  doi
+  pmid
+  pmcid
+  openalex
+  issn
+  isbn
+}
+
+enum LiteratureOpenAccessVersion {
+  published
+  accepted
+  submitted
+}
+
+enum LiteratureOpenAccessHostType {
+  publisher
+  repository
+  other
+}
+
+enum LiteratureImportSeedProviderKey {
+  openalex
+  crossref
+  pubmed
+}
+
+enum LiteratureImportOperationStatus {
+  running
+  succeeded
+  failed
+}
+
+enum LiteratureImportWarningCode {
+  openalex_enrichment_unavailable
+  crossref_enrichment_unavailable
+  pubmed_enrichment_unavailable
+  pmc_enrichment_unavailable
+  unpaywall_enrichment_unavailable
+}
+
+enum LiteratureImportFailureCode {
+  provider_unconfigured
+  seed_not_found
+  seed_unavailable
+  invalid_provider_response
+  identity_conflict
+  authorization_revoked
+  persistence_failed
+  internal_error
+}
+
+enum RelationKind {
+  cites
+}
+
 model User {
-  id                  String               @id @default(cuid())
-  email               String               @unique
-  displayName         String
-  passwordHash        String
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  spaceMembers        SpaceMember[]
-  projectsCreated     Project[]            @relation("ProjectCreator")
-  projectMembers      ProjectMember[]
-  sessions            Session[]
-  invitationsCreated  Invitation[]         @relation("InvitationCreator")
-  invitationsAccepted Invitation[]         @relation("InvitationAcceptedBy")
-  documents           Document[]           @relation("DocumentOwner")
-  documentDrafts      DocumentDraft[]
-  documentRevisions   DocumentRevision[]
-  documentAttachments DocumentAttachment[]
-  uploadIntents       UploadIntent[]
-  aiProviderConfigs   AIProviderConfig[]
-  aiConversations     AIConversation[]
-  aiUsageAggregates   AIUsageAggregate[]
-  auditEvents         AuditEvent[]         @relation("ActorAuditEvents")
+  id                   String               @id @default(cuid())
+  email                String               @unique
+  displayName          String
+  passwordHash         String
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  spaceMembers         SpaceMember[]
+  projectsCreated      Project[]            @relation("ProjectCreator")
+  projectMembers       ProjectMember[]
+  sessions             Session[]
+  invitationsCreated   Invitation[]         @relation("InvitationCreator")
+  invitationsAccepted  Invitation[]         @relation("InvitationAcceptedBy")
+  documents            Document[]           @relation("DocumentOwner")
+  documentDrafts       DocumentDraft[]
+  documentRevisions    DocumentRevision[]
+  documentAttachments  DocumentAttachment[]
+  uploadIntents        UploadIntent[]
+  aiProviderConfigs    AIProviderConfig[]
+  aiConversations      AIConversation[]
+  aiUsageAggregates    AIUsageAggregate[]
+  auditEvents          AuditEvent[]         @relation("ActorAuditEvents")
+  literaturesOwned     Literature[]         @relation("LiteratureOwner")
+  literaturesCreated   Literature[]         @relation("LiteratureCreator")
+  providerRecords      ProviderRecord[]     @relation("ProviderRecordCreator")
+  assertions           Assertion[]          @relation("AssertionCreator")
+  relationAssertions   RelationAssertion[]  @relation("RelationAssertionCreator")
+  literatureIdentities LiteratureIdentity[] @relation("LiteratureIdentityOwner")
+  importOperations     ImportOperation[]    @relation("ImportOperationOwner")
+  importsCreated       ImportOperation[]    @relation("ImportOperationCreator")
+  sourceRevisions      SourceRevision[]     @relation("SourceRevisionCreator")
+  annotations          Annotation[]         @relation("AnnotationAuthor")
+  excerpts             Excerpt[]            @relation("ExcerptCreator")
+  evidence             Evidence[]           @relation("EvidenceCreator")
+  notebookProjections  NotebookProjection[] @relation("NotebookProjectionCreator")
 }
 
 model Space {
@@ -157,16 +245,19 @@ model SpaceMember {
 }
 
 model Project {
-  id              String          @id @default(cuid())
-  spaceId         String
-  name            String
-  createdByUserId String
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  space           Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  createdBy       User            @relation("ProjectCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  members         ProjectMember[]
-  documents       Document[]
+  id                   String               @id @default(cuid())
+  spaceId              String
+  name                 String
+  createdByUserId      String
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  space                Space                @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdBy            User                 @relation("ProjectCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  members              ProjectMember[]
+  documents            Document[]
+  literatures          Literature[]
+  literatureIdentities LiteratureIdentity[]
+  importOperations     ImportOperation[]
 
   @@index([spaceId])
   @@index([createdByUserId])
@@ -218,24 +309,25 @@ model Invitation {
 }
 
 model Document {
-  id                String               @id @default(cuid())
-  type              DocumentType
-  status            DocumentStatus       @default(active)
-  title             String
-  ownerUserId       String?
-  projectId         String?
-  currentRevisionId String?              @unique
-  revisionNumber    Int                  @default(0)
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-  owner             User?                @relation("DocumentOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  project           Project?             @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  currentRevision   DocumentRevision?    @relation("CurrentDocumentRevision", fields: [currentRevisionId], references: [id], onDelete: SetNull)
-  drafts            DocumentDraft[]
-  revisions         DocumentRevision[]   @relation("DocumentRevisions")
-  attachments       DocumentAttachment[]
-  uploadIntents     UploadIntent[]
-  aiConversations   AIConversation[]
+  id                  String               @id @default(cuid())
+  type                DocumentType
+  status              DocumentStatus       @default(active)
+  title               String
+  ownerUserId         String?
+  projectId           String?
+  currentRevisionId   String?              @unique
+  revisionNumber      Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  owner               User?                @relation("DocumentOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  project             Project?             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  currentRevision     DocumentRevision?    @relation("CurrentDocumentRevision", fields: [currentRevisionId], references: [id], onDelete: SetNull)
+  drafts              DocumentDraft[]
+  revisions           DocumentRevision[]   @relation("DocumentRevisions")
+  attachments         DocumentAttachment[]
+  uploadIntents       UploadIntent[]
+  aiConversations     AIConversation[]
+  notebookProjections NotebookProjection[]
 
   @@index([ownerUserId])
   @@index([projectId])
@@ -255,17 +347,19 @@ model DocumentDraft {
 }
 
 model DocumentRevision {
-  id                 String    @id @default(cuid())
-  documentId         String
-  revisionNumber     Int
-  contentSnapshot    Json
-  editorUserId       String
-  createdAt          DateTime  @default(now())
-  document           Document  @relation("DocumentRevisions", fields: [documentId], references: [id], onDelete: Cascade)
-  editor             User      @relation(fields: [editorUserId], references: [id], onDelete: Restrict)
-  currentForDocument Document? @relation("CurrentDocumentRevision")
+  id                  String               @id @default(cuid())
+  documentId          String
+  revisionNumber      Int
+  contentSnapshot     Json
+  editorUserId        String
+  createdAt           DateTime             @default(now())
+  document            Document             @relation("DocumentRevisions", fields: [documentId], references: [id], onDelete: Cascade)
+  editor              User                 @relation(fields: [editorUserId], references: [id], onDelete: Restrict)
+  currentForDocument  Document?            @relation("CurrentDocumentRevision")
+  notebookProjections NotebookProjection[]
 
   @@unique([documentId, revisionNumber])
+  @@unique([id, documentId])
   @@index([editorUserId])
 }
 
@@ -317,31 +411,31 @@ model UploadIntent {
 }
 
 model AIProviderConfig {
-  id                      String                    @id @default(cuid())
-  ownerUserId             String
-  name                    String
-  provider                String
-  providerKind            AIProviderKind            @default(openai_compatible)
-  baseURL                 String
-  encryptedApiKey         String?
-  keyPreview              String?
-  isDefault               Boolean                   @default(false)
-  transportState          AIProviderTransportState  @default(not_checked)
-  authState               AIProviderAuthState       @default(not_checked)
-  discoveryState          AIProviderDiscoveryState  @default(not_attempted)
-  inventoryFreshness      AIInventoryFreshnessState @default(never)
-  lastConnectionAttemptAt DateTime?
-  lastVerifiedAt          DateTime?
+  id                       String                    @id @default(cuid())
+  ownerUserId              String
+  name                     String
+  provider                 String
+  providerKind             AIProviderKind            @default(openai_compatible)
+  baseURL                  String
+  encryptedApiKey          String?
+  keyPreview               String?
+  isDefault                Boolean                   @default(false)
+  transportState           AIProviderTransportState  @default(not_checked)
+  authState                AIProviderAuthState       @default(not_checked)
+  discoveryState           AIProviderDiscoveryState  @default(not_attempted)
+  inventoryFreshness       AIInventoryFreshnessState @default(never)
+  lastConnectionAttemptAt  DateTime?
+  lastVerifiedAt           DateTime?
   verificationAttemptToken String?
-  lastSyncAttemptAt       DateTime?
-  syncAttemptToken        String?
-  lastSuccessfulSyncAt    DateTime?
-  connectionErrorCode     String?
-  discoveryErrorCode      String?
-  createdAt               DateTime                  @default(now())
-  updatedAt               DateTime                  @updatedAt
-  owner                   User                      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
-  modelProfiles           AIModelProfile[]
+  lastSyncAttemptAt        DateTime?
+  syncAttemptToken         String?
+  lastSuccessfulSyncAt     DateTime?
+  connectionErrorCode      String?
+  discoveryErrorCode       String?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  owner                    User                      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  modelProfiles            AIModelProfile[]
 
   @@unique([ownerUserId, name])
   @@index([ownerUserId, isDefault])
@@ -431,4 +525,302 @@ model AuditEvent {
 
   @@index([actorUserId, createdAt])
   @@index([targetType, targetId])
+}
+
+model Literature {
+  id                   String               @id @default(cuid())
+  ownerUserId          String?
+  projectId            String?
+  createdByUserId      String
+  nextAssertionOrdinal Int                  @default(1)
+  createdAt            DateTime             @default(now())
+  owner                User?                @relation("LiteratureOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  project              Project?             @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy            User                 @relation("LiteratureCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  providerRecords      ProviderRecord[]
+  assertions           Assertion[]
+  identities           LiteratureIdentity[]
+  importOperations     ImportOperation[]    @relation("ImportOperationResult")
+  subjectRelations     RelationAssertion[]  @relation("RelationSubject")
+  objectRelations      RelationAssertion[]  @relation("RelationObject")
+  sourceRevisions      SourceRevision[]
+  annotations          Annotation[]
+  excerpts             Excerpt[]
+  evidence             Evidence[]
+  citationOccurrences  CitationOccurrence[]
+
+  @@index([ownerUserId])
+  @@index([projectId])
+  @@index([createdByUserId])
+}
+
+model ProviderRecord {
+  id              String           @id @default(cuid())
+  literatureId    String
+  providerKey     String
+  recordKey       String
+  createdByUserId String
+  createdAt       DateTime         @default(now())
+  literature      Literature       @relation(fields: [literatureId], references: [id], onDelete: Restrict)
+  createdBy       User             @relation("ProviderRecordCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assertions      Assertion[]
+  sourceRevisions SourceRevision[]
+
+  @@unique([literatureId, providerKey, recordKey])
+  @@unique([id, literatureId])
+  @@index([createdByUserId])
+}
+
+model Assertion {
+  id                  String                @id @default(cuid())
+  literatureId        String
+  providerRecordId    String
+  ordinal             Int
+  kind                AssertionKind
+  textValue           String?
+  integerValue        Int?
+  structuredItemCount Int?
+  valueFingerprint    String?
+  createdByUserId     String
+  createdAt           DateTime              @default(now())
+  literature          Literature            @relation(fields: [literatureId], references: [id], onDelete: Restrict)
+  providerRecord      ProviderRecord        @relation(fields: [providerRecordId, literatureId], references: [id, literatureId], onDelete: Restrict)
+  createdBy           User                  @relation("AssertionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  authors             AssertionAuthor[]
+  identifiers         AssertionIdentifier[]
+  openAccess          AssertionOpenAccess?
+  publisher           AssertionPublisher?
+
+  @@unique([id, literatureId])
+  @@unique([literatureId, ordinal])
+  @@index([providerRecordId, literatureId])
+  @@index([createdByUserId])
+}
+
+model AssertionAuthor {
+  assertionId  String
+  literatureId String
+  position     Int
+  displayName  String
+  orcid        String?
+  assertion    Assertion @relation(fields: [assertionId, literatureId], references: [id, literatureId], onDelete: Restrict)
+
+  @@id([assertionId, position])
+  @@index([assertionId, literatureId])
+}
+
+model AssertionIdentifier {
+  assertionId  String
+  literatureId String
+  position     Int
+  scheme       LiteratureIdentifierScheme
+  value        String
+  assertion    Assertion                  @relation(fields: [assertionId, literatureId], references: [id, literatureId], onDelete: Restrict)
+
+  @@id([assertionId, position])
+  @@index([assertionId, literatureId])
+}
+
+model AssertionOpenAccess {
+  assertionId  String                        @id
+  literatureId String
+  isOpenAccess Boolean
+  bestUrl      String?
+  license      String?
+  version      LiteratureOpenAccessVersion?
+  hostType     LiteratureOpenAccessHostType?
+  assertion    Assertion                     @relation(fields: [assertionId, literatureId], references: [id, literatureId], onDelete: Restrict)
+
+  @@unique([assertionId, literatureId])
+  @@index([assertionId, literatureId])
+}
+
+model AssertionPublisher {
+  assertionId    String    @id
+  literatureId   String
+  name           String?
+  landingPageUrl String?
+  assertion      Assertion @relation(fields: [assertionId, literatureId], references: [id, literatureId], onDelete: Restrict)
+
+  @@unique([assertionId, literatureId])
+  @@index([assertionId, literatureId])
+}
+
+model LiteratureIdentity {
+  id            String                 @id @default(cuid())
+  literatureId  String
+  ownerUserId   String?
+  projectId     String?
+  kind          LiteratureIdentityKind
+  providerKey   String?
+  identityValue String
+  createdAt     DateTime               @default(now())
+  literature    Literature             @relation(fields: [literatureId], references: [id], onDelete: Restrict)
+  owner         User?                  @relation("LiteratureIdentityOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  project       Project?               @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@index([literatureId])
+  @@index([ownerUserId])
+  @@index([projectId])
+}
+
+model RelationAssertion {
+  id                  String         @id @default(cuid())
+  subjectLiteratureId String
+  objectLiteratureId  String
+  sourceRevisionId    String
+  kind                RelationKind
+  createdByUserId     String
+  createdAt           DateTime       @default(now())
+  subjectLiterature   Literature     @relation("RelationSubject", fields: [subjectLiteratureId], references: [id], onDelete: Restrict)
+  objectLiterature    Literature     @relation("RelationObject", fields: [objectLiteratureId], references: [id], onDelete: Restrict)
+  sourceRevision      SourceRevision @relation(fields: [sourceRevisionId, subjectLiteratureId], references: [id, literatureId], onDelete: Restrict)
+  createdBy           User           @relation("RelationAssertionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([sourceRevisionId, kind, objectLiteratureId])
+  @@index([subjectLiteratureId])
+  @@index([objectLiteratureId])
+  @@index([createdByUserId])
+}
+
+model ImportOperation {
+  id                   String                          @id @default(cuid())
+  ownerUserId          String?
+  projectId            String?
+  createdByUserId      String
+  idempotencyKey       String
+  requestFingerprint   String
+  sourceProviderKey    LiteratureImportSeedProviderKey
+  sourceRecordKey      String
+  status               LiteratureImportOperationStatus
+  attemptCount         Int
+  attemptStartedAt     DateTime
+  takeoverAfter        DateTime?
+  finishedAttemptCount Int?
+  finishedAt           DateTime?
+  literatureId         String?
+  warningCodes         LiteratureImportWarningCode[]   @default([])
+  failureCode          LiteratureImportFailureCode?
+  createdAt            DateTime                        @default(now())
+  updatedAt            DateTime                        @updatedAt
+  owner                User?                           @relation("ImportOperationOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  project              Project?                        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy            User                            @relation("ImportOperationCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  literature           Literature?                     @relation("ImportOperationResult", fields: [literatureId], references: [id], onDelete: Restrict)
+
+  @@unique([createdByUserId, idempotencyKey])
+  @@index([ownerUserId])
+  @@index([projectId])
+  @@index([literatureId])
+  @@index([createdByUserId])
+}
+
+model SourceRevision {
+  id                 String              @id @default(cuid())
+  literatureId       String
+  providerRecordId   String
+  revisionNumber     Int
+  sha256             String
+  mediaType          String
+  byteLength         BigInt
+  capturedAt         DateTime
+  createdByUserId    String
+  createdAt          DateTime            @default(now())
+  literature         Literature          @relation(fields: [literatureId], references: [id], onDelete: Restrict)
+  providerRecord     ProviderRecord      @relation(fields: [providerRecordId, literatureId], references: [id, literatureId], onDelete: Restrict)
+  createdBy          User                @relation("SourceRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  relationAssertions RelationAssertion[]
+  excerpts           Excerpt[]
+
+  @@unique([providerRecordId, revisionNumber])
+  @@unique([providerRecordId, sha256])
+  @@unique([id, literatureId])
+  @@index([createdByUserId])
+}
+
+model Annotation {
+  id           String     @id @default(cuid())
+  literatureId String
+  excerptId    String
+  authorUserId String
+  body         String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  literature   Literature @relation(fields: [literatureId], references: [id], onDelete: Restrict)
+  excerpt      Excerpt    @relation(fields: [excerptId, literatureId], references: [id, literatureId], onDelete: Restrict)
+  author       User       @relation("AnnotationAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+
+  @@index([literatureId])
+  @@index([authorUserId])
+}
+
+model Excerpt {
+  id               String         @id @default(cuid())
+  literatureId     String
+  sourceRevisionId String
+  startByte        Int
+  endByte          Int
+  quote            String
+  createdByUserId  String
+  createdAt        DateTime       @default(now())
+  literature       Literature     @relation(fields: [literatureId], references: [id], onDelete: Restrict)
+  sourceRevision   SourceRevision @relation(fields: [sourceRevisionId, literatureId], references: [id, literatureId], onDelete: Restrict)
+  createdBy        User           @relation("ExcerptCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  annotations      Annotation[]
+  evidence         Evidence[]
+
+  @@unique([sourceRevisionId, startByte, endByte])
+  @@unique([id, literatureId])
+  @@index([createdByUserId])
+}
+
+model Evidence {
+  id              String               @id @default(cuid())
+  literatureId    String
+  excerptId       String
+  createdByUserId String
+  createdAt       DateTime             @default(now())
+  literature      Literature           @relation(fields: [literatureId], references: [id], onDelete: Restrict)
+  excerpt         Excerpt              @relation(fields: [excerptId, literatureId], references: [id, literatureId], onDelete: Restrict)
+  createdBy       User                 @relation("EvidenceCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  citations       CitationOccurrence[]
+
+  @@unique([literatureId, excerptId])
+  @@unique([id, literatureId])
+  @@index([createdByUserId])
+}
+
+model NotebookProjection {
+  id                 String               @id @default(cuid())
+  documentId         String
+  documentRevisionId String
+  projectionVersion  Int
+  schemaVersion      Int
+  createdByUserId    String
+  createdAt          DateTime             @default(now())
+  document           Document             @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentRevision   DocumentRevision     @relation(fields: [documentRevisionId, documentId], references: [id, documentId], onDelete: Cascade)
+  createdBy          User                 @relation("NotebookProjectionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  citations          CitationOccurrence[]
+
+  @@unique([documentId, projectionVersion])
+  @@unique([documentRevisionId, schemaVersion])
+  @@index([createdByUserId])
+}
+
+model CitationOccurrence {
+  id                   String             @id @default(cuid())
+  notebookProjectionId String
+  evidenceId           String
+  literatureId         String
+  semanticKey          String
+  sourceOrder          Int
+  createdAt            DateTime           @default(now())
+  notebookProjection   NotebookProjection @relation(fields: [notebookProjectionId], references: [id], onDelete: Cascade)
+  evidence             Evidence           @relation(fields: [evidenceId, literatureId], references: [id, literatureId], onDelete: Restrict)
+  literature           Literature         @relation(fields: [literatureId], references: [id], onDelete: Restrict)
+
+  @@unique([notebookProjectionId, semanticKey])
+  @@unique([notebookProjectionId, sourceOrder])
+  @@index([evidenceId, literatureId])
 }

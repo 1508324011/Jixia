@@ -72,7 +72,23 @@ describe("Prisma MVP schema", () => {
       "AIModelProfile",
       "AIConversation",
       "AIUsageAggregate",
-      "AuditEvent"
+      "AuditEvent",
+      "Literature",
+      "ProviderRecord",
+      "Assertion",
+      "AssertionAuthor",
+      "AssertionIdentifier",
+      "AssertionOpenAccess",
+      "AssertionPublisher",
+      "LiteratureIdentity",
+      "RelationAssertion",
+      "ImportOperation",
+      "SourceRevision",
+      "Annotation",
+      "Excerpt",
+      "Evidence",
+      "NotebookProjection",
+      "CitationOccurrence"
     ]);
   });
 
@@ -120,7 +136,7 @@ describe("Prisma MVP schema", () => {
 
     expect(draft).toContain("baseRevision Int");
     expect(draft).toContain("draftContent Json");
-    expect(revision).toContain("contentSnapshot    Json");
+    expect(revision).toMatch(/contentSnapshot\s+Json/u);
     expect(`${draft}\n${revision}`).not.toMatch(/markdown|diff/i);
   });
 
