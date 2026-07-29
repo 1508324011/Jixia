@@ -1603,6 +1603,7 @@ export function createAIConfigService(
       } catch (reportingError) {
         void reportingError;
       }
+      throw error;
     }
   }
 

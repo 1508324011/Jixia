@@ -1045,7 +1045,7 @@ describe("AI config service", () => {
     });
   });
 
-  it("does not report a committed mutation as failed when audit recording fails", async () => {
+  it("rejects a config mutation response when mandatory audit recording fails", async () => {
     const localRepository = new InMemoryAIConfigRepository();
     const auditFailures: Array<{ readonly action: string; readonly targetId: string }> = [];
     const localService = createAIConfigService(localRepository, cipher, {
@@ -1062,17 +1062,18 @@ describe("AI config service", () => {
       }
     });
 
-    const created = await localService.createConfig({
+    await expect(localService.createConfig({
       actor: actor("owner-user"),
       name: "Committed provider",
       provider: "openai",
       baseURL: "https://api.example/v1"
-    });
+    })).rejects.toThrow("audit unavailable");
 
-    expect(localRepository.configs.has(created.config.id)).toBe(true);
+    const configId = Array.from(localRepository.configs.keys())[0];
+    expect(configId).toBeDefined();
     expect(auditFailures).toEqual([{
       action: "ai_provider_config.created",
-      targetId: created.config.id
+      targetId: configId
     }]);
   });
 
