@@ -20,6 +20,7 @@ import {
   type PermissionService
 } from "../permissions/permission.service.js";
 import { ensureMetadataOnlyAuditPayload } from "../audit/audit.service.js";
+import { getDefaultObjectStorage, type ObjectStorage } from "../attachments/object-storage.js";
 import {
   createEmptyEditorSnapshot,
   EditorSchemaError,
@@ -134,6 +135,7 @@ export type DocumentRepository = {
   readonly listProjectDocuments: (projectId: string) => Promise<readonly DocumentRecord[]>;
   readonly createDocument: (input: CreateDocumentRepositoryInput) => Promise<DocumentRecord>;
   readonly findDocumentById: (documentId: string) => Promise<DocumentRecord | null>;
+  readonly listAttachmentStorageKeys: (documentId: string) => Promise<readonly string[]>;
   readonly saveDraft: (input: {
     readonly documentId: string;
     readonly userId: string;
@@ -662,6 +664,15 @@ export class PrismaDocumentRepository implements DocumentRepository {
     return document ? toDocumentRecord(document) : null;
   }
 
+  async listAttachmentStorageKeys(documentId: string): Promise<readonly string[]> {
+    const attachments = await this.prisma.documentAttachment.findMany({
+      where: { documentId },
+      select: { storageKey: true }
+    });
+
+    return attachments.map((attachment) => attachment.storageKey);
+  }
+
   async saveDraft(input: {
     readonly documentId: string;
     readonly userId: string;
@@ -826,25 +837,43 @@ export class PrismaDocumentRepository implements DocumentRepository {
       }
 
       const document = toDocumentRecord(currentDocument);
+      const attachments = await transaction.documentAttachment.findMany({
+        where: { documentId: input.documentId },
+        select: { id: true }
+      });
 
       await transaction.document.update({
         where: { id: input.documentId },
         data: { currentRevision: { disconnect: true } },
         select: { id: true }
       });
-      const deletedAttachments = await transaction.documentAttachment.deleteMany({
+      await transaction.documentAttachment.deleteMany({
         where: { documentId: input.documentId }
       });
-      const deletedDrafts = await transaction.documentDraft.deleteMany({
+      await transaction.documentDraft.deleteMany({
         where: { documentId: input.documentId }
       });
-      const deletedRevisions = await transaction.documentRevision.deleteMany({
+      await transaction.documentRevision.deleteMany({
         where: { documentId: input.documentId }
       });
 
       await transaction.document.delete({ where: { id: input.documentId } });
 
       const deletedAt = new Date();
+      for (const attachment of attachments) {
+        await this.writeAuditEvent(transaction, {
+          actorUserId: input.actorUserId,
+          action: "attachment.deleted",
+          targetType: "DocumentAttachment",
+          targetId: attachment.id,
+          metadata: {
+            attachmentId: attachment.id,
+            documentId: input.documentId,
+            deletedBy: input.actorUserId,
+            deletedAt: deletedAt.toISOString()
+          }
+        });
+      }
       await this.writeAuditEvent(transaction, {
         actorUserId: input.actorUserId,
         action: "document.hard_deleted",
@@ -852,13 +881,12 @@ export class PrismaDocumentRepository implements DocumentRepository {
         targetId: input.documentId,
         metadata: {
           documentId: input.documentId,
-          documentType: document.type,
+          title: document.title,
+          type: document.type,
           ownerUserId: document.ownerUserId,
           projectId: document.projectId,
-          revisionNumber: document.revisionNumber,
-          deletedDraftCount: deletedDrafts.count,
-          deletedRevisionCount: deletedRevisions.count,
-          deletedAttachmentCount: deletedAttachments.count
+          deletedBy: input.actorUserId,
+          deletedAt: deletedAt.toISOString()
         }
       });
 
@@ -931,7 +959,8 @@ export function createDocumentService(
   permissions: Pick<
     PermissionService,
     "canReadDocument" | "canEditDocument" | "canArchiveDocument" | "canHardDeleteDocument"
-  >
+  >,
+  storage: Pick<ObjectStorage, "deleteObject">
 ) {
   async function requireReadableDocument(
     actor: DocumentActor,
@@ -1251,6 +1280,10 @@ export function createDocumentService(
       }
 
       const document = await ensureLifecycleDocument(input.actor, input.documentId, "hard-delete");
+      const storageKeys = await repository.listAttachmentStorageKeys(document.id);
+      for (const storageKey of storageKeys) {
+        await storage.deleteObject(storageKey);
+      }
       const result = await failClosedStoredSnapshot(() =>
         repository.hardDeleteDocument({
           actorUserId: input.actor.userId,
@@ -1277,12 +1310,16 @@ let cachedService: DocumentService | undefined;
 export async function getDefaultDocumentService(): Promise<DocumentService> {
   if (!cachedService) {
     const [{ prisma }] = await Promise.all([import("@jixia/db")]);
-    cachedService = createDocumentService(new PrismaDocumentRepository(prisma), {
-      canReadDocument: defaultCanReadDocument,
-      canEditDocument: defaultCanEditDocument,
-      canArchiveDocument: defaultCanArchiveDocument,
-      canHardDeleteDocument: defaultCanHardDeleteDocument
-    });
+    cachedService = createDocumentService(
+      new PrismaDocumentRepository(prisma),
+      {
+        canReadDocument: defaultCanReadDocument,
+        canEditDocument: defaultCanEditDocument,
+        canArchiveDocument: defaultCanArchiveDocument,
+        canHardDeleteDocument: defaultCanHardDeleteDocument
+      },
+      getDefaultObjectStorage()
+    );
   }
 
   return cachedService;

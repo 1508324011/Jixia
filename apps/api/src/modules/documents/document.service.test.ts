@@ -39,7 +39,20 @@ type UserRecord = {
 type AttachmentRecord = {
   readonly id: string;
   readonly documentId: string;
+  readonly storageKey: string;
 };
+
+class RecordingObjectStorage {
+  readonly deletedKeys: string[] = [];
+  failingKey: string | null = null;
+
+  async deleteObject(storageKey: string): Promise<void> {
+    if (storageKey === this.failingKey) {
+      throw new Error(`storage deletion failed for ${storageKey}`);
+    }
+    this.deletedKeys.push(storageKey);
+  }
+}
 
 const paragraphSnapshot = {
   editorSchemaVersion: 1,
@@ -137,6 +150,12 @@ class InMemoryDocumentRepository implements DocumentRepository {
 
   async findDocumentById(documentId: string): Promise<DocumentRecord | null> {
     return this.documents.get(documentId) ?? null;
+  }
+
+  async listAttachmentStorageKeys(documentId: string): Promise<readonly string[]> {
+    return Array.from(this.attachments.values())
+      .filter((attachment) => attachment.documentId === documentId)
+      .map((attachment) => attachment.storageKey);
   }
 
   async saveDraft(input: {
@@ -237,33 +256,43 @@ class InMemoryDocumentRepository implements DocumentRepository {
       return null;
     }
 
-    const deletedDrafts = this.deleteMatching(this.drafts, (draft) => draft.documentId === input.documentId);
-    const deletedRevisions = this.deleteMatching(
-      this.revisions,
-      (revision) => revision.documentId === input.documentId
-    );
-    const deletedAttachments = this.deleteMatching(
-      this.attachments,
+    const deletedAt = this.nextDate(999);
+    const attachments = Array.from(this.attachments.values()).filter(
       (attachment) => attachment.documentId === input.documentId
     );
+    this.deleteMatching(this.drafts, (draft) => draft.documentId === input.documentId);
+    this.deleteMatching(this.revisions, (revision) => revision.documentId === input.documentId);
+    this.deleteMatching(this.attachments, (attachment) => attachment.documentId === input.documentId);
     this.documents.delete(input.documentId);
+    for (const attachment of attachments) {
+      this.auditEvents.push({
+        action: "attachment.deleted",
+        targetType: "DocumentAttachment",
+        targetId: attachment.id,
+        metadata: {
+          attachmentId: attachment.id,
+          documentId: input.documentId,
+          deletedBy: input.actorUserId,
+          deletedAt: deletedAt.toISOString()
+        }
+      });
+    }
     this.auditEvents.push({
       action: "document.hard_deleted",
       targetType: "Document",
       targetId: input.documentId,
       metadata: {
         documentId: input.documentId,
-        documentType: document.type,
+        title: document.title,
+        type: document.type,
         ownerUserId: document.ownerUserId,
         projectId: document.projectId,
-        revisionNumber: document.revisionNumber,
-        deletedDraftCount: deletedDrafts,
-        deletedRevisionCount: deletedRevisions,
-        deletedAttachmentCount: deletedAttachments
+        deletedBy: input.actorUserId,
+        deletedAt: deletedAt.toISOString()
       }
     });
 
-    return { documentId: input.documentId, deletedAt: this.nextDate(999) };
+    return { documentId: input.documentId, deletedAt };
   }
 
   seedUser(input: {
@@ -291,12 +320,14 @@ class InMemoryDocumentRepository implements DocumentRepository {
     }
   }
 
-  seedAttachment(documentId: string): void {
+  seedAttachment(documentId: string, storageKey: string): AttachmentRecord {
     const attachment: AttachmentRecord = {
       id: `attachment-${this.attachments.size + 1}`,
-      documentId
+      documentId,
+      storageKey
     };
     this.attachments.set(attachment.id, attachment);
+    return attachment;
   }
 
   private updateStatus(
@@ -556,10 +587,12 @@ describe("editor schema helpers", () => {
 
 describe("document service", () => {
   let repository: InMemoryDocumentRepository;
+  let storage: RecordingObjectStorage;
   let service: DocumentService;
 
   beforeEach(() => {
     repository = new InMemoryDocumentRepository();
+    storage = new RecordingObjectStorage();
     for (const userId of [
       "notebook-owner",
       "project-owner",
@@ -578,7 +611,7 @@ describe("document service", () => {
         { userId: "project-viewer", role: "ProjectViewer" }
       ]
     });
-    service = createDocumentService(repository, createPermissionFacade(repository));
+    service = createDocumentService(repository, createPermissionFacade(repository), storage);
   });
 
   it("creates notebook documents for the owner only and starts with an empty snapshot", async () => {
@@ -791,7 +824,8 @@ describe("document service", () => {
     brokenRepository.seedUser({ id: "notebook-owner" });
     const brokenService = createDocumentService(
       brokenRepository,
-      createPermissionFacade(brokenRepository)
+      createPermissionFacade(brokenRepository),
+      new RecordingObjectStorage()
     );
     const created = await brokenService.createNotebookDocument({
       actor: actor("notebook-owner"),
@@ -936,7 +970,7 @@ describe("document service", () => {
       canEditDocument: async () => true,
       canArchiveDocument: async () => true,
       canHardDeleteDocument: async () => true
-    });
+    }, storage);
     const created = await permissiveService.createNotebookDocument({
       actor: actor("notebook-owner"),
       title: "Archived guard"
@@ -995,7 +1029,7 @@ describe("document service", () => {
       .resolves.toMatchObject({ document: { status: "active" } });
   });
 
-  it("requires hard-delete confirmation and deletes document rows with metadata-only audit", async () => {
+  it("requires confirmation and deletes object-storage plus database records with mandatory audits", async () => {
     const created = await service.createProjectDocument({
       actor: actor("project-owner"),
       projectId: "project-1",
@@ -1003,12 +1037,6 @@ describe("document service", () => {
     });
     const documentId = created.document.id;
 
-    await service.saveDraft({
-      actor: actor("project-owner"),
-      documentId,
-      baseRevision: 0,
-      draftContent: paragraphSnapshot
-    });
     await service.saveRevision({
       actor: actor("project-owner"),
       documentId,
@@ -1016,12 +1044,19 @@ describe("document service", () => {
       contentSnapshot: paragraphSnapshot
     });
     await service.saveDraft({
+      actor: actor("project-owner"),
+      documentId,
+      baseRevision: 1,
+      draftContent: updatedSnapshot
+    });
+    await service.saveDraft({
       actor: actor("project-editor"),
       documentId,
       baseRevision: 1,
       draftContent: updatedSnapshot
     });
-    repository.seedAttachment(documentId);
+    const firstAttachment = repository.seedAttachment(documentId, "documents/delete-me/first.pdf");
+    const secondAttachment = repository.seedAttachment(documentId, "documents/delete-me/second.png");
 
     await expectRejectedWithStatus(
       service.hardDeleteDocument({
@@ -1051,16 +1086,82 @@ describe("document service", () => {
     expect(repository.drafts).toHaveLength(0);
     expect(repository.revisions).toHaveLength(0);
     expect(repository.attachments).toHaveLength(0);
+    expect(storage.deletedKeys).toEqual([
+      "documents/delete-me/first.pdf",
+      "documents/delete-me/second.png"
+    ]);
+    const attachmentDeleteEvents = repository.auditEvents.filter(
+      (event) => event.action === "attachment.deleted"
+    );
+    expect(attachmentDeleteEvents).toEqual([
+      expect.objectContaining({
+        targetId: firstAttachment.id,
+        metadata: expect.objectContaining({
+          attachmentId: firstAttachment.id,
+          documentId,
+          deletedBy: "project-owner"
+        })
+      }),
+      expect.objectContaining({
+        targetId: secondAttachment.id,
+        metadata: expect.objectContaining({
+          attachmentId: secondAttachment.id,
+          documentId,
+          deletedBy: "project-owner"
+        })
+      })
+    ]);
     const auditEvent = expectAuditEvent(repository.auditEvents[repository.auditEvents.length - 1]);
     expect(auditEvent).toMatchObject({
       action: "document.hard_deleted",
       metadata: {
-        deletedDraftCount: 1,
-        deletedRevisionCount: 1,
-        deletedAttachmentCount: 1
+        documentId,
+        title: "Delete me",
+        type: "project",
+        ownerUserId: null,
+        projectId: "project-1",
+        deletedBy: "project-owner",
+        deletedAt: response.deletedAt
       }
     });
+    attachmentDeleteEvents.forEach(expectMetadataOnly);
     expectMetadataOnly(auditEvent);
+  });
+
+  it("keeps database records and audits unchanged when object-storage deletion fails", async () => {
+    const created = await service.createProjectDocument({
+      actor: actor("project-owner"),
+      projectId: "project-1",
+      title: "Retain on storage failure"
+    });
+    const documentId = created.document.id;
+    await service.saveRevision({
+      actor: actor("project-owner"),
+      documentId,
+      baseRevision: 0,
+      contentSnapshot: paragraphSnapshot
+    });
+    await service.saveDraft({
+      actor: actor("project-owner"),
+      documentId,
+      baseRevision: 1,
+      draftContent: updatedSnapshot
+    });
+    const attachment = repository.seedAttachment(documentId, "documents/retain/failure.pdf");
+    storage.failingKey = attachment.storageKey;
+    const auditCountBeforeDelete = repository.auditEvents.length;
+
+    await expect(service.hardDeleteDocument({
+      actor: actor("project-owner"),
+      documentId,
+      confirmation: documentHardDeleteConfirmation
+    })).rejects.toThrow("storage deletion failed");
+
+    expect(repository.documents.has(documentId)).toBe(true);
+    expect(Array.from(repository.drafts.values()).some((draft) => draft.documentId === documentId)).toBe(true);
+    expect(Array.from(repository.revisions.values()).some((revision) => revision.documentId === documentId)).toBe(true);
+    expect(repository.attachments.has(attachment.id)).toBe(true);
+    expect(repository.auditEvents).toHaveLength(auditCountBeforeDelete);
   });
 });
 
@@ -1156,7 +1257,11 @@ describe("document routes", () => {
         { userId: "project-viewer", role: "ProjectViewer" }
       ]
     });
-    service = createDocumentService(repository, createPermissionFacade(repository));
+    service = createDocumentService(
+      repository,
+      createPermissionFacade(repository),
+      new RecordingObjectStorage()
+    );
   });
 
   afterEach(async () => {
