@@ -73,6 +73,45 @@ test.describe("responsive workbench foundation", () => {
     expect(browserErrors).toEqual([]);
   });
 
+  test("keeps the active primary navigation control inside its visible rail at 375px", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    const identity = identityFor(testInfo, "responsive-375-navigation");
+    await acceptInvitationThroughUi(page, identity);
+
+    const destinations = [
+      { label: "Home", path: /\/home$/ },
+      { label: "Search", path: /\/search$/ },
+      { label: "Library", path: /\/library$/ },
+      { label: "Projects", path: /\/workspace$/ },
+      { label: "Notebook", path: /\/notebook$/ },
+      { label: "AI", path: /\/ai$/ }
+    ] as const;
+
+    for (const destination of destinations) {
+      await page.getByRole("button", { name: destination.label, exact: true }).click();
+      await expect(page).toHaveURL(destination.path);
+      await expectActiveNavigationWithinRail(page);
+    }
+
+    await page.getByLabel("Language").selectOption("zh-CN");
+    await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+
+    const chineseDestinations = [
+      { label: "首页", path: /\/home$/ },
+      { label: "搜索", path: /\/search$/ },
+      { label: "文献库", path: /\/library$/ },
+      { label: "项目", path: /\/workspace$/ },
+      { label: "笔记本", path: /\/notebook$/ },
+      { label: "AI", path: /\/ai$/ }
+    ] as const;
+
+    for (const destination of chineseDestinations) {
+      await page.getByRole("button", { name: destination.label, exact: true }).click();
+      await expect(page).toHaveURL(destination.path);
+      await expectActiveNavigationWithinRail(page);
+    }
+  });
+
   test("keeps document canvas and Copilot usable side by side at 1100px", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1100, height: 800 });
     const identity = identityFor(testInfo, "responsive-compact-desktop");
@@ -160,6 +199,19 @@ async function expectElementWithinViewport(locator: Locator, viewportWidth: numb
   expect(box).not.toBeNull();
   expect(box?.x).toBeGreaterThanOrEqual(0);
   expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(viewportWidth);
+}
+
+async function expectActiveNavigationWithinRail(page: Page): Promise<void> {
+  await expect(page.locator(".jixia-shell__rail-button[aria-current='page']")).toBeVisible();
+  const rail = page.locator(".jixia-shell__activity-rail");
+  const railBox = await rail.boundingBox();
+  expect(railBox).not.toBeNull();
+  expect(railBox?.height).toBeLessThanOrEqual(200);
+  const navigation = page.locator(".jixia-shell__rail-nav");
+  const buttons = navigation.locator(".jixia-shell__rail-button");
+  for (let index = 0; index < await buttons.count(); index += 1) {
+    await expectElementWithinContainer(buttons.nth(index), navigation);
+  }
 }
 
 async function expectInspectorControlsWithinBounds(inspector: Locator): Promise<void> {
