@@ -17,7 +17,8 @@ import {
   ImageBlock,
   ImageToExternalHTML,
   createReactBlockSpec,
-  useCreateBlockNote
+  useCreateBlockNote,
+  useResolveUrl
 } from "@blocknote/react";
 import {
   type AttachmentBlockType,
@@ -110,6 +111,68 @@ const createJixiaFileBlockConfig = () => {
   };
 };
 
+type JixiaImageBlockRenderProps = Parameters<typeof ImageBlock>[0];
+
+function JixiaResolvedImageBlock(props: JixiaImageBlockRenderProps) {
+  const [attempt, setAttempt] = useState(0);
+
+  return (
+    <JixiaResolvedImageAttempt
+      key={attempt}
+      onRetry={() => setAttempt((currentAttempt) => currentAttempt + 1)}
+      props={props}
+    />
+  );
+}
+
+function JixiaResolvedImageAttempt({
+  onRetry,
+  props
+}: {
+  readonly onRetry: () => void;
+  readonly props: JixiaImageBlockRenderProps;
+}) {
+  const resolved = useResolveUrl(props.block.props.url || "");
+
+  if (resolved.loadingState === "loading") {
+    return (
+      <div
+        aria-label="Loading image preview"
+        className="jixia-native-attachment-frame__image-state"
+        role="status"
+      >
+        Resolving private image preview…
+      </div>
+    );
+  }
+
+  if (resolved.loadingState === "error" || resolved.downloadUrl === undefined) {
+    return (
+      <div
+        aria-label="Image preview unavailable"
+        className="jixia-native-attachment-frame__image-state"
+        role="alert"
+      >
+        <strong>Image preview unavailable</strong>
+        <span>The private image could not be resolved. Its attachment remains linked to this document.</span>
+        <Button onClick={onRetry} variant="secondary">
+          Retry image preview
+        </Button>
+      </div>
+    );
+  }
+
+  const resolvedBlock = {
+    ...props.block,
+    props: {
+      ...props.block.props,
+      url: resolved.downloadUrl
+    }
+  };
+
+  return <ImageBlock {...props} block={resolvedBlock} />;
+}
+
 const jixiaNativeImageBlock = createLooseReactBlockSpec(
   createJixiaImageBlockConfig,
   (options: Parameters<typeof createImageBlockConfig>[0]) => ({
@@ -118,7 +181,7 @@ const jixiaNativeImageBlock = createLooseReactBlockSpec(
     },
     render: (props: Parameters<typeof ImageBlock>[0]) => (
       <JixiaNativeAttachmentFrame blockType="image" block={props.block} editor={props.editor as unknown as JixiaBlockNoteEditor}>
-        <ImageBlock {...props} />
+        <JixiaResolvedImageBlock {...props} />
       </JixiaNativeAttachmentFrame>
     ),
     parse: imageParse(options) as unknown,

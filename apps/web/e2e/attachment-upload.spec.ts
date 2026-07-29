@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, type Route, test } from "@playwright/test";
 
 import {
   acceptInvitationThroughUi,
@@ -18,6 +18,7 @@ const pastedImageBytes = [60, 115, 118, 103, 32, 47, 62];
 test("uploads an image block and resolves it after document reload", async ({ page }, testInfo) => {
   const authorizationHeaderRequests = collectApiRequestsWithAuthorization(page);
   const directUploadCredentialLeaks = collectDirectUploadCredentialLeaks(page);
+  const attachmentSchemeErrors = collectAttachmentSchemeErrors(page);
   const identity = identityFor(testInfo, "attachment-upload");
 
   await acceptInvitationThroughUi(page, identity);
@@ -47,12 +48,14 @@ test("uploads an image block and resolves it after document reload", async ({ pa
   await expect(page.getByRole("img", { name: "figure.svg" })).toBeVisible();
   await expectReadyImageIsContentFirst(page, "figure.svg");
   expect(directUploadCredentialLeaks).toEqual([]);
+  expect(attachmentSchemeErrors).toEqual([]);
 
   await waitForDraftSave(page);
   await saveFormalRevision(page);
   await page.reload();
   await expect(page.getByRole("img", { name: "figure.svg" })).toBeVisible();
   await expectReadyImageIsContentFirst(page, "figure.svg");
+  expect(attachmentSchemeErrors).toEqual([]);
   await expect(page.getByText(/storageKey|objectKey|x-amz|signature/i)).toHaveCount(0);
 
   const downloadResponse = page.waitForResponse((response) => {
@@ -70,6 +73,30 @@ test("uploads an image block and resolves it after document reload", async ({ pa
     expect(popupUrl.searchParams.has("signature")).toBe(true);
   }
   await popup?.close();
+
+  const downloadEndpoint = /\/api\/attachments\/[^/]+\/download$/;
+  const rejectPreviewResolution = async (route: Route): Promise<void> => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Attachment preview temporarily unavailable." })
+    });
+  };
+  await page.route(downloadEndpoint, rejectPreviewResolution);
+  await page.reload();
+
+  const previewFailure = page.getByRole("alert", { name: "Image preview unavailable" });
+  await expect(previewFailure).toBeVisible();
+  const failureBox = await previewFailure.boundingBox();
+  expect(failureBox).not.toBeNull();
+  expect(failureBox?.width).toBeGreaterThanOrEqual(240);
+  expect(failureBox?.height).toBeGreaterThanOrEqual(120);
+  await expect(page.getByRole("button", { name: "Retry image preview" })).toBeVisible();
+  expect(attachmentSchemeErrors).toEqual([]);
+
+  await page.unroute(downloadEndpoint, rejectPreviewResolution);
+  await page.getByRole("button", { name: "Retry image preview" }).click();
+  await expect(page.getByRole("img", { name: "figure.svg" })).toBeVisible();
 
   expect(authorizationHeaderRequests).toEqual([]);
 });
@@ -242,6 +269,26 @@ function blockNoteEditable(page: Page): Locator {
 
 function nativeFileName(page: Page, fileName: string): Locator {
   return page.locator(".jixia-native-attachment-frame", { hasText: fileName }).first();
+}
+
+function collectAttachmentSchemeErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("requestfailed", (request) => {
+    if (request.url().startsWith("jixia-attachment:")) {
+      errors.push(`requestfailed:${request.url()}`);
+    }
+  });
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().includes("jixia-attachment:")) {
+      errors.push(`console:${message.text()}`);
+    }
+  });
+  page.on("pageerror", (error) => {
+    if (error.message.includes("jixia-attachment:")) {
+      errors.push(`pageerror:${error.message}`);
+    }
+  });
+  return errors;
 }
 
 async function expectReadyImageIsContentFirst(page: Page, fileName: string): Promise<void> {
