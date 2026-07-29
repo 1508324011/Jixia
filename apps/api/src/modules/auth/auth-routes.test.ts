@@ -24,10 +24,19 @@ const cookieName = "jixia_test_session";
 const space = { id: "space-1", name: "Jixia Lab" };
 const baseNow = new Date("2026-06-14T12:00:00.000Z");
 
+type InvitationAuditEvent = {
+  readonly actorUserId: string;
+  readonly action: string;
+  readonly targetType: "Invitation";
+  readonly targetId: string;
+  readonly metadata: Readonly<Record<string, unknown>>;
+};
+
 class InMemoryAuthRepository implements AuthRepository {
   readonly users = new Map<string, AuthUserRecord>();
   readonly sessions = new Map<string, AuthSessionRecord>();
   readonly invitations = new Map<string, AuthInvitationRecord>();
+  readonly auditEvents: InvitationAuditEvent[] = [];
 
   async findUserByEmail(email: string): Promise<AuthUserRecord | null> {
     return this.users.get(email) ?? null;
@@ -111,6 +120,20 @@ class InMemoryAuthRepository implements AuthRepository {
       createdAt: baseNow
     };
     this.invitations.set(invitation.tokenHash, invitation);
+    this.auditEvents.push({
+      actorUserId: input.invitedByUserId,
+      action: "invitation.created",
+      targetType: "Invitation",
+      targetId: invitation.id,
+      metadata: {
+        invitationId: invitation.id,
+        spaceId: invitation.spaceId,
+        role: invitation.role,
+        invitedByUserId: invitation.invitedByUserId,
+        createdAt: invitation.createdAt.toISOString(),
+        expiresAt: invitation.expiresAt.toISOString()
+      }
+    });
     return invitation;
   }
 
@@ -157,6 +180,19 @@ class InMemoryAuthRepository implements AuthRepository {
       id: input.sessionId,
       userId: user.id,
       expiresAt: input.sessionExpiresAt
+    });
+    this.auditEvents.push({
+      actorUserId: user.id,
+      action: "invitation.accepted",
+      targetType: "Invitation",
+      targetId: invitation.id,
+      metadata: {
+        invitationId: invitation.id,
+        spaceId: invitation.spaceId,
+        role: invitation.role,
+        acceptedByUserId: user.id,
+        acceptedAt: input.now.toISOString()
+      }
     });
 
     return { status: "accepted", session };
@@ -450,6 +486,19 @@ describe("auth and invitation routes", () => {
     });
     expect(JSON.stringify(body)).not.toMatch(/token|password|session/i);
     expect(Array.from(repository.invitations.values())[0]?.tokenHash).toBeTruthy();
+    expect(repository.auditEvents).toEqual([
+      expect.objectContaining({
+        actorUserId: "admin-user",
+        action: "invitation.created",
+        targetType: "Invitation",
+        metadata: expect.objectContaining({
+          spaceId: space.id,
+          role: "SpaceMember",
+          invitedByUserId: "admin-user"
+        })
+      })
+    ]);
+    expect(JSON.stringify(repository.auditEvents)).not.toMatch(/email|token|password|session/i);
   });
 
   it("accepts a valid invitation, creates a user, and starts a session", async () => {
@@ -492,6 +541,20 @@ describe("auth and invitation routes", () => {
     expect(user?.passwordHash).not.toBe(newUserSecret);
     expect(repository.sessions.get(id)?.userId).toBe(user?.id);
     expect(JSON.stringify(response.json())).not.toContain(invitationToken);
+    expect(repository.auditEvents).toEqual([
+      expect.objectContaining({
+        actorUserId: user?.id,
+        action: "invitation.accepted",
+        targetType: "Invitation",
+        metadata: expect.objectContaining({
+          spaceId: space.id,
+          role: "SpaceMember",
+          acceptedByUserId: user?.id,
+          acceptedAt: now.toISOString()
+        })
+      })
+    ]);
+    expect(JSON.stringify(repository.auditEvents)).not.toMatch(/email|token|password|session/i);
 
     const meResponse = await app.inject({ method: "GET", url: "/auth/me", headers: { cookie } });
     expect(meResponse.statusCode).toBe(200);

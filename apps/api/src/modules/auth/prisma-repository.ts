@@ -1,6 +1,11 @@
 import type { PrismaClient } from "@jixia/db/client";
-import type { ProjectRole, SpaceRole } from "@jixia/shared";
-
+import type { Prisma } from "@jixia/db/generated";
+import { ensureMetadataOnlyAuditPayload } from "../audit/audit.service.js";
+import {
+  toAuthInvitation,
+  toAuthSession,
+  toAuthUser
+} from "./prisma-record-mappers.js";
 import type {
   AcceptInvitationInput,
   AcceptInvitationResult,
@@ -28,112 +33,6 @@ const sessionInclude = {
     include: userInclude
   }
 };
-
-type PrismaUserWithMemberships = {
-  readonly id: string;
-  readonly email: string;
-  readonly displayName: string;
-  readonly passwordHash: string;
-  readonly spaceMembers: readonly {
-    readonly id: string;
-    readonly role: string;
-    readonly createdAt: Date;
-    readonly space: {
-      readonly id: string;
-      readonly name: string;
-    };
-  }[];
-  readonly projectMembers: readonly {
-    readonly id: string;
-    readonly role: string;
-    readonly createdAt: Date;
-    readonly project: {
-      readonly id: string;
-      readonly name: string;
-    };
-  }[];
-};
-
-type PrismaSessionWithUser = {
-  readonly id: string;
-  readonly userId: string;
-  readonly expiresAt: Date;
-  readonly revokedAt: Date | null;
-  readonly user: PrismaUserWithMemberships;
-};
-
-type PrismaInvitation = {
-  readonly id: string;
-  readonly spaceId: string;
-  readonly email: string;
-  readonly role: string;
-  readonly tokenHash: string;
-  readonly invitedByUserId: string;
-  readonly acceptedByUserId: string | null;
-  readonly expiresAt: Date;
-  readonly acceptedAt: Date | null;
-  readonly createdAt: Date;
-};
-
-function toSpaceRole(role: string): SpaceRole {
-  return role as SpaceRole;
-}
-
-function toProjectRole(role: string): ProjectRole {
-  return role as ProjectRole;
-}
-
-function toAuthUser(user: PrismaUserWithMemberships): AuthUserRecord {
-  return {
-    id: user.id,
-    email: user.email,
-    displayName: user.displayName,
-    passwordHash: user.passwordHash,
-    spaceMembers: user.spaceMembers.map((membership) => ({
-      id: membership.id,
-      role: toSpaceRole(membership.role),
-      createdAt: membership.createdAt,
-      space: {
-        id: membership.space.id,
-        name: membership.space.name
-      }
-    })),
-    projectMembers: user.projectMembers.map((membership) => ({
-      id: membership.id,
-      role: toProjectRole(membership.role),
-      createdAt: membership.createdAt,
-      project: {
-        id: membership.project.id,
-        name: membership.project.name
-      }
-    }))
-  };
-}
-
-function toAuthSession(session: PrismaSessionWithUser): AuthSessionRecord {
-  return {
-    id: session.id,
-    userId: session.userId,
-    expiresAt: session.expiresAt,
-    revokedAt: session.revokedAt,
-    user: toAuthUser(session.user)
-  };
-}
-
-function toAuthInvitation(invitation: PrismaInvitation): AuthInvitationRecord {
-  return {
-    id: invitation.id,
-    spaceId: invitation.spaceId,
-    email: invitation.email,
-    role: toSpaceRole(invitation.role),
-    tokenHash: invitation.tokenHash,
-    invitedByUserId: invitation.invitedByUserId,
-    acceptedByUserId: invitation.acceptedByUserId,
-    expiresAt: invitation.expiresAt,
-    acceptedAt: invitation.acceptedAt,
-    createdAt: invitation.createdAt
-  };
-}
 
 export class PrismaAuthRepository implements AuthRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -194,9 +93,29 @@ export class PrismaAuthRepository implements AuthRepository {
   }
 
   async createInvitation(input: CreateInvitationInput): Promise<AuthInvitationRecord> {
-    const invitation = await this.prisma.invitation.create({ data: input });
+    return this.prisma.$transaction(async (transaction) => {
+      const invitation = await transaction.invitation.create({ data: input });
+      const auditMetadata = {
+        invitationId: invitation.id,
+        spaceId: invitation.spaceId,
+        role: invitation.role,
+        invitedByUserId: invitation.invitedByUserId,
+        createdAt: invitation.createdAt.toISOString(),
+        expiresAt: invitation.expiresAt.toISOString()
+      } satisfies Record<string, unknown>;
+      ensureMetadataOnlyAuditPayload(auditMetadata);
+      await transaction.auditEvent.create({
+        data: {
+          actorUserId: invitation.invitedByUserId,
+          action: "invitation.created",
+          targetType: "Invitation",
+          targetId: invitation.id,
+          metadata: auditMetadata as Prisma.InputJsonValue
+        }
+      });
 
-    return toAuthInvitation(invitation);
+      return toAuthInvitation(invitation);
+    });
   }
 
   async acceptInvitation(input: AcceptInvitationInput): Promise<AcceptInvitationResult> {
@@ -251,6 +170,23 @@ export class PrismaAuthRepository implements AuthRepository {
           expiresAt: input.sessionExpiresAt
         },
         include: sessionInclude
+      });
+      const auditMetadata = {
+        invitationId: invitation.id,
+        spaceId: invitation.spaceId,
+        role: invitation.role,
+        acceptedByUserId: user.id,
+        acceptedAt: input.now.toISOString()
+      } satisfies Record<string, unknown>;
+      ensureMetadataOnlyAuditPayload(auditMetadata);
+      await transaction.auditEvent.create({
+        data: {
+          actorUserId: user.id,
+          action: "invitation.accepted",
+          targetType: "Invitation",
+          targetId: invitation.id,
+          metadata: auditMetadata as Prisma.InputJsonValue
+        }
       });
 
       return {
