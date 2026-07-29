@@ -3,8 +3,7 @@ import type {
   CurrentSessionView,
   ProjectRole,
   SpaceRole,
-  UploadFailureReason,
-  UploadIntentStatus
+  UploadFailureReason
 } from "@jixia/shared";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -48,13 +47,20 @@ type DocumentRecord = {
   readonly projectId: string | null;
 };
 
+type AttachmentAuditEvent = {
+  readonly action: string;
+  readonly targetType: string;
+  readonly targetId: string;
+  readonly metadata: Readonly<Record<string, unknown>>;
+};
+
 class InMemoryAttachmentRepository implements AttachmentRepository {
   readonly users = new Set<string>();
   readonly documents = new Map<string, DocumentRecord>();
   readonly projectMembers = new Map<string, ProjectRole>();
   readonly uploadIntents = new Map<string, UploadIntentRecord>();
   readonly attachments = new Map<string, AttachmentRecord>();
-  readonly auditEvents: unknown[] = [];
+  readonly auditEvents: AttachmentAuditEvent[] = [];
   confirmRace = false;
 
   async createUploadIntent(input: {
@@ -137,6 +143,18 @@ class InMemoryAttachmentRepository implements AttachmentRepository {
     };
     this.uploadIntents.set(intent.id, confirmedIntent);
     this.attachments.set(attachment.id, attachment);
+    this.auditEvents.push({
+      action: "attachment.upload_confirmed",
+      targetType: "DocumentAttachment",
+      targetId: attachment.id,
+      metadata: {
+        attachmentId: attachment.id,
+        documentId: attachment.documentId,
+        uploadIntentId: intent.id,
+        uploadedByUserId: intent.uploaderUserId,
+        confirmedAt: input.now.toISOString()
+      }
+    });
 
     return { outcome: "confirmed", intent: confirmedIntent, attachment };
   }
@@ -492,6 +510,19 @@ describe("attachment service", () => {
       etag: "etag-1"
     });
     expect(repository.attachments).toHaveLength(1);
+    expect(repository.auditEvents).toEqual([{
+      action: "attachment.upload_confirmed",
+      targetType: "DocumentAttachment",
+      targetId: "attachment-1",
+      metadata: {
+        attachmentId: "attachment-1",
+        documentId: "project-document-1",
+        uploadIntentId: created.intent.id,
+        uploadedByUserId: "project-editor",
+        confirmedAt: baseNow.toISOString()
+      }
+    }]);
+    expect(JSON.stringify(repository.auditEvents)).not.toMatch(/storageKey|fileName|checksum|etag/i);
   });
 
   it("records locked failure reasons for missing size MIME storage expired and permission failures", async () => {
@@ -576,6 +607,7 @@ describe("attachment service", () => {
       actor: actor("project-editor"),
       uploadIntentId: created.intent.id
     });
+    const auditCountBeforeDownload = repository.auditEvents.length;
 
     const response = await service.createAttachmentDownload({
       actor: actor("project-viewer"),
@@ -584,7 +616,7 @@ describe("attachment service", () => {
 
     expect(response.downloadUrl).toContain("/download/");
     expect(response.expiresAt).toBe(new Date(baseNow.getTime() + 15 * 60 * 1_000).toISOString());
-    expect(repository.auditEvents).toHaveLength(0);
+    expect(repository.auditEvents).toHaveLength(auditCountBeforeDownload);
     await expectRejectedWithStatus(
       service.createAttachmentDownload({ actor: actor("non-member"), attachmentId: confirmed.attachment.id }),
       404
@@ -708,6 +740,7 @@ describe("attachment routes", () => {
       intent: { status: "confirmed" },
       attachment: { id: "attachment-1", etag: "route-etag" }
     });
+    const auditCountBeforeDownload = repository.auditEvents.length;
 
     const downloadResponse = await app.inject({
       method: "POST",
@@ -720,7 +753,7 @@ describe("attachment routes", () => {
       attachment: { id: "attachment-1" }
     });
     expect(downloadResponse.json().downloadUrl).toContain("/download/");
-    expect(repository.auditEvents).toHaveLength(0);
+    expect(repository.auditEvents).toHaveLength(auditCountBeforeDownload);
   });
 });
 

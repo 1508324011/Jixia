@@ -23,6 +23,7 @@ import {
   canEditDocument as defaultCanEditDocument,
   type PermissionService
 } from "../permissions/permission.service.js";
+import { ensureMetadataOnlyAuditPayload } from "../audit/audit.service.js";
 import {
   getDefaultObjectStorage,
   ObjectStorageError,
@@ -90,8 +91,15 @@ export type ConfirmUploadIntentRepositoryResult =
       readonly outcome: "unavailable";
     };
 
+export type AttachmentAuditEventRecord = {
+  readonly action: string;
+  readonly targetType: string;
+  readonly targetId: string;
+  readonly metadata: Readonly<Record<string, unknown>>;
+};
+
 export type AttachmentRepository = {
-  readonly auditEvents: readonly unknown[];
+  readonly auditEvents: readonly AttachmentAuditEventRecord[];
   readonly createUploadIntent: (input: {
     readonly documentId: string;
     readonly uploaderUserId: string;
@@ -349,7 +357,7 @@ const attachmentSelect = {
 } satisfies Prisma.DocumentAttachmentSelect;
 
 export class PrismaAttachmentRepository implements AttachmentRepository {
-  readonly auditEvents: readonly unknown[] = [];
+  readonly auditEvents: readonly AttachmentAuditEventRecord[] = [];
 
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -437,6 +445,23 @@ export class PrismaAttachmentRepository implements AttachmentRepository {
           etag: input.etag
         },
         select: attachmentSelect
+      });
+      const auditMetadata = {
+        attachmentId: attachment.id,
+        documentId: intent.documentId,
+        uploadIntentId: intent.id,
+        uploadedByUserId: intent.uploaderUserId,
+        confirmedAt: input.now.toISOString()
+      } satisfies Record<string, unknown>;
+      ensureMetadataOnlyAuditPayload(auditMetadata);
+      await transaction.auditEvent.create({
+        data: {
+          actorUserId: input.uploaderUserId,
+          action: "attachment.upload_confirmed",
+          targetType: "DocumentAttachment",
+          targetId: attachment.id,
+          metadata: auditMetadata as Prisma.InputJsonValue
+        }
       });
 
       return {
