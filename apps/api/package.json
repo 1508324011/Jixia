@@ -16,7 +16,7 @@
     "argon2": "^0.44.0",
     "fast-xml-parser": "5.10.1",
     "fastify": "latest",
-    "undici": "7.28.0",
+    "undici": "7.29.0",
     "zod": "latest"
   },
   "devDependencies": {
